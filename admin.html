@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de Control — Bruwaltech</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+  :root {
+    --navy: #15294D;
+    --celeste: #2F8FE0;
+    --bg: #F4F8FC;
+    --surface: #FFFFFF;
+    --line: #DCE6F0;
+    --text-dark: #15294D;
+    --text-mute: #5C6B82;
+    --stock: #1FA088;
+    --warn: #D97706;
+    --danger: #DC2626;
+    --radius: 12px;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text-dark);
+    min-height: 100vh;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  /* ===== AUTH SCREEN ===== */
+  #authView {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .auth-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 20px 50px -20px rgba(21, 41, 77, 0.2);
+  }
+
+  .auth-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+    color: var(--navy);
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .auth-logo .mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--navy), var(--celeste));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+  }
+
+  .auth-tabs {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 3px;
+    margin-bottom: 22px;
+  }
+
+  .auth-tab {
+    flex: 1;
+    text-align: center;
+    padding: 9px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-mute);
+    cursor: pointer;
+    border: none;
+    background: none;
+  }
+
+  .auth-tab.active {
+    background: var(--navy);
+    color: #fff;
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-mute);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .field input {
+    width: 100%;
+    padding: 11px 13px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
+    color: var(--text-dark);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .field input:focus {
+    outline: none;
+    border-color: var(--celeste);
+    box-shadow: 0 0 0 3px rgba(47, 143, 224, 0.12);
+  }
+
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: filter 0.15s;
+  }
+
+  .btn-primary {
+    background: var(--navy);
+    color: #fff;
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.15);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .auth-error {
+    background: #FEF2F2;
+    border: 1px solid #FCA5A5;
+    color: var(--danger);
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+
+  .auth-hint {
+    margin-top: 16px;
+    font-size: 12.5px;
+    color: var(--text-mute);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  /* ===== APP SCREEN ===== */
+  #appView header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .app-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    color: var(--navy);
+    font-size: 15px;
+  }
+
+  .app-logo .mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--navy), var(--celeste));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+  }
+
+  .app-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+
+  .app-user b {
+    color: var(--navy);
+  }
+
+  .btn-ghost {
+    background: #fff;
+    border: 1px solid var(--line);
+    color: var(--navy);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .btn-ghost:hover {
+    border-color: var(--celeste);
+  }
+
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .app-tabs {
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+  }
+
+  .wrap-tabs {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .app-tab {
+    background: none;
+    border: none;
+    padding: 13px 16px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-mute);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .app-tab.active {
+    color: var(--navy);
+    border-bottom-color: var(--navy);
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  @media (max-width: 760px) {
+    .stats-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+
+  .stat-card .label {
+    font-size: 12px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .stat-card .value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-top: 6px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-action.primary {
+    background: var(--navy);
+    color: #fff;
+  }
+
+  .btn-action.primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+
+  .panel-head {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+    color: var(--navy);
+    font-size: 14.5px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    text-align: left;
+    font-size: 11.5px;
+    color: var(--text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+    color: var(--text-dark);
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  .row-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .icon-btn {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--navy);
+    font-weight: 600;
+  }
+
+  .icon-btn:hover {
+    border-color: var(--celeste);
+  }
+
+  .icon-btn.danger {
+    color: var(--danger);
+  }
+
+  /* ===== MODAL ===== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(21, 41, 77, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+  }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 26px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal h3 {
+    color: var(--navy);
+    margin-bottom: 16px;
+  }
+
+  .modal-close {
+    float: right;
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--text-mute);
+  }
+
+  .empty-state {
+    background: var(--surface);
+    border: 1px dashed var(--line);
+    border-radius: 14px;
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-mute);
+  }
+
+  .empty-state h3 {
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+
+  .product-thumb {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+  }
+
+  .product-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .badge.ok {
+    background: #DCFCE7;
+    color: var(--stock);
+  }
+
+  .badge.low {
+    background: #FEF3C7;
+    color: var(--warn);
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== AUTH SCREEN ===== -->
+<div id="authView">
+  <div class="auth-card">
+    <div class="auth-logo"><span class="mark">B</span> BRUWAL</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin">Ingresar</button>
+      <button class="auth-tab" id="tabRegister">Registrarme</button>
+    </div>
+    <div id="authError" class="auth-error hidden"></div>
+
+    <form id="loginForm">
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" required></div>
+      <div class="field"><label>Contraseña</label><input type="password" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary" id="loginBtn">Ingresar</button>
+    </form>
+
+    <form id="registerForm" class="hidden">
+      <div class="field"><label>Nombre de tu negocio</label><input type="text" id="regBusiness" required placeholder="Ej: Mi Kiosco"></div>
+      <div class="field"><label>Teléfono (WhatsApp)</label><input type="tel" id="regPhone" required placeholder="Ej: 341 555-1234"></div>
+      <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
+      <div class="field"><label>Contraseña</label><input type="password" id="regPassword" required minlength="6"></div>
+      <button type="submit" class="btn btn-primary" id="registerBtn">Crear cuenta</button>
+    </form>
+
+    <div class="auth-hint">Al registrarte podrás crear tu tienda online y recibir pedidos.</div>
+  </div>
+</div>
+
+<!-- ===== APP SCREEN ===== -->
+<div id="appView" class="hidden">
+  <header>
+    <div class="app-logo"><span class="mark">B</span> BRUWAL</div>
+    <div class="app-user">
+      <span id="userBusiness"><b></b></span>
+      <button class="btn-ghost" id="logoutBtn">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <div class="app-tabs">
+    <div class="wrap-tabs">
+      <button class="app-tab active" id="tabDashboard">📊 Dashboard</button>
+      <button class="app-tab" id="tabProductos">📦 Productos</button>
+      <button class="app-tab" id="tabPedidos">🛒 Pedidos</button>
+    </div>
+  </div>
+
+  <main>
+    <!-- ===== DASHBOARD ===== -->
+    <div id="dashboardView">
+      <div class="stats-row">
+        <div class="stat-card"><div class="label">Ventas hoy</div><div class="value" id="statToday">$0</div></div>
+        <div class="stat-card"><div class="label">Ventas mes</div><div class="value" id="statMonth">$0</div></div>
+        <div class="stat-card"><div class="label">Pedidos totales</div><div class="value" id="statOrders">0</div></div>
+        <div class="stat-card"><div class="label">Productos</div><div class="value" id="statProducts">0</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">📝 Últimos pedidos</div>
+        <table>
+          <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th></tr></thead>
+          <tbody id="recentOrdersBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== PRODUCTOS ===== -->
+    <div id="productosView" class="hidden">
+      <div class="toolbar">
+        <button class="btn-action primary" id="newProductBtn">+ Nuevo producto</button>
+      </div>
+
+      <div id="emptyProducts" class="empty-state hidden">
+        <h3>Sin productos aún</h3>
+        <p>Crea tu primer producto para comenzar a recibir pedidos.</p>
+      </div>
+
+      <div id="productsPanel" class="panel hidden">
+        <div class="panel-head">Tus productos</div>
+        <table>
+          <thead><tr><th>Producto</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr></thead>
+          <tbody id="productsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== PEDIDOS ===== -->
+    <div id="pedidosView" class="hidden">
+      <div class="panel">
+        <div class="panel-head">Pedidos recibidos</div>
+        <table>
+          <thead><tr><th>Cliente</th><th>Teléfono</th><th>Productos</th><th>Total</th><th>Fecha</th><th>Estado</th></tr></thead>
+          <tbody id="ordersBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ===== MODAL: NUEVO PRODUCTO ===== -->
+<div class="modal-overlay hidden" id="productModal">
+  <div class="modal">
+    <button class="modal-close" id="closeModal">✕</button>
+    <h3 id="modalTitle">Nuevo producto</h3>
+    <form id="productForm">
+      <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
+      <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
+      <div class="field"><label>Precio</label><input type="number" id="pPrice" min="0" step="0.01" required></div>
+      <div class="field"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
+      <div class="field"><label>Categoría</label><input type="text" id="pCategory"></div>
+      <div class="field"><label>URL de imagen</label><input type="url" id="pImage"></div>
+      <button type="submit" class="btn btn-primary">Guardar producto</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentUser = null;
+let currentStore = null;
+let products = [];
+let orders = [];
+
+function byId(id) { return document.getElementById(id); }
+function show(el) { el.classList.remove('hidden'); }
+function hide(el) { el.classList.add('hidden'); }
+function money(n) { return '$' + Number(n || 0).toLocaleString('es-AR'); }
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str == null ? '' : String(str);
+  return d.innerHTML;
+}
+
+// ===== AUTH =====
+byId('tabLogin').addEventListener('click', () => {
+  byId('tabLogin').classList.add('active');
+  byId('tabRegister').classList.remove('active');
+  show(byId('loginForm')); hide(byId('registerForm'));
+  hide(byId('authError'));
+});
+
+byId('tabRegister').addEventListener('click', () => {
+  byId('tabRegister').classList.add('active');
+  byId('tabLogin').classList.remove('active');
+  show(byId('registerForm')); hide(byId('loginForm'));
+  hide(byId('authError'));
+});
+
+byId('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = byId('loginEmail').value.trim();
+  const password = byId('loginPassword').value;
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    byId('authError').textContent = 'Email o contraseña incorrectos';
+    show(byId('authError'));
+    return;
+  }
+  await onLoggedIn();
+});
+
+byId('registerForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const business_name = byId('regBusiness').value.trim();
+  const phone = byId('regPhone').value.trim();
+  const email = byId('regEmail').value.trim();
+  const password = byId('regPassword').value;
+
+  const { error } = await sb.auth.signUp({
+    email,
+    password,
+    options: { data: { business_name, phone } }
+  });
+
+  if (error) {
+    byId('authError').textContent = error.message;
+    show(byId('authError'));
+    return;
+  }
+
+  byId('authError').textContent = '';
+  byId('authError').innerHTML = '<span style="color:#1FA088;">¡Cuenta creada! Confirma tu email para ingresar.</span>';
+  show(byId('authError'));
+});
+
+byId('logoutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  currentUser = null;
+  hide(byId('appView'));
+  show(byId('authView'));
+  byId('loginForm').reset();
+  byId('registerForm').reset();
+});
+
+async function onLoggedIn() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+
+  currentUser = user;
+  const { data: store } = await sb.from('store_profiles').select('*').eq('user_id', user.id).maybeSingle();
+
+  if (!store) {
+    // Crear tienda automáticamente
+    const business_name = user.user_metadata?.business_name || 'Mi Tienda';
+    const phone = user.user_metadata?.phone || '';
+    const slug = business_name.toLowerCase().replace(/\s+/g, '-') + '-' + Math.random().toString(36).substr(2, 5);
+
+    const { data: newStore } = await sb.from('store_profiles').insert({
+      user_id: user.id,
+      slug: slug,
+      business_name: business_name,
+      phone: phone
+    }).select().single();
+
+    currentStore = newStore;
+  } else {
+    currentStore = store;
+  }
+
+  byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
+  hide(byId('authView'));
+  show(byId('appView'));
+
+  await refreshData();
+}
+
+async function refreshData() {
+  if (!currentStore) return;
+
+  // Cargar productos
+  const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', currentStore.slug);
+  products = prods || [];
+
+  // Cargar pedidos
+  const { data: ords } = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  orders = ords || [];
+
+  renderDashboard();
+  renderProducts();
+  renderOrders();
+}
+
+function renderDashboard() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayOrders = orders.filter(o => new Date(o.created_at) >= today);
+  const monthOrders = orders.filter(o => {
+    const d = new Date(o.created_at);
+    return d.getFullYear() === new Date().getFullYear() && d.getMonth() === new Date().getMonth();
+  });
+
+  const todayTotal = todayOrders.reduce((sum, o) => sum + Number(o.total), 0);
+  const monthTotal = monthOrders.reduce((sum, o) => sum + Number(o.total), 0);
+
+  byId('statToday').textContent = money(todayTotal);
+  byId('statMonth').textContent = money(monthTotal);
+  byId('statOrders').textContent = orders.length;
+  byId('statProducts').textContent = products.length;
+
+  const body = byId('recentOrdersBody');
+  const recent = orders.slice(0, 5);
+  body.innerHTML = recent.length ? recent.map(o => {
+    const items = Array.isArray(o.items) ? o.items.map(it => (it.qty || 1) + 'x ' + (it.name || 'Producto')).join(', ') : '';
+    return '<tr><td>' + escapeHtml(o.customer_name) + '</td><td>' + escapeHtml(items) + '</td><td>' + money(o.total) + '</td><td>' + new Date(o.created_at).toLocaleDateString('es-AR') + '</td></tr>';
+  }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-mute);">Sin pedidos aún</td></tr>';
+}
+
+function renderProducts() {
+  if (products.length === 0) {
+    show(byId('emptyProducts'));
+    hide(byId('productsPanel'));
+    return;
+  }
+
+  hide(byId('emptyProducts'));
+  show(byId('productsPanel'));
+
+  const body = byId('productsBody');
+  body.innerHTML = products.map(p => {
+    const low = p.stock <= (p.min_stock || 0);
+    return '<tr>' +
+      '<td><div class="product-name-cell">' + (p.image_url ? '<img class="product-thumb" src="' + escapeHtml(p.image_url) + '" alt="">' : '<div style="width:40px;height:40px;background:var(--bg);border-radius:6px;"></div>') + '<div>' + escapeHtml(p.name) + '</div></div></td>' +
+      '<td>' + money(p.price) + '</td>' +
+      '<td>' + p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span></td>' +
+      '<td><div class="row-actions"><button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
+      '</tr>';
+  }).join('');
+
+  body.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
+  body.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(b.getAttribute('data-del'))));
+}
+
+function renderOrders() {
+  const body = byId('ordersBody');
+  body.innerHTML = orders.map(o => {
+    const items = Array.isArray(o.items) ? o.items.map(it => (it.qty || 1) + 'x ' + (it.name || 'Producto')).join(', ') : '';
+    return '<tr>' +
+      '<td>' + escapeHtml(o.customer_name) + '</td>' +
+      '<td>' + escapeHtml(o.customer_phone) + '</td>' +
+      '<td>' + escapeHtml(items) + '</td>' +
+      '<td>' + money(o.total) + '</td>' +
+      '<td>' + new Date(o.created_at).toLocaleDateString('es-AR') + '</td>' +
+      '<td><span style="background:#DCFCE7;color:#1FA088;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;">' + (o.status || 'nuevo') + '</span></td>' +
+      '</tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos aún</td></tr>';
+}
+
+// ===== TABS =====
+byId('tabDashboard').addEventListener('click', () => {
+  byId('tabDashboard').classList.add('active');
+  byId('tabProductos').classList.remove('active');
+  byId('tabPedidos').classList.remove('active');
+  show(byId('dashboardView'));
+  hide(byId('productosView'));
+  hide(byId('pedidosView'));
+});
+
+byId('tabProductos').addEventListener('click', () => {
+  byId('tabDashboard').classList.remove('active');
+  byId('tabProductos').classList.add('active');
+  byId('tabPedidos').classList.remove('active');
+  hide(byId('dashboardView'));
+  show(byId('productosView'));
+  hide(byId('pedidosView'));
+});
+
+byId('tabPedidos').addEventListener('click', () => {
+  byId('tabDashboard').classList.remove('active');
+  byId('tabProductos').classList.remove('active');
+  byId('tabPedidos').classList.add('active');
+  hide(byId('dashboardView'));
+  hide(byId('productosView'));
+  show(byId('pedidosView'));
+});
+
+// ===== PRODUCTOS =====
+byId('newProductBtn').addEventListener('click', () => {
+  byId('modalTitle').textContent = 'Nuevo producto';
+  byId('pName').value = '';
+  byId('pDesc').value = '';
+  byId('pPrice').value = '';
+  byId('pStock').value = '0';
+  byId('pCategory').value = '';
+  byId('pImage').value = '';
+  byId('productForm').dataset.id = '';
+  show(byId('productModal'));
+});
+
+byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
+
+byId('productForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const id = byId('productForm').dataset.id;
+  const payload = {
+    store_slug: currentStore.slug,
+    name: byId('pName').value,
+    description: byId('pDesc').value,
+    price: Number(byId('pPrice').value),
+    stock: Number(byId('pStock').value),
+    category: byId('pCategory').value,
+    image_url: byId('pImage').value || null
+  };
+
+  if (id) {
+    await sb.from('store_products').update(payload).eq('id', id);
+  } else {
+    await sb.from('store_products').insert(payload);
+  }
+
+  hide(byId('productModal'));
+  await refreshData();
+});
+
+async function editProduct(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+
+  byId('modalTitle').textContent = 'Editar producto';
+  byId('pName').value = p.name;
+  byId('pDesc').value = p.description || '';
+  byId('pPrice').value = p.price;
+  byId('pStock').value = p.stock;
+  byId('pCategory').value = p.category || '';
+  byId('pImage').value = p.image_url || '';
+  byId('productForm').dataset.id = id;
+  show(byId('productModal'));
+}
+
+async function deleteProduct(id) {
+  if (!confirm('¿Eliminar este producto?')) return;
+  await sb.from('store_products').delete().eq('id', id);
+  await refreshData();
+}
+
+// ===== INIT =====
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await onLoggedIn();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tienda — BRUWAL</title>
+<meta name="robots" content="noindex, follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --navy:#15294D; --celeste:#2F8FE0; --celeste-soft:#5DAEF0;
+    --bg:#F4F8FC; --line:#DCE6F0; --text-dark:#15294D; --text-mute:#5C6B82;
+    --stock:#1FA088; --warn:#D97706; --danger:#DC2626;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text-dark);-webkit-font-smoothing:antialiased;min-height:100vh;}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;font-weight:700;}
+  .hidden{display:none !important;}
+  .wrap{max-width:760px;margin:0 auto;padding:0 20px;}
+
+  header{background:var(--navy);color:#fff;padding:22px 0;}
+  .store-name{font-size:22px;}
+  .store-desc{font-size:13px;color:#A9BBD6;margin-top:4px;}
+  .store-contact{margin-top:12px;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.12);padding:8px 14px;border-radius:8px;font-size:13px;color:#fff;}
+
+  main{padding:24px 0 120px;}
+  .empty{background:#fff;border:1px dashed var(--line);border-radius:12px;padding:40px 20px;text-align:center;color:var(--text-mute);}
+
+  .product-card{
+    background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;
+    display:flex;gap:14px;align-items:center;margin-bottom:12px;
+  }
+  .product-photo{width:64px;height:64px;border-radius:10px;object-fit:cover;background:var(--bg);border:1px solid var(--line);flex-shrink:0;}
+  .product-photo-placeholder{width:64px;height:64px;border-radius:10px;background:var(--bg);border:1px solid var(--line);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:24px;}
+  .product-info{flex:1;min-width:0;}
+  .product-name{font-size:15px;font-weight:600;color:var(--navy);}
+  .product-category{font-size:11.5px;color:var(--text-mute);margin-top:1px;}
+  .product-price{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:var(--navy);margin-top:4px;}
+  .out-of-stock{font-size:11px;color:var(--danger);font-weight:700;text-transform:uppercase;margin-top:4px;}
+  .qty-controls{display:flex;align-items:center;gap:8px;}
+  .qty-controls button{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);background:#fff;font-size:16px;cursor:pointer;color:var(--navy);}
+  .add-btn{background:var(--navy);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .add-btn:disabled{opacity:0.4;cursor:not-allowed;}
+
+  .cart-bar{
+    position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);
+    box-shadow:0 -10px 30px -15px rgba(21,41,77,0.2);padding:14px 0;
+  }
+  .cart-bar-inner{display:flex;align-items:center;justify-content:space-between;gap:14px;}
+  .cart-summary{font-size:13px;color:var(--text-mute);}
+  .cart-summary b{color:var(--navy);font-family:'Space Grotesk',sans-serif;font-size:17px;}
+  .checkout-btn{background:var(--celeste);color:#fff;border:none;padding:12px 22px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;}
+  .checkout-btn:disabled{opacity:0.4;cursor:not-allowed;}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(21,41,77,0.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
+  .modal{background:#fff;border-radius:16px;padding:26px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto;}
+  .modal h3{color:var(--navy);margin-bottom:14px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--text-mute);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em;font-family:'IBM Plex Mono',monospace;}
+  .field input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-size:14px;}
+  .field input:focus{outline:none;border-color:var(--celeste);}
+  .btn-primary{width:100%;background:var(--navy);color:#fff;border:none;padding:13px;border-radius:8px;font-size:14.5px;font-weight:600;cursor:pointer;}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+  .modal-error{background:#FEF2F2;border:1px solid #FCA5A5;color:var(--danger);font-size:13px;padding:10px 12px;border-radius:8px;margin-bottom:14px;}
+  .modal-close{float:right;background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-mute);}
+
+  .success-screen{text-align:center;padding:60px 20px;}
+  .success-screen .mark{width:60px;height:60px;border-radius:50%;background:var(--stock);color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;}
+  .powered{text-align:center;font-size:11.5px;color:var(--text-mute);padding:24px 0;font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+
+<div id="loadingState" class="wrap" style="padding-top:60px;text-align:center;color:var(--text-mute);">Cargando tienda...</div>
+
+<div id="notFoundState" class="wrap hidden" style="padding-top:60px;text-align:center;">
+  <h2>No encontramos esta tienda</h2>
+  <p style="color:var(--text-mute);margin-top:10px;">Revisá el link, puede estar mal escrito.</p>
+</div>
+
+<div id="storeView" class="hidden">
+  <header>
+    <div class="wrap">
+      <div class="store-name" id="storeName"></div>
+      <div class="store-desc" id="storeDesc"></div>
+      <a class="store-contact" id="storePhone" href="#" target="_blank">💬 Consultas por WhatsApp</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="productsList"></div>
+    <div id="emptyProducts" class="empty hidden">Esta tienda todavía no cargó productos.</div>
+  </main>
+
+  <div class="powered">Tienda hecha con BRUWAL Technologies</div>
+
+  <div class="cart-bar" id="cartBar" style="display:none;">
+    <div class="wrap cart-bar-inner">
+      <div class="cart-summary"><span id="cartCount">0</span> productos · <b id="cartTotal">$0</b></div>
+      <button class="checkout-btn" id="openCheckoutBtn">Hacer pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: datos de contacto para el pedido ============ -->
+<div class="modal-overlay hidden" id="checkoutModal">
+  <div class="modal">
+    <button class="modal-close" id="closeCheckoutModal">✕</button>
+    <h3>Últimos datos</h3>
+    <div id="checkoutError" class="modal-error hidden"></div>
+    <div class="field"><label>Tu nombre</label><input type="text" id="custName" required></div>
+    <div class="field"><label>Tu teléfono (para coordinar)</label><input type="tel" id="custPhone" required></div>
+    <button class="btn-primary" id="confirmOrderBtn">Confirmar pedido</button>
+  </div>
+</div>
+
+<!-- ============ Pantalla de éxito ============ -->
+<div class="wrap hidden" id="successState">
+  <div class="success-screen">
+    <div class="mark">✓</div>
+    <h2>¡Pedido enviado!</h2>
+    <p style="color:var(--text-mute);margin-top:10px;">La tienda te va a contactar para coordinar la entrega y el pago.</p>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function byId(id){ return document.getElementById(id); }
+function show(el){ el.classList.remove('hidden'); }
+function hide(el){ el.classList.add('hidden'); }
+function money(n){ return '$' + Number(n || 0).toLocaleString('es-AR'); }
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str == null ? '' : String(str);
+  return d.innerHTML;
+}
+
+function getSlugFromUrl(){
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  return parts[0] || '';
+}
+
+let products = [];
+let cart = {}; // { productId: qty }
+
+async function init(){
+  hide(byId('notFoundState'));
+  hide(byId('storeView'));
+  show(byId('loadingState'));
+  const slug = getSlugFromUrl();
+  if (!slug){
+    hide(byId('loadingState'));
+    show(byId('notFoundState'));
+    return;
+  }
+
+  const { data: store, error: storeError } = await sb.from('store_profiles').select('*').eq('slug', slug).maybeSingle();
+  if (storeError || !store){
+    hide(byId('loadingState'));
+    show(byId('notFoundState'));
+    return;
+  }
+
+  byId('storeName').textContent = store.business_name || slug;
+  byId('storeDesc').textContent = 'Catálogo online';
+  if (store.phone){
+    byId('storePhone').href = 'https://wa.me/54' + store.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent('Hola! Vengo de tu tienda online');
+  } else {
+    hide(byId('storePhone'));
+  }
+
+  const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
+  products = prods || [];
+
+  hide(byId('loadingState'));
+  show(byId('storeView'));
+  renderProducts();
+}
+
+function renderProducts(){
+  const list = byId('productsList');
+  if (products.length === 0){
+    show(byId('emptyProducts'));
+    return;
+  }
+  list.innerHTML = products.map(p => {
+    const photo = p.image_url
+      ? '<img class="product-photo" src="' + escapeHtml(p.image_url) + '" alt="">'
+      : '<div class="product-photo-placeholder">🛒</div>';
+    const qty = cart[p.id] || 0;
+    const controls = qty === 0
+      ? '<button class="add-btn" data-add="' + p.id + '">+ Agregar</button>'
+      : '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="mono">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
+    return '<div class="product-card">' + photo +
+      '<div class="product-info"><div class="product-name">' + escapeHtml(p.name) + '</div>' +
+      (p.category ? '<div class="product-category">' + escapeHtml(p.category) + '</div>' : '') +
+      '<div class="product-price">' + money(p.price) + '</div>' +
+      (!p.in_stock ? '<div class="out-of-stock">Sin stock</div>' : '') +
+      '</div>' +
+      (p.in_stock ? controls : '') +
+      '</div>';
+  }).join('');
+
+  list.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => { cart[b.getAttribute('data-add')] = 1; renderProducts(); renderCartBar(); }));
+  list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-plus'); cart[id] = (cart[id]||0) + 1; renderProducts(); renderCartBar(); }));
+  list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-minus'); cart[id] = Math.max(0, (cart[id]||0) - 1); if (cart[id] === 0) delete cart[id]; renderProducts(); renderCartBar(); }));
+}
+
+function renderCartBar(){
+  const ids = Object.keys(cart);
+  const bar = byId('cartBar');
+  if (ids.length === 0){ bar.style.display = 'none'; return; }
+  bar.style.display = 'block';
+  const count = ids.reduce((sum, id) => sum + cart[id], 0);
+  const total = ids.reduce((sum, id) => {
+    const p = products.find(x => x.id === id);
+    return sum + (p ? p.price * cart[id] : 0);
+  }, 0);
+  byId('cartCount').textContent = count;
+  byId('cartTotal').textContent = money(total);
+}
+
+byId('openCheckoutBtn').addEventListener('click', () => {
+  byId('checkoutError').classList.add('hidden');
+  show(byId('checkoutModal'));
+});
+byId('closeCheckoutModal').addEventListener('click', () => hide(byId('checkoutModal')));
+
+byId('confirmOrderBtn').addEventListener('click', async () => {
+  const errEl = byId('checkoutError');
+  errEl.classList.add('hidden');
+  const name = byId('custName').value.trim();
+  const phone = byId('custPhone').value.trim();
+  if (!name || !phone){
+    errEl.textContent = 'Completá tu nombre y teléfono.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const items = Object.keys(cart).map(id => {
+    const p = products.find(x => x.id === id);
+    return { product_id: id, qty: cart[id], label: p ? p.name : '' };
+  });
+
+  byId('confirmOrderBtn').disabled = true;
+  const slug = getSlugFromUrl();
+  const { error } = await sb.rpc('place_order', {
+    p_slug: slug,
+    p_items: items,
+    p_customer_name: name,
+    p_customer_phone: phone
+  });
+  byId('confirmOrderBtn').disabled = false;
+
+  if (error){
+    errEl.textContent = 'No se pudo enviar el pedido: ' + error.message;
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  hide(byId('checkoutModal'));
+  hide(byId('storeView'));
+  show(byId('successState'));
+});
+
+init();
+</script>
+</body>
+</html>

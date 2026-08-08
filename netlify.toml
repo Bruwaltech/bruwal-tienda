@@ -1,0 +1,18 @@
+[build]
+  publish = "."
+  command = ""
+
+[[redirects]]
+from = "/"
+to = "/index.html"
+status = 200
+
+[[redirects]]
+from = "/:slug"
+to = "/tienda.html"
+status = 200
+
+[[redirects]]
+from = "/admin/*"
+to = "/index.html"
+status = 200
