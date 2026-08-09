@@ -529,7 +529,11 @@
       animation-duration: .01ms !important;
       transition-duration: .01ms !important;
     }
-    .revelar { opacity: 1; transform: none; }
+    /* Con .js-anim delante para ganarle a la regla que oculta.
+       Sin esto, quien pide menos movimiento veria la seccion en blanco
+       hasta que actuara la red de seguridad. */
+    .js-anim .revelar,
+    .js-anim .revelar.visible { opacity: 1 !important; transform: none !important; }
   }
 </style>
 </head>
