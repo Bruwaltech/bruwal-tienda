@@ -346,11 +346,18 @@ let markers = [];
 let selectedStore = null;
 
 async function init() {
-  // Redirigir si está logueado
-  const { data: { user } } = await sb.auth.getUser();
-  if (user) {
-    window.location.href = '/dashboard';
-    return;
+  try {
+    // Evitar loops de redirección
+    if (sessionStorage.getItem('redirecting')) return;
+
+    const { data: { user } } = await sb.auth.getUser();
+    if (user) {
+      sessionStorage.setItem('redirecting', 'true');
+      window.location.href = '/dashboard';
+      return;
+    }
+  } catch (err) {
+    console.error('Auth check error:', err);
   }
 
   loadStores();

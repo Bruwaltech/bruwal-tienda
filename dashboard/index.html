@@ -1975,7 +1975,7 @@ async function guardarPerfil() {
 
 async function checkIfPublicStore() {
   const slug = window.location.pathname.split('/').filter(Boolean)[0];
-  if (!slug || slug === 'index.html' || slug === 'admin') return false;
+  if (!slug || slug === 'index.html' || slug === 'admin' || slug === 'dashboard') return false;
 
   const { data: store } = await sb.from('store_profiles').select('*').eq('slug', slug).maybeSingle();
   return !!store;
