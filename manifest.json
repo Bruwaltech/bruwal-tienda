@@ -1,0 +1,26 @@
+{
+  "name": "BRUWAL — Panel de tu negocio",
+  "short_name": "BRUWAL",
+  "description": "Controlá tu stock, registrá ventas escaneando y recibí pedidos.",
+  "lang": "es-AR",
+  "start_url": "/dashboard?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#15294D",
+  "theme_color": "#15294D",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Registrar una venta",
+      "short_name": "Vender",
+      "description": "Abre la cámara lista para escanear un producto",
+      "url": "/dashboard?app=1&vender=1",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

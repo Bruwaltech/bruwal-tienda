@@ -5,13 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BRUWALTECH v3.0 — Panel de Control</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#15294D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BRUWAL">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qr-scanner@1.4.0/qr-scanner-umd.min.js"></script>
+<!-- ZXing: lee codigos de barras de producto (EAN-13, UPC, Code128) y ademas QR.
+     Reemplaza a jsQR y qr-scanner, que solo leian QR y no servian para productos. -->
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
 :root {
   --navy: #15294D;
@@ -1595,6 +1603,23 @@ async function onLoggedIn() {
   if (byId('tabDashboard')) byId('tabDashboard').classList.add('active');
 
   await refreshData();
+
+  // Si entro desde el icono del celular, va derecho a vender
+  await arranqueDirectoAVentas();
+}
+
+// Cuando la app se abre desde el icono instalado (start_url lleva ?app=1),
+// saltamos el dashboard y dejamos la pantalla de venta lista para escanear.
+async function arranqueDirectoAVentas() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('app') !== '1' && params.get('vender') !== '1') return;
+  if (!puedeOperar()) return;   // prueba vencida: no lo mandamos a una pantalla que no puede usar
+
+  byId('tabVentas').click();
+
+  // Damos un instante a que se pinte la pestaña antes de pedir la camara
+  await new Promise(r => setTimeout(r, 350));
+  toggleCameraScanner();
 }
 
 async function refreshData() {
@@ -1993,18 +2018,97 @@ byId('barcodeInput').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') searchByBarcode();
 });
 
-// CAMERA SCANNER - Temporalmente deshabilitado por compatibilidad
-let htmlQrcodeScanner = null;
+// ============ ESCANEO CON LA CAMARA ============
+// Un lector por pantalla: el de ventas y el del alta de producto.
+const lectores = { venta: null, producto: null };
 
-function toggleCameraScanner() {
-  alert('⚠️ Scanner de cámara en desarrollo. Por favor usa el escaneo manual.');
+function avisarLectura() {
+  if (navigator.vibrate) navigator.vibrate(60);
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), vol = ctx.createGain();
+    osc.frequency.value = 880;
+    vol.gain.value = 0.08;
+    osc.connect(vol); vol.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, 110);
+  } catch (e) { /* si el navegador no deja hacer sonido, no pasa nada */ }
 }
 
-// CAMERA SCANNER PARA PRODUCTOS - Temporalmente deshabilitado por compatibilidad
-let htmlQrcodeProductScanner = null;
+async function abrirCamara(clave, idContenedor, idZona, alLeer) {
+  if (typeof ZXing === 'undefined') {
+    alert('No se pudo cargar el lector de códigos. Revisá tu conexión y volvé a intentar.');
+    return;
+  }
 
+  const cont = byId(idContenedor);
+  const zona = byId(idZona);
+  if (!cont || !zona) return;
+
+  show(cont);
+  const idVideo = idZona + '-video';
+  zona.innerHTML = '<video id="' + idVideo + '" playsinline muted ' +
+                   'style="width:100%;height:100%;object-fit:cover;background:#000;"></video>';
+
+  try {
+    const lector = new ZXing.BrowserMultiFormatReader();
+    lectores[clave] = lector;
+
+    // facingMode environment = camara trasera, que es con la que se escanea
+    await lector.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' } } },
+      idVideo,
+      (resultado) => {
+        if (!resultado) return;          // sin lectura todavia: seguimos mirando
+        avisarLectura();
+        cerrarCamara(clave, idContenedor, idZona);
+        alLeer(resultado.getText().trim());
+      }
+    );
+  } catch (err) {
+    cerrarCamara(clave, idContenedor, idZona);
+    const msg = (err && err.name === 'NotAllowedError')
+      ? 'Necesitamos permiso para usar la cámara. Habilitalo desde el candado en la barra de direcciones.'
+      : 'No se pudo abrir la cámara: ' + (err?.message || err);
+    alert(msg);
+  }
+}
+
+function cerrarCamara(clave, idContenedor, idZona) {
+  const lector = lectores[clave];
+  if (lector) {
+    try { lector.reset(); } catch (e) {}
+    lectores[clave] = null;
+  }
+  const zona = byId(idZona);
+  if (zona) zona.innerHTML = '';       // suelta la camara del todo
+  const cont = byId(idContenedor);
+  if (cont) hide(cont);
+}
+
+// --- Ventas ---
+function toggleCameraScanner() {
+  if (lectores.venta) { stopCameraScanner(); return; }
+  abrirCamara('venta', 'cameraScanner', 'qr-reader', (codigo) => {
+    byId('barcodeInput').value = codigo;
+    searchByBarcode();
+  });
+}
+
+function stopCameraScanner() {
+  cerrarCamara('venta', 'cameraScanner', 'qr-reader');
+}
+
+// --- Alta de producto ---
 function toggleProductCameraScanner() {
-  alert('⚠️ Scanner de cámara en desarrollo. Por favor ingresa el EAN manualmente.');
+  if (lectores.producto) { stopProductCameraScanner(); return; }
+  abrirCamara('producto', 'productCameraScanner', 'qr-reader-product', (codigo) => {
+    byId('pEan').value = codigo;
+  });
+}
+
+function stopProductCameraScanner() {
+  cerrarCamara('producto', 'productCameraScanner', 'qr-reader-product');
 }
 
 if (byId('newProductBtn')) {
@@ -2400,6 +2504,15 @@ async function init() {
     hideLoadingScreen();
     clearTimeout(timeoutId);
   }
+}
+
+// El service worker es lo que hace que el navegador ofrezca instalar la app.
+// Si falla, la web sigue funcionando igual: solo se pierde la instalacion.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .catch(err => console.warn('No se pudo registrar el service worker:', err));
+  });
 }
 
 init();
