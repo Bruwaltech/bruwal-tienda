@@ -396,28 +396,35 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   });
 
   let total = 0;
-  let detalles = '📦 *NUEVO PEDIDO*\n\n';
-  detalles += '👤 *Cliente:* ' + name + '\n';
-  detalles += '📱 *Teléfono:* ' + phone + '\n\n';
-  detalles += '*Productos:*\n';
+  let listaProductos = '';
 
   Object.keys(cart).forEach(id => {
     const p = products.find(x => x.id === id);
     if (p){
       const subtotal = p.price * cart[id];
       total += subtotal;
-      detalles += '• ' + p.name + ' x' + cart[id] + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
+      listaProductos += '• ' + p.name + ' x' + cart[id] + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
     }
   });
-
-  detalles += '\n💰 *Total:* $' + total.toLocaleString('es-AR');
 
   byId('confirmOrderBtn').disabled = true;
 
   const slug = getSlugFromUrl();
-  const { data: store } = await sb.from('store_profiles').select('phone').eq('slug', slug).maybeSingle();
+  const { data: store } = await sb.from('store_profiles').select('phone,business_name,mensaje_envio')
+    .eq('slug', slug).maybeSingle();
 
   if (store && store.phone){
+    // Encabezamos con el nombre del negocio. Un link de WhatsApp solo
+    // admite texto, asi que el logo no se puede incluir.
+    let detalles = '';
+    if (store.business_name) detalles += '🏪 *' + store.business_name + '*\n';
+    detalles += '📦 *NUEVO PEDIDO*\n\n';
+    detalles += '👤 *Cliente:* ' + name + '\n';
+    detalles += '📱 *Teléfono:* ' + phone + '\n\n';
+    detalles += '*Productos:*\n' + listaProductos;
+    detalles += '\n💰 *Total:* $' + total.toLocaleString('es-AR');
+    if (store.mensaje_envio) detalles += '\n\n📝 ' + store.mensaje_envio;
+
     const storePhone = store.phone.replace(/\D/g,'');
     const waLink = 'https://wa.me/54' + storePhone + '?text=' + encodeURIComponent(detalles);
     window.open(waLink, '_blank');
