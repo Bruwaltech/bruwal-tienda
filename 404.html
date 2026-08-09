@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tienda</title>
+</head>
+<body>
+<script>
+  const path = window.location.pathname;
+  const slug = path.split('/').filter(p => p && p !== 'index.html' && p !== '404.html')[0];
+  if (slug) {
+    window.location.replace('/tienda.html?slug=' + encodeURIComponent(slug));
+  } else {
+    window.location.replace('/');
+  }
+</script>
+</body>
+</html>

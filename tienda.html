@@ -156,6 +156,10 @@ function escapeHtml(str){
 }
 
 function getSlugFromUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const querySlug = params.get('slug');
+  if (querySlug) return querySlug;
+
   const parts = window.location.pathname.split('/').filter(Boolean);
   return parts[0] || '';
 }
