@@ -42,30 +42,15 @@ set plan            = 'cortesia',
     plan_updated_at = now()
 where slug in ('novalis-5lf0q', 'wabi-import-rsmq3');
 
--- 6) Función de apoyo: ¿esta tienda puede operar? -------------
---    La usaremos desde las políticas de seguridad. Devuelve
---    true si el plan está activo o si la prueba sigue vigente.
-create or replace function public.tienda_activa(p_slug text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select coalesce(
-    (select plan in ('basic', 'pro', 'cortesia')
-         or (plan = 'trial' and coalesce(trial_ends_at, now()) > now())
-     from public.store_profiles
-     where slug = p_slug),
-    false
-  );
-$$;
-
--- 7) Verificación --------------------------------------------
+-- 6) Verificación --------------------------------------------
 select business_name,
        plan,
        trial_ends_at,
-       greatest(0, date_part('day', trial_ends_at - now()))::int as dias_restantes,
-       public.tienda_activa(slug)                                as puede_operar
+       plan_updated_at
 from public.store_profiles
 order by created_at;
+
+-- NOTA: la función de apoyo tienda_activa() vive en el archivo
+-- 02-politicas-seguridad.sql. Se separó porque los delimitadores $$
+-- se cortaban al pegarse en el editor SQL de Supabase, y acá no
+-- hace falta: recién se usa cuando activemos las políticas.
