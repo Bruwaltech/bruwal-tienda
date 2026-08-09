@@ -870,7 +870,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel" style="background:#EAF4FD;border:2px solid var(--celeste);margin-bottom:20px;">
         <div class="panel-head">📱 Escanear venta</div>
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:12px;margin-bottom:16px;">
-          <input type="text" id="barcodeInput" placeholder="Escanea código de barras o EAN..." autofocus style="padding:12px 14px;border:1px solid var(--line);border-radius:8px;font-size:15px;">
+          <input type="text" id="barcodeInput" placeholder="Escanea código, EAN o nombre del producto..." autofocus style="padding:12px 14px;border:1px solid var(--line);border-radius:8px;font-size:15px;">
           <button onclick="searchByBarcode()" class="btn btn-primary" style="width:auto;padding:12px 24px;">Buscar</button>
           <button onclick="toggleCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 24px;background:#1FA088;">📷 Cámara</button>
         </div>
@@ -1439,15 +1439,20 @@ function renderSalesHistory() {
 let currentBarcodeProduct = null;
 
 async function searchByBarcode() {
-  const ean = byId('barcodeInput').value.trim();
-  if (!ean) {
-    alert('Ingresa un código de barras o EAN');
+  const query = byId('barcodeInput').value.trim().toLowerCase();
+  if (!query) {
+    alert('Ingresa un código, EAN o nombre del producto');
     return;
   }
 
-  const product = products.find(p => p.ean === ean);
+  let product = products.find(p => p.ean === query);
+
   if (!product) {
-    alert('Producto no encontrado con ese código');
+    product = products.find(p => p.name.toLowerCase().includes(query));
+  }
+
+  if (!product) {
+    alert('Producto no encontrado');
     byId('barcodeInput').focus();
     return;
   }
