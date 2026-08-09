@@ -8,16 +8,11 @@
 <body>
 <script>
   const path = window.location.pathname;
-
-  if (path === '/dashboard' || path === '/dashboard/') {
-    window.location.replace('/index.html');
+  const slug = path.split('/').filter(p => p && p !== 'index.html' && p !== '404.html' && p !== 'dashboard')[0];
+  if (slug) {
+    window.location.replace('/tienda.html?slug=' + encodeURIComponent(slug));
   } else {
-    const slug = path.split('/').filter(p => p && p !== 'index.html' && p !== '404.html')[0];
-    if (slug) {
-      window.location.replace('/tienda.html?slug=' + encodeURIComponent(slug));
-    } else {
-      window.location.replace('/');
-    }
+    window.location.replace('/');
   }
 </script>
 </body>
