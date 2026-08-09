@@ -1505,7 +1505,11 @@ async function confirmBarcodeVenta() {
   clearBarcodeResult();
 
   // Recargar datos
-  await loadOrders();
+  const { data: ords } = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  orders = ords || [];
+  renderDashboard();
+  renderOrders();
+  renderClientes();
   renderVentas();
 }
 
