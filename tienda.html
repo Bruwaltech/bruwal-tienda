@@ -28,7 +28,10 @@
   .store-contact:hover{background:var(--celeste-soft);transform:scale(1.05);}
 
   main{padding:32px 0 140px;}
-  .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;margin-bottom:24px;}
+  .products-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;}
+  @media(max-width:1024px){.products-grid{grid-template-columns:repeat(4,1fr);}}
+  @media(max-width:768px){.products-grid{grid-template-columns:repeat(3,1fr);}}
+  @media(max-width:480px){.products-grid{grid-template-columns:repeat(2,1fr);}}
   .empty{background:#fff;border:2px dashed var(--line);border-radius:16px;padding:60px 20px;text-align:center;color:var(--text-mute);}
 
   .product-card{
