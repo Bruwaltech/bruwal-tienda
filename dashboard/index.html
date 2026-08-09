@@ -1595,7 +1595,7 @@ if (byId('newProductBtn')) {
     if (byId('pDesc')) byId('pDesc').value = '';
     if (byId('pPrice')) byId('pPrice').value = '';
     if (byId('pEan')) byId('pEan').value = '';
-    if (byId('pImage')) byId('pImage').value = '';
+    if (byId('pImageFile')) byId('pImageFile').value = '';
     if (byId('pStock')) byId('pStock').value = '0';
     if (byId('pCategory')) byId('pCategory').value = '';
     if (byId('productForm')) byId('productForm').dataset.id = '';
@@ -1760,7 +1760,8 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   show(byId('scannerStatus'));
 
   byId('modalTitle').textContent = 'Nuevo producto (escaneado)';
-  byId('pName').value = byId('pDesc').value = byId('pPrice').value = byId('pImage').value = '';
+  byId('pName').value = byId('pDesc').value = byId('pPrice').value = '';
+  if (byId('pImageFile')) byId('pImageFile').value = '';
   byId('pStock').value = '1';
   byId('pCategory').value = '';
   byId('pEan').value = ean;
@@ -1808,22 +1809,6 @@ byId('tabVentas').addEventListener('click', () => {
   byId('ventasView').classList.add('visible');
 });
 
-
-byId('logoInput').addEventListener('change', async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  if (file.size > 2 * 1024 * 1024) {
-    alert('La imagen debe pesar menos de 2MB');
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    byId('logoPreview').innerHTML = '<img src="' + evt.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
-  };
-  reader.readAsDataURL(file);
-});
 
 byId('clientSearch').addEventListener('input', (e) => {
   const q = e.target.value.toLowerCase();
@@ -1904,73 +1889,6 @@ async function guardarConfiguracion() {
   currentStore = { ...currentStore, ...updateData };
   byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
   hide(byId('configModal'));
-}
-
-async function cargarPerfil() {
-  if (!currentStore) return;
-
-  const { data: store } = await sb.from('store_profiles').select('*').eq('slug', currentStore.slug).maybeSingle();
-
-  if (store) {
-    byId('perfNombre').value = store.business_name || '';
-    byId('perfDesc').value = store.description || '';
-    byId('perfPhone').value = store.phone || '';
-    byId('perfLocation').value = store.location || '';
-    byId('perfWeb').value = store.website || '';
-    byId('perfIg').value = store.instagram || '';
-    byId('perfMsgEnvio').value = store.mensaje_envio || '';
-
-    if (store.image_url) {
-      byId('logoPreview').innerHTML = '<img src="' + store.image_url + '" style="width:100%;height:100%;object-fit:cover;">';
-    }
-  }
-}
-
-async function guardarPerfil() {
-  if (!currentStore) return;
-
-  const logoFile = byId('logoInput').files?.[0];
-  let imageUrl = null;
-
-  if (logoFile) {
-    if (logoFile.size > 2 * 1024 * 1024) {
-      alert('La imagen debe pesar menos de 2MB');
-      return;
-    }
-
-    const fileName = 'logos/' + currentStore.slug + '-' + Date.now() + logoFile.name.slice(-4);
-    const { data, error: uploadError } = await sb.storage.from('product-images').upload(fileName, logoFile, { upsert: true });
-
-    if (uploadError) {
-      alert('Error al subir la imagen: ' + uploadError.message);
-      return;
-    }
-
-    imageUrl = sb.storage.from('product-images').getPublicUrl(fileName).data.publicUrl;
-  }
-
-  const updateData = {
-    business_name: byId('perfNombre').value,
-    description: byId('perfDesc').value,
-    phone: byId('perfPhone').value,
-    location: byId('perfLocation').value,
-    website: byId('perfWeb').value,
-    instagram: byId('perfIg').value,
-    mensaje_envio: byId('perfMsgEnvio').value
-  };
-
-  if (imageUrl) updateData.image_url = imageUrl;
-
-  const { error } = await sb.from('store_profiles').update(updateData).eq('slug', currentStore.slug);
-
-  if (error) {
-    alert('Error al guardar: ' + error.message);
-    return;
-  }
-
-  alert('✓ Perfil guardado correctamente!');
-  currentStore = { ...currentStore, ...updateData };
-  byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
 }
 
 async function checkIfPublicStore() {
