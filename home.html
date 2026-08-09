@@ -3,80 +3,221 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BRUWAL - Descubre tiendas online cerca de ti</title>
+<title>BRUWAL - Tu tienda en la palma de tu mano</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #f5f5f5;
+    background: #f8f9fa;
+    color: #333;
   }
 
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse-scale { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+
+  /* HEADER */
   header {
     background: linear-gradient(135deg, #15294D 0%, #2F8FE0 100%);
     color: #fff;
-    padding: 24px;
-    text-align: center;
-    box-shadow: 0 4px 12px rgba(21,41,77,0.2);
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 12px rgba(21,41,77,0.15);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    animation: fadeInDown 0.6s ease-out;
   }
 
-  header h1 { font-size: 32px; margin-bottom: 8px; font-weight: 700; }
-  header p { font-size: 16px; opacity: 0.9; }
+  .logo {
+    font-size: 24px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
 
-  .search-bar {
-    max-width: 1000px;
-    margin: 24px auto;
-    padding: 0 20px;
+  .auth-buttons {
     display: flex;
     gap: 12px;
   }
 
-  .search-bar input {
-    flex: 1;
-    padding: 14px 16px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 15px;
+  .btn-auth {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 14px;
   }
 
-  .search-bar button {
-    padding: 14px 24px;
-    background: #2F8FE0;
+  .btn-login {
+    background: rgba(255,255,255,0.2);
     color: #fff;
-    border: none;
+    border: 1px solid rgba(255,255,255,0.3);
+  }
+
+  .btn-login:hover {
+    background: rgba(255,255,255,0.3);
+  }
+
+  .btn-register {
+    background: #fff;
+    color: #15294D;
+    font-weight: 700;
+  }
+
+  .btn-register:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+
+  /* HERO */
+  .hero {
+    background: linear-gradient(135deg, rgba(21,41,77,0.95) 0%, rgba(47,143,224,0.95) 100%),
+                url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600"><circle cx="100" cy="100" r="150" fill="%23fff" opacity="0.05"/><circle cx="1100" cy="500" r="200" fill="%23fff" opacity="0.05"/></svg>');
+    background-size: cover;
+    color: #fff;
+    padding: 80px 24px;
+    text-align: center;
+    animation: fadeInUp 0.8s ease-out;
+  }
+
+  .hero h1 {
+    font-size: 48px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    line-height: 1.2;
+  }
+
+  .hero .subtitle {
+    font-size: 20px;
+    opacity: 0.95;
+    margin-bottom: 40px;
+    font-weight: 300;
+  }
+
+  /* SEARCH SECTION */
+  .search-section {
+    max-width: 900px;
+    margin: -30px auto 60px;
+    padding: 0 24px;
+    position: relative;
+    z-index: 10;
+  }
+
+  .search-box {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(21,41,77,0.15);
+    padding: 24px;
+    animation: fadeInUp 1s ease-out;
+  }
+
+  .search-label {
+    display: block;
+    font-weight: 700;
+    color: #15294D;
+    margin-bottom: 16px;
+    font-size: 16px;
+  }
+
+  .search-input-wrapper {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .search-input-wrapper input {
+    flex: 1;
+    padding: 14px 16px;
+    border: 2px solid #e0e0e0;
     border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
+    font-size: 15px;
     transition: all 0.3s;
   }
 
-  .search-bar button:hover { background: #1a5fb0; transform: scale(1.02); }
+  .search-input-wrapper input:focus {
+    outline: none;
+    border-color: #2F8FE0;
+    box-shadow: 0 0 0 3px rgba(47,143,224,0.1);
+  }
 
-  .container {
+  .search-btn {
+    padding: 14px 32px;
+    background: linear-gradient(135deg, #2F8FE0 0%, #1a5fb0 100%);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+
+  .search-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(47,143,224,0.3);
+  }
+
+  /* FILTERS */
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+
+  .filter-input {
+    padding: 10px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+
+  .filter-input:focus {
+    outline: none;
+    border-color: #2F8FE0;
+  }
+
+  /* RESULTS SECTION */
+  .results-section {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 0 20px 40px;
+    padding: 0 24px 60px;
+  }
+
+  .results-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #15294D;
+    margin-bottom: 32px;
+  }
+
+  .results-layout {
     display: grid;
-    grid-template-columns: 1fr 350px;
-    gap: 20px;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
   }
 
   #map {
     width: 100%;
-    height: 600px;
+    height: 500px;
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
 
-  .stores-list {
+  .stores-sidebar {
     background: #fff;
     border-radius: 12px;
     overflow-y: auto;
-    max-height: 600px;
+    max-height: 500px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
 
-  .stores-list-title {
+  .stores-header {
     padding: 16px;
     font-weight: 700;
     border-bottom: 1px solid #e0e0e0;
@@ -89,51 +230,107 @@
 
   .store-item {
     padding: 16px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid #f0f0f0;
     cursor: pointer;
     transition: all 0.2s;
   }
 
-  .store-item:hover { background: #f5f5f5; }
-  .store-item.active { background: #EAF4FD; }
+  .store-item:hover {
+    background: #f9f9f9;
+  }
 
-  .store-name { font-weight: 700; font-size: 14px; color: #15294D; margin-bottom: 4px; }
-  .store-status { font-size: 12px; color: #666; margin-bottom: 8px; }
-  .store-status.open { color: #1FA088; }
-  .store-status.closed { color: #DC2626; }
-  .store-action { font-size: 12px; padding: 8px 12px; background: #2F8FE0; color: #fff; border: none; border-radius: 6px; cursor: pointer; width: 100%; }
+  .store-item.active {
+    background: #EAF4FD;
+  }
 
-  .loading { text-align: center; padding: 40px; }
-  .spinner { width: 40px; height: 40px; border: 4px solid #f0f0f0; border-top: 4px solid #2F8FE0; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .store-name {
+    font-weight: 700;
+    font-size: 15px;
+    color: #15294D;
+    margin-bottom: 4px;
+  }
 
-  .empty-state { padding: 40px; text-align: center; color: #666; }
+  .store-info {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 8px;
+  }
+
+  .store-action {
+    width: 100%;
+    padding: 8px;
+    background: #2F8FE0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .store-action:hover {
+    background: #1a5fb0;
+  }
+
+  .empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #999;
+  }
+
+  @media(max-width: 1024px) {
+    .results-layout { grid-template-columns: 1fr; }
+    .stores-sidebar { max-height: 300px; }
+    #map { height: 400px; }
+  }
 
   @media(max-width: 768px) {
-    .container { grid-template-columns: 1fr; }
-    #map { height: 400px; }
-    .stores-list { max-height: 300px; }
-    header h1 { font-size: 24px; }
+    .hero h1 { font-size: 32px; }
+    .hero .subtitle { font-size: 16px; }
+    .search-input-wrapper { flex-direction: column; }
+    .filters { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🛍️ BRUWAL - Tiendas Online</h1>
-  <p>Descubre negocios locales con tienda en línea</p>
+  <div class="logo">🛍️ BRUWAL</div>
+  <div class="auth-buttons">
+    <button class="btn-auth btn-login" onclick="goToLogin()">Iniciar sesión</button>
+    <button class="btn-auth btn-register" onclick="goToRegister()">Registrarse</button>
+  </div>
 </header>
 
-<div class="search-bar">
-  <input type="text" id="searchInput" placeholder="Buscar por nombre de negocio...">
-  <button onclick="filterStores()">Buscar</button>
+<div class="hero">
+  <h1>Tu tienda en la palma de tu mano</h1>
+  <p class="subtitle">Descubre negocios locales con tienda online en tu zona</p>
 </div>
 
-<div class="container">
-  <div id="map"></div>
-  <div class="stores-list">
-    <div class="stores-list-title" id="storesCount">Cargando tiendas...</div>
-    <div id="storesList"></div>
+<div class="search-section">
+  <div class="search-box">
+    <label class="search-label">🔍 Encontra la tienda que buscas</label>
+    <div class="search-input-wrapper">
+      <input type="text" id="searchInput" placeholder="Nombre de negocio...">
+      <button class="search-btn" onclick="filterStores()">Buscar</button>
+    </div>
+    <div class="filters">
+      <input type="text" id="filterCity" class="filter-input" placeholder="Ciudad, localidad..." oninput="filterStores()">
+      <input type="text" id="filterRubro" class="filter-input" placeholder="Rubro, categoría..." oninput="filterStores()">
+      <input type="text" id="filterAddress" class="filter-input" placeholder="Dirección..." oninput="filterStores()">
+    </div>
+  </div>
+</div>
+
+<div class="results-section">
+  <h2 class="results-title" id="resultsTitle">Tiendas disponibles</h2>
+  <div class="results-layout">
+    <div id="map"></div>
+    <div class="stores-sidebar">
+      <div class="stores-header" id="storesCount">Cargando tiendas...</div>
+      <div id="storesList"></div>
+    </div>
   </div>
 </div>
 
@@ -148,49 +345,49 @@ let map = null;
 let markers = [];
 let selectedStore = null;
 
-// Redirigir al dashboard si el usuario está logueado
-(async () => {
+async function init() {
+  // Redirigir si está logueado
   const { data: { user } } = await sb.auth.getUser();
   if (user) {
     window.location.href = '/dashboard';
+    return;
   }
-})();
+
+  loadStores();
+}
 
 async function loadStores() {
   try {
     const { data, error } = await sb.from('store_profiles').select('*').order('business_name');
-
     if (error) throw error;
 
     stores = data || [];
     filteredStores = stores;
-
     initMap();
     renderStoresList();
     addMapMarkers();
     updateStoreCount();
   } catch (err) {
-    console.error('Error loading stores:', err);
+    console.error('Error:', err);
     document.getElementById('storesList').innerHTML = '<div class="empty-state">Error al cargar tiendas</div>';
   }
 }
 
 function initMap() {
-  const center = { lat: -31.6368, lng: -60.7000 }; // Entre Ríos, Argentina
-
+  const center = { lat: -31.6368, lng: -60.7000 };
   map = new google.maps.Map(document.getElementById('map'), {
     zoom: 6,
     center: center,
     styles: [
       { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#e9e9e9' }, { lightness: 17 }] },
-      { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f3f3f3' }, { lightness: 20 }] },
-      { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#ffffff' }, { lightness: 17 }] }
+      { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f3f3f3' }, { lightness: 20 }] }
     ]
   });
 }
 
 function addMapMarkers() {
-  clearMapMarkers();
+  markers.forEach(m => m.setMap(null));
+  markers = [];
 
   filteredStores.forEach(store => {
     const lat = parseFloat(store.lat) || -31.6368;
@@ -208,19 +405,14 @@ function addMapMarkers() {
   });
 }
 
-function clearMapMarkers() {
-  markers.forEach(marker => marker.setMap(null));
-  markers = [];
-}
-
 function renderStoresList() {
   const html = filteredStores.length === 0
     ? '<div class="empty-state">No se encontraron tiendas</div>'
     : filteredStores.map(store => `
       <div class="store-item ${selectedStore?.id === store.id ? 'active' : ''}" onclick="selectStore({...store})">
         <div class="store-name">${escapeHtml(store.business_name)}</div>
-        <div class="store-status">📱 ${store.phone || 'Sin teléfono'}</div>
-        <button class="store-action" onclick="goToStore(event, '${store.slug}')">Ver tienda</button>
+        <div class="store-info">📱 ${store.phone || 'Sin teléfono'}</div>
+        <button class="store-action" onclick="goToStore(event, '${store.slug}')">Ver tienda →</button>
       </div>
     `).join('');
 
@@ -230,38 +422,48 @@ function renderStoresList() {
 function selectStore(store) {
   selectedStore = store;
   renderStoresList();
-
   const lat = parseFloat(store.lat) || -31.6368;
   const lng = parseFloat(store.lng) || -60.7000;
-
   map.panTo({ lat, lng });
   map.setZoom(12);
 }
 
 function filterStores() {
-  const query = document.getElementById('searchInput').value.toLowerCase().trim();
+  const search = document.getElementById('searchInput').value.toLowerCase().trim();
+  const city = document.getElementById('filterCity').value.toLowerCase().trim();
+  const rubro = document.getElementById('filterRubro').value.toLowerCase().trim();
+  const address = document.getElementById('filterAddress').value.toLowerCase().trim();
 
-  filteredStores = query === ''
-    ? stores
-    : stores.filter(s => s.business_name.toLowerCase().includes(query));
+  filteredStores = stores.filter(s => {
+    const nameMatch = !search || s.business_name.toLowerCase().includes(search);
+    const cityMatch = !city || (s.location && s.location.toLowerCase().includes(city));
+    const rubroMatch = !rubro || (s.description && s.description.toLowerCase().includes(rubro));
+    const addressMatch = !address || (s.phone && s.phone.toLowerCase().includes(address));
+    return nameMatch && cityMatch && rubroMatch && addressMatch;
+  });
 
   selectedStore = null;
-  clearMapMarkers();
-  renderStoresList();
   addMapMarkers();
+  renderStoresList();
   updateStoreCount();
 }
 
 function updateStoreCount() {
   const count = filteredStores.length;
-  document.getElementById('storesCount').textContent = count === 0
-    ? 'No se encontraron tiendas'
-    : `${count} tienda${count === 1 ? '' : 's'}`;
+  document.getElementById('storesCount').textContent = count === 0 ? 'No se encontraron tiendas' : `${count} tienda${count === 1 ? '' : 's'}`;
 }
 
 function goToStore(event, slug) {
   event.stopPropagation();
   window.open(`/${slug}`, '_blank');
+}
+
+function goToLogin() {
+  window.location.href = '/dashboard';
+}
+
+function goToRegister() {
+  window.location.href = '/dashboard';
 }
 
 function escapeHtml(str) {
@@ -270,12 +472,9 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-// Cargar tiendas al abrir la página
-loadStores();
+init();
 </script>
 
-<!-- Google Maps API -->
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDwXkUvYQfKcZABz5S95o_5cP0U3wQI2Jc"></script>
-
 </body>
 </html>
