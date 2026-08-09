@@ -502,13 +502,19 @@
     .ia-ilustracion { max-width: 380px; margin: 0 auto; }
   }
 
-  /* Aparición al llegar con el scroll */
-  .revelar {
+  /* Aparición al llegar con el scroll.
+     El ocultamiento cuelga de .js-anim, que agrega el propio JavaScript.
+     Asi, si el script no corre, el contenido se ve igual en vez de quedar
+     en una seccion en blanco. Nunca escondemos texto sin poder mostrarlo. */
+  .js-anim .revelar {
     opacity: 0;
     transform: translateY(22px);
+  }
+  .js-anim .revelar.visible {
+    opacity: 1;
+    transform: translateY(0);
     transition: opacity .6s ease-out, transform .6s ease-out;
   }
-  .revelar.visible { opacity: 1; transform: translateY(0); }
 
   @media(max-width: 768px) {
     .ia-banda { padding: 52px 20px; }
@@ -848,10 +854,14 @@ function configurarAvisoIA() {
   const items = [...document.querySelectorAll('.revelar')];
   const mostrarTodo = () => items.forEach(el => el.classList.add('visible'));
 
-  // RED DE SEGURIDAD: esta seccion arranca invisible y aparece con el
-  // scroll. Si el observador no llega a dispararse (navegador viejo,
-  // pestaña en segundo plano, vuelta atras desde el cache), el aviso
-  // quedaria en blanco. Pase lo que pase, a los 2 segundos se muestra.
+  // Recien ahora ocultamos: el CSS solo esconde dentro de .js-anim, asi que
+  // hasta esta linea el contenido estuvo visible. Si el script hubiera
+  // fallado antes, el aviso se veria igual.
+  document.documentElement.classList.add('js-anim');
+
+  // RED DE SEGURIDAD: si el observador no llega a dispararse (pestaña en
+  // segundo plano, vuelta atras desde el cache, navegador raro), a los
+  // 2 segundos mostramos todo igual.
   setTimeout(mostrarTodo, 2000);
 
   if (!('IntersectionObserver' in window)) {
