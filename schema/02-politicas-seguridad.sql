@@ -91,17 +91,22 @@ create policy prod_borrar
 
 -- ---------- orders ------------------------------------------
 -- Crear: cualquiera, porque el comprador no está logueado.
---        Igual exigimos que la tienda exista (evita basura).
 --        NO se exige plan vigente: si la prueba venció, la tienda
 --        pública sigue online y tiene que poder seguir recibiendo.
 -- Ver:   solo el dueño de esa tienda.
+--
+-- OJO: acá había un "exists (...)" que exigía que la tienda existiera.
+-- Se probó en producción y rompía TODAS las compras:
+--   "new row violates row-level security policy for table orders".
+-- La subconsulta contra store_profiles no resuelve dentro de la
+-- política. No hace falta: lo que protege los datos es la política
+-- de lectura de abajo, no ésta. Si algún día queremos garantizar que
+-- el slug exista, va como FOREIGN KEY, no como política.
 
 drop policy if exists ord_crear_publico on public.orders;
 create policy ord_crear_publico
   on public.orders for insert
-  with check (
-    exists (select 1 from public.store_profiles sp where sp.slug = orders.store_slug)
-  );
+  with check (true);
 
 drop policy if exists ord_ver_propios on public.orders;
 create policy ord_ver_propios
