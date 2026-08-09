@@ -8,7 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-<script async src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.4"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qr-scanner@1.4.0/qr-scanner-umd.min.js"></script>
 <style>
 :root {
   --navy: #15294D;
@@ -1571,103 +1572,18 @@ byId('barcodeInput').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') searchByBarcode();
 });
 
-// CAMERA SCANNER
+// CAMERA SCANNER - Temporalmente deshabilitado por compatibilidad
 let htmlQrcodeScanner = null;
 
 function toggleCameraScanner() {
-  if (byId('cameraScanner').classList.contains('hidden')) {
-    show(byId('cameraScanner'));
-    startCameraScanner();
-  } else {
-    stopCameraScanner();
-  }
+  alert('⚠️ Scanner de cámara en desarrollo. Por favor usa el escaneo manual.');
 }
 
-function startCameraScanner() {
-  if (htmlQrcodeScanner) return;
-
-  htmlQrcodeScanner = new Html5Qrcode('qr-reader');
-
-  const qrCodeSuccessCallback = (decodedText) => {
-    byId('barcodeInput').value = decodedText;
-    stopCameraScanner();
-    searchByBarcode();
-  };
-
-  const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-  htmlQrcodeScanner.start(
-    { facingMode: 'environment' },
-    config,
-    qrCodeSuccessCallback,
-    (errorMessage) => { /* ignorar errores */ }
-  ).catch(() => {
-    alert('No se pudo acceder a la cámara. Verifica los permisos.');
-    stopCameraScanner();
-  });
-}
-
-function stopCameraScanner() {
-  if (htmlQrcodeScanner) {
-    htmlQrcodeScanner.stop().then(() => {
-      htmlQrcodeScanner = null;
-      hide(byId('cameraScanner'));
-    }).catch(() => {
-      htmlQrcodeScanner = null;
-      hide(byId('cameraScanner'));
-    });
-  } else {
-    hide(byId('cameraScanner'));
-  }
-}
-
-// CAMERA SCANNER PARA PRODUCTOS
+// CAMERA SCANNER PARA PRODUCTOS - Temporalmente deshabilitado por compatibilidad
 let htmlQrcodeProductScanner = null;
 
 function toggleProductCameraScanner() {
-  if (byId('productCameraScanner').classList.contains('hidden')) {
-    show(byId('productCameraScanner'));
-    startProductCameraScanner();
-  } else {
-    stopProductCameraScanner();
-  }
-}
-
-function startProductCameraScanner() {
-  if (htmlQrcodeProductScanner) return;
-
-  htmlQrcodeProductScanner = new Html5Qrcode('qr-reader-product');
-
-  const qrCodeSuccessCallback = (decodedText) => {
-    byId('pEan').value = decodedText;
-    stopProductCameraScanner();
-  };
-
-  const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-  htmlQrcodeProductScanner.start(
-    { facingMode: 'environment' },
-    config,
-    qrCodeSuccessCallback,
-    (errorMessage) => { /* ignorar errores */ }
-  ).catch(() => {
-    alert('No se pudo acceder a la cámara. Verifica los permisos.');
-    stopProductCameraScanner();
-  });
-}
-
-function stopProductCameraScanner() {
-  if (htmlQrcodeProductScanner) {
-    htmlQrcodeProductScanner.stop().then(() => {
-      htmlQrcodeProductScanner = null;
-      hide(byId('productCameraScanner'));
-    }).catch(() => {
-      htmlQrcodeProductScanner = null;
-      hide(byId('productCameraScanner'));
-    });
-  } else {
-    hide(byId('productCameraScanner'));
-  }
+  alert('⚠️ Scanner de cámara en desarrollo. Por favor ingresa el EAN manualmente.');
 }
 
 if (byId('newProductBtn')) {
