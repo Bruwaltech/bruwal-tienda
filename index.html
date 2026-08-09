@@ -873,17 +873,31 @@ tr:last-child td { border-bottom: none; }
           <button onclick="searchByBarcode()" class="btn btn-primary" style="width:auto;padding:12px 24px;">Buscar</button>
         </div>
         <div id="barcodeResult" class="hidden" style="background:#fff;padding:16px;border-radius:8px;margin-bottom:12px;border:1px solid var(--line);">
-          <div style="display:grid;grid-template-columns:1fr 150px;gap:16px;align-items:center;">
+          <div style="display:grid;grid-template-columns:1fr auto;gap:20px;">
             <div>
               <div style="font-weight:700;color:var(--navy);margin-bottom:4px;" id="barcodeProductName"></div>
-              <div style="font-size:14px;color:var(--text-mute);margin-bottom:8px;">Precio: <span id="barcodeProductPrice" style="font-weight:700;color:var(--celeste);"></span></div>
-              <div style="display:flex;gap:8px;align-items:center;">
+              <div style="font-size:14px;color:var(--text-mute);margin-bottom:12px;">Precio unitario: <span id="barcodeProductPrice" style="font-weight:700;color:var(--celeste);"></span></div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
                 <label style="font-size:14px;color:var(--text-mute);">Cantidad:</label>
-                <input type="number" id="barcodeQty" value="1" min="1" style="width:60px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+                <input type="number" id="barcodeQty" value="1" min="1" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;" oninput="calculateTotal()">
+              </div>
+              <div style="border-top:1px solid var(--line);padding-top:12px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                  <span style="color:var(--text-mute);">Total:</span>
+                  <span id="barcodeTotal" style="font-weight:700;color:var(--navy);">$0</span>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <label style="font-size:14px;color:var(--text-mute);">Abono (pago):</label>
+                  <input type="number" id="barcodeAbono" value="0" min="0" step="0.01" style="width:100px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;" oninput="calculateChange()">
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);">
+                  <span style="font-weight:700;color:#1FA088;">Vuelto:</span>
+                  <span id="barcodeChange" style="font-weight:700;font-size:16px;color:#1FA088;">$0</span>
+                </div>
               </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:8px;">
-              <button onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;">Registrar venta</button>
+            <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-start;">
+              <button onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
               <button onclick="clearBarcodeResult()" class="btn-ghost" style="padding:10px 16px;font-size:14px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Limpiar</button>
             </div>
           </div>
@@ -1416,6 +1430,8 @@ function renderSalesHistory() {
 }
 
 // SCANNER DE CÓDIGOS DE BARRAS
+let currentBarcodeProduct = null;
+
 async function searchByBarcode() {
   const ean = byId('barcodeInput').value.trim();
   if (!ean) {
@@ -1430,11 +1446,30 @@ async function searchByBarcode() {
     return;
   }
 
+  currentBarcodeProduct = product;
   byId('barcodeProductName').textContent = product.name;
   byId('barcodeProductPrice').textContent = money(product.price);
   byId('barcodeQty').value = '1';
+  byId('barcodeAbono').value = '0';
+  calculateTotal();
   show(byId('barcodeResult'));
   byId('barcodeQty').focus();
+}
+
+function calculateTotal() {
+  if (!currentBarcodeProduct) return;
+  const qty = parseInt(byId('barcodeQty').value) || 1;
+  const total = currentBarcodeProduct.price * qty;
+  byId('barcodeTotal').textContent = money(total);
+  calculateChange();
+}
+
+function calculateChange() {
+  const totalEl = byId('barcodeTotal').textContent;
+  const total = parseFloat(totalEl.replace('$', '').replace('.', '').replace(',', '.')) || 0;
+  const abono = parseFloat(byId('barcodeAbono').value) || 0;
+  const change = abono - total;
+  byId('barcodeChange').textContent = money(Math.max(0, change));
 }
 
 function clearBarcodeResult() {
