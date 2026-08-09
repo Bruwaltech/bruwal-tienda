@@ -1114,15 +1114,19 @@ let charts = {};
 // (columna trial_ends_at de store_profiles).
 const DIAS_DE_PRUEBA = 15;
 
+// WhatsApp de BRUWAL para consultas comerciales
+const WHATSAPP_BRUWAL = '5493413005232';
+
 // IMPORTANTE: el precio que se muestra aca tiene que coincidir con el monto
 // configurado en el link de Mercado Pago. Si no coinciden, el cliente ve un
 // precio y se le cobra otro.
-// Mientras 'link' no empiece con https, el modal muestra un mensaje de
-// "planes en preparacion" en vez de precios equivocados.
+// Mientras el link de un plan 'pago' no empiece con https, el modal muestra
+// "planes en preparacion" en vez de un boton de pago roto.
 const PLANES = {
   basic: {
     nombre: 'Básico',
-    precio: '',                 // ej: '$25.000'
+    tipo: 'pago',
+    precio: '$35.000',
     periodo: 'por mes',
     link: '',                   // pegar aca el link de suscripción de Mercado Pago
     beneficios: [
@@ -1134,19 +1138,23 @@ const PLANES = {
   },
   pro: {
     nombre: 'Pro',
-    precio: '',                 // ej: '$60.000'
-    periodo: 'por mes',
-    link: '',                   // pegar aca el link de suscripción de Mercado Pago
+    tipo: 'consulta',           // no se contrata solo: se habla con un asesor
+    precio: 'A medida',
+    periodo: 'lo armamos con vos',
     beneficios: [
       'Todo lo del plan Básico',
-      'Toma de pedidos automática',
+      'Chatbot que toma los pedidos',
+      'Integraciones a medida',
       'Soporte prioritario'
     ]
   }
 };
 
+// Solo los planes de autoservicio necesitan link de pago cargado
 const planesConfigurados = () =>
-  Object.values(PLANES).every(p => p.link.startsWith('https://') && p.precio);
+  Object.values(PLANES)
+    .filter(p => p.tipo === 'pago')
+    .every(p => p.link.startsWith('https://') && p.precio);
 
 // Planes que dan acceso completo. 'cortesia' = cuenta exenta de pago,
 // sin vencimiento (se asigna a mano en la base de datos).
@@ -1255,18 +1263,32 @@ function abrirPlanes() {
     return;
   }
 
-  cont.innerHTML = '<div class="planes-grid">' + Object.entries(PLANES).map(([id, p]) => `
+  cont.innerHTML = '<div class="planes-grid">' + Object.entries(PLANES).map(([id, p]) => {
+    let accion;
+    if (p.tipo === 'consulta') {
+      // El mensaje ya viene escrito para que el cliente solo apriete enviar
+      const msg = `Hola! Soy de ${currentStore?.business_name || 'mi tienda'} y quiero información sobre el plan Pro de BRUWAL.`;
+      accion = `<a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
+                   href="https://wa.me/${WHATSAPP_BRUWAL}?text=${encodeURIComponent(msg)}"
+                   target="_blank" rel="noopener">Hablar con un asesor</a>`;
+    } else if (currentStore?.plan === id) {
+      accion = `<div class="btn" style="text-align:center;background:var(--bg);color:var(--text-mute);cursor:default;">Tu plan actual</div>`;
+    } else {
+      const sep = p.link.includes('?') ? '&' : '?';
+      accion = `<a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
+                   href="${p.link}${sep}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
+                   target="_blank" rel="noopener">Suscribirme</a>`;
+    }
+
+    return `
     <div class="plan-card">
-      <div class="nombre">${p.nombre}</div>
+      <div class="nombre">${escapeHtml(p.nombre)}</div>
       <div class="precio">${escapeHtml(p.precio)}</div>
       <div class="periodo">${escapeHtml(p.periodo)}</div>
       <ul>${p.beneficios.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
-      <a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
-         href="${p.link}${p.link.includes('?') ? '&' : '?'}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
-         target="_blank" rel="noopener">
-         ${currentStore?.plan === id ? 'Tu plan actual' : 'Suscribirme'}
-      </a>
-    </div>`).join('') + '</div>';
+      ${accion}
+    </div>`;
+  }).join('') + '</div>';
 
   show(byId('planesModal'));
 }
