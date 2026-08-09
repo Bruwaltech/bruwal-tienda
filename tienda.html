@@ -163,6 +163,7 @@
     <div class="mark">✓</div>
     <h2>¡Pedido enviado!</h2>
     <p style="color:var(--text-mute);margin-top:10px;">La tienda te va a contactar para coordinar la entrega y el pago.</p>
+    <button onclick="backToShop()" style="margin-top:20px;padding:12px 32px;background:var(--celeste);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:15px;">← Volver a la tienda</button>
   </div>
 </div>
 
@@ -352,6 +353,16 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
   byId('confirmOrderBtn').disabled = false;
 });
+
+function backToShop() {
+  cart = {};
+  hide(byId('successState'));
+  show(byId('storeView'));
+  hide(byId('cartBar'));
+  byId('cartCount').textContent = '0';
+  byId('cartTotal').textContent = '$0';
+  window.scrollTo(0, 0);
+}
 
 init();
 </script>
