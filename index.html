@@ -736,6 +736,7 @@ tr:last-child td { border-bottom: none; }
     <span>🛒 Tu tienda pública:</span>
     <a id="storeLinkAnchor" href="#" target="_blank" style="font-weight:600;"></a>
     <button class="btn-ghost" id="copyStoreLinkBtn" style="padding:5px 10px;font-size:12px;">Copiar link</button>
+    <button class="btn-ghost" id="editContactBtn" style="padding:5px 10px;font-size:12px;">⚙️ Contacto</button>
   </div>
 
   <div class="app-tabs">
@@ -922,6 +923,22 @@ tr:last-child td { border-bottom: none; }
         <img id="previewImg" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">
       </div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR CONTACTO -->
+<div class="modal-overlay hidden" id="contactModal">
+  <div class="modal">
+    <button class="modal-close" id="closeContactModal">✕</button>
+    <h3>Información de contacto</h3>
+    <form id="contactForm">
+      <div class="field"><label>Teléfono (WhatsApp)</label><input type="tel" id="contactPhone" placeholder="Ej: 3413005232"></div>
+      <div class="field"><label>Sitio web</label><input type="url" id="contactWeb" placeholder="https://example.com"></div>
+      <div class="field"><label>Instagram</label><input type="text" id="contactIg" placeholder="@tuusuario"></div>
+      <div class="field"><label>Email</label><input type="email" id="contactEmail"></div>
+      <div class="field"><label>Ubicación</label><input type="text" id="contactLocation" placeholder="Ciudad, Provincia"></div>
+      <button type="submit" class="btn btn-primary">Guardar cambios</button>
+    </form>
   </div>
 </div>
 
@@ -1392,6 +1409,50 @@ if (byId('newProductBtn')) {
 }
 
 byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
+
+// CONTACTO MODAL
+byId('editContactBtn').addEventListener('click', async () => {
+  if (!currentStore) return;
+  const { data: store } = await sb.from('store_profiles').select('phone,website,instagram,email,location').eq('slug', currentStore.slug).maybeSingle();
+  if (store){
+    byId('contactPhone').value = store.phone || '';
+    byId('contactWeb').value = store.website || '';
+    byId('contactIg').value = store.instagram || '';
+    byId('contactEmail').value = store.email || '';
+    byId('contactLocation').value = store.location || '';
+  }
+  show(byId('contactModal'));
+});
+
+byId('closeContactModal').addEventListener('click', () => hide(byId('contactModal')));
+
+byId('contactForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!currentStore) return;
+
+  const phone = byId('contactPhone').value.trim();
+  const website = byId('contactWeb').value.trim();
+  const instagram = byId('contactIg').value.trim();
+  const email = byId('contactEmail').value.trim();
+  const location = byId('contactLocation').value.trim();
+
+  const { error } = await sb.from('store_profiles').update({
+    phone: phone || null,
+    website: website || null,
+    instagram: instagram || null,
+    email: email || null,
+    location: location || null
+  }).eq('slug', currentStore.slug);
+
+  if (error){
+    alert('Error al guardar: ' + error.message);
+    return;
+  }
+
+  currentStore = { ...currentStore, phone, website, instagram, email, location };
+  hide(byId('contactModal'));
+  alert('Datos de contacto guardados!');
+});
 
 // Preview de imagen
 byId('pImageFile').addEventListener('change', (e) => {

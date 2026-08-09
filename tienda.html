@@ -28,15 +28,15 @@
   .store-contact:hover{background:var(--celeste-soft);transform:scale(1.05);}
 
   main{padding:32px 0 140px;}
-  .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;margin-bottom:24px;}
+  .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;margin-bottom:24px;}
   .empty{background:#fff;border:2px dashed var(--line);border-radius:16px;padding:60px 20px;text-align:center;color:var(--text-mute);}
 
   .product-card{
-    background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;
     transition:all 0.3s;cursor:pointer;display:flex;flex-direction:column;
   }
   .product-card:hover{box-shadow:0 8px 24px rgba(21,41,77,0.12);transform:translateY(-2px);}
-  .product-photo-container{width:100%;height:100px;background:var(--bg);overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .product-photo-container{width:100%;height:70px;background:var(--bg);overflow:hidden;display:flex;align-items:center;justify-content:center;}
   .product-photo{width:100%;height:100%;object-fit:cover;}
   .product-photo-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:48px;background:linear-gradient(135deg, #EAF4FD 0%, #D6E9FF 100%);}
   .product-info{flex:1;padding:12px;display:flex;flex-direction:column;}
@@ -84,6 +84,17 @@
   .success-screen h2{color:var(--navy);font-size:24px;margin-bottom:12px;}
   .success-screen p{color:var(--text-mute);line-height:1.6;}
   .powered{text-align:center;font-size:12px;color:var(--text-mute);padding:24px 0;font-family:'IBM Plex Mono',monospace;}
+
+  .store-layout{display:grid;grid-template-columns:180px 1fr;gap:24px;align-items:start;}
+  .store-menu{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;position:sticky;top:100px;height:fit-content;}
+  .store-menu-title{font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:16px;letter-spacing:0.5px;}
+  .store-menu-item{display:flex;align-items:center;gap:12px;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:var(--text-dark);transition:all 0.3s;font-size:14px;}
+  .store-menu-item:hover{background:var(--bg);color:var(--celeste);}
+  .store-menu-item-icon{font-size:20px;min-width:24px;}
+  @media(max-width:768px){
+    .store-layout{grid-template-columns:1fr;}
+    .store-menu{position:static;display:flex;gap:12px;padding:16px;overflow-x:auto;}
+  }
 </style>
 </head>
 <body>
@@ -105,8 +116,20 @@
   </header>
 
   <main class="wrap">
-    <div id="productsList"></div>
-    <div id="emptyProducts" class="empty hidden">Esta tienda todavía no cargó productos.</div>
+    <div class="store-layout">
+      <aside class="store-menu">
+        <div class="store-menu-title">Contacto</div>
+        <a class="store-menu-item" id="menuPhone" href="#" target="_blank"><span class="store-menu-item-icon">📱</span><span>WhatsApp</span></a>
+        <a class="store-menu-item hidden" id="menuWeb" href="#" target="_blank"><span class="store-menu-item-icon">🌐</span><span>Sitio web</span></a>
+        <a class="store-menu-item hidden" id="menuInstagram" href="#" target="_blank"><span class="store-menu-item-icon">📷</span><span>Instagram</span></a>
+        <a class="store-menu-item hidden" id="menuEmail" href="#" target="_blank"><span class="store-menu-item-icon">📧</span><span>Email</span></a>
+        <a class="store-menu-item hidden" id="menuLocation" href="#"><span class="store-menu-item-icon">📍</span><span>Ubicación</span></a>
+      </aside>
+      <div>
+        <div id="productsList"></div>
+        <div id="emptyProducts" class="empty hidden">Esta tienda todavía no cargó productos.</div>
+      </div>
+    </div>
   </main>
 
   <div class="powered">Tienda hecha con BRUWAL Technologies</div>
@@ -189,8 +212,30 @@ async function init(){
   byId('storeDesc').textContent = 'Catálogo online';
   if (store.phone){
     byId('storePhone').href = 'https://wa.me/54' + store.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent('Hola! Vengo de tu tienda online');
+    byId('menuPhone').href = byId('storePhone').href;
   } else {
     hide(byId('storePhone'));
+  }
+
+  if (store.website){
+    show(byId('menuWeb'));
+    byId('menuWeb').href = store.website.startsWith('http') ? store.website : 'https://' + store.website;
+  }
+
+  if (store.instagram){
+    show(byId('menuInstagram'));
+    byId('menuInstagram').href = 'https://instagram.com/' + store.instagram.replace('@','');
+  }
+
+  if (store.email){
+    show(byId('menuEmail'));
+    byId('menuEmail').href = 'mailto:' + store.email;
+  }
+
+  if (store.location){
+    show(byId('menuLocation'));
+    byId('menuLocation').href = 'https://www.google.com/maps/search/' + encodeURIComponent(store.location);
+    byId('menuLocation').target = '_blank';
   }
 
   const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
