@@ -7,6 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -445,13 +446,36 @@ h1, h2, h3 {
   border-bottom: 2px solid transparent;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   white-space: nowrap;
+  position: relative;
+  transition: color .22s ease;
 }
+
+.app-tab i {
+  font-size: 14px;
+  transition: transform .22s ease;
+}
+
+.app-tab:hover { color: var(--navy); }
+.app-tab:hover i { transform: translateY(-2px); }
+
+/* Subrayado que crece desde el centro al activarse */
+.app-tab::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  right: 50%;
+  bottom: -2px;
+  height: 2px;
+  background: var(--celeste);
+  transition: left .25s ease, right .25s ease;
+}
+
+.app-tab.active::after { left: 0; right: 0; }
 
 .app-tab.active {
   color: var(--navy);
-  border-bottom-color: var(--navy);
 }
 
 main {
@@ -512,7 +536,30 @@ main::before, main::after {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
 }
+
+/* Franja de color que se despliega al pasar el mouse */
+.stat-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--navy), var(--celeste));
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform .28s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(21,41,77,.10);
+  border-color: #C9DBEC;
+}
+
+.stat-card:hover::before { transform: scaleY(1); }
 
 .stat-card .label {
   font-size: 12px;
@@ -564,6 +611,48 @@ main::before, main::after {
   border-radius: 14px;
   overflow: hidden;
   margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(21,41,77,.05);
+  transition: box-shadow .25s ease;
+}
+
+.panel:hover { box-shadow: 0 6px 18px rgba(21,41,77,.08); }
+
+/* Entrada escalonada de tarjetas y paneles al cambiar de pestaña */
+@keyframes subirSuave {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+main > div.visible .stat-card,
+main > div.visible .panel {
+  animation: subirSuave .45s ease-out backwards;
+}
+
+main > div.visible .stat-card:nth-child(1) { animation-delay: .04s; }
+main > div.visible .stat-card:nth-child(2) { animation-delay: .10s; }
+main > div.visible .stat-card:nth-child(3) { animation-delay: .16s; }
+main > div.visible .stat-card:nth-child(4) { animation-delay: .22s; }
+
+/* Filas de tabla con realce al pasar el mouse */
+tbody tr { transition: background .18s ease; }
+tbody tr:hover { background: #F7FAFE; }
+
+/* Botones con respuesta al mouse */
+.btn, .btn-action, .icon-btn {
+  transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.btn-action:hover, .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(21,41,77,.16);
+}
+.icon-btn:hover { transform: translateY(-1px); }
+
+/* Respeta a quien pidio menos movimiento en su sistema */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
 }
 
 .panel-head {
@@ -833,11 +922,11 @@ tr:last-child td { border-bottom: none; }
 
   <div class="app-tabs">
     <div class="wrap-tabs">
-      <button class="app-tab active" id="tabDashboard">📊 Dashboard</button>
-      <button class="app-tab" id="tabProductos">📦 Productos</button>
-      <button class="app-tab" id="tabPedidos">🛒 Pedidos</button>
-      <button class="app-tab" id="tabClientes">👥 Clientes</button>
-      <button class="app-tab" id="tabVentas">💰 Ventas</button>
+      <button class="app-tab active" id="tabDashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</button>
+      <button class="app-tab" id="tabProductos"><i class="fa-solid fa-box"></i> Productos</button>
+      <button class="app-tab" id="tabPedidos"><i class="fa-solid fa-cart-shopping"></i> Pedidos</button>
+      <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
+      <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
     </div>
   </div>
 
