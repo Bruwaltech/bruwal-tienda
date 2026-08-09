@@ -378,23 +378,38 @@ main {
 
 main > div {
   display: none !important;
+  visibility: hidden !important;
 }
 
 main > div.visible {
   display: block !important;
+  visibility: visible !important;
 }
 
 body > * {
   position: relative;
 }
 
-script, noscript, meta[property], meta[name] {
+script, noscript, meta[property], meta[name], style, link {
   display: none !important;
-  visibility: hidden;
-  height: 0;
-  width: 0;
-  margin: 0;
-  padding: 0;
+  visibility: hidden !important;
+  height: 0 !important;
+  width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  overflow: hidden !important;
+}
+
+body::after {
+  content: none !important;
+}
+
+main::before, main::after {
+  display: none !important;
 }
 
 .stats-row {
