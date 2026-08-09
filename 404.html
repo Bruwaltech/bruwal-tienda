@@ -8,7 +8,8 @@
 <body>
 <script>
   const path = window.location.pathname;
-  const slug = path.split('/').filter(p => p && p !== 'index.html' && p !== '404.html' && p !== 'dashboard')[0];
+  const reservados = ['index.html', '404.html', 'home.html', 'tienda.html', 'admin.html', 'dashboard'];
+  const slug = path.split('/').filter(p => p && !reservados.includes(p))[0];
   if (slug) {
     window.location.replace('/tienda.html?slug=' + encodeURIComponent(slug));
   } else {
