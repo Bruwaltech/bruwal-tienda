@@ -708,6 +708,8 @@ tr:last-child td { border-bottom: none; }
 
     <form id="registerForm" class="hidden">
       <div class="field"><label>Nombre de tu negocio</label><input type="text" id="regBusiness" required></div>
+      <div class="field"><label>Logo/Imagen de tu tienda</label><input type="file" id="regLogo" accept="image/*"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Max 2MB</small></div>
+      <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
       <div class="field"><label>Contraseña</label><input type="password" id="regPassword" required minlength="6"></div>
@@ -747,6 +749,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabPedidos">🛒 Pedidos</button>
       <button class="app-tab" id="tabClientes">👥 Clientes</button>
       <button class="app-tab" id="tabVentas">💰 Ventas</button>
+      <button class="app-tab" id="tabPerfil">⚙️ Perfil</button>
     </div>
   </div>
 
@@ -942,6 +945,34 @@ tr:last-child td { border-bottom: none; }
           <thead><tr><th>Fecha</th><th>Producto</th><th>Cantidad</th><th>Total</th></tr></thead>
           <tbody id="salesHistoryBody"></tbody>
         </table>
+      </div>
+
+      <!-- PERFIL -->
+      <div id="perfilView" class="hidden">
+        <div class="panel" style="background:#fff;border:1px solid var(--line);">
+          <div class="panel-head">⚙️ Configuración de tu tienda</div>
+          <div style="display:grid;grid-template-columns:200px 1fr;gap:40px;padding:24px;">
+            <div style="text-align:center;">
+              <div id="logoPreview" style="width:180px;height:180px;border:2px solid var(--line);border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:64px;overflow:hidden;margin-bottom:16px;">
+                📦
+              </div>
+              <input type="file" id="logoInput" accept="image/*" style="display:none;">
+              <button onclick="document.getElementById('logoInput').click()" class="btn btn-primary" style="width:100%;padding:10px;font-size:14px;">Cambiar logo</button>
+            </div>
+            <div>
+              <div style="display:grid;gap:16px;">
+                <div class="field"><label>Nombre de tu tienda</label><input type="text" id="perfNombre" required></div>
+                <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="perfDesc" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
+                <div class="field"><label>Teléfono WhatsApp</label><input type="tel" id="perfPhone" required></div>
+                <div class="field"><label>Ubicación/Ciudad</label><input type="text" id="perfLocation" placeholder="Ej: Paraná, Entre Ríos"></div>
+                <div class="field"><label>Sitio web (opcional)</label><input type="url" id="perfWeb" placeholder="https://..."></div>
+                <div class="field"><label>Instagram (opcional)</label><input type="text" id="perfIg" placeholder="@tuusuario"></div>
+                <div class="field"><label>Mensaje de envío personalizado</label><textarea id="perfMsgEnvio" style="padding:12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;min-height:80px;" placeholder="Ej: Entregamos en 30 minutos o es gratis!"></textarea></div>
+                <button onclick="guardarPerfil()" class="btn btn-primary">Guardar cambios</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -1852,6 +1883,30 @@ byId('tabVentas').addEventListener('click', () => {
   byId('ventasView').classList.add('visible');
 });
 
+byId('tabPerfil').addEventListener('click', async () => {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabPerfil').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('perfilView').classList.add('visible');
+  await cargarPerfil();
+});
+
+byId('logoInput').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  if (file.size > 2 * 1024 * 1024) {
+    alert('La imagen debe pesar menos de 2MB');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    byId('logoPreview').innerHTML = '<img src="' + evt.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
+  };
+  reader.readAsDataURL(file);
+});
+
 byId('clientSearch').addEventListener('input', (e) => {
   const q = e.target.value.toLowerCase();
   byId('clientesBody').querySelectorAll('tr').forEach(tr => {
@@ -1859,6 +1914,74 @@ byId('clientSearch').addEventListener('input', (e) => {
     tr.style.display = text.includes(q) ? '' : 'none';
   });
 });
+
+// PERFIL
+async function cargarPerfil() {
+  if (!currentStore) return;
+
+  const { data: store } = await sb.from('store_profiles').select('*').eq('slug', currentStore.slug).maybeSingle();
+
+  if (store) {
+    byId('perfNombre').value = store.business_name || '';
+    byId('perfDesc').value = store.description || '';
+    byId('perfPhone').value = store.phone || '';
+    byId('perfLocation').value = store.location || '';
+    byId('perfWeb').value = store.website || '';
+    byId('perfIg').value = store.instagram || '';
+    byId('perfMsgEnvio').value = store.mensaje_envio || '';
+
+    if (store.image_url) {
+      byId('logoPreview').innerHTML = '<img src="' + store.image_url + '" style="width:100%;height:100%;object-fit:cover;">';
+    }
+  }
+}
+
+async function guardarPerfil() {
+  if (!currentStore) return;
+
+  const logoFile = byId('logoInput').files?.[0];
+  let imageUrl = null;
+
+  if (logoFile) {
+    if (logoFile.size > 2 * 1024 * 1024) {
+      alert('La imagen debe pesar menos de 2MB');
+      return;
+    }
+
+    const fileName = 'logos/' + currentStore.slug + '-' + Date.now() + logoFile.name.slice(-4);
+    const { data, error: uploadError } = await sb.storage.from('product-images').upload(fileName, logoFile, { upsert: true });
+
+    if (uploadError) {
+      alert('Error al subir la imagen: ' + uploadError.message);
+      return;
+    }
+
+    imageUrl = sb.storage.from('product-images').getPublicUrl(fileName).data.publicUrl;
+  }
+
+  const updateData = {
+    business_name: byId('perfNombre').value,
+    description: byId('perfDesc').value,
+    phone: byId('perfPhone').value,
+    location: byId('perfLocation').value,
+    website: byId('perfWeb').value,
+    instagram: byId('perfIg').value,
+    mensaje_envio: byId('perfMsgEnvio').value
+  };
+
+  if (imageUrl) updateData.image_url = imageUrl;
+
+  const { error } = await sb.from('store_profiles').update(updateData).eq('slug', currentStore.slug);
+
+  if (error) {
+    alert('Error al guardar: ' + error.message);
+    return;
+  }
+
+  alert('✓ Perfil guardado correctamente!');
+  currentStore = { ...currentStore, ...updateData };
+  byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
+}
 
 async function checkIfPublicStore() {
   const slug = window.location.pathname.split('/').filter(Boolean)[0];
