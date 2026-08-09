@@ -1137,10 +1137,14 @@ async function onLoggedIn() {
       const phone = user.user_metadata?.phone || '';
       let slug = business_name.toLowerCase().replace(/\s+/g, '-');
 
-      // Verificar si el slug existe, si existe agregar sufijo
-      let slugExists = await sb.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
-      if (slugExists.data) {
-        slug = slug + '-' + Math.random().toString(36).substr(2, 3);
+      // Verificar si el slug existe, si existe agregar sufijo numérico
+      let counter = 1;
+      let baseSlug = slug;
+      while (true) {
+        let slugExists = await sb.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
+        if (!slugExists.data) break;
+        counter++;
+        slug = baseSlug + '-' + counter;
       }
 
       const { data: newStore, error } = await sb.from('store_profiles').insert({
