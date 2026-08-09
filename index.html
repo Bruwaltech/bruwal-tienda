@@ -907,16 +907,21 @@ tr:last-child td { border-bottom: none; }
   <div class="modal">
     <button class="modal-close" id="closeModal">✕</button>
     <h3 id="modalTitle">Nuevo producto</h3>
-    <form id="productForm">
-      <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
-      <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
-      <div class="field"><label>Precio</label><input type="number" id="pPrice" min="0" step="0.01" required></div>
-      <div class="field"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
-      <div class="field"><label>Categoría</label><input type="text" id="pCategory"></div>
-      <div class="field"><label>EAN / Código de barras</label><input type="text" id="pEan" placeholder="Se completa al escanear"></div>
-      <div class="field"><label>Foto del producto</label><input type="file" id="pImageFile" accept="image/*"><small id="imageHelp" style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Max 2MB</small><div id="imagePreview" style="margin-top:10px;border-radius:8px;overflow:hidden;height:100px;border:1px solid var(--line);display:none;"><img id="previewImg" style="width:100%;height:100%;object-fit:cover;"></div></div>
-      <button type="submit" class="btn btn-primary">Guardar producto</button>
-    </form>
+    <div style="display:grid;grid-template-columns:1fr 200px;gap:24px;">
+      <form id="productForm">
+        <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
+        <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
+        <div class="field"><label>Precio</label><input type="number" id="pPrice" min="0" step="0.01" required></div>
+        <div class="field"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
+        <div class="field"><label>Categoría</label><input type="text" id="pCategory"></div>
+        <div class="field"><label>EAN / Código de barras</label><input type="text" id="pEan" placeholder="Se completa al escanear"></div>
+        <div class="field"><label>Foto del producto</label><input type="file" id="pImageFile" accept="image/*" style="cursor:pointer;"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Max 2MB</small></div>
+        <button type="submit" class="btn btn-primary">Guardar producto</button>
+      </form>
+      <div id="imagePreview" style="display:none;border-radius:12px;overflow:hidden;border:2px solid var(--line);aspect-ratio:1;background:var(--bg);padding:8px;flex-shrink:0;">
+        <img id="previewImg" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">
+      </div>
+    </div>
   </div>
 </div>
 
