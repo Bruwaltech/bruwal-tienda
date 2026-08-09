@@ -1493,8 +1493,7 @@ async function confirmBarcodeVenta() {
     customer_name: customerName,
     customer_phone: 'scanner',
     items: [{ product_id: product.id, qty, name: product.name, price: product.price }],
-    total: total,
-    status: 'completada'
+    total: total
   }]);
 
   if (error) {
