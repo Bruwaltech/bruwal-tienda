@@ -1219,6 +1219,15 @@ tr:last-child td { border-bottom: none; }
         <div class="field"><label>Ubicación</label><input type="text" id="configLocation" placeholder="Ej: Paraná, Entre Ríos"></div>
         <div class="field"><label>Sitio web</label><input type="url" id="configWeb" placeholder="https://..."></div>
         <div class="field"><label>Instagram</label><input type="text" id="configIg" placeholder="@tuusuario"></div>
+        <div class="field">
+          <label>Tu ficha en Google (reseñas)</label>
+          <input type="url" id="configGoogle" placeholder="https://maps.app.goo.gl/...">
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Buscá tu negocio en Google Maps, tocá Compartir y pegá el link acá.
+            Tus clientes van a ver tus reseñas reales. Si lo dejás vacío, usamos
+            una búsqueda por tu nombre y ubicación.
+          </small>
+        </div>
         <button type="button" onclick="guardarConfiguracion()" class="btn btn-primary" style="width:100%;">Guardar cambios</button>
       </form>
     </div>
@@ -2362,6 +2371,7 @@ async function cargarConfiguracion() {
     byId('configLocation').value = store.location || '';
     byId('configWeb').value = store.website || '';
     byId('configIg').value = store.instagram || '';
+    byId('configGoogle').value = store.google_url || '';
 
     if (store.image_url) {
       byId('configLogoPreview').style.backgroundImage = `url(${store.image_url})`;
@@ -2420,7 +2430,8 @@ async function guardarConfiguracion() {
     phone: byId('configPhone').value,
     location: byId('configLocation').value,
     website: byId('configWeb').value,
-    instagram: byId('configIg').value
+    instagram: byId('configIg').value,
+    google_url: byId('configGoogle').value.trim() || null
   };
 
   if (imageUrl) updateData.image_url = imageUrl;

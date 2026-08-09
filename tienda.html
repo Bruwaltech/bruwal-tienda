@@ -163,6 +163,7 @@
         <a class="store-menu-item hidden" id="menuInstagram" href="#" target="_blank"><span class="store-menu-item-icon"><i class="fab fa-instagram" style="color:#E4405F;"></i></span><span>Instagram</span></a>
         <a class="store-menu-item hidden" id="menuEmail" href="#" target="_blank"><span class="store-menu-item-icon"><i class="fas fa-envelope" style="color:#EA4335;"></i></span><span>Email</span></a>
         <a class="store-menu-item hidden" id="menuLocation" href="#"><span class="store-menu-item-icon"><i class="fab fa-google" style="color:#4285F4;"></i></span><span>Ubicación</span></a>
+        <a class="store-menu-item hidden" id="menuResenas" href="#" target="_blank" rel="noopener"><span class="store-menu-item-icon"><i class="fas fa-star" style="color:#FBBC04;"></i></span><span>Reseñas en Google</span></a>
       </aside>
       <div>
         <div id="productsList"></div>
@@ -288,6 +289,21 @@ async function init(){
     show(byId('menuLocation'));
     byId('menuLocation').href = 'https://www.google.com/maps/search/' + encodeURIComponent(store.location);
     byId('menuLocation').target = '_blank';
+  }
+
+  // Reseñas: si el negocio pegó el link exacto de su ficha lo usamos;
+  // si no, armamos una búsqueda en Google Maps con su nombre y ubicación.
+  // No mostramos ninguna puntuación: no la tenemos verificada y no vamos
+  // a inventar una estrella que Google no dijo.
+  const linkResenas = store.google_url
+    || (store.location
+        ? 'https://www.google.com/maps/search/?api=1&query=' +
+          encodeURIComponent([store.business_name, store.location].filter(Boolean).join(', '))
+        : null);
+
+  if (linkResenas){
+    show(byId('menuResenas'));
+    byId('menuResenas').href = linkResenas;
   }
 
   const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
