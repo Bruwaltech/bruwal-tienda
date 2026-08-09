@@ -1363,15 +1363,21 @@ function renderSalesHistory() {
   }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-mute);padding:20px;">Sin ventas</td></tr>';
 }
 
-byId('newProductBtn').addEventListener('click', () => {
-  byId('modalTitle').textContent = 'Nuevo producto';
-  byId('pName').value = byId('pDesc').value = byId('pPrice').value = byId('pEan').value = byId('pImage').value = '';
-  byId('pStock').value = '0';
-  byId('pCategory').value = '';
-  byId('productForm').dataset.id = '';
-  show(byId('productModal'));
-  byId('pName').focus();
-});
+if (byId('newProductBtn')) {
+  byId('newProductBtn').addEventListener('click', () => {
+    if (byId('modalTitle')) byId('modalTitle').textContent = 'Nuevo producto';
+    if (byId('pName')) byId('pName').value = '';
+    if (byId('pDesc')) byId('pDesc').value = '';
+    if (byId('pPrice')) byId('pPrice').value = '';
+    if (byId('pEan')) byId('pEan').value = '';
+    if (byId('pImage')) byId('pImage').value = '';
+    if (byId('pStock')) byId('pStock').value = '0';
+    if (byId('pCategory')) byId('pCategory').value = '';
+    if (byId('productForm')) byId('productForm').dataset.id = '';
+    if (byId('productModal')) show(byId('productModal'));
+    if (byId('pName')) byId('pName').focus();
+  });
+}
 
 byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
 
