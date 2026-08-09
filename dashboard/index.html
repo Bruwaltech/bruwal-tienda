@@ -1128,7 +1128,11 @@ const PLANES = {
     tipo: 'pago',
     precio: '$35.000',
     periodo: 'por mes',
-    link: '',                   // pegar aca el link de suscripción de Mercado Pago
+    // Plan "Bruwalstock Basic" en Mercado Pago — $35.000, débito mensual.
+    // Usamos la URL larga a proposito: el link corto (mpago.la/28KDgwc)
+    // descarta los parametros al redirigir y perderiamos el external_reference,
+    // que es lo que le dice al webhook QUE tienda pago.
+    link: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=558bf71f6d62460797b95829fc767e0d',
     beneficios: [
       'Productos ilimitados',
       'Tienda pública con carrito',
