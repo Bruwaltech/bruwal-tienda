@@ -34,29 +34,39 @@
   .store-contact:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,0.2);}
 
   main{padding:32px 0 140px;}
-  .products-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;}
-  @media(max-width:1024px){.products-grid{grid-template-columns:repeat(4,1fr);}}
-  @media(max-width:768px){.products-grid{grid-template-columns:repeat(3,1fr);}}
-  @media(max-width:480px){.products-grid{grid-template-columns:repeat(2,1fr);}}
+  .category-filters{display:flex;gap:10px;overflow-x:auto;margin-bottom:24px;padding-bottom:8px;}
+  .category-filter{padding:10px 20px;border:2px solid var(--line);border-radius:20px;cursor:pointer;font-weight:600;font-size:14px;white-space:nowrap;transition:all 0.3s;background:#fff;color:var(--text-dark);}
+  .category-filter.active{background:var(--celeste);color:#fff;border-color:var(--celeste);}
+  .category-filter:hover{border-color:var(--celeste);}
+
+  .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:24px;}
+  @media(max-width:1024px){.products-grid{grid-template-columns:repeat(3,1fr);}}
+  @media(max-width:768px){.products-grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:480px){.products-grid{grid-template-columns:1fr;}}
   .empty{background:#fff;border:2px dashed var(--line);border-radius:16px;padding:60px 20px;text-align:center;color:var(--text-mute);}
 
   .product-card{
-    background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;
-    transition:all 0.3s;cursor:pointer;display:flex;flex-direction:column;
+    background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    transition:all 0.3s;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,0.08);
   }
-  .product-card:hover{box-shadow:0 8px 24px rgba(21,41,77,0.12);transform:translateY(-2px);}
-  .product-photo-container{width:100%;height:70px;background:var(--bg);overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .product-card:hover{box-shadow:0 12px 32px rgba(21,41,77,0.15);transform:translateY(-4px);}
+  .product-photo-container{width:100%;height:200px;background:linear-gradient(135deg, #EAF4FD 0%, #D6E9FF 100%);overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;}
+  .product-badge{position:absolute;top:12px;right:12px;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700;}
+  .product-badge.stock{background:#1FA088;color:#fff;}
+  .product-badge.limited{background:#D97706;color:#fff;}
   .product-photo{width:100%;height:100%;object-fit:cover;}
-  .product-photo-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:48px;background:linear-gradient(135deg, #EAF4FD 0%, #D6E9FF 100%);}
-  .product-info{flex:1;padding:12px;display:flex;flex-direction:column;}
-  .product-name{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:2px;}
-  .product-category{font-size:11px;color:var(--text-mute);margin-bottom:6px;}
-  .product-price{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--celeste);margin-bottom:8px;}
-  .product-controls{display:flex;gap:6px;margin-top:auto;}
-  .qty-controls{display:flex;align-items:center;gap:6px;flex:1;}
-  .qty-controls button{width:28px;height:28px;border-radius:6px;border:1px solid var(--line);background:#fff;font-size:14px;cursor:pointer;color:var(--navy);font-weight:600;transition:all 0.2s;}
-  .qty-controls button:hover{background:var(--celeste);color:#fff;border-color:var(--celeste);}
-  .qty-badge{font-weight:600;color:var(--navy);font-size:13px;min-width:20px;text-align:center;}
+  .product-photo-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:64px;}
+  .product-info{flex:1;padding:16px;display:flex;flex-direction:column;}
+  .product-category{font-size:12px;color:var(--celeste);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}
+  .product-name{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:8px;line-height:1.3;}
+  .product-description{font-size:13px;color:var(--text-mute);margin-bottom:12px;line-height:1.4;}
+  .product-price{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:var(--celeste);margin-bottom:4px;}
+  .product-stock{font-size:12px;color:var(--text-mute);margin-bottom:12px;}
+  .product-controls{display:flex;gap:8px;margin-top:auto;}
+  .qty-controls{display:flex;align-items:center;gap:8px;flex:1;background:var(--bg);border-radius:8px;padding:4px;}
+  .qty-controls button{width:32px;height:32px;border-radius:6px;border:none;background:#fff;font-size:16px;cursor:pointer;color:var(--celeste);font-weight:700;transition:all 0.2s;}
+  .qty-controls button:hover{background:var(--celeste);color:#fff;}
+  .qty-badge{font-weight:700;color:var(--navy);font-size:14px;min-width:32px;text-align:center;}
   .add-btn{background:var(--celeste);color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.2s;flex:1;}
   .add-btn:hover{background:var(--celeste-soft);}
   .add-btn:disabled{opacity:0.4;cursor:not-allowed;}
@@ -135,6 +145,12 @@
   </header>
 
   <main class="wrap">
+    <div id="categoriesSection" style="margin-bottom:24px;display:none;">
+      <div class="category-filters" id="categoriesContainer">
+        <div class="category-filter active" onclick="filterByCategory(null)">Todos</div>
+      </div>
+    </div>
+
     <div class="store-layout">
       <aside class="store-menu">
         <div style="text-align:center;margin-bottom:16px;">
@@ -211,7 +227,9 @@ function getSlugFromUrl(){
 }
 
 let products = [];
+let filteredProducts = [];
 let cart = {}; // { productId: qty }
+let selectedCategory = null;
 
 async function init(){
   hide(byId('notFoundState'));
@@ -280,32 +298,64 @@ async function init(){
 }
 
 function renderProducts(){
+  loadCategories();
+
+  filteredProducts = selectedCategory
+    ? products.filter(p => p.category === selectedCategory)
+    : products;
+
   const list = byId('productsList');
-  if (products.length === 0){
+  if (filteredProducts.length === 0){
     show(byId('emptyProducts'));
     return;
   }
-  list.innerHTML = products.map(p => {
+  hide(byId('emptyProducts'));
+
+  list.innerHTML = filteredProducts.map(p => {
+    const qty = cart[p.id] || 0;
+    const stockBadge = p.stock > 0
+      ? '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock > 10 ? 'En stock' : '⚠️ ' + p.stock + ' ud') + '</div>'
+      : '<div class="product-badge" style="background:#DC2626;color:#fff;">Agotado</div>';
     const photo = p.image_url
       ? '<img class="product-photo" src="' + escapeHtml(p.image_url) + '" alt="">'
       : '<div class="product-photo-placeholder">🛒</div>';
-    const qty = cart[p.id] || 0;
-    const controls = qty === 0
-      ? '<button class="add-btn" data-add="' + p.id + '">+ Agregar</button>'
-      : '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="mono">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
-    return '<div class="product-card">' + photo +
-      '<div class="product-info"><div class="product-name">' + escapeHtml(p.name) + '</div>' +
+    const controls = '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
+
+    return '<div class="product-card">' +
+      '<div class="product-photo-container">' + photo + stockBadge + '</div>' +
+      '<div class="product-info">' +
       (p.category ? '<div class="product-category">' + escapeHtml(p.category) + '</div>' : '') +
+      '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
+      (p.description ? '<div class="product-description">' + escapeHtml(p.description) + '</div>' : '') +
       '<div class="product-price">' + money(p.price) + '</div>' +
-      (!p.in_stock ? '<div class="out-of-stock">Sin stock</div>' : '') +
+      '<div class="product-stock">' + (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') + '</div>' +
+      '<div class="product-controls">' + (p.stock > 0 ? controls : '') + '</div>' +
       '</div>' +
-      (p.in_stock ? controls : '') +
       '</div>';
   }).join('');
 
-  list.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => { cart[b.getAttribute('data-add')] = 1; renderProducts(); renderCartBar(); }));
   list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-plus'); cart[id] = (cart[id]||0) + 1; renderProducts(); renderCartBar(); }));
   list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-minus'); cart[id] = Math.max(0, (cart[id]||0) - 1); if (cart[id] === 0) delete cart[id]; renderProducts(); renderCartBar(); }));
+}
+
+function loadCategories(){
+  const categories = [...new Set(products.map(p => p.category).filter(Boolean))];
+  if (categories.length === 0) {
+    hide(byId('categoriesSection'));
+    return;
+  }
+
+  show(byId('categoriesSection'));
+  const container = byId('categoriesContainer');
+  container.innerHTML = '<div class="category-filter active" onclick="filterByCategory(null)">Todos</div>' +
+    categories.map(cat => '<div class="category-filter" onclick="filterByCategory(\'' + cat + '\')">' + escapeHtml(cat) + '</div>').join('');
+}
+
+function filterByCategory(category){
+  selectedCategory = category;
+  document.querySelectorAll('.category-filter').forEach(el => el.classList.remove('active'));
+  if (event?.target) event.target.classList.add('active');
+  renderProducts();
 }
 
 function renderCartBar(){
