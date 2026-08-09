@@ -707,9 +707,12 @@ tr:last-child td { border-bottom: none; }
 
     <form id="registerForm" class="hidden">
       <div class="field"><label>Nombre de tu negocio</label><input type="text" id="regBusiness" required></div>
-      <div class="field"><label>Teléfono (WhatsApp)</label><input type="tel" id="regPhone" required></div>
+      <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
       <div class="field"><label>Contraseña</label><input type="password" id="regPassword" required minlength="6"></div>
+      <div style="font-size:12px;color:var(--text-mute);margin-bottom:14px;background:#EAF4FD;padding:10px 12px;border-radius:8px;">
+        💡 Tip: Los pedidos de tus clientes se enviarán a este número de WhatsApp
+      </div>
       <button type="submit" class="btn btn-primary">Crear cuenta</button>
     </form>
 
@@ -1450,17 +1453,17 @@ async function editProduct(id) {
   const p = products.find(x => x.id === id);
   if (!p) return;
 
-  byId('modalTitle').textContent = 'Editar producto';
-  byId('pName').value = p.name;
-  byId('pDesc').value = p.description || '';
-  byId('pPrice').value = p.price;
-  byId('pStock').value = p.stock;
-  byId('pCategory').value = p.category || '';
-  byId('pEan').value = p.ean || '';
-  byId('pImage').value = p.image_url || '';
-  byId('productForm').dataset.id = id;
-  show(byId('productModal'));
-  byId('pName').focus();
+  if (byId('modalTitle')) byId('modalTitle').textContent = 'Editar producto';
+  if (byId('pName')) byId('pName').value = p.name;
+  if (byId('pDesc')) byId('pDesc').value = p.description || '';
+  if (byId('pPrice')) byId('pPrice').value = p.price;
+  if (byId('pStock')) byId('pStock').value = p.stock;
+  if (byId('pCategory')) byId('pCategory').value = p.category || '';
+  if (byId('pEan')) byId('pEan').value = p.ean || '';
+  if (byId('pImageFile')) byId('pImageFile').value = '';
+  if (byId('productForm')) byId('productForm').dataset.id = id;
+  if (byId('productModal')) show(byId('productModal'));
+  if (byId('pName')) byId('pName').focus();
 }
 
 async function deleteProduct(id) {
