@@ -98,6 +98,35 @@
     line-height: 1.2;
   }
 
+  /* Las palabras entran una tras otra. Los <span> los crea el JavaScript,
+     asi que si no corre queda el titulo comun y corriente, visible. */
+  .hero h1 .palabra {
+    display: inline-block;
+    opacity: 0;
+    animation: palabraEntra .7s cubic-bezier(.22,.68,.35,1) forwards;
+  }
+
+  @keyframes palabraEntra {
+    from { opacity: 0; transform: translateY(20px); filter: blur(4px); }
+    to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
+  }
+
+  /* Línea que se dibuja sola bajo el título */
+  .hero h1::after {
+    content: '';
+    display: block;
+    width: 0;
+    height: 3px;
+    margin: 18px auto 0;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #7DD3FC, #4ADE80);
+    animation: dibujarLinea 1s ease-out .7s forwards;
+  }
+
+  @keyframes dibujarLinea {
+    to { width: 92px; }
+  }
+
   .hero .subtitle {
     font-size: 20px;
     opacity: 0.95;
@@ -358,10 +387,17 @@
   }
 
   .ia-banda h2 .destacado {
-    background: linear-gradient(90deg, #7DD3FC, #4ADE80);
+    background: linear-gradient(90deg, #7DD3FC, #4ADE80, #7DD3FC, #4ADE80);
+    background-size: 300% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+    animation: brilloLento 9s linear infinite;
+  }
+
+  /* El degradé se desplaza despacio: da vida sin llamar la atención */
+  @keyframes brilloLento {
+    to { background-position: -300% 0; }
   }
 
   .ia-banda .bajada {
@@ -848,6 +884,18 @@ function escapeHtml(str) {
 // WhatsApp comercial de BRUWAL
 const WHATSAPP_BRUWAL = '5493413005232';
 
+// Parte el titulo en palabras para que entren escalonadas.
+// Si esto no corre, el titulo queda tal cual esta en el HTML: visible.
+function animarTitulo() {
+  const h1 = document.querySelector('.hero h1');
+  if (!h1) return;
+
+  const palabras = h1.textContent.trim().split(/\s+/);
+  h1.innerHTML = palabras
+    .map((p, i) => '<span class="palabra" style="animation-delay:' + (i * 0.09).toFixed(2) + 's">' + escapeHtml(p) + '</span>')
+    .join(' ');
+}
+
 function configurarAvisoIA() {
   const btn = document.getElementById('iaWhatsappBtn');
   if (btn) {
@@ -889,6 +937,7 @@ function configurarAvisoIA() {
   });
 }
 
+animarTitulo();
 configurarAvisoIA();
 init();
 </script>
