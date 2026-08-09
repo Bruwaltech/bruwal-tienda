@@ -1894,9 +1894,11 @@ async function guardarConfiguracion() {
 
   if (imageUrl) updateData.image_url = imageUrl;
 
-  // Si cambio la ubicacion, buscamos sus coordenadas para el mapa de la home
+  // Buscamos coordenadas para el mapa de la home si cambio la ubicacion,
+  // o si la tienda todavia no tiene coordenadas cargadas.
   const ubicacion = updateData.location?.trim();
-  if (ubicacion && ubicacion !== (currentStore.location || '').trim()) {
+  const sinCoords = !isFinite(parseFloat(currentStore.lat)) || !isFinite(parseFloat(currentStore.lng));
+  if (ubicacion && (sinCoords || ubicacion !== (currentStore.location || '').trim())) {
     const coords = await buscarCoordenadas(ubicacion);
     if (coords) {
       updateData.lat = coords.lat;
