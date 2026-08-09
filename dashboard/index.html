@@ -366,6 +366,25 @@ h1, h2, h3 {
   box-shadow: 0 4px 12px rgba(47,143,224,.35);
 }
 
+/* Boton de adhesion, siempre visible en el encabezado */
+.btn-adherir {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #D97706, #F59E0B);
+  box-shadow: 0 2px 8px rgba(217,119,6,.35);
+  transition: transform .2s, box-shadow .2s;
+  white-space: nowrap;
+}
+.btn-adherir:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(217,119,6,.45);
+}
+
 /* Bloqueo de acciones cuando la prueba vencio */
 .bloqueado-trial {
   opacity: .45;
@@ -795,6 +814,7 @@ tr:last-child td { border-bottom: none; }
     <div class="app-logo"><span class="mark">B</span> BRUWALTECH</div>
     <div class="app-user">
       <span id="userBusiness"><b></b></span>
+      <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
       <button class="btn-ghost" id="logoutBtn">Cerrar sesión</button>
     </div>
   </header>
@@ -1124,8 +1144,8 @@ const WHATSAPP_BRUWAL = '5493413005232';
 // "planes en preparacion" en vez de un boton de pago roto.
 const PLANES = {
   basic: {
-    nombre: 'Básico',
-    tipo: 'pago',
+    nombre: 'Stock y Pedidos',
+    tipo: 'pago',               // se activa solo, con Mercado Pago
     precio: '$35.000',
     periodo: 'por mes',
     // Plan "Bruwalstock Basic" en Mercado Pago — $35.000, débito mensual.
@@ -1134,21 +1154,23 @@ const PLANES = {
     // que es lo que le dice al webhook QUE tienda pago.
     link: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=558bf71f6d62460797b95829fc767e0d',
     beneficios: [
+      'Control de stock en tiempo real',
+      'Registro de ventas con lector de código',
+      'Estadísticas y reportes de tu negocio',
       'Productos ilimitados',
-      'Tienda pública con carrito',
-      'Pedidos por WhatsApp',
-      'Registro de ventas y estadísticas'
+      'Tienda pública con carrito y pedidos por WhatsApp'
     ]
   },
   pro: {
-    nombre: 'Pro',
-    tipo: 'consulta',           // no se contrata solo: se habla con un asesor
+    nombre: 'Pro — Bot de pedidos',
+    tipo: 'consulta',           // no se contrata solo: lo armamos con el cliente
     precio: 'A medida',
     periodo: 'lo armamos con vos',
     beneficios: [
-      'Todo lo del plan Básico',
-      'Chatbot que toma los pedidos',
-      'Integraciones a medida',
+      'Todo lo de Stock y Pedidos',
+      'Bot con IA que toma los pedidos solo',
+      'Responde a tus clientes las 24 horas',
+      'Configurado según tu rubro y tu carta',
       'Soporte prioritario'
     ]
   }
@@ -1221,6 +1243,17 @@ function renderTrialBar() {
     byId('verPlanesBtn').textContent = 'Ver planes';
   }
 
+  // Boton de adhesion en el encabezado: solo tiene sentido si todavia no paga
+  const btnAdherir = byId('adherirmeBtn');
+  if (btnAdherir) {
+    if (estado === 'activo') {
+      hide(btnAdherir);
+    } else {
+      btnAdherir.textContent = estado === 'vencido' ? '⭐ Activar mi plan' : '⭐ Adherirme al plan';
+      show(btnAdherir);
+    }
+  }
+
   show(bar);
   aplicarModoSoloLectura(estado === 'vencido');
 }
@@ -1271,7 +1304,7 @@ function abrirPlanes() {
     let accion;
     if (p.tipo === 'consulta') {
       // El mensaje ya viene escrito para que el cliente solo apriete enviar
-      const msg = `Hola! Soy de ${currentStore?.business_name || 'mi tienda'} y quiero información sobre el plan Pro de BRUWAL.`;
+      const msg = `Hola! Soy de ${currentStore?.business_name || 'mi tienda'} y me interesa el plan Pro con bot de pedidos. Quiero contarles cómo es mi negocio para ver cómo armarlo.`;
       accion = `<a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
                    href="https://wa.me/${WHATSAPP_BRUWAL}?text=${encodeURIComponent(msg)}"
                    target="_blank" rel="noopener">Hablar con un asesor</a>`;
@@ -1888,6 +1921,7 @@ byId('closeConfigModal').addEventListener('click', () => hide(byId('configModal'
 
 byId('closePlanesModal').addEventListener('click', () => hide(byId('planesModal')));
 byId('verPlanesBtn').addEventListener('click', abrirPlanes);
+byId('adherirmeBtn').addEventListener('click', abrirPlanes);
 
 byId('openConfigBtn').addEventListener('click', async () => {
   await cargarConfiguracion();
