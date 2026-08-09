@@ -333,6 +333,68 @@ h1, h2, h3 {
   flex-wrap: wrap;
 }
 
+/* ---- Aviso de prueba gratis / suscripcion ---- */
+.trial-bar {
+  padding: 11px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  flex-wrap: wrap;
+  border-bottom: 1px solid transparent;
+}
+.trial-bar.ok      { background: #E8F6F1; color: #10614F; border-bottom-color: #BFE5DA; }
+.trial-bar.pronto  { background: #FEF3E2; color: #8A5200; border-bottom-color: #F5D9AE; }
+.trial-bar.vencido { background: #FDECEC; color: #97201D; border-bottom-color: #F5C3C1; }
+.trial-bar.activo  { background: #E8F6F1; color: #10614F; border-bottom-color: #BFE5DA; }
+
+.trial-bar button {
+  border: none;
+  border-radius: 7px;
+  padding: 7px 15px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--navy), var(--celeste));
+  color: #fff;
+  transition: transform .2s, box-shadow .2s;
+}
+.trial-bar button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(47,143,224,.35);
+}
+
+/* Bloqueo de acciones cuando la prueba vencio */
+.bloqueado-trial {
+  opacity: .45;
+  cursor: not-allowed !important;
+  filter: grayscale(1);
+}
+
+/* ---- Planes ---- */
+.planes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+.plan-card {
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  transition: border-color .2s, transform .2s;
+}
+.plan-card:hover { border-color: var(--celeste); transform: translateY(-2px); }
+.plan-card .nombre { font-weight: 700; font-size: 17px; color: var(--navy); }
+.plan-card .precio { font-size: 26px; font-weight: 700; margin: 8px 0 2px; color: var(--navy); }
+.plan-card .periodo { font-size: 12px; color: var(--text-mute); margin-bottom: 14px; }
+.plan-card ul { list-style: none; margin: 0 0 18px; font-size: 13px; color: var(--text-mute); line-height: 1.9; }
+.plan-card ul li::before { content: '✓ '; color: var(--stock); font-weight: 700; }
+.plan-card .btn { margin-top: auto; }
+
+@media (max-width: 640px) {
+  .planes-grid { grid-template-columns: 1fr; }
+}
+
 .store-link-bar a {
   color: var(--celeste);
   font-weight: 600;
@@ -744,6 +806,11 @@ tr:last-child td { border-bottom: none; }
     <button class="btn-ghost" id="openConfigBtn" style="padding:5px 10px;font-size:12px;">⚙️ Configurar</button>
   </div>
 
+  <div class="trial-bar hidden" id="trialBar">
+    <span id="trialTexto"></span>
+    <button type="button" id="verPlanesBtn">Ver planes</button>
+  </div>
+
   <div class="app-tabs">
     <div class="wrap-tabs">
       <button class="app-tab active" id="tabDashboard">📊 Dashboard</button>
@@ -907,7 +974,7 @@ tr:last-child td { border-bottom: none; }
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-start;">
-              <button onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
+              <button id="btnRegistrarVenta" onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
               <button onclick="clearBarcodeResult()" class="btn-ghost" style="padding:10px 16px;font-size:14px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Limpiar</button>
             </div>
           </div>
@@ -979,6 +1046,20 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL PLANES -->
+<div class="modal-overlay hidden" id="planesModal">
+  <div class="modal" style="max-width:640px;">
+    <button class="modal-close" id="closePlanesModal">✕</button>
+    <h3 id="planesTitulo">Elegí tu plan</h3>
+    <p id="planesSubtitulo" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;"></p>
+    <div id="planesContenido"></div>
+    <p style="color:var(--text-mute);font-size:11.5px;margin-top:16px;line-height:1.6;">
+      El pago se procesa en Mercado Pago. La activación puede demorar unos minutos;
+      si pasada una hora tu plan sigue sin activarse, escribinos y lo resolvemos.
+    </p>
+  </div>
+</div>
+
 <!-- MODAL CONFIGURACIÓN DE TIENDA -->
 <div class="modal-overlay hidden" id="configModal">
   <div class="modal" style="max-width:700px;">
@@ -1027,6 +1108,169 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null, currentStore = null, products = [], orders = [];
 let charts = {};
+
+// ===================== PLANES Y PRUEBA GRATIS =====================
+// Duracion de la prueba. Tiene que coincidir con el valor en la base de datos
+// (columna trial_ends_at de store_profiles).
+const DIAS_DE_PRUEBA = 15;
+
+// IMPORTANTE: el precio que se muestra aca tiene que coincidir con el monto
+// configurado en el link de Mercado Pago. Si no coinciden, el cliente ve un
+// precio y se le cobra otro.
+// Mientras 'link' no empiece con https, el modal muestra un mensaje de
+// "planes en preparacion" en vez de precios equivocados.
+const PLANES = {
+  basic: {
+    nombre: 'Básico',
+    precio: '',                 // ej: '$25.000'
+    periodo: 'por mes',
+    link: '',                   // pegar aca el link de suscripción de Mercado Pago
+    beneficios: [
+      'Productos ilimitados',
+      'Tienda pública con carrito',
+      'Pedidos por WhatsApp',
+      'Registro de ventas y estadísticas'
+    ]
+  },
+  pro: {
+    nombre: 'Pro',
+    precio: '',                 // ej: '$60.000'
+    periodo: 'por mes',
+    link: '',                   // pegar aca el link de suscripción de Mercado Pago
+    beneficios: [
+      'Todo lo del plan Básico',
+      'Toma de pedidos automática',
+      'Soporte prioritario'
+    ]
+  }
+};
+
+const planesConfigurados = () =>
+  Object.values(PLANES).every(p => p.link.startsWith('https://') && p.precio);
+
+// Planes que dan acceso completo. 'cortesia' = cuenta exenta de pago,
+// sin vencimiento (se asigna a mano en la base de datos).
+const PLANES_ACTIVOS = ['basic', 'pro', 'cortesia'];
+
+const nombrePlan = (plan) =>
+  plan === 'cortesia' ? 'Cortesía' : (PLANES[plan]?.nombre || plan);
+
+// Estado de la suscripcion de la tienda actual.
+// Devuelve: 'activo' (pago o cortesia), 'prueba', 'vencido'
+function estadoSuscripcion() {
+  if (!currentStore) return 'prueba';
+  if (PLANES_ACTIVOS.includes(currentStore.plan)) return 'activo';
+
+  const fin = currentStore.trial_ends_at ? new Date(currentStore.trial_ends_at) : null;
+  if (!fin || isNaN(fin)) return 'prueba';   // sin fecha cargada no bloqueamos a nadie
+  return Date.now() < fin.getTime() ? 'prueba' : 'vencido';
+}
+
+function diasRestantesDePrueba() {
+  if (!currentStore?.trial_ends_at) return null;
+  const fin = new Date(currentStore.trial_ends_at);
+  if (isNaN(fin)) return null;
+  return Math.max(0, Math.ceil((fin.getTime() - Date.now()) / 86400000));
+}
+
+// Puerta unica para toda accion de escritura. Devuelve false y avisa si vencio.
+function puedeOperar() {
+  if (estadoSuscripcion() !== 'vencido') return true;
+  abrirPlanes();
+  return false;
+}
+
+function renderTrialBar() {
+  const bar = byId('trialBar');
+  const texto = byId('trialTexto');
+  if (!bar || !texto || !currentStore) return;
+
+  const estado = estadoSuscripcion();
+  bar.classList.remove('ok', 'pronto', 'vencido', 'activo');
+
+  if (estado === 'activo') {
+    bar.classList.add('activo');
+    texto.textContent = currentStore.plan === 'cortesia'
+      ? '★ Cuenta de cortesía: acceso completo sin cargo, sin vencimiento.'
+      : `✓ Plan ${nombrePlan(currentStore.plan)} activo. ¡Gracias por confiar en BRUWAL!`;
+    byId('verPlanesBtn').textContent = 'Ver mi plan';
+  } else if (estado === 'vencido') {
+    bar.classList.add('vencido');
+    texto.textContent = '🔒 Tu prueba gratis terminó. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás activar un plan. Tu tienda pública sigue online.';
+    byId('verPlanesBtn').textContent = 'Activar mi plan';
+  } else {
+    const dias = diasRestantesDePrueba();
+    bar.classList.add(dias !== null && dias <= 3 ? 'pronto' : 'ok');
+    texto.textContent = dias === null
+      ? '🎁 Estás usando la prueba gratis.'
+      : (dias === 0
+          ? '🎁 Último día de tu prueba gratis.'
+          : `🎁 Prueba gratis: te ${dias === 1 ? 'queda' : 'quedan'} ${dias} día${dias === 1 ? '' : 's'}.`);
+    byId('verPlanesBtn').textContent = 'Ver planes';
+  }
+
+  show(bar);
+  aplicarModoSoloLectura(estado === 'vencido');
+}
+
+// Atenua visualmente lo que no se puede usar. El bloqueo real lo hace
+// puedeOperar() y, sobre todo, las politicas de la base de datos.
+function aplicarModoSoloLectura(bloquear) {
+  const botones = [byId('newProductBtn'), byId('btnRegistrarVenta')].filter(Boolean);
+  botones.forEach(b => b.classList.toggle('bloqueado-trial', bloquear));
+}
+
+function abrirPlanes() {
+  const cont = byId('planesContenido');
+  const estado = estadoSuscripcion();
+
+  byId('planesTitulo').textContent = estado === 'activo' ? 'Tu plan' : 'Elegí tu plan';
+  byId('planesSubtitulo').textContent =
+    currentStore?.plan === 'cortesia' ? 'Tu cuenta tiene acceso completo sin cargo y sin vencimiento. No necesitás hacer nada.'
+    : estado === 'vencido' ? 'Tu prueba gratis terminó. Activá un plan para seguir operando.'
+    : estado === 'activo' ? 'Podés gestionar o cancelar tu suscripción desde Mercado Pago.'
+    : `Estás en la prueba gratis de ${DIAS_DE_PRUEBA} días. Podés activar un plan cuando quieras.`;
+
+  // Una cuenta de cortesia no necesita ver precios ni botones de pago
+  if (currentStore?.plan === 'cortesia') {
+    byId('planesContenido').innerHTML = `
+      <div style="background:#E8F6F1;border:1px solid #BFE5DA;border-radius:var(--radius);padding:24px;text-align:center;">
+        <div style="font-size:34px;margin-bottom:8px;">★</div>
+        <div style="font-weight:700;color:#10614F;">Cuenta de cortesía</div>
+      </div>`;
+    show(byId('planesModal'));
+    return;
+  }
+
+  if (!planesConfigurados()) {
+    cont.innerHTML = `
+      <div style="background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:22px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:8px;">🛠️</div>
+        <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Estamos terminando de configurar los planes</div>
+        <div style="color:var(--text-mute);font-size:13.5px;line-height:1.6;">
+          Escribinos y te pasamos las opciones y el link de pago.
+        </div>
+      </div>`;
+    show(byId('planesModal'));
+    return;
+  }
+
+  cont.innerHTML = '<div class="planes-grid">' + Object.entries(PLANES).map(([id, p]) => `
+    <div class="plan-card">
+      <div class="nombre">${p.nombre}</div>
+      <div class="precio">${escapeHtml(p.precio)}</div>
+      <div class="periodo">${escapeHtml(p.periodo)}</div>
+      <ul>${p.beneficios.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+      <a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
+         href="${p.link}${p.link.includes('?') ? '&' : '?'}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
+         target="_blank" rel="noopener">
+         ${currentStore?.plan === id ? 'Tu plan actual' : 'Suscribirme'}
+      </a>
+    </div>`).join('') + '</div>';
+
+  show(byId('planesModal'));
+}
+// ==================================================================
 
 const byId = (id) => document.getElementById(id);
 const show = (el) => el.classList.remove('hidden');
@@ -1168,6 +1412,8 @@ async function onLoggedIn() {
     byId('storeLinkAnchor').textContent = storeUrl;
     show(byId('storeLinkBar'));
   }
+
+  renderTrialBar();
 
   hide(byId('authView'));
   show(byId('appView'));
@@ -1535,6 +1781,8 @@ function clearBarcodeResult() {
 }
 
 async function confirmBarcodeVenta() {
+  if (!puedeOperar()) return;
+
   const ean = byId('barcodeInput').value.trim();
   const qty = parseInt(byId('barcodeQty').value) || 1;
 
@@ -1591,6 +1839,7 @@ function toggleProductCameraScanner() {
 
 if (byId('newProductBtn')) {
   byId('newProductBtn').addEventListener('click', () => {
+    if (!puedeOperar()) return;
     if (byId('modalTitle')) byId('modalTitle').textContent = 'Nuevo producto';
     if (byId('pName')) byId('pName').value = '';
     if (byId('pDesc')) byId('pDesc').value = '';
@@ -1610,6 +1859,9 @@ byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
 byId('closeContactModal').addEventListener('click', () => hide(byId('contactModal')));
 
 byId('closeConfigModal').addEventListener('click', () => hide(byId('configModal')));
+
+byId('closePlanesModal').addEventListener('click', () => hide(byId('planesModal')));
+byId('verPlanesBtn').addEventListener('click', abrirPlanes);
 
 byId('openConfigBtn').addEventListener('click', async () => {
   await cargarConfiguracion();
@@ -1680,6 +1932,7 @@ byId('pImageFile').addEventListener('change', (e) => {
 
 byId('productForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (!puedeOperar()) return;
 
   let imageUrl = null;
   const file = byId('pImageFile').files?.[0];
@@ -1721,6 +1974,7 @@ byId('productForm').addEventListener('submit', async (e) => {
 });
 
 async function editProduct(id) {
+  if (!puedeOperar()) return;
   const p = products.find(x => x.id === id);
   if (!p) return;
 
@@ -1738,6 +1992,7 @@ async function editProduct(id) {
 }
 
 async function deleteProduct(id) {
+  if (!puedeOperar()) return;
   if (!confirm('¿Eliminar este producto?')) return;
   await sb.from('store_products').delete().eq('id', id);
   await refreshData();
