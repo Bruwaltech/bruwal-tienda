@@ -1844,6 +1844,22 @@ async function cargarConfiguracion() {
   }
 }
 
+// Convierte un texto de ubicacion en coordenadas usando Nominatim (OpenStreetMap, gratis).
+// Devuelve null si no encuentra nada: la tienda simplemente no aparece en el mapa.
+async function buscarCoordenadas(texto) {
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(texto);
+    const res = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+    if (!res.ok) return null;
+    const datos = await res.json();
+    if (!datos.length) return null;
+    return { lat: parseFloat(datos[0].lat), lng: parseFloat(datos[0].lon) };
+  } catch (err) {
+    console.warn('No se pudo geolocalizar la ubicacion:', err);
+    return null;
+  }
+}
+
 async function guardarConfiguracion() {
   if (!currentStore) return;
 
@@ -1877,6 +1893,16 @@ async function guardarConfiguracion() {
   };
 
   if (imageUrl) updateData.image_url = imageUrl;
+
+  // Si cambio la ubicacion, buscamos sus coordenadas para el mapa de la home
+  const ubicacion = updateData.location?.trim();
+  if (ubicacion && ubicacion !== (currentStore.location || '').trim()) {
+    const coords = await buscarCoordenadas(ubicacion);
+    if (coords) {
+      updateData.lat = coords.lat;
+      updateData.lng = coords.lng;
+    }
+  }
 
   const { error } = await sb.from('store_profiles').update(updateData).eq('slug', currentStore.slug);
 
