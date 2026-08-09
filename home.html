@@ -298,7 +298,7 @@
 <header>
   <div class="logo">🛍️ BRUWAL</div>
   <div class="auth-buttons">
-    <button class="btn-auth btn-login" onclick="goToLogin()">Iniciar sesión</button>
+    <button class="btn-auth btn-login" onclick="goToDashboard()">👤 Panel Admin</button>
     <button class="btn-auth btn-register" onclick="goToRegister()">Registrarse</button>
   </div>
 </header>
@@ -458,7 +458,7 @@ function goToStore(event, slug) {
   window.open(`/${slug}`, '_blank');
 }
 
-function goToLogin() {
+function goToDashboard() {
   window.location.href = '/dashboard';
 }
 
