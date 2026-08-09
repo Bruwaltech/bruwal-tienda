@@ -1606,19 +1606,6 @@ if (byId('newProductBtn')) {
 
 byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
 
-// CONTACTO MODAL
-byId('editContactBtn').addEventListener('click', async () => {
-  if (!currentStore) return;
-  const { data: store } = await sb.from('store_profiles').select('phone,website,instagram,location').eq('slug', currentStore.slug).maybeSingle();
-  if (store){
-    byId('contactPhone').value = store.phone || '';
-    byId('contactWeb').value = store.website || '';
-    byId('contactIg').value = store.instagram || '';
-    byId('contactLocation').value = store.location || '';
-  }
-  show(byId('contactModal'));
-});
-
 byId('closeContactModal').addEventListener('click', () => hide(byId('contactModal')));
 
 byId('closeConfigModal').addEventListener('click', () => hide(byId('configModal')));
