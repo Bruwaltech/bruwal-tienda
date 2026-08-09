@@ -139,6 +139,25 @@ h1, h2, h3 {
   background-attachment: fixed;
 }
 
+.volver-inicio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-mute);
+  text-decoration: none;
+  transition: color .2s ease;
+}
+
+.volver-inicio:hover { color: var(--celeste); }
+.volver-inicio i { transition: transform .2s ease; }
+.volver-inicio:hover i { transform: translateX(-3px); }
+
 .auth-card {
   width: 100%;
   max-width: 380px;
@@ -894,6 +913,8 @@ tr:last-child td { border-bottom: none; }
     <div style="margin-top:16px;font-size:12.5px;color:var(--text-mute);text-align:center;line-height:1.5;">
       Al registrarte podrás crear tu tienda online y recibir pedidos directamente.
     </div>
+
+    <a href="/" class="volver-inicio"><i class="fa-solid fa-arrow-left"></i> Volver al inicio</a>
   </div>
 </div>
 
@@ -904,6 +925,7 @@ tr:last-child td { border-bottom: none; }
     <div class="app-user">
       <span id="userBusiness"><b></b></span>
       <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
+      <a href="/" class="btn-ghost" title="Ir al inicio" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-house"></i> Inicio</a>
       <button class="btn-ghost" id="logoutBtn">Cerrar sesión</button>
     </div>
   </header>

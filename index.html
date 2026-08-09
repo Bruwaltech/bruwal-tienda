@@ -350,14 +350,13 @@ let selectedStore = null;
 
 async function init() {
   try {
-    // Evitar loops de redirección
-    if (sessionStorage.getItem('redirecting')) return;
-
+    // Antes esto redirigia al dashboard si habia sesion, lo que impedia
+    // que un vendedor logueado pudiera mirar la home. Ahora se queda:
+    // solo le cambiamos el texto del boton para que vuelva a su panel.
     const { data: { user } } = await sb.auth.getUser();
     if (user) {
-      sessionStorage.setItem('redirecting', 'true');
-      window.location.href = '/dashboard';
-      return;
+      const btn = document.querySelector('.btn-login');
+      if (btn) btn.textContent = '👤 Mi panel';
     }
   } catch (err) {
     console.error('Auth check error:', err);
