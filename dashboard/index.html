@@ -1981,7 +1981,28 @@ async function checkIfPublicStore() {
   return !!store;
 }
 
+function hideLoadingScreen() {
+  const loader = byId('loadingScreen');
+  if (!loader) return;
+  loader.style.opacity = '0';
+  loader.style.transition = 'opacity 0.5s ease-out';
+  setTimeout(() => {
+    loader.style.display = 'none';
+    document.querySelectorAll('main > div, header, .auth-card').forEach((el, i) => {
+      el.style.animation = `fadeIn 0.6s ease-out ${i * 0.1}s forwards`;
+      el.style.opacity = '0';
+    });
+  }, 500);
+}
+
 async function init() {
+  // Timeout obligatorio para ocultar loading screen
+  const timeoutId = setTimeout(() => {
+    console.warn('Init timeout - ocultando loading screen');
+    hideLoadingScreen();
+    if (byId('loginEmail')) byId('loginEmail').focus();
+  }, 5000);
+
   try {
     const isPublicStore = await checkIfPublicStore();
 
@@ -1992,26 +2013,19 @@ async function init() {
 
     const { data: { session } } = await sb.auth.getSession();
 
-    setTimeout(() => {
-      byId('loadingScreen').style.opacity = '0';
-      byId('loadingScreen').style.transition = 'opacity 0.5s ease-out';
-      setTimeout(() => {
-        byId('loadingScreen').style.display = 'none';
-        document.querySelectorAll('main > div, header, .auth-card').forEach((el, i) => {
-          el.style.animation = `fadeIn 0.6s ease-out ${i * 0.1}s forwards`;
-          el.style.opacity = '0';
-        });
-      }, 500);
-    }, 800);
+    setTimeout(() => hideLoadingScreen(), 800);
 
     if (session) {
       await onLoggedIn();
     } else {
-      byId('loginEmail').focus();
+      if (byId('loginEmail')) byId('loginEmail').focus();
     }
+
+    clearTimeout(timeoutId);
   } catch (err) {
     console.error('Error en init:', err);
-    byId('loadingScreen').style.display = 'none';
+    hideLoadingScreen();
+    clearTimeout(timeoutId);
   }
 }
 
