@@ -6,6 +6,7 @@
 <title>BRUWAL - Tu tienda en la palma de tu mano</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -294,6 +295,236 @@
     .search-input-wrapper { flex-direction: column; }
     .filters { grid-template-columns: 1fr; }
   }
+
+  /* ============ AVISO: la IA atiende tus pedidos ============ */
+  .ia-banda {
+    background: linear-gradient(135deg, #0F1E3C 0%, #15294D 45%, #2F8FE0 100%);
+    color: #fff;
+    padding: 72px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Resplandor lento de fondo, apenas perceptible */
+  .ia-banda::before {
+    content: '';
+    position: absolute;
+    width: 620px; height: 620px;
+    top: -280px; right: -160px;
+    background: radial-gradient(circle, rgba(47,143,224,.35) 0%, transparent 70%);
+    animation: respirar 9s ease-in-out infinite;
+  }
+
+  @keyframes respirar {
+    0%, 100% { transform: scale(1);    opacity: .55; }
+    50%      { transform: scale(1.18); opacity: .85; }
+  }
+
+  .ia-inner { max-width: 1100px; margin: 0 auto; position: relative; z-index: 2; }
+
+  .ia-etiqueta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.22);
+    padding: 7px 15px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    margin-bottom: 22px;
+  }
+
+  .ia-etiqueta .punto {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #4ADE80;
+    animation: latir 1.8s ease-in-out infinite;
+  }
+
+  @keyframes latir {
+    0%, 100% { opacity: 1;  box-shadow: 0 0 0 0 rgba(74,222,128,.6); }
+    50%      { opacity: .7; box-shadow: 0 0 0 7px rgba(74,222,128,0); }
+  }
+
+  .ia-banda h2 {
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1.15;
+    margin-bottom: 16px;
+    max-width: 700px;
+  }
+
+  .ia-banda h2 .destacado {
+    background: linear-gradient(90deg, #7DD3FC, #4ADE80);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .ia-banda .bajada {
+    font-size: 17px;
+    opacity: .88;
+    max-width: 560px;
+    line-height: 1.6;
+    margin-bottom: 38px;
+    font-weight: 300;
+  }
+
+  .ia-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+
+  .ia-item {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 12px;
+    padding: 20px;
+    transition: transform .28s ease, background .28s ease, border-color .28s ease;
+  }
+
+  .ia-item:hover {
+    transform: translateY(-4px);
+    background: rgba(255,255,255,.13);
+    border-color: rgba(255,255,255,.3);
+  }
+
+  .ia-item .ico {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.14);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px;
+    margin-bottom: 13px;
+  }
+
+  .ia-item h4 { font-size: 15.5px; font-weight: 700; margin-bottom: 6px; }
+  .ia-item p  { font-size: 13.5px; opacity: .82; line-height: 1.55; font-weight: 300; }
+
+  .ia-acciones { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+
+  .ia-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 15px 28px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    transition: transform .22s ease, box-shadow .22s ease;
+  }
+
+  .ia-btn:hover { transform: translateY(-2px); }
+
+  .ia-btn.wa {
+    background: #25D366;
+    color: #0B3D22;
+    box-shadow: 0 6px 20px rgba(37,211,102,.35);
+  }
+  .ia-btn.wa:hover { box-shadow: 0 10px 26px rgba(37,211,102,.5); }
+
+  .ia-btn.fantasma {
+    background: rgba(255,255,255,.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.3);
+  }
+  .ia-btn.fantasma:hover { background: rgba(255,255,255,.18); }
+
+  /* ---- Ilustración: notebook + celular ---- */
+  .ia-top {
+    display: grid;
+    grid-template-columns: 1.05fr .95fr;
+    gap: 44px;
+    align-items: center;
+    margin-bottom: 46px;
+  }
+
+  .ia-ilustracion { width: 100%; height: auto; max-width: 460px; }
+
+  /* Barras del gráfico en la notebook */
+  .g-barra {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: crecerBarra 3.2s ease-in-out infinite;
+  }
+  .g-barra:nth-of-type(1) { animation-delay: 0s; }
+  .g-barra:nth-of-type(2) { animation-delay: .22s; }
+  .g-barra:nth-of-type(3) { animation-delay: .44s; }
+  .g-barra:nth-of-type(4) { animation-delay: .66s; }
+  .g-barra:nth-of-type(5) { animation-delay: .88s; }
+
+  @keyframes crecerBarra {
+    0%, 100% { transform: scaleY(.45); opacity: .7; }
+    50%      { transform: scaleY(1);   opacity: 1; }
+  }
+
+  /* Mensajes que van apareciendo en el celular */
+  .g-msg {
+    transform-box: fill-box;
+    transform-origin: left center;
+    animation: aparecerMsg 4.5s ease-in-out infinite;
+    opacity: 0;
+  }
+  .g-msg:nth-of-type(1) { animation-delay: .2s; }
+  .g-msg:nth-of-type(2) { animation-delay: 1.1s; }
+  .g-msg:nth-of-type(3) { animation-delay: 2.0s; }
+
+  @keyframes aparecerMsg {
+    0%          { opacity: 0; transform: translateY(7px) scale(.94); }
+    12%, 78%    { opacity: 1; transform: translateY(0)   scale(1); }
+    92%, 100%   { opacity: 0; transform: translateY(-5px) scale(.97); }
+  }
+
+  /* Globo de pedido que flota sobre la notebook */
+  .g-flota { animation: flotar 4s ease-in-out infinite; }
+  @keyframes flotar {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-9px); }
+  }
+
+  /* Anillo del asistente, pulsando */
+  .g-pulso { animation: pulsoAnillo 2.6s ease-out infinite; transform-origin: center; }
+  @keyframes pulsoAnillo {
+    0%   { r: 15; opacity: .55; }
+    100% { r: 32; opacity: 0; }
+  }
+
+  @media(max-width: 900px) {
+    .ia-top { grid-template-columns: 1fr; gap: 30px; }
+    .ia-ilustracion { max-width: 380px; margin: 0 auto; }
+  }
+
+  /* Aparición al llegar con el scroll */
+  .revelar {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity .6s ease-out, transform .6s ease-out;
+  }
+  .revelar.visible { opacity: 1; transform: translateY(0); }
+
+  @media(max-width: 768px) {
+    .ia-banda { padding: 52px 20px; }
+    .ia-banda h2 { font-size: 28px; }
+    .ia-banda .bajada { font-size: 15.5px; }
+    .ia-acciones { flex-direction: column; align-items: stretch; }
+    .ia-btn { justify-content: center; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      transition-duration: .01ms !important;
+    }
+    .revelar { opacity: 1; transform: none; }
+  }
 </style>
 </head>
 <body>
@@ -336,6 +567,117 @@
     </div>
   </div>
 </div>
+
+<section class="ia-banda">
+  <div class="ia-inner">
+
+    <div class="ia-top">
+      <div class="revelar">
+        <div class="ia-etiqueta"><span class="punto"></span> Nuevo · Asistente con IA</div>
+        <h2>¿Y si la IA <span class="destacado">atendiera tus pedidos</span> mientras vos hacés lo demás?</h2>
+        <p class="bajada">
+          Tu negocio sigue vendiendo aunque estés cocinando, atendiendo el mostrador
+          o durmiendo. El asistente responde, toma el pedido y te lo deja listo.
+        </p>
+        <div class="ia-acciones">
+          <a class="ia-btn wa" id="iaWhatsappBtn" href="#" target="_blank" rel="noopener">
+            <i class="fa-brands fa-whatsapp" style="font-size:19px;"></i> Quiero saber más
+          </a>
+          <a class="ia-btn fantasma" href="/dashboard">
+            <i class="fa-solid fa-store"></i> Crear mi tienda gratis
+          </a>
+        </div>
+      </div>
+
+      <div class="revelar">
+        <svg class="ia-ilustracion" viewBox="0 0 420 300" xmlns="http://www.w3.org/2000/svg" role="img"
+             aria-label="Una notebook con estadísticas de ventas y un celular recibiendo pedidos">
+          <!-- Silueta de ciudad al fondo -->
+          <g fill="#fff" opacity=".10">
+            <rect x="6"   y="186" width="30" height="84" rx="2"/>
+            <rect x="42"  y="158" width="24" height="112" rx="2"/>
+            <rect x="72"  y="200" width="28" height="70" rx="2"/>
+            <rect x="330" y="170" width="26" height="100" rx="2"/>
+            <rect x="362" y="196" width="30" height="74" rx="2"/>
+            <rect x="398" y="176" width="18" height="94" rx="2"/>
+          </g>
+
+          <!-- Notebook -->
+          <rect x="55" y="78" width="200" height="128" rx="9" fill="#0C1B33" stroke="rgba(255,255,255,.28)" stroke-width="2"/>
+          <rect x="64" y="87" width="182" height="110" rx="5" fill="#122a4f"/>
+
+          <!-- Grafico dentro de la pantalla -->
+          <line x1="76" y1="180" x2="238" y2="180" stroke="rgba(255,255,255,.22)" stroke-width="1.5"/>
+          <rect class="g-barra" x="86"  y="140" width="17" height="40" rx="3" fill="#4ADE80"/>
+          <rect class="g-barra" x="115" y="118" width="17" height="62" rx="3" fill="#7DD3FC"/>
+          <rect class="g-barra" x="144" y="132" width="17" height="48" rx="3" fill="#4ADE80"/>
+          <rect class="g-barra" x="173" y="104" width="17" height="76" rx="3" fill="#7DD3FC"/>
+          <rect class="g-barra" x="202" y="126" width="17" height="54" rx="3" fill="#4ADE80"/>
+
+          <!-- Titulo simulado en la pantalla -->
+          <rect x="76" y="97" width="62" height="7" rx="3.5" fill="rgba(255,255,255,.5)"/>
+          <rect x="76" y="109" width="38" height="5" rx="2.5" fill="rgba(255,255,255,.25)"/>
+
+          <!-- Base de la notebook -->
+          <path d="M38 206 h234 l12 13 H26 Z" fill="#0C1B33" stroke="rgba(255,255,255,.28)" stroke-width="2" stroke-linejoin="round"/>
+          <rect x="128" y="210" width="54" height="4" rx="2" fill="rgba(255,255,255,.3)"/>
+
+          <!-- Celular -->
+          <rect x="274" y="112" width="82" height="152" rx="13" fill="#0C1B33" stroke="rgba(255,255,255,.3)" stroke-width="2"/>
+          <rect x="281" y="126" width="68" height="126" rx="7" fill="#122a4f"/>
+          <rect x="302" y="118" width="26" height="4" rx="2" fill="rgba(255,255,255,.35)"/>
+
+          <!-- Conversacion en el celular -->
+          <g class="g-msg">
+            <rect x="288" y="136" width="42" height="15" rx="7" fill="rgba(255,255,255,.22)"/>
+          </g>
+          <g class="g-msg">
+            <rect x="304" y="158" width="39" height="15" rx="7" fill="#25D366" opacity=".85"/>
+          </g>
+          <g class="g-msg">
+            <rect x="288" y="180" width="50" height="15" rx="7" fill="rgba(255,255,255,.22)"/>
+          </g>
+
+          <!-- Anillo del asistente -->
+          <circle cx="315" cy="222" r="15" fill="rgba(74,222,128,.18)"/>
+          <circle class="g-pulso" cx="315" cy="222" r="15" fill="none" stroke="#4ADE80" stroke-width="1.5"/>
+          <text x="315" y="228" text-anchor="middle" font-size="14" fill="#4ADE80" font-weight="700">IA</text>
+
+          <!-- Globo de pedido nuevo -->
+          <g class="g-flota">
+            <rect x="248" y="44" width="118" height="34" rx="10" fill="#4ADE80"/>
+            <path d="M268 78 l10 11 4-11 Z" fill="#4ADE80"/>
+            <text x="307" y="66" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0B3D22">Nuevo pedido</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="ia-grid">
+      <div class="ia-item revelar">
+        <div class="ico"><i class="fa-solid fa-comments"></i></div>
+        <h4>Responde a tus clientes</h4>
+        <p>Contesta consultas de precios, stock y horarios las 24 horas, sin que tengas que estar.</p>
+      </div>
+      <div class="ia-item revelar">
+        <div class="ico"><i class="fa-solid fa-clipboard-check"></i></div>
+        <h4>Toma el pedido solo</h4>
+        <p>Arma el pedido conversando, confirma cantidades y te lo pasa listo para preparar.</p>
+      </div>
+      <div class="ia-item revelar">
+        <div class="ico"><i class="fa-solid fa-boxes-stacked"></i></div>
+        <h4>Con tu stock real</h4>
+        <p>No ofrece lo que no tenés: trabaja sobre el stock que cargás en tu panel.</p>
+      </div>
+      <div class="ia-item revelar">
+        <div class="ico"><i class="fa-solid fa-sliders"></i></div>
+        <h4>Armado para tu rubro</h4>
+        <p>Lo configuramos con vos según tu carta, tus tiempos y tu forma de trabajar.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
 
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
@@ -493,6 +835,36 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
+// WhatsApp comercial de BRUWAL
+const WHATSAPP_BRUWAL = '5493413005232';
+
+function configurarAvisoIA() {
+  const btn = document.getElementById('iaWhatsappBtn');
+  if (btn) {
+    const msg = 'Hola! Vi el asistente con IA en la web y quiero saber cómo funcionaría para mi negocio.';
+    btn.href = 'https://wa.me/' + WHATSAPP_BRUWAL + '?text=' + encodeURIComponent(msg);
+  }
+
+  const items = document.querySelectorAll('.revelar');
+
+  // Si el navegador no soporta el observador, mostramos todo sin animar
+  if (!('IntersectionObserver' in window)) {
+    items.forEach(el => el.classList.add('visible'));
+    return;
+  }
+
+  const obs = new IntersectionObserver((entradas) => {
+    entradas.forEach((e, i) => {
+      if (!e.isIntersecting) return;
+      setTimeout(() => e.target.classList.add('visible'), i * 90);
+      obs.unobserve(e.target);
+    });
+  }, { threshold: 0.15 });
+
+  items.forEach(el => obs.observe(el));
+}
+
+configurarAvisoIA();
 init();
 </script>
 </body>
