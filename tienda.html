@@ -122,6 +122,9 @@
   <main class="wrap">
     <div class="store-layout">
       <aside class="store-menu">
+        <div style="text-align:center;margin-bottom:16px;">
+          <img id="storeLogo" src="" style="width:100%;max-width:140px;border-radius:8px;display:none;">
+        </div>
         <div class="store-menu-title">Contacto</div>
         <a class="store-menu-item" id="menuPhone" href="#" target="_blank"><span class="store-menu-item-icon"><i class="fab fa-whatsapp" style="color:#25D366;"></i></span><span>WhatsApp</span></a>
         <a class="store-menu-item hidden" id="menuWeb" href="#" target="_blank"><span class="store-menu-item-icon"><i class="fas fa-globe" style="color:#0066CC;"></i></span><span>Sitio web</span></a>
@@ -215,6 +218,12 @@ async function init(){
 
   byId('storeName').textContent = store.business_name || slug;
   byId('storeDesc').textContent = 'Catálogo online';
+
+  if (store.image_url) {
+    byId('storeLogo').src = store.image_url;
+    byId('storeLogo').style.display = 'block';
+  }
+
   if (store.phone){
     byId('storePhone').href = 'https://wa.me/54' + store.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent('Hola! Vengo de tu tienda online');
     byId('menuPhone').href = byId('storePhone').href;
