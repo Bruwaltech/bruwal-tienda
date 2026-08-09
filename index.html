@@ -1349,7 +1349,9 @@ function renderHourlyChart() {
 }
 
 function renderSalesHistory() {
-  byId('salesHistoryBody').innerHTML = orders.slice(0, 30).map((o, i) => {
+  const el = byId('salesHistoryBody');
+  if (!el) return;
+  el.innerHTML = orders.slice(0, 30).map((o, i) => {
     const items = (Array.isArray(o.items) ? o.items.map(it => (it.qty || 1) + 'x ' + it.name).join(', ') : '');
     const date = new Date(o.created_at).toLocaleDateString('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     return '<tr style="' + (i % 2 === 0 ? 'background:rgba(245,245,245,0.5);' : '') + '">' +
