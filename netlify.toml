@@ -3,7 +3,12 @@
   command = ""
 
 [[redirects]]
-from = "/"
+from = "/dashboard"
+to = "/index.html"
+status = 200
+
+[[redirects]]
+from = "/dashboard/*"
 to = "/index.html"
 status = 200
 
@@ -13,6 +18,6 @@ to = "/tienda.html"
 status = 200
 
 [[redirects]]
-from = "/admin/*"
-to = "/index.html"
+from = "/"
+to = "/home.html"
 status = 200

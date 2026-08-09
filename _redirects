@@ -1,8 +1,9 @@
-# Rutas admin (solo raíz)
-/ /index.html 200
+# Rutas admin
+/dashboard /index.html 200
+/dashboard/* /index.html 200
 
 # Rutas de tienda pública (cualquier slug)
 /:slug /tienda.html 200
 
-# SPA fallback para index.html
-/admin/* /index.html 200
+# Página principal (home)
+/ /home.html 200
