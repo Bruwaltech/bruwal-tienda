@@ -1252,7 +1252,53 @@ tr:last-child td { border-bottom: none; }
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Donde se guarda la sesion depende de "Mantenerme conectado":
+//  - marcado  -> localStorage: sobrevive al cerrar el navegador
+//  - sin marcar -> sessionStorage: muere al cerrar la pestaña
+// Antes la sesion quedaba guardada siempre y la tilde no hacia nada, asi que
+// en un celular prestado la sesion seguia abierta aunque el usuario la
+// hubiera desmarcado a proposito.
+const almacenamientoSesion = {
+  getItem: (k) => {
+    try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); }
+    catch (e) { return null; }
+  },
+  setItem: (k, v) => {
+    try {
+      if (localStorage.getItem('bruwal_remember_me') === 'true') {
+        localStorage.setItem(k, v);
+        sessionStorage.removeItem(k);
+      } else {
+        sessionStorage.setItem(k, v);
+        localStorage.removeItem(k);
+      }
+    } catch (e) {}
+  },
+  removeItem: (k) => {
+    try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch (e) {}
+  }
+};
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: almacenamientoSesion,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
+
+// Los tokens de sesion viajan en el # de la URL despues de confirmar el mail.
+// Si alguien copia esa direccion de la barra y la comparte, esta regalando su
+// sesion: el que la abre entra como el. Los borramos apenas Supabase los leyo.
+function limpiarTokensDeLaUrl() {
+  const h = window.location.hash || '';
+  if (!/access_token=|refresh_token=|provider_token=|type=recovery/.test(h)) return;
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+sb.auth.onAuthStateChange(() => limpiarTokensDeLaUrl());
+setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
 let currentUser = null, currentStore = null, products = [], orders = [];
 let charts = {};
@@ -1491,18 +1537,21 @@ byId('loginForm').addEventListener('submit', async (e) => {
   const password = byId('loginPassword').value;
   const rememberMe = byId('rememberMe').checked;
 
+  // Se define ANTES de entrar: el adaptador de almacenamiento lee esta marca
+  // en el momento en que Supabase guarda la sesion, que ocurre dentro de
+  // signInWithPassword. Si la guardaramos despues, llegaria tarde.
+  if (rememberMe) {
+    localStorage.setItem('bruwal_remember_me', 'true');
+  } else {
+    localStorage.removeItem('bruwal_remember_me');
+  }
+
   const { error } = await sb.auth.signInWithPassword({ email, password });
 
   if (error) {
     byId('authError').textContent = 'Email o contraseña incorrectos';
     show(byId('authError'));
     return;
-  }
-
-  if (rememberMe) {
-    localStorage.setItem('bruwal_remember_me', 'true');
-  } else {
-    localStorage.removeItem('bruwal_remember_me');
   }
 
   await onLoggedIn();
@@ -2495,7 +2544,9 @@ async function init() {
     const isPublicStore = await checkIfPublicStore();
 
     if (isPublicStore) {
-      window.location.href = '/tienda.html' + window.location.search + window.location.hash;
+      // Sin el hash a proposito: ahi viajan los tokens de sesion y no tienen
+      // nada que hacer en la pagina publica de una tienda.
+      window.location.href = '/tienda.html' + window.location.search;
       return;
     }
 
