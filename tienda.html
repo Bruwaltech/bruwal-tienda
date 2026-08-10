@@ -98,6 +98,25 @@
   .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
   .modal-error{background:#FEF2F2;border:1px solid #FCA5A5;color:var(--danger);font-size:13px;padding:12px 14px;border-radius:8px;margin-bottom:16px;}
 
+  /* Vista compacta: cuando hay categorias entran mas productos en pantalla */
+  .products-grid.compacta .product-photo-container{height:132px;}
+  .products-grid.compacta .product-info{padding:10px;}
+  .products-grid.compacta .product-name{font-size:13px;}
+  .products-grid.compacta .product-price{font-size:15px;}
+  .products-grid.compacta .product-description{display:none;}
+  .product-card{cursor:pointer;}
+
+  /* Ficha del producto */
+  .ficha-galeria{background:#F4F8FC;border-radius:12px;overflow:hidden;margin-bottom:14px;}
+  .ficha-principal{width:100%;height:290px;object-fit:contain;display:block;background:#fff;}
+  .ficha-miniaturas{display:flex;gap:7px;padding:9px;overflow-x:auto;}
+  .ficha-mini{width:56px;height:56px;flex-shrink:0;border-radius:8px;object-fit:cover;
+    border:2px solid transparent;cursor:pointer;transition:border-color .2s ease;}
+  .ficha-mini.activa{border-color:var(--celeste);}
+  .ficha-cat{display:inline-block;background:#EAF4FD;color:var(--navy);font-size:11px;
+    font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:9px;}
+  .ficha-precio{font-size:27px;font-weight:700;color:var(--navy);margin:10px 0 4px;}
+
   /* Puntitos para cambiar entre las fotos del producto */
   .foto-puntos{
     position:absolute;left:0;right:0;bottom:7px;display:flex;justify-content:center;
@@ -209,6 +228,14 @@
 </div>
 
 <!-- ============ MODAL: datos de contacto para el pedido ============ -->
+<!-- ============ Ficha del producto ============ -->
+<div class="modal-overlay hidden" id="fichaModal">
+  <div class="modal">
+    <button class="modal-close" id="cerrarFicha">✕</button>
+    <div id="fichaContenido"></div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="checkoutModal">
   <div class="modal">
     <button class="modal-close" id="closeCheckoutModal">✕</button>
@@ -387,6 +414,11 @@ function renderProducts(){
   }
   hide(byId('emptyProducts'));
 
+  // Con categorias cargadas conviene la vista compacta: entran mas productos
+  // en pantalla y el detalle se ve al abrir la ficha.
+  const hayCategorias = new Set(products.map(p => p.category).filter(Boolean)).size > 0;
+  list.classList.toggle('compacta', hayCategorias);
+
   list.innerHTML = filteredProducts.map(p => {
     const qty = cart[p.id] || 0;
     const stockBadge = p.stock > 0
@@ -409,7 +441,7 @@ function renderProducts(){
       : '<div class="product-photo-placeholder">🛒</div>';
     const controls = '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
 
-    return '<div class="product-card">' +
+    return '<div class="product-card" data-id="' + p.id + '">' +
       '<div class="product-photo-container">' + photo + stockBadge + '</div>' +
       '<div class="product-info">' +
       (p.category ? '<div class="product-category">' + escapeHtml(p.category) + '</div>' : '') +
@@ -422,8 +454,9 @@ function renderProducts(){
       '</div>';
   }).join('');
 
-  list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-plus'); cart[id] = (cart[id]||0) + 1; renderProducts(); renderCartBar(); }));
-  list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-minus'); cart[id] = Math.max(0, (cart[id]||0) - 1); if (cart[id] === 0) delete cart[id]; renderProducts(); renderCartBar(); }));
+  // stopPropagation: sin esto, tocar + o − tambien abriria la ficha
+  list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); const id = b.getAttribute('data-plus'); cart[id] = (cart[id]||0) + 1; renderProducts(); renderCartBar(); }));
+  list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); const id = b.getAttribute('data-minus'); cart[id] = Math.max(0, (cart[id]||0) - 1); if (cart[id] === 0) delete cart[id]; renderProducts(); renderCartBar(); }));
 
   // Cambiar de foto sin recargar la tarjeta, para no perder el carrito
   list.querySelectorAll('.foto-punto').forEach(b => {
@@ -435,6 +468,78 @@ function renderProducts(){
       b.classList.add('activo');
     });
   });
+
+  // Abrir la ficha al tocar la tarjeta. Los botones de cantidad y los
+  // puntitos frenan el evento, asi que no abren la ficha sin querer.
+  list.querySelectorAll('.product-card').forEach(c => {
+    c.addEventListener('click', () => abrirFicha(c.dataset.id));
+  });
+}
+
+// ---- Ficha del producto ----
+function fotosDe(p) {
+  return (Array.isArray(p.imagenes) && p.imagenes.length)
+    ? p.imagenes
+    : (p.image_url ? [p.image_url] : []);
+}
+
+function abrirFicha(id) {
+  const p = products.find(x => String(x.id) === String(id));
+  if (!p) return;
+
+  const fotos = fotosDe(p);
+  const qty = cart[p.id] || 0;
+
+  byId('fichaContenido').innerHTML =
+    (fotos.length
+      ? '<div class="ficha-galeria">' +
+          '<img class="ficha-principal" id="fichaPrincipal" src="' + escapeHtml(fotos[0]) + '" alt="">' +
+          (fotos.length > 1
+            ? '<div class="ficha-miniaturas">' + fotos.map((u,i) =>
+                '<img class="ficha-mini' + (i===0?' activa':'') + '" data-url="' + escapeHtml(u) + '" src="' + escapeHtml(u) + '" alt="">'
+              ).join('') + '</div>'
+            : '') +
+        '</div>'
+      : '') +
+    (p.category ? '<span class="ficha-cat">' + escapeHtml(p.category) + '</span>' : '') +
+    '<h3 style="margin:0;">' + escapeHtml(p.name) + '</h3>' +
+    '<div class="ficha-precio">' + money(p.price) + '</div>' +
+    '<div style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
+      (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') + '</div>' +
+    (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
+    (p.stock > 0
+      ? '<div class="qty-controls" style="justify-content:center;margin-bottom:14px;">' +
+          '<button data-fminus="' + p.id + '">−</button>' +
+          '<span class="qty-badge" id="fichaQty">' + qty + '</span>' +
+          '<button data-fplus="' + p.id + '">+</button>' +
+        '</div>' +
+        '<button class="btn-primary" id="fichaAgregar" style="width:100%;">Agregar al carrito</button>'
+      : '<div style="text-align:center;color:var(--danger);font-weight:600;">Sin stock por ahora</div>');
+
+  const ficha = byId('fichaContenido');
+
+  ficha.querySelectorAll('.ficha-mini').forEach(m => {
+    m.addEventListener('click', () => {
+      byId('fichaPrincipal').src = m.dataset.url;
+      ficha.querySelectorAll('.ficha-mini').forEach(o => o.classList.remove('activa'));
+      m.classList.add('activa');
+    });
+  });
+
+  const actualizar = () => { byId('fichaQty').textContent = cart[p.id] || 0; renderCartBar(); };
+  ficha.querySelector('[data-fplus]')?.addEventListener('click', () => { cart[p.id] = (cart[p.id]||0) + 1; actualizar(); });
+  ficha.querySelector('[data-fminus]')?.addEventListener('click', () => {
+    cart[p.id] = Math.max(0, (cart[p.id]||0) - 1);
+    if (cart[p.id] === 0) delete cart[p.id];
+    actualizar();
+  });
+  ficha.querySelector('#fichaAgregar')?.addEventListener('click', () => {
+    if (!cart[p.id]) cart[p.id] = 1;
+    renderProducts(); renderCartBar();
+    hide(byId('fichaModal'));
+  });
+
+  show(byId('fichaModal'));
 }
 
 function loadCategories(){
@@ -517,6 +622,10 @@ byId('openCheckoutBtn').addEventListener('click', () => {
   show(byId('checkoutModal'));
 });
 byId('closeCheckoutModal').addEventListener('click', () => hide(byId('checkoutModal')));
+byId('cerrarFicha').addEventListener('click', () => hide(byId('fichaModal')));
+byId('fichaModal').addEventListener('click', (e) => {
+  if (e.target === byId('fichaModal')) hide(byId('fichaModal'));   // tocar afuera cierra
+});
 
 byId('confirmOrderBtn').addEventListener('click', async () => {
   const errEl = byId('checkoutError');
