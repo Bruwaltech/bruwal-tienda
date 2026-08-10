@@ -2577,69 +2577,112 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
         '<div style="width:82%;height:34%;border:2px solid rgba(255,255,255,.9);border-radius:10px;' +
              'box-shadow:0 0 0 2000px rgba(0,0,0,.32);"></div>' +
       '</div>' +
-      '<div style="position:absolute;left:0;right:0;bottom:8px;text-align:center;color:#fff;' +
+      '<div style="position:absolute;left:0;right:0;bottom:22px;text-align:center;color:#fff;' +
            'font-size:12.5px;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;">' +
         'Llená el recuadro con el código de barras' +
       '</div>' +
+      // Renglon de diagnostico: dice que motor esta usando, a que resolucion
+      // y cuantas lecturas lleva. Sin esto, "no lee" es imposible de depurar.
+      '<div id="' + idZona + '-estado" style="position:absolute;left:0;right:0;bottom:5px;' +
+           'text-align:center;color:rgba(255,255,255,.75);font-size:10.5px;' +
+           'text-shadow:0 1px 2px rgba(0,0,0,.9);pointer-events:none;">iniciando...</div>' +
     '</div>';
 
   const video = byId(idVideo);
+  const estado = byId(idZona + '-estado');
+  const decir = (t) => { if (estado) estado.textContent = t; };
+
+  lectores[clave] = { stream: null, detener: null, zxing: null };
+
+  const alDetectar = (texto) => {
+    if (!texto || !lectores[clave]) return;
+    avisarLectura();
+    cerrarCamara(clave, idContenedor, idZona);
+    alLeer(String(texto).trim());
+  };
 
   try {
-    // Alta resolucion: con 640x480 las barras finas de un EAN-13 no se
-    // distinguen y el lector nunca encuentra nada, sin dar ningun error.
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width:  { ideal: 1920 },
-        height: { ideal: 1080 }
-      }
-    });
-
-    lectores[clave] = { stream, detener: null };
-    video.srcObject = stream;
-    await video.play();
-
-    // Enfoque continuo, si la camara lo soporta
-    try {
-      const pista = stream.getVideoTracks()[0];
-      const caps = pista.getCapabilities ? pista.getCapabilities() : {};
-      if (caps.focusMode && caps.focusMode.includes('continuous')) {
-        await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-      }
-    } catch (e) { /* no todas las camaras lo permiten */ }
-
-    const alDetectar = (texto) => {
-      if (!texto || !lectores[clave]) return;
-      avisarLectura();
-      cerrarCamara(clave, idContenedor, idZona);
-      alLeer(String(texto).trim());
-    };
-
-    // Camino 1: detector nativo del navegador (Android/Chrome). Es mas rapido
-    // y mas preciso que cualquier libreria, porque lo resuelve el sistema.
+    // ---- Camino 1: detector nativo del navegador (Android/Chrome) ----
+    // Lo resuelve el sistema operativo: es mas rapido y mas preciso.
+    let formatosOk = [];
     if ('BarcodeDetector' in window) {
-      const detector = new BarcodeDetector({ formats: FORMATOS_NATIVOS });
+      try {
+        const soportados = await BarcodeDetector.getSupportedFormats();
+        // Solo pedimos los que el dispositivo declara soportar: pasarle uno
+        // que no soporta hace fallar el constructor entero.
+        formatosOk = FORMATOS_NATIVOS.filter(f => soportados.includes(f));
+      } catch (e) { formatosOk = []; }
+    }
+
+    if (formatosOk.length) {
+      // Alta resolucion: con 640x480 las barras finas de un EAN-13 no se
+      // distinguen y el lector nunca encuentra nada, sin dar ningun error.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' },
+                 width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      lectores[clave].stream = stream;
+      video.srcObject = stream;
+      await video.play();
+
+      try {
+        const pista = stream.getVideoTracks()[0];
+        const caps = pista.getCapabilities ? pista.getCapabilities() : {};
+        if (caps.focusMode && caps.focusMode.includes('continuous')) {
+          await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        }
+      } catch (e) {}
+
+      const detector = new BarcodeDetector({ formats: formatosOk });
+      let vueltas = 0, ultimoError = '';
+
       const timer = setInterval(async () => {
         if (!lectores[clave]) return;
+        vueltas++;
         try {
+          if (!video.videoWidth) { decir('Esperando la cámara...'); return; }
           const encontrados = await detector.detect(video);
+          decir('Nativo · ' + video.videoWidth + 'x' + video.videoHeight +
+                ' · ' + vueltas + ' lecturas' + (ultimoError ? ' · ' + ultimoError : ''));
           if (encontrados && encontrados.length) alDetectar(encontrados[0].rawValue);
-        } catch (e) { /* fotograma no listo */ }
-      }, 250);
+        } catch (e) {
+          ultimoError = 'error: ' + (e.name || e.message);
+        }
+      }, 200);
+
       lectores[clave].detener = () => clearInterval(timer);
       return;
     }
 
-    // Camino 2: ZXing sobre el mismo stream
+    // ---- Camino 2: ZXing ----
+    // Le dejamos manejar la camara a la libreria. Antes yo adjuntaba el
+    // stream al video Y ademas se lo pasaba a ZXing, que volvia a
+    // adjuntarlo: esa doble asignacion lo dejaba mirando un video vacio.
     if (typeof ZXing === 'undefined') {
-      throw new Error('No se pudo cargar el lector de códigos.');
+      throw new Error('No se pudo cargar el lector de códigos. Revisá tu conexión.');
     }
-    const lector = new ZXing.BrowserMultiFormatReader(hintsZXing(), 300);
+
+    decir('Iniciando lector...');
+    const lector = new ZXing.BrowserMultiFormatReader(hintsZXing(), 200);
     lectores[clave].zxing = lector;
-    lector.decodeFromStream(stream, video, (resultado) => {
-      if (resultado) alDetectar(resultado.getText());
-    });
+
+    let intentos = 0;
+    await lector.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' },
+                 width: { ideal: 1920 }, height: { ideal: 1080 } } },
+      idVideo,
+      (resultado, err) => {
+        intentos++;
+        if (resultado) { alDetectar(resultado.getText()); return; }
+        if (intentos % 10 === 0) {
+          decir('ZXing · ' + (video.videoWidth || '?') + 'x' + (video.videoHeight || '?') +
+                ' · ' + intentos + ' intentos');
+        }
+      }
+    );
+
+    // Guardamos el stream que abrio ZXing, para poder apagarlo despues
+    if (video.srcObject) lectores[clave].stream = video.srcObject;
 
   } catch (err) {
     cerrarCamara(clave, idContenedor, idZona);
