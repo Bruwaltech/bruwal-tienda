@@ -1874,11 +1874,13 @@ function renderOpciones() {
   }
   show(campo);
 
-  if (grupo) {
-    byId('opcTitulo').innerHTML = escapeHtml(grupo.titulo) +
-      ' <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>';
-    byId('opcAyuda').textContent = grupo.ayuda;
-  }
+  // Titulo neutral cuando no hay grupo: llegamos acá porque el producto ya
+  // tenía opciones cargadas, y dejar el texto del rubro anterior confundiria.
+  const titulo = grupo ? grupo.titulo : 'Opciones y agregados';
+  const ayuda  = grupo ? grupo.ayuda  : 'Poné 0 en el precio si la opción no cuesta nada.';
+  byId('opcTitulo').innerHTML = escapeHtml(titulo) +
+    ' <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>';
+  byId('opcAyuda').textContent = ayuda;
 
   lista.innerHTML = opcionesEnEdicion.length
     ? opcionesEnEdicion.map((o, i) =>
