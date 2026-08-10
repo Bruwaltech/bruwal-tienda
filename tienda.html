@@ -97,6 +97,20 @@
   .btn-primary:hover{background:#1a3a60;transform:scale(1.02);}
   .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
   .modal-error{background:#FEF2F2;border:1px solid #FCA5A5;color:var(--danger);font-size:13px;padding:12px 14px;border-radius:8px;margin-bottom:16px;}
+
+  /* Botones de opción del checkout (entrega y pago) */
+  .opciones{display:flex;flex-wrap:wrap;gap:8px;}
+  .opcion{
+    flex:1 1 auto;min-width:135px;padding:12px 14px;border:1.5px solid #DCE6F0;
+    background:#fff;border-radius:9px;font-family:inherit;font-size:13.5px;
+    font-weight:600;color:#5C6B82;cursor:pointer;text-align:center;
+    transition:border-color .2s ease,background .2s ease,color .2s ease;
+  }
+  .opcion:hover{border-color:var(--celeste);color:var(--celeste);}
+  .opcion.activa{
+    border-color:var(--celeste);background:#EAF4FD;color:var(--navy);
+    box-shadow:0 0 0 3px rgba(47,143,224,.12);
+  }
   .modal-close{float:right;background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-mute);padding:0;width:30px;height:30px;}
 
   .success-screen{text-align:center;padding:80px 20px;}
@@ -190,6 +204,25 @@
     <div id="checkoutError" class="modal-error hidden"></div>
     <div class="field"><label>Tu nombre</label><input type="text" id="custName" required></div>
     <div class="field"><label>Tu teléfono (para coordinar)</label><input type="tel" id="custPhone" required></div>
+
+    <div class="field">
+      <label>¿Cómo lo recibís?</label>
+      <div class="opciones" id="opcionesEntrega">
+        <button type="button" class="opcion activa" data-valor="Retiro por el local">🏪 Retiro por el local</button>
+        <button type="button" class="opcion" data-valor="Envío a domicilio">🛵 Envío a domicilio</button>
+      </div>
+    </div>
+
+    <div class="field hidden" id="campoDireccion">
+      <label>Dirección de entrega</label>
+      <input type="text" id="custDireccion" placeholder="Calle, número, piso, referencias">
+    </div>
+
+    <div class="field">
+      <label>¿Cómo pagás?</label>
+      <div class="opciones" id="opcionesPago"></div>
+    </div>
+
     <button class="btn-primary" id="confirmOrderBtn">Confirmar pedido</button>
   </div>
 </div>
@@ -318,6 +351,8 @@ async function init(){
     byId('menuResenas').href = linkResenas;
   }
 
+  armarOpcionesDeCheckout(store);
+
   const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
   products = prods || [];
 
@@ -401,6 +436,47 @@ function renderCartBar(){
   byId('cartTotal').textContent = money(total);
 }
 
+// ---- Opciones de entrega y pago ----
+const MEDIOS_DE_PAGO_POR_DEFECTO = ['Efectivo', 'Débito', 'Crédito', 'Transferencia'];
+
+// Deja una sola opción activa dentro de un grupo
+function elegirOpcion(grupo, boton) {
+  grupo.querySelectorAll('.opcion').forEach(b => b.classList.remove('activa'));
+  boton.classList.add('activa');
+}
+
+function valorElegido(idGrupo) {
+  const activo = byId(idGrupo)?.querySelector('.opcion.activa');
+  return activo ? activo.dataset.valor : null;
+}
+
+function armarOpcionesDeCheckout(store) {
+  // Entrega
+  const entrega = byId('opcionesEntrega');
+  entrega.querySelectorAll('.opcion').forEach(b => {
+    b.addEventListener('click', () => {
+      elegirOpcion(entrega, b);
+      // La dirección solo se pide si eligió envío
+      byId('campoDireccion').classList.toggle('hidden', b.dataset.valor !== 'Envío a domicilio');
+    });
+  });
+
+  // Pago: el vendedor puede limitar los medios que acepta
+  const medios = (Array.isArray(store?.medios_pago) && store.medios_pago.length)
+    ? store.medios_pago
+    : MEDIOS_DE_PAGO_POR_DEFECTO;
+
+  const iconos = { 'Efectivo': '💵', 'Débito': '💳', 'Crédito': '💳', 'Transferencia': '🏦', 'Mercado Pago': '🔵' };
+  const pago = byId('opcionesPago');
+  pago.innerHTML = medios.map((m, i) =>
+    '<button type="button" class="opcion' + (i === 0 ? ' activa' : '') + '" data-valor="' + escapeHtml(m) + '">' +
+    (iconos[m] || '•') + ' ' + escapeHtml(m) + '</button>').join('');
+
+  pago.querySelectorAll('.opcion').forEach(b => {
+    b.addEventListener('click', () => elegirOpcion(pago, b));
+  });
+}
+
 byId('openCheckoutBtn').addEventListener('click', () => {
   byId('checkoutError').classList.add('hidden');
   show(byId('checkoutModal'));
@@ -414,6 +490,23 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   const phone = byId('custPhone').value.trim();
   if (!name || !phone){
     errEl.textContent = 'Completá tu nombre y teléfono.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const entrega = valorElegido('opcionesEntrega');
+  const medioDePago = valorElegido('opcionesPago');
+  const direccion = byId('custDireccion').value.trim();
+
+  if (entrega === 'Envío a domicilio' && !direccion){
+    errEl.textContent = 'Escribí la dirección donde querés recibir el pedido.';
+    errEl.classList.remove('hidden');
+    byId('custDireccion').focus();
+    return;
+  }
+
+  if (!medioDePago){
+    errEl.textContent = 'Elegí cómo vas a pagar.';
     errEl.classList.remove('hidden');
     return;
   }
@@ -451,6 +544,11 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     detalles += '📱 *Teléfono:* ' + phone + '\n\n';
     detalles += '*Productos:*\n' + listaProductos;
     detalles += '\n💰 *Total:* $' + total.toLocaleString('es-AR');
+
+    detalles += '\n\n' + (entrega === 'Envío a domicilio' ? '🛵' : '🏪') + ' *Entrega:* ' + entrega;
+    if (entrega === 'Envío a domicilio') detalles += '\n📍 *Dirección:* ' + direccion;
+    detalles += '\n💳 *Paga con:* ' + medioDePago;
+
     if (store.mensaje_envio) detalles += '\n\n📝 ' + store.mensaje_envio;
 
     const storePhone = store.phone.replace(/\D/g,'');

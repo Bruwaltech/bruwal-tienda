@@ -1342,6 +1342,14 @@ tr:last-child td { border-bottom: none; }
             una búsqueda por tu nombre y ubicación.
           </small>
         </div>
+        <div class="field">
+          <label>Medios de pago que aceptás</label>
+          <div id="configMediosPago" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"></div>
+          <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Tus clientes van a elegir entre estos al hacer el pedido. Si no marcás
+            ninguno se muestran todos.
+          </small>
+        </div>
         <button type="button" onclick="guardarConfiguracion()" class="btn btn-primary" style="width:100%;">Guardar cambios</button>
       </form>
     </div>
@@ -2758,6 +2766,22 @@ byId('clientSearch').addEventListener('input', (e) => {
 });
 
 // PERFIL
+// Medios de pago que puede aceptar una tienda
+const MEDIOS_DE_PAGO = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
+
+function renderMediosDePago(elegidos) {
+  const marcados = Array.isArray(elegidos) && elegidos.length ? elegidos : MEDIOS_DE_PAGO;
+  byId('configMediosPago').innerHTML = MEDIOS_DE_PAGO.map(m =>
+    '<label class="chip-cat" style="cursor:pointer;padding-left:11px;">' +
+    '<input type="checkbox" value="' + escapeHtml(m) + '" ' +
+    (marcados.includes(m) ? 'checked' : '') + ' style="margin:0;cursor:pointer;"> ' +
+    escapeHtml(m) + '</label>').join('');
+}
+
+function mediosDePagoElegidos() {
+  return [...byId('configMediosPago').querySelectorAll('input:checked')].map(i => i.value);
+}
+
 async function cargarConfiguracion() {
   if (!currentStore) return;
 
@@ -2771,6 +2795,7 @@ async function cargarConfiguracion() {
     byId('configWeb').value = store.website || '';
     byId('configIg').value = store.instagram || '';
     byId('configGoogle').value = store.google_url || '';
+    renderMediosDePago(store.medios_pago);
 
     if (store.image_url) {
       byId('configLogoPreview').style.backgroundImage = `url(${store.image_url})`;
@@ -2830,7 +2855,8 @@ async function guardarConfiguracion() {
     location: byId('configLocation').value,
     website: byId('configWeb').value,
     instagram: byId('configIg').value,
-    google_url: byId('configGoogle').value.trim() || null
+    google_url: byId('configGoogle').value.trim() || null,
+    medios_pago: mediosDePagoElegidos()
   };
 
   if (imageUrl) updateData.image_url = imageUrl;
