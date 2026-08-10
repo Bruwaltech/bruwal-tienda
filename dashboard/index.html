@@ -147,6 +147,48 @@ h1, h2, h3 {
   background-attachment: fixed;
 }
 
+/* ---- Categorías ---- */
+.chip-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #EAF4FD;
+  border: 1px solid #C9DBEC;
+  color: var(--navy);
+  border-radius: 999px;
+  padding: 7px 8px 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chip-cat button {
+  border: none;
+  background: rgba(21,41,77,.12);
+  color: var(--navy);
+  width: 19px; height: 19px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s ease;
+}
+.chip-cat button:hover { background: var(--danger); color: #fff; }
+
+.chip-sug {
+  background: none;
+  border: 1px dashed var(--line);
+  color: var(--text-mute);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .2s ease;
+}
+.chip-sug:hover { border-color: var(--celeste); color: var(--celeste); border-style: solid; }
+
 /* Boton que se comporta como enlace, para acciones secundarias del login */
 .link-suave {
   display: block;
@@ -1072,6 +1114,7 @@ tr:last-child td { border-bottom: none; }
     <div id="productosView" class="hidden">
       <div class="toolbar">
         <button class="btn-action primary" id="newProductBtn">+ Nuevo producto</button>
+        <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código..." autofocus>
       </div>
       <div id="scannerStatus" class="scanner-status hidden"></div>
@@ -1209,7 +1252,11 @@ tr:last-child td { border-bottom: none; }
         <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
         <div class="field"><label>Precio</label><input type="number" id="pPrice" min="0" step="0.01" required></div>
         <div class="field"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
-        <div class="field"><label>Categoría</label><input type="text" id="pCategory"></div>
+        <div class="field">
+          <label>Categoría</label>
+          <input type="text" id="pCategory" list="listaCategoriasProducto" placeholder="Elegí una o escribí la tuya" autocomplete="off">
+          <datalist id="listaCategoriasProducto"></datalist>
+        </div>
         <div class="field"><label>EAN / Código de barras</label><div style="display:flex;gap:8px;"><input type="text" id="pEan" placeholder="Se completa al escanear" style="flex:1;"><button type="button" onclick="toggleProductCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 16px;font-size:14px;">📷</button></div></div>
         <div id="productCameraScanner" class="hidden" style="margin-bottom:12px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
           <div id="qr-reader-product" style="width:100%;height:250px;"></div>
@@ -1222,6 +1269,33 @@ tr:last-child td { border-bottom: none; }
         <img id="previewImg" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">
       </div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL CATEGORÍAS -->
+<div class="modal-overlay hidden" id="categoriasModal">
+  <div class="modal" style="max-width:560px;">
+    <button class="modal-close" id="closeCategoriasModal">✕</button>
+    <h3><i class="fa-solid fa-tags" style="color:var(--celeste);"></i> Categorías de tu tienda</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;line-height:1.6;">
+      Con esto tus clientes filtran el catálogo. Por ejemplo, una tienda de
+      electrónica puede tener Teléfonos, Auriculares y Cargadores.
+    </p>
+
+    <div style="display:flex;gap:8px;margin-bottom:18px;">
+      <input type="text" id="nuevaCategoria" placeholder="Ej: Auriculares" maxlength="40"
+             style="flex:1;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+      <button type="button" id="agregarCategoriaBtn" class="btn btn-primary" style="width:auto;padding:11px 20px;">Agregar</button>
+    </div>
+
+    <div id="sugerenciasCategorias" style="margin-bottom:18px;"></div>
+
+    <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px;">
+      Tus categorías
+    </div>
+    <div id="listaCategorias" style="display:flex;flex-wrap:wrap;gap:8px;min-height:44px;"></div>
+
+    <button type="button" id="guardarCategoriasBtn" class="btn btn-primary" style="width:100%;margin-top:22px;">Guardar</button>
   </div>
 </div>
 
@@ -1574,6 +1648,133 @@ byId('tabLogin').addEventListener('click', () => {
   hide(byId('authError'));
 });
 
+// ================= CATEGORÍAS =================
+// Se guardan en store_profiles.categorias (jsonb). No hace falta una tabla
+// aparte: son pocas y siempre se leen junto con la tienda.
+
+// Sugerencias segun lo que el vendedor escribio como rubro
+const CATEGORIAS_SUGERIDAS = {
+  electronica: { claves: ['electr', 'tecno', 'celular', 'compu', 'informat'],
+    lista: ['Teléfonos', 'Auriculares', 'Cargadores', 'Fundas', 'Parlantes', 'Smartwatch', 'Cables', 'Accesorios'] },
+  suplementos: { claves: ['suplement', 'nutric', 'proteina', 'fitness', 'gimnasio'],
+    lista: ['Proteínas', 'Creatina', 'Vitaminas', 'Pre-entreno', 'Barritas', 'Aminoácidos'] },
+  comida: { claves: ['hamburgues', 'comida', 'rotiser', 'pizz', 'delivery', 'resto', 'cocina'],
+    lista: ['Hamburguesas', 'Pizzas', 'Empanadas', 'Guarniciones', 'Bebidas', 'Postres', 'Promos'] },
+  kiosco: { claves: ['kiosco', 'kiosko', 'almacen', 'despensa', 'maxikiosco'],
+    lista: ['Golosinas', 'Bebidas', 'Snacks', 'Galletitas', 'Cigarrillos', 'Lácteos'] },
+  indumentaria: { claves: ['ropa', 'indument', 'moda', 'textil', 'boutique'],
+    lista: ['Remeras', 'Pantalones', 'Camperas', 'Calzado', 'Buzos', 'Accesorios'] },
+  perfumeria: { claves: ['perfum', 'cosmet', 'belleza', 'farmac'],
+    lista: ['Perfumes', 'Cremas', 'Maquillaje', 'Cuidado capilar', 'Higiene'] },
+  ferreteria: { claves: ['ferret', 'construc', 'herramient', 'pintur'],
+    lista: ['Herramientas', 'Tornillería', 'Pinturas', 'Electricidad', 'Plomería'] },
+  mascotas: { claves: ['mascota', 'petshop', 'veterin', 'animal'],
+    lista: ['Alimento perro', 'Alimento gato', 'Juguetes', 'Higiene', 'Accesorios'] }
+};
+
+const CATEGORIAS_GENERICAS = ['Destacados', 'Ofertas', 'Novedades', 'Más vendidos'];
+
+let categoriasEnEdicion = [];
+
+function sugerenciasParaMiRubro() {
+  const rubro = ((currentStore?.description || '') + ' ' + (currentStore?.business_name || '')).toLowerCase();
+  for (const g of Object.values(CATEGORIAS_SUGERIDAS)) {
+    if (g.claves.some(k => rubro.includes(k))) return g.lista;
+  }
+  return CATEGORIAS_GENERICAS;
+}
+
+function categoriasDeLaTienda() {
+  const guardadas = Array.isArray(currentStore?.categorias) ? currentStore.categorias : [];
+  if (guardadas.length) return guardadas;
+  // Sin lista propia todavia: usamos las que ya escribio en sus productos
+  return [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+}
+
+function renderCategorias() {
+  const cont = byId('listaCategorias');
+  cont.innerHTML = categoriasEnEdicion.length
+    ? categoriasEnEdicion.map((c, i) =>
+        '<span class="chip-cat">' + escapeHtml(c) +
+        '<button type="button" data-i="' + i + '" title="Quitar">✕</button></span>').join('')
+    : '<span style="color:var(--text-mute);font-size:13px;">Todavía no cargaste ninguna.</span>';
+
+  cont.querySelectorAll('button[data-i]').forEach(b => {
+    b.addEventListener('click', () => {
+      categoriasEnEdicion.splice(+b.dataset.i, 1);
+      renderCategorias();
+    });
+  });
+
+  const pendientes = sugerenciasParaMiRubro()
+    .filter(s => !categoriasEnEdicion.some(c => c.toLowerCase() === s.toLowerCase()));
+
+  byId('sugerenciasCategorias').innerHTML = pendientes.length
+    ? '<div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:9px;">Sugeridas para tu rubro — tocá para agregar</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:7px;">' +
+      pendientes.map(s => '<button type="button" class="chip-sug" data-sug="' + escapeHtml(s) + '">+ ' + escapeHtml(s) + '</button>').join('') +
+      '</div>'
+    : '';
+
+  byId('sugerenciasCategorias').querySelectorAll('[data-sug]').forEach(b => {
+    b.addEventListener('click', () => agregarCategoria(b.dataset.sug));
+  });
+}
+
+// Llena el desplegable del alta de producto con las categorias de la tienda
+function refrescarListaDeCategorias() {
+  const dl = byId('listaCategoriasProducto');
+  if (!dl) return;
+  dl.innerHTML = categoriasDeLaTienda()
+    .map(c => '<option value="' + escapeHtml(c) + '">').join('');
+}
+
+function agregarCategoria(nombre) {
+  const limpio = (nombre || '').trim();
+  if (!limpio) return;
+  if (categoriasEnEdicion.some(c => c.toLowerCase() === limpio.toLowerCase())) return;  // sin repetidas
+  categoriasEnEdicion.push(limpio);
+  renderCategorias();
+}
+
+byId('gestionarCategoriasBtn').addEventListener('click', () => {
+  categoriasEnEdicion = [...categoriasDeLaTienda()];
+  renderCategorias();
+  byId('nuevaCategoria').value = '';
+  show(byId('categoriasModal'));
+});
+
+byId('closeCategoriasModal').addEventListener('click', () => hide(byId('categoriasModal')));
+
+byId('agregarCategoriaBtn').addEventListener('click', () => {
+  agregarCategoria(byId('nuevaCategoria').value);
+  byId('nuevaCategoria').value = '';
+  byId('nuevaCategoria').focus();
+});
+
+byId('nuevaCategoria').addEventListener('keypress', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  byId('agregarCategoriaBtn').click();
+});
+
+byId('guardarCategoriasBtn').addEventListener('click', async () => {
+  if (!currentStore || !puedeOperar()) return;
+
+  const { error } = await sb.from('store_profiles')
+    .update({ categorias: categoriasEnEdicion })
+    .eq('slug', currentStore.slug);
+
+  if (error) {
+    alert('No se pudieron guardar las categorías: ' + error.message);
+    return;
+  }
+
+  currentStore.categorias = [...categoriasEnEdicion];
+  refrescarListaDeCategorias();
+  hide(byId('categoriasModal'));
+});
+
 // ---------- Recuperar contraseña ----------
 
 byId('olvideBtn').addEventListener('click', () => {
@@ -1842,6 +2043,7 @@ async function refreshData() {
   renderOrders();
   renderClientes();
   renderVentas();
+  refrescarListaDeCategorias();
 }
 
 function renderDashboard() {
