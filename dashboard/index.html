@@ -147,6 +147,24 @@ h1, h2, h3 {
   background-attachment: fixed;
 }
 
+/* Boton que se comporta como enlace, para acciones secundarias del login */
+.link-suave {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 4px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-mute);
+  cursor: pointer;
+  text-align: center;
+  transition: color .2s ease;
+}
+.link-suave:hover { color: var(--celeste); }
+
 .volver-inicio {
   display: flex;
   align-items: center;
@@ -903,6 +921,28 @@ tr:last-child td { border-bottom: none; }
         <label style="margin:0;">Mantenerme conectado</label>
       </div>
       <button type="submit" class="btn btn-primary">Ingresar</button>
+      <button type="button" id="olvideBtn" class="link-suave">¿Olvidaste tu contraseña?</button>
+    </form>
+
+    <!-- Pedir el mail de recuperacion -->
+    <form id="recuperarForm" class="hidden">
+      <div style="font-size:13.5px;color:var(--text-mute);line-height:1.6;margin-bottom:16px;">
+        Escribí el email con el que te registraste y te mandamos un link para
+        crear una contraseña nueva.
+      </div>
+      <div class="field"><label>Email</label><input type="email" id="recuperarEmail" required></div>
+      <button type="submit" class="btn btn-primary">Enviarme el link</button>
+      <button type="button" id="volverAlLoginBtn" class="link-suave">← Volver a ingresar</button>
+    </form>
+
+    <!-- Definir la contraseña nueva, al volver desde el mail -->
+    <form id="nuevaClaveForm" class="hidden">
+      <div style="font-size:13.5px;color:var(--text-mute);line-height:1.6;margin-bottom:16px;">
+        Ya validamos tu identidad. Elegí tu contraseña nueva.
+      </div>
+      <div class="field"><label>Contraseña nueva</label><input type="password" id="nuevaClave" minlength="6" required></div>
+      <div class="field"><label>Repetila</label><input type="password" id="nuevaClave2" minlength="6" required></div>
+      <button type="submit" class="btn btn-primary">Guardar contraseña</button>
     </form>
 
     <form id="registerForm" class="hidden">
@@ -1297,7 +1337,15 @@ function limpiarTokensDeLaUrl() {
   history.replaceState(null, '', window.location.pathname + window.location.search);
 }
 
-sb.auth.onAuthStateChange(() => limpiarTokensDeLaUrl());
+// Se lee ANTES de limpiar nada: es la unica señal de que el usuario viene
+// del mail de recuperacion y no de un ingreso normal.
+let enRecuperacion = /type=recovery/.test(window.location.hash || '');
+
+sb.auth.onAuthStateChange((evento) => {
+  if (evento === 'PASSWORD_RECOVERY') enRecuperacion = true;
+  limpiarTokensDeLaUrl();
+});
+
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
 let currentUser = null, currentStore = null, products = [], orders = [];
@@ -1519,8 +1567,84 @@ const escapeHtml = (str) => {
 byId('tabLogin').addEventListener('click', () => {
   byId('tabLogin').classList.add('active');
   byId('tabRegister').classList.remove('active');
-  show(byId('loginForm')); hide(byId('registerForm'));
+  show(byId('loginForm'));
+  hide(byId('registerForm'));
+  hide(byId('recuperarForm'));
+  hide(byId('nuevaClaveForm'));
   hide(byId('authError'));
+});
+
+// ---------- Recuperar contraseña ----------
+
+byId('olvideBtn').addEventListener('click', () => {
+  hide(byId('loginForm'));
+  hide(byId('registerForm'));
+  hide(byId('authError'));
+  show(byId('recuperarForm'));
+  byId('recuperarEmail').value = byId('loginEmail').value.trim();
+  byId('recuperarEmail').focus();
+});
+
+byId('volverAlLoginBtn').addEventListener('click', () => byId('tabLogin').click());
+
+byId('recuperarForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = byId('recuperarEmail').value.trim();
+  const boton = e.target.querySelector('button[type=submit]');
+  boton.disabled = true;
+  boton.textContent = 'Enviando...';
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/dashboard'
+  });
+
+  boton.disabled = false;
+  boton.textContent = 'Enviarme el link';
+
+  // A proposito no distinguimos si el mail existe o no: decirlo permitiria
+  // averiguar quien tiene cuenta en la plataforma.
+  byId('authError').innerHTML = error
+    ? '<span style="color:var(--danger);">No se pudo enviar el mail. Probá de nuevo en un rato.</span>'
+    : '<span style="color:var(--stock);">Listo. Si ese email tiene una cuenta, te va a llegar el link en unos minutos. Revisá también el correo no deseado.</span>';
+  show(byId('authError'));
+});
+
+// Al volver desde el mail, Supabase deja una sesion valida. Sin esto, el
+// usuario entraria directo al panel y nunca podria cambiar la contraseña.
+function mostrarFormularioDeNuevaClave() {
+  hide(byId('appView'));
+  show(byId('authView'));
+  hide(byId('loginForm'));
+  hide(byId('registerForm'));
+  hide(byId('recuperarForm'));
+  hide(byId('authError'));
+  show(byId('nuevaClaveForm'));
+  byId('nuevaClave').focus();
+}
+
+byId('nuevaClaveForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const c1 = byId('nuevaClave').value;
+  const c2 = byId('nuevaClave2').value;
+
+  if (c1 !== c2) {
+    byId('authError').innerHTML = '<span style="color:var(--danger);">Las contraseñas no coinciden.</span>';
+    show(byId('authError'));
+    return;
+  }
+
+  const { error } = await sb.auth.updateUser({ password: c1 });
+
+  if (error) {
+    byId('authError').innerHTML = '<span style="color:var(--danger);">' + escapeHtml(error.message) + '</span>';
+    show(byId('authError'));
+    return;
+  }
+
+  enRecuperacion = false;
+  hide(byId('nuevaClaveForm'));
+  alert('✓ Contraseña actualizada. Ya podés usarla para entrar.');
+  await onLoggedIn();
 });
 
 byId('tabRegister').addEventListener('click', () => {
@@ -2554,7 +2678,11 @@ async function init() {
 
     setTimeout(() => hideLoadingScreen(), 800);
 
-    if (session) {
+    if (enRecuperacion) {
+      // Viene del mail: tiene sesion valida, pero lo que necesita es elegir
+      // una contraseña nueva, no entrar al panel.
+      mostrarFormularioDeNuevaClave();
+    } else if (session) {
       await onLoggedIn();
     } else {
       if (byId('loginEmail')) byId('loginEmail').focus();
