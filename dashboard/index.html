@@ -2561,6 +2561,63 @@ function hintsZXing() {
   return mapa;
 }
 
+// Linterna, zoom y enfoque. El motor de lectura ya esta probado contra un
+// EAN-13 generado: lo que falla en la practica es la nitidez de la foto.
+function configurarControlesDeCamara(stream, idZona, video) {
+  if (!stream) return;
+  const pista = stream.getVideoTracks()[0];
+  if (!pista) return;
+
+  const caps = pista.getCapabilities ? pista.getCapabilities() : {};
+  const btnLuz = byId(idZona + '-luz');
+  const btnMas = byId(idZona + '-mas');
+  const btnMenos = byId(idZona + '-menos');
+
+  // Linterna: en un local con poca luz es lo que mas mejora la lectura
+  if (caps.torch && btnLuz) {
+    let prendida = false;
+    btnLuz.addEventListener('click', async () => {
+      prendida = !prendida;
+      try {
+        await pista.applyConstraints({ advanced: [{ torch: prendida }] });
+        btnLuz.style.background = prendida ? '#F59E0B' : 'rgba(0,0,0,.55)';
+      } catch (e) { prendida = !prendida; }
+    });
+  } else if (btnLuz) {
+    btnLuz.style.display = 'none';
+  }
+
+  // Zoom: acercar hace que el codigo ocupe mas pixeles, que es justo
+  // lo que necesita el decodificador
+  if (caps.zoom && btnMas && btnMenos) {
+    let z = pista.getSettings().zoom || caps.zoom.min || 1;
+    const paso = ((caps.zoom.max - caps.zoom.min) / 8) || 0.5;
+    const aplicar = async (nuevo) => {
+      z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, nuevo));
+      try { await pista.applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) {}
+    };
+    btnMas.addEventListener('click', () => aplicar(z + paso));
+    btnMenos.addEventListener('click', () => aplicar(z - paso));
+  } else {
+    if (btnMas) btnMas.style.display = 'none';
+    if (btnMenos) btnMenos.style.display = 'none';
+  }
+
+  // Enfoque continuo, y al tocar la pantalla lo forzamos de nuevo
+  const enfocar = async () => {
+    try {
+      if (caps.focusMode && caps.focusMode.includes('continuous')) {
+        await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      }
+    } catch (e) {}
+  };
+  enfocar();
+  if (video) {
+    video.style.pointerEvents = 'auto';
+    video.addEventListener('click', enfocar);
+  }
+}
+
 async function abrirCamara(clave, idContenedor, idZona, alLeer) {
   const cont = byId(idContenedor);
   const zona = byId(idZona);
@@ -2586,6 +2643,19 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
       '<div id="' + idZona + '-estado" style="position:absolute;left:0;right:0;bottom:5px;' +
            'text-align:center;color:rgba(255,255,255,.75);font-size:10.5px;' +
            'text-shadow:0 1px 2px rgba(0,0,0,.9);pointer-events:none;">iniciando...</div>' +
+      // Controles de camara: el motor de lectura ya esta probado, lo que
+      // falla es la nitidez. Estos tres botones atacan eso.
+      '<div style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:6px;">' +
+        '<button type="button" id="' + idZona + '-luz" title="Linterna" ' +
+          'style="width:38px;height:38px;border-radius:50%;border:none;background:rgba(0,0,0,.55);' +
+          'color:#fff;font-size:16px;cursor:pointer;">🔦</button>' +
+        '<button type="button" id="' + idZona + '-mas" title="Acercar" ' +
+          'style="width:38px;height:38px;border-radius:50%;border:none;background:rgba(0,0,0,.55);' +
+          'color:#fff;font-size:18px;cursor:pointer;font-weight:700;">+</button>' +
+        '<button type="button" id="' + idZona + '-menos" title="Alejar" ' +
+          'style="width:38px;height:38px;border-radius:50%;border:none;background:rgba(0,0,0,.55);' +
+          'color:#fff;font-size:18px;cursor:pointer;font-weight:700;">−</button>' +
+      '</div>' +
     '</div>';
 
   const video = byId(idVideo);
@@ -2625,13 +2695,7 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
       video.srcObject = stream;
       await video.play();
 
-      try {
-        const pista = stream.getVideoTracks()[0];
-        const caps = pista.getCapabilities ? pista.getCapabilities() : {};
-        if (caps.focusMode && caps.focusMode.includes('continuous')) {
-          await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-        }
-      } catch (e) {}
+      configurarControlesDeCamara(stream, idZona, video);
 
       const detector = new BarcodeDetector({ formats: formatosOk });
       let vueltas = 0, ultimoError = '';
@@ -2682,7 +2746,10 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
     );
 
     // Guardamos el stream que abrio ZXing, para poder apagarlo despues
-    if (video.srcObject) lectores[clave].stream = video.srcObject;
+    if (video.srcObject) {
+      lectores[clave].stream = video.srcObject;
+      configurarControlesDeCamara(video.srcObject, idZona, video);
+    }
 
   } catch (err) {
     cerrarCamara(clave, idContenedor, idZona);
