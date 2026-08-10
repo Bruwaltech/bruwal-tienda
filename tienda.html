@@ -211,7 +211,10 @@
         <a class="store-menu-item hidden" id="menuResenas" href="#" target="_blank" rel="noopener"><span class="store-menu-item-icon"><i class="fas fa-star" style="color:#FBBC04;"></i></span><span>Reseñas en Google</span></a>
       </aside>
       <div>
-        <div id="productsList"></div>
+        <!-- La clase products-grid faltaba: toda la CSS de grilla estaba
+             escrita pero nunca se aplicaba, y los productos salian apilados
+             uno por fila a lo ancho de la pantalla. -->
+        <div id="productsList" class="products-grid"></div>
         <div id="emptyProducts" class="empty hidden">Esta tienda todavía no cargó productos.</div>
       </div>
     </div>
