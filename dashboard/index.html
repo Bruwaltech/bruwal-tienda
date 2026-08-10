@@ -1731,7 +1731,21 @@ async function onLoggedIn() {
   currentUser = user;
 
   try {
-    const { data: store } = await sb.from('store_profiles').select('*').eq('user_id', user.id).maybeSingle();
+    // Nada de maybeSingle(): devuelve ERROR si hay mas de una fila, y ese
+    // error se descartaba. El codigo creia que el usuario no tenia tienda y
+    // le creaba otra en cada ingreso. Un usuario llego a tener cinco.
+    const { data: tiendas, error: errorTienda } = await sb
+      .from('store_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    // Si la consulta falla NO creamos nada: ante la duda, preferimos no
+    // duplicar. Duplicar rompe; no crear solo obliga a reintentar.
+    if (errorTienda) throw errorTienda;
+
+    const store = tiendas && tiendas.length ? tiendas[0] : null;
 
     if (store) {
       currentStore = store;
@@ -1750,18 +1764,28 @@ async function onLoggedIn() {
         slug = baseSlug + '-' + counter;
       }
 
-      const { data: newStore, error } = await sb.from('store_profiles').insert({
+      const { data: newStore, error: errorAlta } = await sb.from('store_profiles').insert({
         user_id: user.id,
         slug: slug,
         business_name: business_name,
         phone: phone
       }).select().single();
 
-      currentStore = newStore || { slug, business_name, phone };
+      if (errorAlta) throw errorAlta;
+      currentStore = newStore;
     }
   } catch (err) {
-    const business_name = user.user_metadata?.business_name || 'Mi Tienda';
-    currentStore = { slug: 'temp-' + Math.random().toString(36).substr(2, 9), business_name };
+    // Antes se inventaba una tienda falsa ('temp-xxxx') que no existia en la
+    // base: el usuario entraba a un panel que apuntaba a la nada y todo lo
+    // que guardaba fallaba sin explicacion. Mejor decirlo y no dejarlo pasar.
+    console.error('No se pudo cargar la tienda del usuario:', err);
+    currentStore = null;
+    hide(byId('appView'));
+    show(byId('authView'));
+    byId('authError').innerHTML =
+      '<span style="color:var(--danger);">No pudimos cargar tu tienda. Volvé a intentar en un momento; si sigue pasando, escribinos.</span>';
+    show(byId('authError'));
+    return;
   }
 
   byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
