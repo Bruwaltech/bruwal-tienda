@@ -147,6 +147,25 @@ h1, h2, h3 {
   background-attachment: fixed;
 }
 
+/* ---- Pulso semanal ---- */
+.pulso {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 17px 19px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  margin-bottom: 20px;
+  animation: subirSuave .5s ease-out backwards;
+}
+.pulso .icono { font-size: 25px; line-height: 1; flex-shrink: 0; }
+.pulso .titulo { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
+.pulso .detalle { font-size: 13.5px; line-height: 1.55; opacity: .88; }
+
+.pulso.sube    { background: #E8F6F1; border-color: #BFE5DA; color: #10614F; }
+.pulso.baja    { background: #FEF3E2; border-color: #F5D9AE; color: #8A5200; }
+.pulso.neutro  { background: #EAF4FD; border-color: #C9DBEC; color: var(--navy); }
+
 /* ---- Categorías ---- */
 .chip-cat {
   display: inline-flex;
@@ -1046,6 +1065,8 @@ tr:last-child td { border-bottom: none; }
     <!-- DASHBOARD -->
     <div id="dashboardView" class="visible">
       <h2 style="font-size:20px;margin-bottom:16px;">📊 Panel de Control</h2>
+
+      <div id="pulsoSemanal" class="pulso hidden"></div>
 
       <div class="stats-row">
         <div class="stat-card">
@@ -2054,7 +2075,80 @@ async function refreshData() {
   refrescarListaDeCategorias();
 }
 
+// Compara los ultimos 7 dias contra los 7 anteriores.
+// Criterio de redaccion: cuando baja no inventamos animo vacio. A alguien que
+// tuvo una mala semana un "¡vos podés!" le suena a burla. Damos el dato y algo
+// concreto para hacer.
+function renderPulsoSemanal() {
+  const caja = byId('pulsoSemanal');
+  if (!caja) return;
+
+  const DIA = 86400000;
+  const ahora = Date.now();
+  const sumar = (desde, hasta) => orders
+    .filter(o => {
+      const t = new Date(o.created_at).getTime();
+      return t >= ahora - desde * DIA && t < ahora - hasta * DIA;
+    })
+    .reduce((s, o) => s + Number(o.total || 0), 0);
+
+  const estaSemana = sumar(7, 0);
+  const semanaPasada = sumar(14, 7);
+
+  caja.classList.remove('sube', 'baja', 'neutro');
+
+  let clase, icono, titulo, detalle;
+
+  if (estaSemana === 0 && semanaPasada === 0) {
+    clase = 'neutro'; icono = '🌱';
+    titulo = 'Todavía no registraste ventas';
+    detalle = 'Cuando empieces a cargarlas desde la pestaña Ventas, acá vas a ver cómo venís semana a semana.';
+  } else if (semanaPasada === 0) {
+    clase = 'sube'; icono = '🚀';
+    titulo = '¡Arrancaste la semana con ' + money(estaSemana) + '!';
+    detalle = 'Es tu primera semana con ventas registradas. A partir de la que viene vas a poder compararte con vos mismo.';
+  } else {
+    const dif = estaSemana - semanaPasada;
+    const pct = Math.round(Math.abs(dif) / semanaPasada * 100);
+
+    if (dif > 0) {
+      clase = 'sube'; icono = '📈';
+      titulo = 'Vendiste ' + pct + '% más que la semana pasada';
+      detalle = 'Esta semana ' + money(estaSemana) + ', contra ' + money(semanaPasada) +
+                '. Son ' + money(dif) + ' más. Seguí así.';
+    } else if (dif === 0) {
+      clase = 'neutro'; icono = '⚖️';
+      titulo = 'Misma facturación que la semana pasada';
+      detalle = money(estaSemana) + ' en las dos. Sostener también es un resultado.';
+    } else {
+      clase = 'baja'; icono = '📊';
+      titulo = 'Esta semana vendiste ' + pct + '% menos';
+      detalle = money(estaSemana) + ' contra ' + money(semanaPasada) + ' de la semana pasada. ' +
+                'Te faltan ' + money(Math.abs(dif)) + ' para igualarla';
+
+      // Dato accionable en vez de una frase motivacional vacia
+      const porDia = {};
+      orders
+        .filter(o => new Date(o.created_at).getTime() >= ahora - 14 * DIA)
+        .forEach(o => {
+          const d = new Date(o.created_at).toLocaleDateString('es-AR', { weekday: 'long' });
+          porDia[d] = (porDia[d] || 0) + Number(o.total || 0);
+        });
+      const mejor = Object.entries(porDia).sort((a, b) => b[1] - a[1])[0];
+      detalle += mejor ? '. Tu mejor día suele ser el ' + mejor[0] + '.' : '.';
+    }
+  }
+
+  caja.classList.add(clase);
+  caja.innerHTML =
+    '<div class="icono">' + icono + '</div>' +
+    '<div><div class="titulo">' + escapeHtml(titulo) + '</div>' +
+    '<div class="detalle">' + escapeHtml(detalle) + '</div></div>';
+  show(caja);
+}
+
 function renderDashboard() {
+  renderPulsoSemanal();
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
