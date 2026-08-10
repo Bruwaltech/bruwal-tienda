@@ -1253,7 +1253,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head">📝 Últimas 30 ventas</div>
         <table>
-          <thead><tr><th>Fecha</th><th>Producto</th><th>Cantidad</th><th>Total</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Producto</th><th>Cantidad</th><th style="text-align:right;">Total</th><th></th></tr></thead>
           <tbody id="salesHistoryBody"></tbody>
         </table>
       </div>
@@ -2427,8 +2427,51 @@ function renderSalesHistory() {
       '<td>' + escapeHtml(items) + '</td>' +
       '<td style="text-align:center;color:var(--celeste);">N/A</td>' +
       '<td style="text-align:right;color:var(--navy);font-weight:600;">' + money(o.total) + '</td>' +
+      '<td style="text-align:right;">' +
+        '<button class="icon-btn" data-borrar-venta="' + o.id + '" title="Anular esta venta" ' +
+        'style="color:var(--danger);">🗑</button></td>' +
       '</tr>';
-  }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-mute);padding:20px;">Sin ventas</td></tr>';
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin ventas</td></tr>';
+
+  el.querySelectorAll('[data-borrar-venta]').forEach(b => {
+    b.addEventListener('click', () => anularVenta(b.dataset.borrarVenta));
+  });
+}
+
+// Anular una venta cargada por error. Devuelve el stock al producto, porque
+// si no, el error de carga se convierte en un error de inventario.
+async function anularVenta(id) {
+  if (!puedeOperar()) return;
+
+  const venta = orders.find(o => String(o.id) === String(id));
+  if (!venta) return;
+
+  const detalle = Array.isArray(venta.items)
+    ? venta.items.map(it => (it.qty || 1) + 'x ' + it.name).join(', ')
+    : '';
+
+  if (!confirm('¿Anular esta venta?\n\n' + detalle + '\nTotal: ' + money(venta.total) +
+               '\n\nSe va a devolver el stock. No se puede deshacer.')) return;
+
+  // Primero devolvemos el stock, despues borramos: si falla el borrado
+  // preferimos stock de mas y la venta visible, a stock perdido en silencio.
+  if (Array.isArray(venta.items)) {
+    for (const it of venta.items) {
+      const p = products.find(x => x.id === it.product_id);
+      if (!p) continue;
+      await sb.from('store_products')
+        .update({ stock: Number(p.stock || 0) + Number(it.qty || 1) })
+        .eq('id', p.id);
+    }
+  }
+
+  const { error } = await sb.from('orders').delete().eq('id', venta.id);
+  if (error) {
+    alert('No se pudo anular la venta: ' + error.message);
+    return;
+  }
+
+  await refreshData();
 }
 
 // SCANNER DE CÓDIGOS DE BARRAS
