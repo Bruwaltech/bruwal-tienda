@@ -2451,36 +2451,102 @@ function avisarLectura() {
   } catch (e) { /* si el navegador no deja hacer sonido, no pasa nada */ }
 }
 
-async function abrirCamara(clave, idContenedor, idZona, alLeer) {
-  if (typeof ZXing === 'undefined') {
-    alert('No se pudo cargar el lector de códigos. Revisá tu conexión y volvé a intentar.');
-    return;
-  }
+// Formatos que nos interesan. Limitar la lista acelera mucho la deteccion:
+// sin esto ZXing prueba todos los formatos que conoce en cada fotograma.
+const FORMATOS_NATIVOS = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','codabar','qr_code'];
 
+function hintsZXing() {
+  const F = ZXing.BarcodeFormat;
+  const mapa = new Map();
+  mapa.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.CODABAR, F.QR_CODE
+  ]);
+  // TRY_HARDER: mas lento por fotograma pero lee codigos torcidos o borrosos,
+  // que es exactamente el caso de un celular a pulso sobre una gondola.
+  mapa.set(ZXing.DecodeHintType.TRY_HARDER, true);
+  return mapa;
+}
+
+async function abrirCamara(clave, idContenedor, idZona, alLeer) {
   const cont = byId(idContenedor);
   const zona = byId(idZona);
   if (!cont || !zona) return;
 
   show(cont);
   const idVideo = idZona + '-video';
-  zona.innerHTML = '<video id="' + idVideo + '" playsinline muted ' +
-                   'style="width:100%;height:100%;object-fit:cover;background:#000;"></video>';
+  zona.innerHTML =
+    '<div style="position:relative;width:100%;height:100%;">' +
+      '<video id="' + idVideo + '" playsinline muted autoplay ' +
+        'style="width:100%;height:100%;object-fit:cover;background:#000;"></video>' +
+      // Guia visual: alinear el codigo adentro mejora muchisimo la lectura
+      '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">' +
+        '<div style="width:82%;height:34%;border:2px solid rgba(255,255,255,.9);border-radius:10px;' +
+             'box-shadow:0 0 0 2000px rgba(0,0,0,.32);"></div>' +
+      '</div>' +
+      '<div style="position:absolute;left:0;right:0;bottom:8px;text-align:center;color:#fff;' +
+           'font-size:12.5px;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;">' +
+        'Llená el recuadro con el código de barras' +
+      '</div>' +
+    '</div>';
+
+  const video = byId(idVideo);
 
   try {
-    const lector = new ZXing.BrowserMultiFormatReader();
-    lectores[clave] = lector;
-
-    // facingMode environment = camara trasera, que es con la que se escanea
-    await lector.decodeFromConstraints(
-      { video: { facingMode: { ideal: 'environment' } } },
-      idVideo,
-      (resultado) => {
-        if (!resultado) return;          // sin lectura todavia: seguimos mirando
-        avisarLectura();
-        cerrarCamara(clave, idContenedor, idZona);
-        alLeer(resultado.getText().trim());
+    // Alta resolucion: con 640x480 las barras finas de un EAN-13 no se
+    // distinguen y el lector nunca encuentra nada, sin dar ningun error.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 }
       }
-    );
+    });
+
+    lectores[clave] = { stream, detener: null };
+    video.srcObject = stream;
+    await video.play();
+
+    // Enfoque continuo, si la camara lo soporta
+    try {
+      const pista = stream.getVideoTracks()[0];
+      const caps = pista.getCapabilities ? pista.getCapabilities() : {};
+      if (caps.focusMode && caps.focusMode.includes('continuous')) {
+        await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      }
+    } catch (e) { /* no todas las camaras lo permiten */ }
+
+    const alDetectar = (texto) => {
+      if (!texto || !lectores[clave]) return;
+      avisarLectura();
+      cerrarCamara(clave, idContenedor, idZona);
+      alLeer(String(texto).trim());
+    };
+
+    // Camino 1: detector nativo del navegador (Android/Chrome). Es mas rapido
+    // y mas preciso que cualquier libreria, porque lo resuelve el sistema.
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({ formats: FORMATOS_NATIVOS });
+      const timer = setInterval(async () => {
+        if (!lectores[clave]) return;
+        try {
+          const encontrados = await detector.detect(video);
+          if (encontrados && encontrados.length) alDetectar(encontrados[0].rawValue);
+        } catch (e) { /* fotograma no listo */ }
+      }, 250);
+      lectores[clave].detener = () => clearInterval(timer);
+      return;
+    }
+
+    // Camino 2: ZXing sobre el mismo stream
+    if (typeof ZXing === 'undefined') {
+      throw new Error('No se pudo cargar el lector de códigos.');
+    }
+    const lector = new ZXing.BrowserMultiFormatReader(hintsZXing(), 300);
+    lectores[clave].zxing = lector;
+    lector.decodeFromStream(stream, video, (resultado) => {
+      if (resultado) alDetectar(resultado.getText());
+    });
+
   } catch (err) {
     cerrarCamara(clave, idContenedor, idZona);
     const msg = (err && err.name === 'NotAllowedError')
@@ -2491,13 +2557,16 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
 }
 
 function cerrarCamara(clave, idContenedor, idZona) {
-  const lector = lectores[clave];
-  if (lector) {
-    try { lector.reset(); } catch (e) {}
+  const l = lectores[clave];
+  if (l) {
+    try { if (l.detener) l.detener(); } catch (e) {}
+    try { if (l.zxing) l.zxing.reset(); } catch (e) {}
+    // Apagar la camara de verdad: sin esto queda la luz prendida y gasta bateria
+    try { if (l.stream) l.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
     lectores[clave] = null;
   }
   const zona = byId(idZona);
-  if (zona) zona.innerHTML = '';       // suelta la camara del todo
+  if (zona) zona.innerHTML = '';
   const cont = byId(idContenedor);
   if (cont) hide(cont);
 }
