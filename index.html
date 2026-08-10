@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BRUWAL - Tu tienda en la palma de tu mano</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="manifest" href="/manifest-tiendas.json">
+<meta name="theme-color" content="#15294D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tiendas">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -78,6 +84,37 @@
   .btn-register:hover {
     transform: scale(1.05);
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+
+  .btn-instalar {
+    background: #4ADE80;
+    color: #0B3D22;
+    font-weight: 700;
+  }
+  .btn-instalar:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 14px rgba(74,222,128,.4);
+  }
+
+  /* Instrucciones para iPhone, donde no existe la instalación automática */
+  .ayuda-ios {
+    position: fixed;
+    left: 16px; right: 16px; bottom: 16px;
+    background: #15294D;
+    color: #fff;
+    padding: 16px 18px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.3);
+    z-index: 999;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .ayuda-ios button {
+    margin-top: 10px;
+    background: rgba(255,255,255,.16);
+    border: none; color: #fff;
+    padding: 8px 16px; border-radius: 7px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
   }
 
   /* HERO */
@@ -578,6 +615,7 @@
 <header>
   <div class="logo">🛍️ BRUWAL</div>
   <div class="auth-buttons">
+    <button class="btn-auth btn-instalar hidden" id="instalarTiendasBtn">📲 Descargar app</button>
     <button class="btn-auth btn-login" onclick="goToDashboard()">👤 Panel Admin</button>
     <button class="btn-auth btn-register" onclick="goToRegister()">Registrarse</button>
   </div>
@@ -818,8 +856,13 @@ function renderStoresList() {
       <div class="store-item ${selectedStore?.id === store.id ? 'active' : ''}" onclick="selectStore('${store.id}')">
         <div class="store-name">${escapeHtml(store.business_name)}</div>
         <div class="store-info">📱 ${store.phone || 'Sin teléfono'}</div>
-        ${storeCoords(store) ? '' : '<div class="store-info" style="color:#b8860b;">📍 Ubicación sin cargar</div>'}
-        <button class="store-action" onclick="goToStore(event, '${store.slug}')">Ver tienda →</button>
+        ${store.location ? `<div class="store-info">📍 ${escapeHtml(store.location)}</div>` : ''}
+        <div style="display:flex;gap:6px;">
+          <button class="store-action" onclick="goToStore(event, '${store.slug}')">Ver tienda →</button>
+          ${(store.location || storeCoords(store))
+            ? `<button class="store-action" style="background:#4285F4;" onclick="comoLlegar(event, '${store.id}')">Cómo llegar</button>`
+            : ''}
+        </div>
       </div>
     `).join('');
 
@@ -865,6 +908,75 @@ function updateStoreCount() {
 function goToStore(event, slug) {
   event.stopPropagation();
   window.open(`/${slug}`, '_blank');
+}
+
+// Abre Google Maps con la direccion del negocio. Si tiene coordenadas
+// cargadas usamos esas, que son exactas; si no, buscamos por nombre y
+// direccion, que igual suele caer bien.
+function comoLlegar(event, storeId) {
+  event.stopPropagation();
+  const s = stores.find(x => String(x.id) === String(storeId));
+  if (!s) return;
+
+  const coords = storeCoords(s);
+  const destino = coords
+    ? coords[0] + ',' + coords[1]
+    : [s.business_name, s.location].filter(Boolean).join(', ');
+
+  window.open('https://www.google.com/maps/dir/?api=1&destination=' +
+              encodeURIComponent(destino), '_blank');
+}
+
+// ---------- Instalar la app ----------
+let promptDeInstalacion = null;
+
+function configurarInstalacion() {
+  const btn = document.getElementById('instalarTiendasBtn');
+  if (!btn) return;
+
+  // Ya instalada: no tiene sentido ofrecerla de nuevo
+  const yaInstalada = window.matchMedia('(display-mode: standalone)').matches ||
+                      window.navigator.standalone === true;
+  if (yaInstalada) return;
+
+  const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  // Chrome y Edge avisan cuando la app se puede instalar
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    promptDeInstalacion = e;
+    btn.classList.remove('hidden');
+  });
+
+  // En iPhone no existe la instalacion automatica: hay que explicarla
+  if (esIOS) btn.classList.remove('hidden');
+
+  btn.addEventListener('click', async () => {
+    if (promptDeInstalacion) {
+      promptDeInstalacion.prompt();
+      const { outcome } = await promptDeInstalacion.userChoice;
+      promptDeInstalacion = null;
+      if (outcome === 'accepted') btn.classList.add('hidden');
+      return;
+    }
+
+    if (esIOS) { mostrarAyudaIOS(); return; }
+
+    // Chrome sin el evento: suele ser porque ya esta instalada
+    alert('Buscá "Instalar aplicación" en el menú de tu navegador (los tres puntitos).');
+  });
+}
+
+function mostrarAyudaIOS() {
+  if (document.querySelector('.ayuda-ios')) return;
+  const d = document.createElement('div');
+  d.className = 'ayuda-ios';
+  d.innerHTML = '<b>Para instalarla en tu iPhone</b><br>' +
+    'Tocá el botón <b>Compartir</b> (el cuadradito con la flecha hacia arriba) ' +
+    'y después <b>Agregar a inicio</b>.' +
+    '<br><button type="button">Entendido</button>';
+  d.querySelector('button').addEventListener('click', () => d.remove());
+  document.body.appendChild(d);
 }
 
 function goToDashboard() {
@@ -939,6 +1051,17 @@ function configurarAvisoIA() {
 
 animarTitulo();
 configurarAvisoIA();
+configurarInstalacion();
+
+// El service worker es lo que habilita la instalación. Si falla, la web
+// sigue funcionando igual: solo se pierde el poder bajarla como app.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .catch(err => console.warn('No se pudo registrar el service worker:', err));
+  });
+}
+
 init();
 </script>
 </body>

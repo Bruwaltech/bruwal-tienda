@@ -1034,6 +1034,7 @@ tr:last-child td { border-bottom: none; }
     <div class="app-user">
       <span id="userBusiness"><b></b></span>
       <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
+      <button class="btn-ghost hidden" id="instalarPanelBtn" title="Instalar el panel como app" style="display:none;align-items:center;gap:6px;"><i class="fa-solid fa-mobile-screen"></i> Descargar app</button>
       <a href="/" class="btn-ghost" title="Ir al inicio" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-house"></i> Inicio</a>
       <button class="btn-ghost" id="logoutBtn">Cerrar sesión</button>
     </div>
@@ -3436,6 +3437,44 @@ async function init() {
     clearTimeout(timeoutId);
   }
 }
+
+// ---------- Instalar el panel como app ----------
+let promptDeInstalacion = null;
+
+(function configurarInstalacionPanel() {
+  const btn = byId('instalarPanelBtn');
+  if (!btn) return;
+
+  const yaInstalada = window.matchMedia('(display-mode: standalone)').matches ||
+                      window.navigator.standalone === true;
+  if (yaInstalada) return;
+
+  const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const mostrar = () => { btn.classList.remove('hidden'); btn.style.display = 'inline-flex'; };
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    promptDeInstalacion = e;
+    mostrar();
+  });
+
+  if (esIOS) mostrar();
+
+  btn.addEventListener('click', async () => {
+    if (promptDeInstalacion) {
+      promptDeInstalacion.prompt();
+      const { outcome } = await promptDeInstalacion.userChoice;
+      promptDeInstalacion = null;
+      if (outcome === 'accepted') btn.style.display = 'none';
+      return;
+    }
+    if (esIOS) {
+      alert('Para instalarlo en tu iPhone:\n\nTocá el botón Compartir (el cuadradito con la flecha hacia arriba) y después "Agregar a inicio".');
+      return;
+    }
+    alert('Buscá "Instalar aplicación" en el menú de tu navegador (los tres puntitos).');
+  });
+})();
 
 // El service worker es lo que hace que el navegador ofrezca instalar la app.
 // Si falla, la web sigue funcionando igual: solo se pierde la instalacion.
