@@ -1262,10 +1262,10 @@ tr:last-child td { border-bottom: none; }
           <div id="qr-reader-product" style="width:100%;height:250px;"></div>
           <button type="button" onclick="stopProductCameraScanner()" class="btn-ghost" style="width:100%;padding:10px;background:#f0f0f0;border:none;cursor:pointer;font-weight:600;font-size:14px;">Cerrar cámara</button>
         </div>
-        <div class="field"><label>Foto del producto</label><input type="file" id="pImageFile" accept="image/*" style="cursor:pointer;"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Max 2MB</small></div>
+        <div class="field"><label>Fotos del producto (hasta 4)</label><input type="file" id="pImageFile" accept="image/*" multiple style="cursor:pointer;"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Máx 2MB cada una. La primera es la principal.</small></div>
         <button type="submit" class="btn btn-primary">Guardar producto</button>
       </form>
-      <div id="imagePreview" style="display:none;border-radius:12px;overflow:hidden;border:2px solid var(--line);aspect-ratio:1;background:var(--bg);padding:8px;flex-shrink:0;">
+      <div id="imagePreview" class="hidden" style="border-radius:12px;overflow:hidden;border:2px solid var(--line);background:var(--bg);padding:8px;flex-shrink:0;">
         <img id="previewImg" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">
       </div>
     </div>
@@ -2667,46 +2667,77 @@ byId('contactForm').addEventListener('submit', async (e) => {
   alert('Datos de contacto guardados!');
 });
 
-// Preview de imagen
+const MAX_FOTOS = 4;
+
+// Vista previa de las fotos elegidas
 byId('pImageFile').addEventListener('change', (e) => {
-  const file = e.target.files?.[0];
-  if (!file) {
-    hide(byId('imagePreview'));
-    return;
-  }
+  const archivos = [...(e.target.files || [])];
+  const caja = byId('imagePreview');
 
-  if (file.size > 2 * 1024 * 1024) {
-    alert('La imagen debe pesar menos de 2MB');
+  if (!archivos.length) { hide(caja); return; }
+
+  if (archivos.length > MAX_FOTOS) {
+    alert('Podés subir hasta ' + MAX_FOTOS + ' fotos por producto. Elegí de nuevo.');
     e.target.value = '';
-    hide(byId('imagePreview'));
+    hide(caja);
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    byId('previewImg').src = evt.target.result;
-    show(byId('imagePreview'));
-  };
-  reader.readAsDataURL(file);
+  const pesada = archivos.find(f => f.size > 2 * 1024 * 1024);
+  if (pesada) {
+    alert('"' + pesada.name + '" pesa más de 2MB. Elegí las fotos de nuevo.');
+    e.target.value = '';
+    hide(caja);
+    return;
+  }
+
+  show(caja);
+  caja.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+    archivos.map((_, i) =>
+      '<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg);">' +
+        '<img id="prev-' + i + '" style="width:100%;height:100%;object-fit:cover;">' +
+        (i === 0 ? '<span style="position:absolute;left:4px;top:4px;background:var(--navy);color:#fff;' +
+                   'font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;">PRINCIPAL</span>' : '') +
+      '</div>').join('') + '</div>';
+
+  archivos.forEach((f, i) => {
+    const lector = new FileReader();
+    lector.onload = (evt) => { const img = byId('prev-' + i); if (img) img.src = evt.target.result; };
+    lector.readAsDataURL(f);
+  });
 });
 
 byId('productForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!puedeOperar()) return;
 
-  let imageUrl = null;
-  const file = byId('pImageFile').files?.[0];
+  const archivos = [...(byId('pImageFile').files || [])].slice(0, MAX_FOTOS);
+  let urls = [];
 
-  if (file) {
-    const fileName = currentStore.slug + '/' + Date.now() + '_' + file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+  if (archivos.length) {
+    const boton = e.target.querySelector('button[type=submit]');
+    const textoOriginal = boton.textContent;
+    boton.disabled = true;
+
     try {
-      const { data, error } = await sb.storage.from('product-images').upload(fileName, file, { upsert: false });
-      if (error) throw error;
-      imageUrl = sb.storage.from('product-images').getPublicUrl(fileName).data.publicUrl;
+      for (let i = 0; i < archivos.length; i++) {
+        boton.textContent = 'Subiendo foto ' + (i + 1) + ' de ' + archivos.length + '...';
+        const f = archivos[i];
+        const nombre = currentStore.slug + '/' + Date.now() + '_' + i + '_' +
+                       f.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+        const { error } = await sb.storage.from('product-images').upload(nombre, f, { upsert: false });
+        if (error) throw error;
+        urls.push(sb.storage.from('product-images').getPublicUrl(nombre).data.publicUrl);
+      }
     } catch (err) {
-      alert('Error subiendo imagen: ' + (err.message || 'error desconocido'));
+      alert('Error subiendo las fotos: ' + (err.message || 'error desconocido'));
+      boton.disabled = false;
+      boton.textContent = textoOriginal;
       return;
     }
+
+    boton.disabled = false;
+    boton.textContent = textoOriginal;
   }
 
   const id = byId('productForm').dataset.id;
@@ -2717,9 +2748,16 @@ byId('productForm').addEventListener('submit', async (e) => {
     price: Number(byId('pPrice').value),
     stock: Number(byId('pStock').value),
     category: byId('pCategory').value,
-    ean: byId('pEan').value || null,
-    image_url: imageUrl || null
+    ean: byId('pEan').value || null
   };
+
+  // Solo tocamos las fotos si eligio fotos nuevas. Antes se guardaba
+  // image_url: null siempre, asi que editar un producto sin volver a elegir
+  // imagen le borraba la que ya tenia.
+  if (urls.length) {
+    payload.imagenes = urls;
+    payload.image_url = urls[0];   // la principal, para lo que ya lee este campo
+  }
 
   if (id) {
     await sb.from('store_products').update(payload).eq('id', id);

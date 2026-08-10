@@ -98,6 +98,18 @@
   .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
   .modal-error{background:#FEF2F2;border:1px solid #FCA5A5;color:var(--danger);font-size:13px;padding:12px 14px;border-radius:8px;margin-bottom:16px;}
 
+  /* Puntitos para cambiar entre las fotos del producto */
+  .foto-puntos{
+    position:absolute;left:0;right:0;bottom:7px;display:flex;justify-content:center;
+    gap:5px;z-index:2;
+  }
+  .foto-punto{
+    width:7px;height:7px;border-radius:50%;border:none;padding:0;cursor:pointer;
+    background:rgba(255,255,255,.55);box-shadow:0 0 3px rgba(0,0,0,.45);
+    transition:background .2s ease,transform .2s ease;
+  }
+  .foto-punto.activo{background:#fff;transform:scale(1.35);}
+
   /* Botones de opción del checkout (entrega y pago) */
   .opciones{display:flex;flex-wrap:wrap;gap:8px;}
   .opcion{
@@ -380,8 +392,20 @@ function renderProducts(){
     const stockBadge = p.stock > 0
       ? '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock > 10 ? 'En stock' : '⚠️ ' + p.stock + ' ud') + '</div>'
       : '<div class="product-badge" style="background:#DC2626;color:#fff;">Agotado</div>';
-    const photo = p.image_url
-      ? '<img class="product-photo" src="' + escapeHtml(p.image_url) + '" alt="">'
+    // Fotos del producto: las nuevas vienen en 'imagenes'; los productos
+    // viejos solo tienen image_url. Contemplamos los dos casos.
+    const fotos = (Array.isArray(p.imagenes) && p.imagenes.length)
+      ? p.imagenes
+      : (p.image_url ? [p.image_url] : []);
+
+    const photo = fotos.length
+      ? '<img class="product-photo" id="foto-' + p.id + '" src="' + escapeHtml(fotos[0]) + '" alt="">' +
+        (fotos.length > 1
+          ? '<div class="foto-puntos">' + fotos.map((u, i) =>
+              '<button class="foto-punto' + (i === 0 ? ' activo' : '') + '" ' +
+              'data-foto="' + p.id + '" data-url="' + escapeHtml(u) + '" aria-label="Foto ' + (i+1) + '"></button>'
+            ).join('') + '</div>'
+          : '')
       : '<div class="product-photo-placeholder">🛒</div>';
     const controls = '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
 
@@ -400,6 +424,17 @@ function renderProducts(){
 
   list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-plus'); cart[id] = (cart[id]||0) + 1; renderProducts(); renderCartBar(); }));
   list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', () => { const id = b.getAttribute('data-minus'); cart[id] = Math.max(0, (cart[id]||0) - 1); if (cart[id] === 0) delete cart[id]; renderProducts(); renderCartBar(); }));
+
+  // Cambiar de foto sin recargar la tarjeta, para no perder el carrito
+  list.querySelectorAll('.foto-punto').forEach(b => {
+    b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const img = byId('foto-' + b.dataset.foto);
+      if (img) img.src = b.dataset.url;
+      b.parentElement.querySelectorAll('.foto-punto').forEach(o => o.classList.remove('activo'));
+      b.classList.add('activo');
+    });
+  });
 }
 
 function loadCategories(){
