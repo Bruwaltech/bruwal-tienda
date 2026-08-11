@@ -266,9 +266,42 @@
       </div>
     </div>
 
-    <div class="field hidden" id="campoDireccion">
-      <label>Dirección de entrega</label>
-      <input type="text" id="custDireccion" placeholder="Calle, número, piso, referencias">
+    <div class="hidden" id="campoDireccion">
+      <div class="field">
+        <label>Calle y número</label>
+        <input type="text" id="custCalle" placeholder="Ej: Richieri 276">
+      </div>
+      <div class="field">
+        <label>Ciudad / localidad</label>
+        <input type="text" id="custCiudad" placeholder="Ej: San Lorenzo, Santa Fe">
+      </div>
+      <div class="field">
+        <label>¿Casa o departamento?</label>
+        <div class="opciones" id="opcionesVivienda">
+          <button type="button" class="opcion activa" data-valor="Casa">🏠 Casa</button>
+          <button type="button" class="opcion" data-valor="Departamento">🏢 Departamento</button>
+        </div>
+      </div>
+      <div class="field hidden" id="campoDepto">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;">
+          <div>
+            <label>Piso y depto</label>
+            <input type="text" id="custPiso" placeholder="Ej: 3° B">
+          </div>
+          <div>
+            <label>Timbre</label>
+            <input type="text" id="custTimbre" placeholder="Ej: 12 o 3B">
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>¿A nombre de quién? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+        <input type="text" id="custAnombre" placeholder="Si lo recibe otra persona">
+      </div>
+      <div class="field">
+        <label>Referencias <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+        <input type="text" id="custReferencias" placeholder="Ej: portón negro, entre Mitre y Belgrano">
+      </div>
     </div>
 
     <div class="field">
@@ -718,6 +751,15 @@ function armarOpcionesDeCheckout(store) {
     });
   });
 
+  // Casa o departamento: el piso y el timbre solo tienen sentido en depto
+  const vivienda = byId('opcionesVivienda');
+  vivienda.querySelectorAll('.opcion').forEach(b => {
+    b.addEventListener('click', () => {
+      elegirOpcion(vivienda, b);
+      byId('campoDepto').classList.toggle('hidden', b.dataset.valor !== 'Departamento');
+    });
+  });
+
   // Pago: el vendedor puede limitar los medios que acepta
   const medios = (Array.isArray(store?.medios_pago) && store.medios_pago.length)
     ? store.medios_pago
@@ -773,13 +815,28 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
   const entrega = configTurnos ? null : valorElegido('opcionesEntrega');
   const medioDePago = valorElegido('opcionesPago');
-  const direccion = byId('custDireccion').value.trim();
 
-  if (entrega === 'Envío a domicilio' && !direccion){
-    errEl.textContent = 'Escribí la dirección donde querés recibir el pedido.';
-    errEl.classList.remove('hidden');
-    byId('custDireccion').focus();
-    return;
+  const calle = byId('custCalle').value.trim();
+  const ciudad = byId('custCiudad').value.trim();
+  const vivienda = valorElegido('opcionesVivienda');
+  const piso = byId('custPiso').value.trim();
+  const timbre = byId('custTimbre').value.trim();
+  const aNombre = byId('custAnombre').value.trim();
+  const referencias = byId('custReferencias').value.trim();
+
+  if (entrega === 'Envío a domicilio'){
+    if (!calle){
+      errEl.textContent = 'Escribí la calle y el número.';
+      errEl.classList.remove('hidden');
+      byId('custCalle').focus();
+      return;
+    }
+    if (!ciudad){
+      errEl.textContent = 'Escribí la ciudad o localidad.';
+      errEl.classList.remove('hidden');
+      byId('custCiudad').focus();
+      return;
+    }
   }
 
   if (!medioDePago){
@@ -826,7 +883,18 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       detalles += '\n\n📅 *Turno solicitado:* ' + turnoTexto;
     } else {
       detalles += '\n\n' + (entrega === 'Envío a domicilio' ? '🛵' : '🏪') + ' *Entrega:* ' + entrega;
-      if (entrega === 'Envío a domicilio') detalles += '\n📍 *Dirección:* ' + direccion;
+
+      if (entrega === 'Envío a domicilio') {
+        detalles += '\n📍 *Dirección:* ' + calle;
+        detalles += '\n🏙️ *Ciudad:* ' + ciudad;
+        detalles += '\n🏠 *' + vivienda + '*';
+        if (vivienda === 'Departamento') {
+          if (piso)   detalles += '\n   Piso/Depto: ' + piso;
+          if (timbre) detalles += '\n   Timbre: ' + timbre;
+        }
+        if (aNombre)     detalles += '\n👤 *Recibe:* ' + aNombre;
+        if (referencias) detalles += '\n🧭 *Referencias:* ' + referencias;
+      }
     }
     detalles += '\n💳 *Paga con:* ' + medioDePago;
 
