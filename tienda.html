@@ -896,18 +896,22 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     if (turnoTexto) {
       detalles += '\n\n📅 *Turno solicitado:* ' + turnoTexto;
     } else {
-      detalles += '\n\n' + (entrega === 'Envío a domicilio' ? '🛵' : '🏪') + ' *Entrega:* ' + entrega;
+      detalles += '\n\n' + (entrega === 'Envío a domicilio' ? '🚚' : '🏪') + ' *Entrega:* ' + entrega;
 
       if (entrega === 'Envío a domicilio') {
+        // Solo emojis de la primera generación (2010), que existen en todos
+        // los teléfonos. Los más nuevos, o los que llevan selector de
+        // variación invisible como 🏙️, salen como rombo con signo de
+        // pregunta en los equipos que no los conocen.
         detalles += '\n📍 *Dirección:* ' + calle;
-        detalles += '\n🏙️ *Ciudad:* ' + ciudad;
+        detalles += '\n*Ciudad:* ' + ciudad;
         detalles += '\n🏠 *' + vivienda + '*';
         if (vivienda === 'Departamento') {
           if (piso)   detalles += '\n   Piso/Depto: ' + piso;
           if (timbre) detalles += '\n   Timbre: ' + timbre;
         }
         if (aNombre)     detalles += '\n👤 *Recibe:* ' + aNombre;
-        if (referencias) detalles += '\n🧭 *Referencias:* ' + referencias;
+        if (referencias) detalles += '\n📝 *Referencias:* ' + referencias;
       }
     }
     detalles += '\n💳 *Paga con:* ' + medioDePago;

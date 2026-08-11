@@ -38,7 +38,7 @@
     box-shadow: 0 4px 12px rgba(21,41,77,0.15);
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: 1000;          /* por encima de cualquier capa de Leaflet */
     animation: fadeInDown 0.6s ease-out;
   }
 
@@ -277,6 +277,13 @@
     height: 500px;
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    /* Leaflet usa capas internas de hasta z-index 800 para sus controles.
+       Sin aislarlas, al hacer scroll el mapa se dibujaba ENCIMA del
+       encabezado fijo. 'isolation' encierra esas capas acá adentro para
+       que no compitan con el resto de la página. */
+    position: relative;
+    z-index: 0;
+    isolation: isolate;
   }
 
   .stores-sidebar {
