@@ -1199,6 +1199,16 @@ tr:last-child td { border-bottom: none; }
 
     <!-- PEDIDOS -->
     <div id="pedidosView" class="hidden">
+      <div class="panel hidden" id="panelAgenda">
+        <div class="panel-head">📅 Turnos reservados</div>
+        <div style="padding:0 0 4px;">
+          <table>
+            <thead><tr><th>Día</th><th>Hora</th><th>Cliente</th><th>Servicio</th><th></th></tr></thead>
+            <tbody id="agendaBody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-head">🛒 Pedidos recibidos</div>
         <table>
@@ -2333,6 +2343,59 @@ async function refreshData() {
   renderClientes();
   renderVentas();
   refrescarListaDeCategorias();
+  await renderAgenda();
+}
+
+// Turnos reservados desde la tienda. Sin esta vista, un turno cargado por
+// error bloquearia ese horario para siempre y el vendedor no podria verlo
+// ni liberarlo.
+async function renderAgenda() {
+  const panel = byId('panelAgenda');
+  const cuerpo = byId('agendaBody');
+  if (!panel || !cuerpo || !currentStore) return;
+
+  if (!currentStore.turnos || !currentStore.turnos.activo) { hide(panel); return; }
+
+  const hoy = new Date().toISOString().slice(0, 10);
+  const { data, error } = await sb.from('store_turnos')
+    .select('*')
+    .eq('store_slug', currentStore.slug)
+    .gte('fecha', hoy)                 // los pasados no interesan
+    .order('fecha').order('hora');
+
+  if (error) { hide(panel); return; }
+  show(panel);
+
+  const DIAS = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+
+  cuerpo.innerHTML = (data && data.length)
+    ? data.map(t => {
+        const [a, m, d] = t.fecha.split('-').map(Number);
+        const dia = DIAS[new Date(a, m - 1, d).getDay()];
+        return '<tr>' +
+          '<td style="font-size:13px;">' + dia + ' ' + String(d).padStart(2,'0') + '/' + String(m).padStart(2,'0') + '</td>' +
+          '<td style="font-weight:700;color:var(--navy);">' + escapeHtml(t.hora) + '</td>' +
+          '<td>' + escapeHtml(t.cliente || '-') +
+            (t.telefono ? '<br><a href="https://wa.me/54' + String(t.telefono).replace(/\D/g,'') +
+              '" target="_blank" style="font-size:12px;color:var(--celeste);">' + escapeHtml(t.telefono) + '</a>' : '') +
+          '</td>' +
+          '<td style="font-size:13px;">' + escapeHtml(t.servicio || '-') + '</td>' +
+          '<td style="text-align:right;"><button class="icon-btn" data-liberar="' + t.id +
+            '" title="Liberar este horario" style="color:var(--danger);">🗑</button></td>' +
+          '</tr>';
+      }).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:18px;">Sin turnos reservados.</td></tr>';
+
+  cuerpo.querySelectorAll('[data-liberar]').forEach(b => {
+    b.addEventListener('click', async () => {
+      const t = data.find(x => String(x.id) === String(b.dataset.liberar));
+      if (!confirm('¿Liberar el turno de ' + (t?.cliente || 'este cliente') + ' (' + t?.hora + ')?\n\n' +
+                   'El horario vuelve a quedar disponible. Avisale vos al cliente.')) return;
+      const { error } = await sb.from('store_turnos').delete().eq('id', b.dataset.liberar);
+      if (error) { alert('No se pudo liberar: ' + error.message); return; }
+      await renderAgenda();
+    });
+  });
 }
 
 // Compara los ultimos 7 dias contra los 7 anteriores.

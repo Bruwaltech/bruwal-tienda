@@ -635,23 +635,53 @@ function armarTurnos(store) {
   const tope = new Date(hoy.getTime() + 60 * 86400000);   // hasta 60 dias
   fecha.max = tope.toISOString().slice(0, 10);
 
-  fecha.addEventListener('change', () => {
-    const sel = byId('turnoHora');
-    const valor = fecha.value;
-    if (!valor) { sel.innerHTML = '<option value="">Horario</option>'; return; }
+  fecha.addEventListener('change', () => cargarHorariosDisponibles(dias));
+}
 
-    // Se parsea a mano: new Date('2026-08-11') se interpreta en UTC y en
-    // Argentina puede caer el dia anterior.
-    const [a, m, d] = valor.split('-').map(Number);
-    const diaSemana = new Date(a, m - 1, d).getDay();
+async function cargarHorariosDisponibles(dias) {
+  const sel = byId('turnoHora');
+  const valor = byId('turnoFecha').value;
+  if (!valor) { sel.innerHTML = '<option value="">Horario</option>'; return; }
 
-    if (!dias.includes(diaSemana)) {
-      sel.innerHTML = '<option value="">Ese día no atendemos</option>';
-      return;
+  // Se parsea a mano: new Date('2026-08-11') se interpreta en UTC y en
+  // Argentina puede caer el dia anterior.
+  const [a, m, d] = valor.split('-').map(Number);
+  const diaSemana = new Date(a, m - 1, d).getDay();
+
+  if (!dias.includes(diaSemana)) {
+    sel.innerHTML = '<option value="">Ese día no atendemos</option>';
+    return;
+  }
+
+  sel.innerHTML = '<option value="">Buscando horarios...</option>';
+
+  // Que horarios ya estan tomados ese dia. Solo podemos leer fecha y hora:
+  // el nombre y el telefono de quien reservo no son visibles para nadie
+  // mas que el dueño.
+  let ocupados = [];
+  try {
+    const { data } = await sb.from('store_turnos')
+      .select('hora').eq('store_slug', getSlugFromUrl()).eq('fecha', valor);
+    ocupados = (data || []).map(t => t.hora);
+  } catch (e) { /* si falla la consulta mostramos todos y que el negocio confirme */ }
+
+  const ahora = new Date();
+  const esHoy = (new Date(a, m - 1, d)).toDateString() === ahora.toDateString();
+
+  const libres = horariosDelDia().filter(h => {
+    if (ocupados.includes(h)) return false;
+    // No ofrecer horarios que ya pasaron si el turno es para hoy
+    if (esHoy) {
+      const [hh, mm] = h.split(':').map(Number);
+      if (hh * 60 + mm <= ahora.getHours() * 60 + ahora.getMinutes()) return false;
     }
-    sel.innerHTML = '<option value="">Elegí el horario</option>' +
-      horariosDelDia().map(h => '<option value="' + h + '">' + h + '</option>').join('');
+    return true;
   });
+
+  sel.innerHTML = libres.length
+    ? '<option value="">Elegí el horario</option>' +
+      libres.map(h => '<option value="' + h + '">' + h + '</option>').join('')
+    : '<option value="">No quedan horarios ese día</option>';
 }
 
 function horariosDelDia() {
@@ -792,16 +822,46 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
     if (store.mensaje_envio) detalles += '\n\n📝 ' + store.mensaje_envio;
 
+    // Se reserva ANTES de mandar el WhatsApp: no le confirmamos al cliente
+    // un turno que no pudimos asegurar. Si otro lo tomó recién, el índice
+    // único de la base rechaza este insert y avisamos en vez de duplicar.
+    if (turnoTexto) {
+      const { error: errTurno } = await sb.from('store_turnos').insert({
+        store_slug: getSlugFromUrl(),
+        fecha: byId('turnoFecha').value,
+        hora: byId('turnoHora').value,
+        cliente: name,
+        telefono: phone,
+        servicio: Object.keys(cart).map(id => {
+          const p = products.find(x => x.id === id);
+          return p ? p.name : '';
+        }).filter(Boolean).join(', ')
+      });
+
+      if (errTurno) {
+        const ocupado = (errTurno.code === '23505') ||
+                        /duplicate|unique/i.test(errTurno.message || '');
+        errEl.textContent = ocupado
+          ? 'Justo alguien acaba de tomar ese horario. Elegí otro, por favor.'
+          : 'No pudimos reservar el turno. Probá de nuevo en un momento.';
+        errEl.classList.remove('hidden');
+        byId('confirmOrderBtn').disabled = false;
+        if (ocupado) await cargarHorariosDisponibles(
+          (configTurnos.dias && configTurnos.dias.length) ? configTurnos.dias : [1,2,3,4,5]);
+        return;
+      }
+    }
+
     const storePhone = store.phone.replace(/\D/g,'');
     const waLink = 'https://wa.me/54' + storePhone + '?text=' + encodeURIComponent(detalles);
     window.open(waLink, '_blank');
 
-    // Un turno no esta confirmado hasta que el negocio responde: no le
-    // decimos "reservado" para no dejarlo esperando algo que no pasó.
+    // Ahora el horario queda efectivamente bloqueado en la agenda, asi que
+    // ya podemos decir "reservado" sin mentirle al cliente.
     if (turnoTexto) {
-      byId('exitoTitulo').textContent = '¡Turno solicitado!';
+      byId('exitoTitulo').textContent = '¡Turno reservado!';
       byId('exitoTexto').textContent =
-        'Pediste ' + turnoTexto + '. Te van a confirmar por WhatsApp si el horario está disponible.';
+        'Te esperamos el ' + turnoTexto + '. Ese horario ya quedó bloqueado a tu nombre.';
     }
 
     hide(byId('checkoutModal'));
