@@ -436,9 +436,15 @@ function renderProducts(){
 
   list.innerHTML = filteredProducts.map(p => {
     const qty = cart[p.id] || 0;
-    const stockBadge = p.stock > 0
-      ? '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock > 10 ? 'En stock' : '⚠️ ' + p.stock + ' ud') + '</div>'
-      : '<div class="product-badge" style="background:#DC2626;color:#fff;">Agotado</div>';
+    const servicio = !esProductoFisico(p);
+
+    // Un servicio no se agota ni tiene unidades: mostrarle "quedan 3" o
+    // "agotado" a un corte de pelo no tiene sentido.
+    const stockBadge = servicio
+      ? '<div class="product-badge stock">Disponible</div>'
+      : (p.stock > 0
+          ? '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock > 10 ? 'En stock' : '⚠️ ' + p.stock + ' ud') + '</div>'
+          : '<div class="product-badge" style="background:#DC2626;color:#fff;">Agotado</div>');
     // Fotos del producto: las nuevas vienen en 'imagenes'; los productos
     // viejos solo tienen image_url. Contemplamos los dos casos.
     const fotos = (Array.isArray(p.imagenes) && p.imagenes.length)
@@ -463,8 +469,8 @@ function renderProducts(){
       '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
       (p.description ? '<div class="product-description">' + escapeHtml(p.description) + '</div>' : '') +
       '<div class="product-price">' + money(p.price) + '</div>' +
-      '<div class="product-stock">' + (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') + '</div>' +
-      '<div class="product-controls">' + (p.stock > 0 ? controls : '') + '</div>' +
+      '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock')) + '</div>' +
+      '<div class="product-controls">' + ((servicio || p.stock > 0) ? controls : '') + '</div>' +
       '</div>' +
       '</div>';
   }).join('');
@@ -490,6 +496,10 @@ function renderProducts(){
     c.addEventListener('click', () => abrirFicha(c.dataset.id));
   });
 }
+
+// Los productos cargados antes de esta distincion no tienen 'tipo':
+// se consideran fisicos, que es lo que eran.
+const esProductoFisico = (p) => (p?.tipo || 'producto') !== 'servicio';
 
 // ---- Ficha del producto ----
 function fotosDe(p) {
@@ -520,9 +530,9 @@ function abrirFicha(id) {
     '<h3 style="margin:0;">' + escapeHtml(p.name) + '</h3>' +
     '<div class="ficha-precio">' + money(p.price) + '</div>' +
     '<div style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
-      (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') + '</div>' +
+      (esProductoFisico(p) ? (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') : 'Servicio') + '</div>' +
     (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
-    (p.stock > 0
+    ((!esProductoFisico(p) || p.stock > 0)
       ? '<div class="qty-controls" style="justify-content:center;margin-bottom:14px;">' +
           '<button data-fminus="' + p.id + '">−</button>' +
           '<span class="qty-badge" id="fichaQty">' + qty + '</span>' +

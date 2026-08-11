@@ -179,7 +179,31 @@ h1, h2, h3 {
   .fila-resultado-venta > div:last-child .btn { flex: 1; }
 
   main { padding-left: 12px !important; padding-right: 12px !important; }
-  .panel { overflow-x: auto; }
+
+  /* Las tablas no entran a lo ancho en un celular. El sitio tiene el scroll
+     horizontal bloqueado (overflow-x:hidden en body), asi que el arrastre
+     tiene que pasar DENTRO del panel: sin esto las ultimas columnas
+     quedaban inalcanzables. */
+  .panel {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .panel table {
+    min-width: 560px;          /* obliga a desbordar en vez de aplastarse */
+  }
+  .panel table th,
+  .panel table td {
+    white-space: nowrap;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  /* Aviso de que se puede arrastrar, solo en las tablas anchas */
+  .panel-head::after {
+    content: ' — deslizá para ver más →';
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-mute);
+  }
 
   /* El link de la tienda es largo y empujaba la barra a lo ancho */
   .store-link-bar { padding: 10px 12px; }
@@ -1325,7 +1349,17 @@ tr:last-child td { border-bottom: none; }
         <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
         <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
         <div class="field"><label>Precio</label><input type="number" id="pPrice" min="0" step="0.01" required></div>
-        <div class="field"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="pEsServicio" style="margin:0;width:auto;cursor:pointer;">
+            Es un servicio (no maneja stock)
+          </label>
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
+            Corte de pelo, arreglo, consulta. Se puede vender sin límite y no
+            aparece como agotado.
+          </small>
+        </div>
+        <div class="field" id="campoStock"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
         <div class="field">
           <label>Categoría</label>
           <input type="text" id="pCategory" list="listaCategoriasProducto" placeholder="Elegí una o escribí la tuya" autocomplete="off">
@@ -1906,6 +1940,15 @@ byId('guardarCategoriasBtn').addEventListener('click', async () => {
   currentStore.categorias = [...categoriasEnEdicion];
   refrescarListaDeCategorias();
   hide(byId('categoriasModal'));
+});
+
+// ---- Producto físico vs servicio ----
+// Los productos cargados antes de esta distinción no tienen 'tipo': se
+// consideran físicos, que es lo que eran.
+const esProductoFisico = (p) => (p?.tipo || 'producto') !== 'servicio';
+
+byId('pEsServicio').addEventListener('change', (e) => {
+  byId('campoStock').classList.toggle('hidden', e.target.checked);
 });
 
 // ============ OPCIONES / AGREGADOS DEL PRODUCTO ============
@@ -2652,7 +2695,9 @@ function renderProducts() {
       '<td>' + imgHtml + '</td>' +
       '<td><strong>' + escapeHtml(p.name) + '</strong></td>' +
       '<td>' + money(p.price) + '</td>' +
-      '<td>' + p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span></td>' +
+      '<td>' + (esProductoFisico(p)
+        ? p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>'
+        : '<span class="badge" style="background:#EAF4FD;color:var(--navy);">SERVICIO</span>') + '</td>' +
       '<td>' + (p.ean || '—') + '</td>' +
       '<td><div class="row-actions"><button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
       '</tr>';
@@ -2778,10 +2823,11 @@ async function anularVenta(id) {
 
   // Primero devolvemos el stock, despues borramos: si falla el borrado
   // preferimos stock de mas y la venta visible, a stock perdido en silencio.
+  // Solo productos fisicos: un servicio no tiene stock que devolver.
   if (Array.isArray(venta.items)) {
     for (const it of venta.items) {
       const p = products.find(x => x.id === it.product_id);
-      if (!p) continue;
+      if (!p || !esProductoFisico(p)) continue;
       await sb.from('store_products')
         .update({ stock: Number(p.stock || 0) + Number(it.qty || 1) })
         .eq('id', p.id);
@@ -2875,6 +2921,15 @@ async function confirmBarcodeVenta() {
   if (error) {
     alert('Error al registrar venta: ' + error.message);
     return;
+  }
+
+  // Descontar del stock. Antes no se descontaba: se registraba la venta y el
+  // inventario quedaba igual, con lo cual el control de stock no controlaba
+  // nada. Los servicios no llevan stock, asi que no se tocan.
+  if (esProductoFisico(product)) {
+    await sb.from('store_products')
+      .update({ stock: Math.max(0, Number(product.stock || 0) - qty) })
+      .eq('id', product.id);
   }
 
   alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(total));
@@ -3178,6 +3233,8 @@ if (byId('newProductBtn')) {
     if (byId('pStock')) byId('pStock').value = '0';
     if (byId('pCategory')) byId('pCategory').value = '';
     if (byId('productForm')) byId('productForm').dataset.id = '';
+    byId('pEsServicio').checked = false;
+    byId('campoStock').classList.remove('hidden');
     opcionesEnEdicion = [];        // arranca limpio, sin heredar del anterior
     renderOpciones();
     if (byId('productModal')) show(byId('productModal'));
@@ -3321,7 +3378,8 @@ byId('productForm').addEventListener('submit', async (e) => {
     stock: Number(byId('pStock').value),
     category: byId('pCategory').value,
     ean: byId('pEan').value || null,
-    opciones: opcionesEnEdicion
+    opciones: opcionesEnEdicion,
+    tipo: byId('pEsServicio').checked ? 'servicio' : 'producto'
   };
 
   // Solo tocamos las fotos si eligio fotos nuevas. Antes se guardaba
@@ -3357,6 +3415,10 @@ async function editProduct(id) {
   if (byId('pCategory')) byId('pCategory').value = p.category || '';
   if (byId('pEan')) byId('pEan').value = p.ean || '';
   if (byId('pImageFile')) byId('pImageFile').value = '';
+
+  const servicio = !esProductoFisico(p);
+  byId('pEsServicio').checked = servicio;
+  byId('campoStock').classList.toggle('hidden', servicio);
 
   opcionesEnEdicion = Array.isArray(p.opciones) ? p.opciones.map(o => ({ ...o })) : [];
   renderOpciones();
@@ -3396,6 +3458,8 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   byId('pCategory').value = '';
   byId('pEan').value = ean;
   byId('productForm').dataset.id = '';
+  byId('pEsServicio').checked = false;
+  byId('campoStock').classList.remove('hidden');
   opcionesEnEdicion = [];
   renderOpciones();
   show(byId('productModal'));
