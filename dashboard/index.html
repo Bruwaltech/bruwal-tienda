@@ -1422,6 +1422,41 @@ tr:last-child td { border-bottom: none; }
             una búsqueda por tu nombre y ubicación.
           </small>
         </div>
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="turnosActivo" style="margin:0;cursor:pointer;width:auto;">
+            Mi negocio trabaja con turnos
+          </label>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Para peluquerías, barberías, consultorios. El cliente elige día y
+            horario al hacer el pedido.
+          </small>
+
+          <div id="turnosConfig" class="hidden" style="margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
+            <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:9px;">Días que atendés</div>
+            <div id="turnosDias" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+              <div>
+                <label style="font-size:12.5px;">Desde</label>
+                <input type="time" id="turnosDesde" value="09:00">
+              </div>
+              <div>
+                <label style="font-size:12.5px;">Hasta</label>
+                <input type="time" id="turnosHasta" value="18:00">
+              </div>
+            </div>
+
+            <label style="font-size:12.5px;">Duración de cada turno</label>
+            <select id="turnosIntervalo" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+              <option value="15">15 minutos</option>
+              <option value="30" selected>30 minutos</option>
+              <option value="45">45 minutos</option>
+              <option value="60">1 hora</option>
+            </select>
+          </div>
+        </div>
+
         <div class="field">
           <label>Medios de pago que aceptás</label>
           <div id="configMediosPago" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"></div>
@@ -3353,6 +3388,35 @@ byId('clientSearch').addEventListener('input', (e) => {
 });
 
 // PERFIL
+// ---- Turnos (peluquerias, barberias, consultorios) ----
+const DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+function renderDiasDeAtencion(elegidos) {
+  const marcados = Array.isArray(elegidos) ? elegidos : [1, 2, 3, 4, 5];  // lun a vie
+  byId('turnosDias').innerHTML = DIAS_SEMANA.map((d, i) =>
+    '<label class="chip-cat" style="cursor:pointer;padding-left:11px;">' +
+    '<input type="checkbox" value="' + i + '" ' + (marcados.includes(i) ? 'checked' : '') +
+    ' style="margin:0;cursor:pointer;width:auto;"> ' + d + '</label>').join('');
+}
+
+function diasDeAtencionElegidos() {
+  return [...byId('turnosDias').querySelectorAll('input:checked')].map(i => Number(i.value));
+}
+
+function configuracionDeTurnos() {
+  return {
+    activo: byId('turnosActivo').checked,
+    dias: diasDeAtencionElegidos(),
+    desde: byId('turnosDesde').value || '09:00',
+    hasta: byId('turnosHasta').value || '18:00',
+    intervalo: Number(byId('turnosIntervalo').value) || 30
+  };
+}
+
+byId('turnosActivo').addEventListener('change', (e) => {
+  byId('turnosConfig').classList.toggle('hidden', !e.target.checked);
+});
+
 // Medios de pago que puede aceptar una tienda
 const MEDIOS_DE_PAGO = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
 
@@ -3383,6 +3447,14 @@ async function cargarConfiguracion() {
     byId('configIg').value = store.instagram || '';
     byId('configGoogle').value = store.google_url || '';
     renderMediosDePago(store.medios_pago);
+
+    const t = store.turnos || {};
+    byId('turnosActivo').checked = !!t.activo;
+    byId('turnosConfig').classList.toggle('hidden', !t.activo);
+    renderDiasDeAtencion(t.dias);
+    byId('turnosDesde').value = t.desde || '09:00';
+    byId('turnosHasta').value = t.hasta || '18:00';
+    byId('turnosIntervalo').value = String(t.intervalo || 30);
 
     if (store.image_url) {
       byId('configLogoPreview').style.backgroundImage = `url(${store.image_url})`;
@@ -3443,7 +3515,8 @@ async function guardarConfiguracion() {
     website: byId('configWeb').value,
     instagram: byId('configIg').value,
     google_url: byId('configGoogle').value.trim() || null,
-    medios_pago: mediosDePagoElegidos()
+    medios_pago: mediosDePagoElegidos(),
+    turnos: configuracionDeTurnos()
   };
 
   if (imageUrl) updateData.image_url = imageUrl;
