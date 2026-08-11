@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/:slug", "destination": "/tienda.html" }
+    { "source": "/:slug", "destination": "/api/tienda?slug=:slug" }
   ]
 }
