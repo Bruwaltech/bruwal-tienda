@@ -113,6 +113,31 @@
   .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
   .modal-error{background:#FEF2F2;border:1px solid #FCA5A5;color:var(--danger);font-size:13px;padding:12px 14px;border-radius:8px;margin-bottom:16px;}
 
+  /* Agregados dentro de la ficha del producto */
+  .ficha-opciones{
+    background:#F7FAFE;border:1px solid #DCE6F0;border-radius:11px;
+    padding:14px;margin-bottom:4px;
+  }
+  .ficha-opciones-titulo{
+    font-size:12px;font-weight:700;color:var(--text-mute);
+    text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px;
+  }
+  .opcion-fila{
+    display:flex;align-items:center;gap:11px;padding:9px 0;cursor:pointer;
+    border-bottom:1px solid rgba(220,230,240,.75);
+  }
+  .opcion-fila:last-child{border-bottom:none;}
+  .opcion-fila input{width:19px;height:19px;margin:0;cursor:pointer;accent-color:var(--celeste);flex-shrink:0;}
+  .opcion-nombre{flex:1;font-size:14.5px;color:var(--text-dark);}
+  .opcion-precio{font-size:13px;font-weight:700;color:var(--celeste);white-space:nowrap;}
+
+  .btn-elegir{
+    width:100%;padding:9px;border:none;border-radius:8px;cursor:pointer;
+    background:var(--celeste);color:#fff;font-family:inherit;
+    font-size:13px;font-weight:700;transition:background .2s ease;
+  }
+  .btn-elegir:hover{background:#1a5fb0;}
+
   /* Tarjetas de categoría: la primera pantalla de una tienda con rubros */
   .cat-card{
     border-radius:14px;overflow:hidden;cursor:pointer;position:relative;
@@ -570,8 +595,9 @@ function renderProducts(){
   list.className = 'products-grid' + (categorias.length ? ' compacta' : '');
 
   list.innerHTML = filteredProducts.map(p => {
-    const qty = cart[p.id] || 0;
+    const qty = cantidadDelProducto(p.id);
     const servicio = !esProductoFisico(p);
+    const tieneOpciones = Array.isArray(p.opciones) && p.opciones.length > 0;
 
     // Un servicio no se agota ni tiene unidades: mostrarle "quedan 3" o
     // "agotado" a un corte de pelo no tiene sentido.
@@ -595,7 +621,12 @@ function renderProducts(){
             ).join('') + '</div>'
           : '')
       : '<div class="product-photo-placeholder">🛒</div>';
-    const controls = '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
+    // Si el producto lleva agregados, el + no alcanza: el cliente tiene que
+    // elegir qué le pone. Por eso mostramos "Elegir", que abre la ficha.
+    const controls = tieneOpciones
+      ? '<button class="btn-elegir" data-elegir="' + p.id + '">' +
+          (qty ? 'Agregar otra (' + qty + ')' : 'Elegir') + '</button>'
+      : '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
 
     return '<div class="product-card" data-id="' + p.id + '">' +
       '<div class="product-photo-container">' + photo + stockBadge + '</div>' +
@@ -611,8 +642,20 @@ function renderProducts(){
   }).join('');
 
   // stopPropagation: sin esto, tocar + o − tambien abriria la ficha
-  list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); const id = b.getAttribute('data-plus'); cart[id] = (cart[id]||0) + 1; renderProducts(); renderCartBar(); }));
-  list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); const id = b.getAttribute('data-minus'); cart[id] = Math.max(0, (cart[id]||0) - 1); if (cart[id] === 0) delete cart[id]; renderProducts(); renderCartBar(); }));
+  list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    sumarAlCarrito(b.getAttribute('data-plus'), [], 1);
+    renderProducts(); renderCartBar();
+  }));
+  list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    restarDelCarrito(b.getAttribute('data-minus'));
+    renderProducts(); renderCartBar();
+  }));
+  list.querySelectorAll('[data-elegir]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    abrirFicha(b.getAttribute('data-elegir'));
+  }));
 
   // Cambiar de foto sin recargar la tarjeta, para no perder el carrito
   list.querySelectorAll('.foto-punto').forEach(b => {
@@ -648,7 +691,9 @@ function abrirFicha(id) {
   if (!p) return;
 
   const fotos = fotosDe(p);
-  const qty = cart[p.id] || 0;
+  const opciones = Array.isArray(p.opciones) ? p.opciones : [];
+  const disponible = !esProductoFisico(p) || p.stock > 0;
+  let cantidad = 1;   // cuántas de ESTA combinación se agregan
 
   byId('fichaContenido').innerHTML =
     (fotos.length
@@ -667,13 +712,30 @@ function abrirFicha(id) {
     '<div style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
       (esProductoFisico(p) ? (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') : 'Servicio') + '</div>' +
     (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
-    ((!esProductoFisico(p) || p.stock > 0)
-      ? '<div class="qty-controls" style="justify-content:center;margin-bottom:14px;">' +
-          '<button data-fminus="' + p.id + '">−</button>' +
-          '<span class="qty-badge" id="fichaQty">' + qty + '</span>' +
-          '<button data-fplus="' + p.id + '">+</button>' +
+
+    // Los agregados que cargó el dueño, con su precio
+    (opciones.length
+      ? '<div class="ficha-opciones">' +
+          '<div class="ficha-opciones-titulo">¿Querés agregarle algo?</div>' +
+          opciones.map((o, i) =>
+            '<label class="opcion-fila">' +
+              '<input type="checkbox" data-opc="' + i + '">' +
+              '<span class="opcion-nombre">' + escapeHtml(o.nombre) + '</span>' +
+              '<span class="opcion-precio">' +
+                (Number(o.precio) > 0 ? '+' + money(o.precio) : 'sin cargo') +
+              '</span>' +
+            '</label>').join('') +
+        '</div>'
+      : '') +
+
+    (disponible
+      ? '<div class="qty-controls" style="justify-content:center;margin:16px 0 14px;">' +
+          '<button id="fichaMenos">−</button>' +
+          '<span class="qty-badge" id="fichaQty">1</span>' +
+          '<button id="fichaMas">+</button>' +
         '</div>' +
-        '<button class="btn-primary" id="fichaAgregar" style="width:100%;">Agregar al carrito</button>'
+        '<button class="btn-primary" id="fichaAgregar" style="width:100%;">' +
+          'Agregar al carrito · <span id="fichaTotal">' + money(p.price) + '</span></button>'
       : '<div style="text-align:center;color:var(--danger);font-weight:600;">Sin stock por ahora</div>');
 
   const ficha = byId('fichaContenido');
@@ -686,19 +748,37 @@ function abrirFicha(id) {
     });
   });
 
-  const actualizar = () => { byId('fichaQty').textContent = cart[p.id] || 0; renderCartBar(); };
-  ficha.querySelector('[data-fplus]')?.addEventListener('click', () => { cart[p.id] = (cart[p.id]||0) + 1; actualizar(); });
-  ficha.querySelector('[data-fminus]')?.addEventListener('click', () => {
-    cart[p.id] = Math.max(0, (cart[p.id]||0) - 1);
-    if (cart[p.id] === 0) delete cart[p.id];
-    actualizar();
+  // Qué agregados están tildados en este momento
+  const elegidas = () => [...ficha.querySelectorAll('[data-opc]')]
+    .filter(i => i.checked)
+    .map(i => opciones[Number(i.dataset.opc)]);
+
+  // El precio del botón se actualiza solo: el cliente ve cuánto va a pagar
+  // ANTES de agregar, sin sorpresas en el total.
+  const refrescarPrecio = () => {
+    const extras = elegidas().reduce((s, o) => s + Number(o.precio || 0), 0);
+    const t = byId('fichaTotal');
+    if (t) t.textContent = money((Number(p.price) + extras) * cantidad);
+    const q = byId('fichaQty');
+    if (q) q.textContent = cantidad;
+  };
+
+  ficha.querySelectorAll('[data-opc]').forEach(i => i.addEventListener('change', refrescarPrecio));
+
+  ficha.querySelector('#fichaMas')?.addEventListener('click', () => { cantidad++; refrescarPrecio(); });
+  ficha.querySelector('#fichaMenos')?.addEventListener('click', () => {
+    if (cantidad > 1) cantidad--;
+    refrescarPrecio();
   });
+
   ficha.querySelector('#fichaAgregar')?.addEventListener('click', () => {
-    if (!cart[p.id]) cart[p.id] = 1;
-    renderProducts(); renderCartBar();
+    sumarAlCarrito(p.id, elegidas(), cantidad);
+    renderProducts();
+    renderCartBar();
     hide(byId('fichaModal'));
   });
 
+  refrescarPrecio();
   show(byId('fichaModal'));
 }
 
@@ -722,18 +802,56 @@ function filterByCategory(category){
   renderProducts();
 }
 
+// ============ CARRITO ============
+// Guarda LÍNEAS, no productos sueltos:
+//   cart[claveLinea] = { productId, qty, opciones: [{nombre, precio}] }
+// Hacía falta para que alguien pueda pedir una hamburguesa con cheddar y
+// otra sin nada en el mismo pedido. Con un simple producto→cantidad las dos
+// se pisaban.
+
+// Misma hamburguesa con los mismos agregados = una sola línea que suma
+const claveLinea = (productoId, opciones) =>
+  productoId + '|' + (opciones || []).map(o => o.nombre).sort().join('~');
+
+const productoDe = (linea) => products.find(x => String(x.id) === String(linea.productId));
+
+const precioUnitario = (linea) => {
+  const p = productoDe(linea);
+  const extras = (linea.opciones || []).reduce((s, o) => s + Number(o.precio || 0), 0);
+  return (p ? Number(p.price || 0) : 0) + extras;
+};
+
+const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => s + l.qty, 0);
+const totalDelCarrito   = () => Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0);
+
+// Cuántas unidades de un producto hay, sumando todas sus variantes
+const cantidadDelProducto = (productoId) =>
+  Object.values(cart)
+    .filter(l => String(l.productId) === String(productoId))
+    .reduce((s, l) => s + l.qty, 0);
+
+function sumarAlCarrito(productoId, opciones, cantidad){
+  const k = claveLinea(productoId, opciones);
+  if (!cart[k]) cart[k] = { productId: productoId, qty: 0, opciones: opciones || [] };
+  cart[k].qty += (cantidad === undefined ? 1 : cantidad);
+  if (cart[k].qty <= 0) delete cart[k];
+}
+
+// Resta del producto, empezando por la última línea agregada
+function restarDelCarrito(productoId){
+  const claves = Object.keys(cart).filter(k => String(cart[k].productId) === String(productoId));
+  const k = claves[claves.length - 1];
+  if (!k) return;
+  cart[k].qty -= 1;
+  if (cart[k].qty <= 0) delete cart[k];
+}
+
 function renderCartBar(){
-  const ids = Object.keys(cart);
   const bar = byId('cartBar');
-  if (ids.length === 0){ bar.style.display = 'none'; return; }
+  if (!Object.keys(cart).length){ bar.style.display = 'none'; return; }
   bar.style.display = 'block';
-  const count = ids.reduce((sum, id) => sum + cart[id], 0);
-  const total = ids.reduce((sum, id) => {
-    const p = products.find(x => x.id === id);
-    return sum + (p ? p.price * cart[id] : 0);
-  }, 0);
-  byId('cartCount').textContent = count;
-  byId('cartTotal').textContent = money(total);
+  byId('cartCount').textContent = unidadesEnCarrito();
+  byId('cartTotal').textContent = money(totalDelCarrito());
 }
 
 // ---- Opciones de entrega y pago ----
@@ -953,20 +1071,32 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     return;
   }
 
-  const items = Object.keys(cart).map(id => {
-    const p = products.find(x => x.id === id);
-    return { product_id: id, qty: cart[id], label: p ? p.name : '' };
+  const items = Object.values(cart).map(l => {
+    const p = productoDe(l);
+    return {
+      product_id: l.productId,
+      qty: l.qty,
+      label: p ? p.name : '',
+      opciones: (l.opciones || []).map(o => o.nombre)
+    };
   });
 
   let total = 0;
   let listaProductos = '';
 
-  Object.keys(cart).forEach(id => {
-    const p = products.find(x => x.id === id);
+  Object.values(cart).forEach(l => {
+    const p = productoDe(l);
     if (p){
-      const subtotal = p.price * cart[id];
+      const subtotal = precioUnitario(l) * l.qty;
       total += subtotal;
-      listaProductos += '• ' + p.name + ' x' + cart[id] + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
+      listaProductos += '• ' + p.name + ' x' + l.qty + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
+
+      // Los agregados van indentados debajo del producto, para que el
+      // cocinero lea de un vistazo qué lleva cada uno.
+      (l.opciones || []).forEach(o => {
+        listaProductos += '     + ' + o.nombre +
+          (Number(o.precio) > 0 ? ' ($' + Number(o.precio).toLocaleString('es-AR') + ')' : '') + '\n';
+      });
     }
   });
 
@@ -1022,8 +1152,8 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
         hora: byId('turnoHora').value,
         cliente: name,
         telefono: phone,
-        servicio: Object.keys(cart).map(id => {
-          const p = products.find(x => x.id === id);
+        servicio: Object.values(cart).map(l => {
+          const p = productoDe(l);
           return p ? p.name : '';
         }).filter(Boolean).join(', ')
       });
