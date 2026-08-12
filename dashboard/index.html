@@ -2185,7 +2185,12 @@ byId('registerForm').addEventListener('submit', async (e) => {
   const { error } = await sb.auth.signUp({
     email,
     password,
-    options: { data: { business_name, phone } }
+    options: {
+      data: { business_name, phone },
+      // A dónde vuelve después de confirmar el mail. Sin esto Supabase usa
+      // su Site URL por defecto, que puede no ser bruwaltech.com.ar.
+      emailRedirectTo: window.location.origin + '/dashboard'
+    }
   });
 
   boton.textContent = textoBoton;
