@@ -2272,6 +2272,22 @@ byId('copyStoreLinkBtn').addEventListener('click', async () => {
   setTimeout(() => btn.textContent = original, 1500);
 });
 
+// Arma el link de la tienda a partir del nombre del negocio.
+// Antes solo cambiaba los espacios por guiones, asi que "Peluquería Ana"
+// terminaba con la tilde metida en la URL y cualquier simbolo raro quedaba
+// tal cual. Ahora saca acentos y deja solo letras, numeros y guiones.
+function generarSlug(nombre) {
+  const limpio = String(nombre || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // á -> a, ñ -> n
+    .replace(/[^a-z0-9]+/g, '-')                        // todo lo demas, guion
+    .replace(/^-+|-+$/g, '')                            // sin guiones en las puntas
+    .slice(0, 40)
+    .replace(/-+$/, '');                                // por si el corte dejo uno
+
+  return limpio || 'mi-tienda';
+}
+
 async function onLoggedIn() {
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return;
@@ -2300,11 +2316,11 @@ async function onLoggedIn() {
     } else {
       const business_name = user.user_metadata?.business_name || 'Mi Tienda';
       const phone = user.user_metadata?.phone || '';
-      let slug = business_name.toLowerCase().replace(/\s+/g, '-');
+      let slug = generarSlug(business_name);
 
-      // Verificar si el slug existe, si existe agregar sufijo numérico
-      let counter = 1;
+      // Si ese link ya está tomado, se le agrega un número: /panaderia-2
       let baseSlug = slug;
+      let counter = 1;
       while (true) {
         let slugExists = await sb.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
         if (!slugExists.data) break;
