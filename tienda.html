@@ -113,6 +113,29 @@
   .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
   .modal-error{background:#FEF2F2;border:1px solid #FCA5A5;color:var(--danger);font-size:13px;padding:12px 14px;border-radius:8px;margin-bottom:16px;}
 
+  /* Tarjetas de categoría: la primera pantalla de una tienda con rubros */
+  .cat-card{
+    border-radius:14px;overflow:hidden;cursor:pointer;position:relative;
+    box-shadow:0 2px 10px rgba(21,41,77,.10);
+    transition:transform .25s ease, box-shadow .25s ease;
+  }
+  .cat-card:hover{transform:translateY(-4px);box-shadow:0 12px 26px rgba(21,41,77,.18);}
+  .cat-foto{position:relative;height:168px;background:linear-gradient(135deg,#EAF4FD,#D6E9FF);
+    display:flex;align-items:center;justify-content:center;}
+  .cat-foto img{width:100%;height:100%;object-fit:cover;display:block;}
+  .cat-velo{position:absolute;inset:0;
+    background:linear-gradient(to top,rgba(10,22,45,.88) 0%,rgba(10,22,45,.35) 45%,rgba(10,22,45,0) 100%);}
+  .cat-texto{position:absolute;left:14px;right:14px;bottom:12px;color:#fff;}
+  .cat-nombre{font-size:17px;font-weight:700;line-height:1.2;text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  .cat-cuenta{font-size:12.5px;opacity:.9;margin-top:2px;}
+
+  .volver-cat{
+    display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;
+    background:none;border:none;font-family:inherit;font-size:14px;font-weight:600;
+    color:var(--celeste);cursor:pointer;padding:6px 0;transition:opacity .2s ease;
+  }
+  .volver-cat:hover{opacity:.7;}
+
   /* Vista compacta: cuando hay categorias entran mas productos en pantalla */
   .products-grid.compacta .product-photo-container{height:132px;}
   .products-grid.compacta .product-info{padding:10px;}
@@ -229,6 +252,7 @@
         <!-- La clase products-grid faltaba: toda la CSS de grilla estaba
              escrita pero nunca se aplicaba, y los productos salian apilados
              uno por fila a lo ancho de la pantalla. -->
+        <button type="button" id="volverCategorias" class="volver-cat hidden">← Volver a las categorías</button>
         <div id="productsList" class="products-grid"></div>
         <div id="emptyProducts" class="empty hidden">Esta tienda todavía no cargó productos.</div>
       </div>
@@ -463,11 +487,68 @@ async function init(){
   renderProducts();
 }
 
+const SIN_CATEGORIA = 'Otros';
+
+function categoriasDeLaTienda(){
+  const nombres = [...new Set(products.map(p => p.category).filter(Boolean))];
+  // Los productos sin categoría se agrupan al final, para que no desaparezcan
+  if (products.some(p => !p.category) && nombres.length) nombres.push(SIN_CATEGORIA);
+  return nombres;
+}
+
+const productosDe = (cat) => cat === SIN_CATEGORIA
+  ? products.filter(p => !p.category)
+  : products.filter(p => p.category === cat);
+
+// Vista inicial de una tienda con categorías: una tarjeta por rubro.
+// El cliente elige "Hamburguesas" y recién ahí ve las hamburguesas.
+function renderTarjetasDeCategoria(categorias){
+  const list = byId('productsList');
+  list.className = 'products-grid';
+
+  list.innerHTML = categorias.map(cat => {
+    const dentro = productosDe(cat);
+    const conFoto = dentro.find(p => fotosDe(p).length);
+    const portada = conFoto ? fotosDe(conFoto)[0] : null;
+
+    return '<div class="cat-card" data-cat="' + escapeHtml(cat) + '">' +
+      '<div class="cat-foto">' +
+        (portada
+          ? '<img src="' + escapeHtml(portada) + '" alt="">'
+          : '<div class="product-photo-placeholder">🛒</div>') +
+        '<div class="cat-velo"></div>' +
+        '<div class="cat-texto">' +
+          '<div class="cat-nombre">' + escapeHtml(cat) + '</div>' +
+          '<div class="cat-cuenta">' + dentro.length + (dentro.length === 1 ? ' opción' : ' opciones') + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  list.querySelectorAll('.cat-card').forEach(c => {
+    c.addEventListener('click', () => {
+      selectedCategory = c.dataset.cat;
+      renderProducts();
+      byId('productsList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
 function renderProducts(){
   loadCategories();
 
+  const categorias = categoriasDeLaTienda();
+
+  // Sin categorías cargadas todo sigue como antes: la lista completa
+  if (categorias.length && !selectedCategory){
+    hide(byId('emptyProducts'));
+    hide(byId('volverCategorias'));
+    renderTarjetasDeCategoria(categorias);
+    return;
+  }
+
   filteredProducts = selectedCategory
-    ? products.filter(p => p.category === selectedCategory)
+    ? productosDe(selectedCategory)
     : products;
 
   const list = byId('productsList');
@@ -477,10 +558,16 @@ function renderProducts(){
   }
   hide(byId('emptyProducts'));
 
-  // Con categorias cargadas conviene la vista compacta: entran mas productos
-  // en pantalla y el detalle se ve al abrir la ficha.
-  const hayCategorias = new Set(products.map(p => p.category).filter(Boolean)).size > 0;
-  list.classList.toggle('compacta', hayCategorias);
+  // Botón para volver al listado de rubros
+  const volver = byId('volverCategorias');
+  if (categorias.length && selectedCategory){
+    volver.innerHTML = '← Volver a las categorías <b>· ' + escapeHtml(selectedCategory) + '</b>';
+    show(volver);
+  } else {
+    hide(volver);
+  }
+
+  list.className = 'products-grid' + (categorias.length ? ' compacta' : '');
 
   list.innerHTML = filteredProducts.map(p => {
     const qty = cart[p.id] || 0;
@@ -796,6 +883,12 @@ byId('openCheckoutBtn').addEventListener('click', () => {
   show(byId('checkoutModal'));
 });
 byId('closeCheckoutModal').addEventListener('click', () => hide(byId('checkoutModal')));
+byId('volverCategorias').addEventListener('click', () => {
+  selectedCategory = null;
+  renderProducts();
+  byId('productsList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
 byId('cerrarFicha').addEventListener('click', () => hide(byId('fichaModal')));
 byId('fichaModal').addEventListener('click', (e) => {
   if (e.target === byId('fichaModal')) hide(byId('fichaModal'));   // tocar afuera cierra
