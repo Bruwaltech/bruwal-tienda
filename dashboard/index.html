@@ -3395,10 +3395,22 @@ byId('productForm').addEventListener('submit', async (e) => {
     payload.image_url = urls[0];   // la principal, para lo que ya lee este campo
   }
 
-  if (id) {
-    await sb.from('store_products').update(payload).eq('id', id);
-  } else {
-    await sb.from('store_products').insert(payload);
+  // El error se ignoraba: si la base rechazaba el guardado, el formulario se
+  // cerraba igual y el producto no aparecía en ningún lado. Un guardado que
+  // falla en silencio es peor que uno que falla con un cartel.
+  const { error: errorGuardado } = id
+    ? await sb.from('store_products').update(payload).eq('id', id)
+    : await sb.from('store_products').insert(payload);
+
+  if (errorGuardado) {
+    const msg = errorGuardado.message || '';
+    const falta = msg.match(/Could not find the '([^']+)' column/);
+
+    alert(falta
+      ? 'No se pudo guardar: falta la columna "' + falta[1] + '" en la base de datos.\n\n' +
+        'Es una actualización pendiente. Avisale a soporte y mencioná este nombre.'
+      : 'No se pudo guardar el producto:\n\n' + msg);
+    return;   // el formulario queda abierto, con todo lo que cargaste
   }
 
   byId('pImageFile').value = '';
@@ -3435,7 +3447,12 @@ async function editProduct(id) {
 async function deleteProduct(id) {
   if (!puedeOperar()) return;
   if (!confirm('¿Eliminar este producto?')) return;
-  await sb.from('store_products').delete().eq('id', id);
+
+  const { error } = await sb.from('store_products').delete().eq('id', id);
+  if (error) {
+    alert('No se pudo eliminar el producto:\n\n' + error.message);
+    return;
+  }
   await refreshData();
 }
 
