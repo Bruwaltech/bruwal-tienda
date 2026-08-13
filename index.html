@@ -128,12 +128,86 @@
     animation: fadeInUp 0.8s ease-out;
   }
 
-  .hero h1 {
-    font-size: 48px;
-    font-weight: 700;
-    margin-bottom: 16px;
-    line-height: 1.2;
+  .hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.22);
+    padding: 7px 16px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    margin-bottom: 26px;
   }
+  .hero-eyebrow .punto {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #4ADE80;
+    animation: latir 1.8s ease-in-out infinite;
+  }
+
+  .hero h1 {
+    font-size: 72px;
+    font-weight: 700;
+    margin-bottom: 18px;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+
+  /* La palabra fuerte del eslogan, en degradé animado */
+  .hero h1 .resalte {
+    background: linear-gradient(90deg, #7DD3FC, #4ADE80, #7DD3FC, #4ADE80);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: palabraEntra .7s cubic-bezier(.22,.68,.35,1) forwards,
+               brilloLento 9s linear infinite;
+  }
+
+  .hero-acciones {
+    display: flex;
+    gap: 13px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 34px;
+  }
+
+  .hero-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 15px 32px;
+    border-radius: 10px;
+    font-size: 15.5px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: transform .22s ease, box-shadow .22s ease;
+  }
+  .hero-btn:hover { transform: translateY(-2px); }
+
+  .hero-btn.principal {
+    background: #fff;
+    color: #15294D;
+    box-shadow: 0 8px 24px rgba(0,0,0,.22);
+  }
+  .hero-btn.principal:hover { box-shadow: 0 12px 30px rgba(0,0,0,.32); }
+
+  .hero-btn.secundario {
+    background: rgba(255,255,255,.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.32);
+  }
+  .hero-btn.secundario:hover { background: rgba(255,255,255,.2); }
+
+  .hero-prueba {
+    margin-top: 26px;
+    font-size: 13.5px;
+    opacity: .82;
+    font-weight: 300;
+    min-height: 20px;
+  }
+  .hero-prueba b { font-weight: 700; opacity: 1; }
 
   /* Las palabras entran una tras otra. Los <span> los crea el JavaScript,
      asi que si no corre queda el titulo comun y corriente, visible. */
@@ -363,7 +437,11 @@
   }
 
   @media(max-width: 768px) {
-    .hero h1 { font-size: 32px; }
+    .hero { padding: 54px 20px; }
+    .hero h1 { font-size: 42px; }
+    .hero-eyebrow { font-size: 11.5px; padding: 6px 13px; margin-bottom: 20px; }
+    .hero-acciones { flex-direction: column; align-items: stretch; margin-top: 26px; }
+    .hero-btn { justify-content: center; }
     .hero .subtitle { font-size: 16px; }
     .search-input-wrapper { flex-direction: column; }
     .filters { grid-template-columns: 1fr; }
@@ -629,11 +707,24 @@
 </header>
 
 <div class="hero">
-  <h1>Tu tienda en la palma de tu mano</h1>
-  <p class="subtitle">Descubre negocios locales con tienda online en tu zona</p>
+  <div class="hero-eyebrow"><span class="punto"></span> Tiendas online para negocios de barrio</div>
+
+  <h1 data-destacar="marca">Hacé tu marca</h1>
+
+  <p class="subtitle">
+    Nosotros ponemos la tienda.<br>
+    <b>Vos ponés el nombre que la gente va a recordar.</b>
+  </p>
+
+  <div class="hero-acciones">
+    <a href="/dashboard" class="hero-btn principal">Crear mi tienda gratis</a>
+    <a href="#buscador" class="hero-btn secundario">Ver tiendas</a>
+  </div>
+
+  <div class="hero-prueba" id="heroPrueba"></div>
 </div>
 
-<div class="search-section">
+<div class="search-section" id="buscador">
   <div class="search-box">
     <label class="search-label">🔍 Encontra la tienda que buscas</label>
     <div class="search-input-wrapper">
@@ -805,6 +896,7 @@ async function loadStores() {
 
     stores = data || [];
     filteredStores = stores;
+    mostrarPruebaSocial(stores.length);
     initMap();
     renderStoresList();
     addMapMarkers();
@@ -1009,10 +1101,29 @@ function animarTitulo() {
   const h1 = document.querySelector('.hero h1');
   if (!h1) return;
 
+  // Las palabras listadas en data-destacar salen con el degradé animado
+  const destacar = (h1.dataset.destacar || '')
+    .toLowerCase().split(/\s+/).filter(Boolean);
+
   const palabras = h1.textContent.trim().split(/\s+/);
   h1.innerHTML = palabras
-    .map((p, i) => '<span class="palabra" style="animation-delay:' + (i * 0.09).toFixed(2) + 's">' + escapeHtml(p) + '</span>')
+    .map((p, i) => {
+      const limpia = p.toLowerCase().replace(/[.,;:!?¡¿]/g, '');
+      const clase = 'palabra' + (destacar.includes(limpia) ? ' resalte' : '');
+      return '<span class="' + clase + '" style="animation-delay:' + (i * 0.09).toFixed(2) + 's">' +
+             escapeHtml(p) + '</span>';
+    })
     .join(' ');
+}
+
+// Prueba social con el número real de tiendas, no un número inventado.
+// Si la consulta falla no se muestra nada: mejor vacío que un dato falso.
+function mostrarPruebaSocial(cantidad) {
+  const el = document.getElementById('heroPrueba');
+  if (!el || !cantidad) return;
+  el.innerHTML = cantidad === 1
+    ? 'Ya hay <b>1 negocio</b> vendiendo con BRUWAL'
+    : 'Ya hay <b>' + cantidad + ' negocios</b> vendiendo con BRUWAL';
 }
 
 function configurarAvisoIA() {
