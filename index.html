@@ -874,6 +874,21 @@ let map = null;
 let markers = [];
 let selectedStore = null;
 
+// Si Supabase no tiene autorizada la URL de destino, manda al usuario acá,
+// a la portada, con los tokens colgando de la dirección. Esta página no
+// sabe qué hacer con eso, así que el que quería cambiar su contraseña
+// terminaba mirando el mapa de tiendas sin entender nada.
+// Lo derivamos al panel conservando los tokens intactos.
+(function derivarRecuperacion() {
+  const hash = window.location.hash || '';
+  const query = window.location.search || '';
+  const esRecuperacion = /type=recovery|type=signup|access_token=|[?&]code=/.test(hash + query);
+
+  if (esRecuperacion && !window.location.pathname.startsWith('/dashboard')) {
+    window.location.replace('/dashboard' + query + hash);
+  }
+})();
+
 async function init() {
   try {
     // Antes esto redirigia al dashboard si habia sesion, lo que impedia

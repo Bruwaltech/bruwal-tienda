@@ -1580,7 +1580,12 @@ function limpiarTokensDeLaUrl() {
 
 // Se lee ANTES de limpiar nada: es la unica señal de que el usuario viene
 // del mail de recuperacion y no de un ingreso normal.
-let enRecuperacion = /type=recovery/.test(window.location.hash || '');
+// Supabase manda el tipo en el # o en la query segun la version y el flujo,
+// asi que miramos los dos. Si solo miraramos uno, el usuario entraria al
+// panel sin poder cambiar la contraseña, que es justo a lo que vino.
+let enRecuperacion = /type=recovery/.test(
+  (window.location.hash || '') + (window.location.search || '')
+);
 
 sb.auth.onAuthStateChange((evento) => {
   if (evento === 'PASSWORD_RECOVERY') enRecuperacion = true;
@@ -2161,8 +2166,25 @@ byId('loginForm').addEventListener('submit', async (e) => {
   const { error } = await sb.auth.signInWithPassword({ email, password });
 
   if (error) {
-    byId('authError').textContent = 'Email o contraseña incorrectos';
-    show(byId('authError'));
+    // Antes cualquier error decia "email o contraseña incorrectos". A quien
+    // no habia confirmado su cuenta le hacia creer que se equivocaba de
+    // contraseña, y reintentaba para siempre sin saber cual era el problema.
+    const m = (error.message || '').toLowerCase();
+    const cartel = byId('authError');
+
+    if (m.includes('not confirmed') || m.includes('email not confirmed')) {
+      cartel.innerHTML = '<b>Falta confirmar tu cuenta.</b><br>' +
+        '<span style="font-size:12.5px;">Te mandamos un mail cuando te registraste. ' +
+        'Revisá tu bandeja y el correo no deseado. Si no lo encontrás, escribinos y te la habilitamos.</span>';
+    } else if (m.includes('invalid login credentials')) {
+      cartel.textContent = 'El email o la contraseña no coinciden. Revisá que no haya quedado un espacio de más.';
+    } else if (m.match(/after (\d+) seconds?/) || m.includes('rate limit')) {
+      cartel.textContent = 'Demasiados intentos seguidos. Esperá un minuto y volvé a probar.';
+    } else {
+      cartel.textContent = error.message;
+    }
+
+    show(cartel);
     return;
   }
 
