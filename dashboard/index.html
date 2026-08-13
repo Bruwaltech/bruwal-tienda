@@ -1075,7 +1075,7 @@ tr:last-child td { border-bottom: none; }
     <form id="registerForm" class="hidden">
       <div class="field"><label>Nombre de tu negocio</label><input type="text" id="regBusiness" required></div>
       <div class="field"><label>Logo/Imagen de tu tienda</label><input type="file" id="regLogo" accept="image/*"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Max 2MB</small></div>
-      <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
+      <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
       <div class="field"><label>Contraseña</label><input type="password" id="regPassword" required minlength="6"></div>
@@ -1269,6 +1269,10 @@ tr:last-child td { border-bottom: none; }
           <div id="qr-reader" style="width:100%;height:300px;"></div>
           <button onclick="stopCameraScanner()" class="btn-ghost" style="width:100%;padding:12px;background:#f0f0f0;border:none;cursor:pointer;font-weight:600;">Cerrar cámara</button>
         </div>
+        <div id="barcodeMatches" class="hidden" style="background:#fff;padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid var(--line);">
+          <div style="font-size:13px;color:var(--text-mute);margin-bottom:8px;" id="barcodeMatchesTitle"></div>
+          <div id="barcodeMatchesList" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;"></div>
+        </div>
         <div id="barcodeResult" class="hidden" style="background:#fff;padding:16px;border-radius:8px;margin-bottom:12px;border:1px solid var(--line);">
           <div class="fila-resultado-venta">
             <div>
@@ -1364,6 +1368,8 @@ tr:last-child td { border-bottom: none; }
           <label>Categoría</label>
           <input type="text" id="pCategory" list="listaCategoriasProducto" placeholder="Elegí una o escribí la tuya" autocomplete="off">
           <datalist id="listaCategoriasProducto"></datalist>
+          <!-- Rubros sugeridos, compartido por el alta y la configuracion de la tienda -->
+          <datalist id="listaRubros"></datalist>
         </div>
         <div class="field"><label>EAN / Código de barras</label><div style="display:flex;gap:8px;"><input type="text" id="pEan" placeholder="Se completa al escanear" style="flex:1;"><button type="button" onclick="toggleProductCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 16px;font-size:14px;">📷</button></div></div>
         <div id="productCameraScanner" class="hidden" style="margin-bottom:12px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
@@ -1452,7 +1458,7 @@ tr:last-child td { border-bottom: none; }
       </div>
       <form id="configForm">
         <div class="field"><label>Nombre de tu tienda</label><input type="text" id="configNombre" required></div>
-        <div class="field"><label>Descripción (rubro)</label><input type="text" id="configDesc" placeholder="Ej: Hamburguesas artesanales"></div>
+        <div class="field"><label>Descripción (rubro)</label><input type="text" id="configDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales"></div>
         <div class="field"><label>Teléfono WhatsApp</label><input type="tel" id="configPhone" required></div>
         <div class="field"><label>Ubicación</label><input type="text" id="configLocation" placeholder="Ej: Paraná, Entre Ríos"></div>
         <div class="field"><label>Sitio web</label><input type="url" id="configWeb" placeholder="https://..."></div>
@@ -1809,6 +1815,55 @@ const escapeHtml = (str) => {
   return d.innerHTML;
 };
 
+// Compara sin acentos ni mayusculas: quien vende escribe "proteina" y el
+// producto puede estar cargado como "Proteína". Antes eso no matcheaba.
+function normalizarTexto(txt) {
+  return String(txt || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');   // á -> a, ñ -> n
+}
+
+// Cuantas letras hay que cambiar para llegar de la clave a ALGUN comienzo de
+// la palabra (Levenshtein contra todos los prefijos del token, que es la ultima
+// fila de la matriz). Comparar contra prefijos y no contra la palabra entera es
+// lo que hace que "rotiser" mida 0 contra "rotiseria" y contra "rotiserias":
+// lo que sobra al final es la terminacion, no un error de tipeo.
+function distanciaAlPrefijo(token, clave) {
+  if (!clave.length) return 0;
+  if (!token.length) return clave.length;
+
+  // fila[j] = distancia entre lo que va de la clave y token[0..j]
+  let fila = Array.from({ length: token.length + 1 }, (_, j) => j);
+
+  for (let i = 1; i <= clave.length; i++) {
+    let anterior = fila[0];
+    fila[0] = i;
+    for (let j = 1; j <= token.length; j++) {
+      const guardado = fila[j];
+      fila[j] = clave[i - 1] === token[j - 1]
+        ? anterior
+        : 1 + Math.min(anterior, fila[j], fila[j - 1]);
+      anterior = guardado;
+    }
+  }
+  return Math.min(...fila);
+}
+
+// Tolerancia proporcional: en palabras cortas un error ya es mucho, en las
+// largas se perdona mas. "rotiseria" (9) admite 2; "pizza" (5) admite 1.
+// Con 4 letras o menos no perdonamos nada: "bar" y "bazar" no son lo mismo.
+function pareceALaPalabra(texto, clave) {
+  if (texto.includes(clave)) return true;
+
+  const margen = clave.length <= 4 ? 0 : clave.length <= 7 ? 1 : 2;
+  if (!margen) return false;
+
+  return normalizarTexto(texto).split(/[^a-z0-9]+/).some(token => {
+    if (!token || token.length + margen < clave.length) return false;
+    return distanciaAlPrefijo(token, clave) <= margen;
+  });
+}
+
 // AUTH TABS
 byId('tabLogin').addEventListener('click', () => {
   byId('tabLogin').classList.add('active');
@@ -1825,33 +1880,68 @@ byId('tabLogin').addEventListener('click', () => {
 // aparte: son pocas y siempre se leen junto con la tienda.
 
 // Sugerencias segun lo que el vendedor escribio como rubro
+// Las claves son prefijos que se buscan dentro del rubro escrito, y ademas se
+// comparan tolerando errores de tipeo (ver pareceALaPalabra). Por eso conviene
+// listar los sinonimos reales que usa la gente — "rotiseria", "restaurant",
+// "comida rapida" son todos el mismo rubro — y no depender de que lo escriban
+// bien: "retoran" o "rotiseria" sin tilde tambien caen en el grupo correcto.
 const CATEGORIAS_SUGERIDAS = {
-  electronica: { claves: ['electr', 'tecno', 'celular', 'compu', 'informat'],
+  electronica: { claves: ['electr', 'tecno', 'celular', 'compu', 'informat', 'notebook', 'telefon', 'gamer', 'consola'],
     lista: ['Teléfonos', 'Auriculares', 'Cargadores', 'Fundas', 'Parlantes', 'Smartwatch', 'Cables', 'Accesorios'] },
-  suplementos: { claves: ['suplement', 'nutric', 'proteina', 'fitness', 'gimnasio'],
+  suplementos: { claves: ['suplement', 'nutric', 'proteina', 'fitness', 'gimnasio', 'gym', 'deportiv', 'dietetic'],
     lista: ['Proteínas', 'Creatina', 'Vitaminas', 'Pre-entreno', 'Barritas', 'Aminoácidos'] },
-  comida: { claves: ['hamburgues', 'comida', 'rotiser', 'pizz', 'delivery', 'resto', 'cocina'],
+  comida: { claves: ['hamburgues', 'comida', 'rotiser', 'pizz', 'delivery', 'resto', 'restaur', 'restoran', 'retoran',
+                     'cocina', 'parrilla', 'empanada', 'sushi', 'sandwich', 'lomiteria', 'panaderia', 'cafeteria',
+                     'heladeria', 'bar', 'fast food', 'vianda', 'catering', 'milanes'],
     lista: ['Hamburguesas', 'Pizzas', 'Empanadas', 'Guarniciones', 'Bebidas', 'Postres', 'Promos'] },
-  kiosco: { claves: ['kiosco', 'kiosko', 'almacen', 'despensa', 'maxikiosco'],
+  kiosco: { claves: ['kiosco', 'kiosko', 'quiosco', 'almacen', 'despensa', 'maxikiosco', 'autoservicio', 'minimercado', 'fiambreria'],
     lista: ['Golosinas', 'Bebidas', 'Snacks', 'Galletitas', 'Cigarrillos', 'Lácteos'] },
-  indumentaria: { claves: ['ropa', 'indument', 'moda', 'textil', 'boutique'],
+  indumentaria: { claves: ['ropa', 'indument', 'moda', 'textil', 'boutique', 'calzado', 'zapateria', 'lenceria', 'tienda de ropa'],
     lista: ['Remeras', 'Pantalones', 'Camperas', 'Calzado', 'Buzos', 'Accesorios'] },
-  perfumeria: { claves: ['perfum', 'cosmet', 'belleza', 'farmac'],
+  perfumeria: { claves: ['perfum', 'cosmet', 'belleza', 'farmac', 'peluqueria', 'estetica', 'maquillaje'],
     lista: ['Perfumes', 'Cremas', 'Maquillaje', 'Cuidado capilar', 'Higiene'] },
-  ferreteria: { claves: ['ferret', 'construc', 'herramient', 'pintur'],
+  ferreteria: { claves: ['ferret', 'construc', 'herramient', 'pintur', 'corralon', 'sanitario', 'electricidad'],
     lista: ['Herramientas', 'Tornillería', 'Pinturas', 'Electricidad', 'Plomería'] },
-  mascotas: { claves: ['mascota', 'petshop', 'veterin', 'animal'],
+  mascotas: { claves: ['mascota', 'petshop', 'pet shop', 'veterin', 'animal', 'forrajeria'],
     lista: ['Alimento perro', 'Alimento gato', 'Juguetes', 'Higiene', 'Accesorios'] }
 };
 
 const CATEGORIAS_GENERICAS = ['Destacados', 'Ofertas', 'Novedades', 'Más vendidos'];
 
+// Rubros que ofrecemos como autocompletado al crear o configurar la tienda.
+// Escribir uno de estos garantiza que las categorias sugeridas sean las
+// correctas; igual el campo es libre y el matcher tolera variantes.
+const RUBROS_SUGERIDOS = [
+  'Rotisería', 'Restaurante', 'Comida rápida', 'Pizzería', 'Hamburguesería',
+  'Parrilla', 'Panadería', 'Cafetería', 'Heladería', 'Sushi', 'Delivery de comida',
+  'Kiosco', 'Maxikiosco', 'Almacén', 'Despensa', 'Fiambrería', 'Autoservicio',
+  'Suplementos deportivos', 'Dietética', 'Farmacia', 'Perfumería', 'Cosmética',
+  'Peluquería', 'Estética', 'Electrónica', 'Celulares y accesorios', 'Informática',
+  'Indumentaria', 'Zapatería', 'Boutique', 'Ferretería', 'Corralón', 'Pinturería',
+  'Pet shop', 'Veterinaria', 'Forrajería', 'Librería', 'Juguetería', 'Florería'
+].sort((a, b) => a.localeCompare(b, 'es'));
+
+(function cargarRubrosSugeridos() {
+  const dl = byId('listaRubros');
+  if (!dl) return;
+  dl.innerHTML = RUBROS_SUGERIDOS
+    .map(r => '<option value="' + escapeHtml(r) + '"></option>')
+    .join('');
+})();
+
 let categoriasEnEdicion = [];
 
 function sugerenciasParaMiRubro() {
-  const rubro = ((currentStore?.description || '') + ' ' + (currentStore?.business_name || '')).toLowerCase();
+  // Antes esto era un includes() a secas: "rotiseria" entraba, pero "rotiseria"
+  // mal escrita o un sinonimo como "restaurant" caia en las genericas y el
+  // vendedor no veia ninguna categoria util.
+  const rubro = normalizarTexto(
+    (currentStore?.description || '') + ' ' + (currentStore?.business_name || '')
+  );
+  if (!rubro.trim()) return CATEGORIAS_GENERICAS;
+
   for (const g of Object.values(CATEGORIAS_SUGERIDAS)) {
-    if (g.claves.some(k => rubro.includes(k))) return g.lista;
+    if (g.claves.some(k => pareceALaPalabra(rubro, k))) return g.lista;
   }
   return CATEGORIAS_GENERICAS;
 }
@@ -2890,25 +2980,83 @@ async function anularVenta(id) {
 let currentBarcodeProduct = null;
 
 async function searchByBarcode() {
-  const query = byId('barcodeInput').value.trim().toLowerCase();
+  const query = normalizarTexto(byId('barcodeInput').value.trim());
   if (!query) {
     alert('Ingresa un código, EAN o nombre del producto');
     return;
   }
 
-  let product = products.find(p => p.ean === query);
-
-  if (!product) {
-    product = products.find(p => p.name.toLowerCase().includes(query));
+  // El EAN es unico: si hay match exacto no hace falta preguntar nada.
+  const porEan = products.find(p => normalizarTexto(p.ean) === query);
+  if (porEan) {
+    seleccionarProductoVenta(porEan.id);
+    return;
   }
 
-  if (!product) {
+  // Por nombre puede haber varios ("proteina" -> vainilla y chocolate).
+  // Antes usabamos find(), que devolvia solo el primero y hacia invisibles
+  // al resto del catalogo.
+  let coincidencias = products.filter(p => normalizarTexto(p.name).includes(query));
+  let huboTipeo = false;
+
+  // Recien si no hay ninguna exacta perdonamos errores de tipeo. En ese orden,
+  // porque el que escribe bien tiene que ver su producto y nada mas.
+  if (coincidencias.length === 0) {
+    coincidencias = products.filter(p =>
+      pareceALaPalabra(normalizarTexto(p.name), query) ||
+      normalizarTexto(p.category || '').includes(query)
+    );
+    huboTipeo = coincidencias.length > 0;
+  }
+
+  if (coincidencias.length === 0) {
+    hide(byId('barcodeMatches'));
+    hide(byId('barcodeResult'));
     alert('Producto no encontrado');
     byId('barcodeInput').focus();
     return;
   }
 
+  // Con una sola coincidencia exacta vamos derecho. Si la encontramos
+  // perdonando un error de tipeo no: el vendedor tiene que confirmar que ese
+  // es el producto antes de que se registre una venta a nombre de otro.
+  if (coincidencias.length === 1 && !huboTipeo) {
+    seleccionarProductoVenta(coincidencias[0].id);
+    return;
+  }
+
+  mostrarCoincidencias(coincidencias, huboTipeo);
+}
+
+function mostrarCoincidencias(lista, huboTipeo) {
+  hide(byId('barcodeResult'));
+  byId('barcodeMatchesTitle').textContent = huboTipeo
+    ? 'No hay nada con ese nombre exacto. ¿Quisiste decir alguno de estos?'
+    : lista.length + ' productos coinciden. Elegí cuál vas a vender:';
+
+  byId('barcodeMatchesList').innerHTML = lista.map(p => {
+    const sinStock = esProductoFisico(p) && Number(p.stock || 0) <= 0;
+    return '<button type="button" onclick="seleccionarProductoVenta(\'' +
+      String(p.id).replace(/'/g, "\\'") + '\')" ' +
+      'style="display:flex;justify-content:space-between;align-items:center;gap:12px;' +
+      'width:100%;text-align:left;padding:10px 12px;border:1px solid var(--line);' +
+      'border-radius:6px;background:#fff;cursor:pointer;font-size:14px;">' +
+      '<span style="font-weight:600;color:var(--navy);">' + escapeHtml(p.name) + '</span>' +
+      '<span style="white-space:nowrap;">' +
+        (sinStock ? '<span style="color:var(--danger);font-size:12px;margin-right:8px;">sin stock</span>' : '') +
+        '<span style="font-weight:700;color:var(--celeste);">' + money(p.price) + '</span>' +
+      '</span></button>';
+  }).join('');
+
+  show(byId('barcodeMatches'));
+}
+
+function seleccionarProductoVenta(id) {
+  const product = products.find(p => String(p.id) === String(id));
+  if (!product) return;
+
   currentBarcodeProduct = product;
+  hide(byId('barcodeMatches'));
   byId('barcodeProductName').textContent = product.name;
   byId('barcodeProductPrice').textContent = money(product.price);
   byId('barcodeQty').value = '1';
@@ -2936,6 +3084,8 @@ function calculateChange() {
 
 function clearBarcodeResult() {
   hide(byId('barcodeResult'));
+  hide(byId('barcodeMatches'));
+  currentBarcodeProduct = null;
   byId('barcodeInput').value = '';
   byId('barcodeInput').focus();
 }
@@ -2943,11 +3093,17 @@ function clearBarcodeResult() {
 async function confirmBarcodeVenta() {
   if (!puedeOperar()) return;
 
-  const ean = byId('barcodeInput').value.trim();
   const qty = parseInt(byId('barcodeQty').value) || 1;
 
-  const product = products.find(p => p.ean === ean);
-  if (!product) return;
+  // Antes esto volvia a buscar el producto por el EAN escrito en el input.
+  // Si la venta se habia buscado por nombre, ese texto no era el EAN de nada:
+  // la funcion cortaba en silencio, sin registrar la venta ni avisar. Usamos
+  // el producto que el usuario efectivamente selecciono.
+  const product = currentBarcodeProduct;
+  if (!product) {
+    alert('Elegí un producto antes de registrar la venta.');
+    return;
+  }
 
   const total = product.price * qty;
   const customerName = 'Venta escaneada ' + new Date().toLocaleTimeString('es-AR');
