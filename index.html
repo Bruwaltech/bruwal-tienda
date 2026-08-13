@@ -155,8 +155,10 @@
     letter-spacing: -0.02em;
   }
 
-  /* La palabra fuerte del eslogan, en degradé animado */
-  .hero h1 .resalte {
+  /* La palabra fuerte del eslogan, en degradé animado.
+     Va con .palabra.resalte para ganarle por especificidad a la regla de
+     .palabra, que está más abajo y si no le pisaba la animación. */
+  .hero h1 .palabra.resalte {
     background: linear-gradient(90deg, #7DD3FC, #4ADE80, #7DD3FC, #4ADE80);
     background-size: 300% 100%;
     -webkit-background-clip: text;
