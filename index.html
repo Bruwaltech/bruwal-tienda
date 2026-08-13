@@ -309,6 +309,36 @@
     box-shadow: 0 8px 16px rgba(47,143,224,0.3);
   }
 
+  /* Atajos por rubro: buscar sin escribir */
+  .atajos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-bottom: 16px;
+  }
+  .atajos button {
+    background: #F4F8FC;
+    border: 1px solid #DCE6F0;
+    border-radius: 999px;
+    padding: 8px 15px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: #15294D;
+    cursor: pointer;
+    transition: all .2s ease;
+    white-space: nowrap;
+  }
+  .atajos button:hover {
+    border-color: #2F8FE0;
+    background: #EAF4FD;
+  }
+  .atajos button.activo {
+    background: #2F8FE0;
+    border-color: #2F8FE0;
+    color: #fff;
+  }
+
   /* FILTERS */
   .filters {
     display: grid;
@@ -730,8 +760,18 @@
   <div class="search-box">
     <label class="search-label">🔍 Encontra la tienda que buscas</label>
     <div class="search-input-wrapper">
-      <input type="text" id="searchInput" placeholder="Nombre de negocio...">
+      <input type="text" id="searchInput" placeholder="Comida, kiosco, peluquería, un nombre..." oninput="filterStores()">
       <button class="search-btn" onclick="filterStores()">Buscar</button>
+    </div>
+
+    <div class="atajos" id="atajosRubro">
+      <button type="button" data-atajo="comida">🍔 Para comer</button>
+      <button type="button" data-atajo="kiosco">🏪 Kiosco</button>
+      <button type="button" data-atajo="peluqueria">💇 Belleza</button>
+      <button type="button" data-atajo="ropa">👕 Ropa</button>
+      <button type="button" data-atajo="electronica">📱 Tecnología</button>
+      <button type="button" data-atajo="suplementos">💪 Salud</button>
+      <button type="button" data-atajo="mascota">🐶 Mascotas</button>
     </div>
     <div class="filters">
       <input type="text" id="filterCity" class="filter-input" placeholder="Ciudad, localidad..." oninput="filterStores()">
@@ -996,18 +1036,84 @@ function selectStore(storeId) {
   if (coords) map.setView(coords, 14);
 }
 
+// Saca acentos y mayúsculas: "Rotisería" y "rotiseria" tienen que ser lo mismo
+const normalizar = (s) => String(s || '').toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+// El que busca no sabe cómo se describió cada negocio. Escribe "comida" o
+// "para comer" y espera ver rotiserías y hamburgueserías. Cada grupo junta
+// las palabras que la gente BUSCA con las que los negocios USAN, incluidos
+// los errores de tipeo más comunes.
+const GRUPOS_DE_RUBRO = [
+  { busca:   ['comida','comer','restaurant','restaurante','restoran','restorant','resto',
+              'delivery','hambre','almuerzo','cena','vianda','gastronomia'],
+    coincide:['comida','rotiser','hamburgues','burger','pizz','resto','parrilla','empanada',
+              'sandwich','sanguch','lomo','vianda','catering','cocina','pasta','sushi',
+              'milanes','choripan','food','asador','pollo'] },
+
+  { busca:   ['kiosco','kiosko','quiosco','almacen','despensa','golosina','bebida'],
+    coincide:['kiosco','kiosko','almacen','despensa','maxikiosco','golosina','bebida','fiambre'] },
+
+  { busca:   ['ropa','vestimenta','indumentaria','moda','vestir','calzado','zapatilla'],
+    coincide:['ropa','indument','moda','textil','boutique','calzado','zapatill','deportiv'] },
+
+  { busca:   ['tecnologia','tecnologico','electronica','celular','computacion','compu'],
+    coincide:['electronic','tecno','celular','computac','informatic','notebook','accesorio'] },
+
+  { busca:   ['belleza','peluqueria','estetica','uñas','barberia','cabello','pelo'],
+    coincide:['peluquer','barber','estetic','belleza','uñas','unas','spa','manicur','cosmetic'] },
+
+  { busca:   ['salud','farmacia','remedio','suplemento','gimnasio','nutricion','proteina'],
+    coincide:['farmac','suplement','nutric','proteina','vitamina','gimnasio','fitness','salud'] },
+
+  { busca:   ['ferreteria','herramienta','construccion','pintura','obra'],
+    coincide:['ferret','herramient','construc','pintur','electricidad','plomeri','sanitario'] },
+
+  { busca:   ['mascota','perro','gato','veterinaria','petshop'],
+    coincide:['mascota','petshop','veterin','animal','perro','gato'] },
+
+  { busca:   ['auto','vehiculo','repuesto','mecanica','moto','automotor'],
+    coincide:['auto','vehicul','repuest','mecanic','moto','neumatic','lubricentro'] }
+];
+
+// Devuelve la consulta más todos los términos del rubro que corresponda
+function terminosDeBusqueda(consulta) {
+  const q = normalizar(consulta);
+  if (!q) return [];
+
+  const terminos = new Set([q]);
+
+  // Con menos de 3 letras no ampliamos: "a" haría match con cualquier cosa
+  if (q.length >= 3) {
+    GRUPOS_DE_RUBRO.forEach(g => {
+      const pega = g.busca.some(t => t.includes(q) || q.includes(t)) ||
+                   g.coincide.some(t => t.includes(q) || q.includes(t));
+      if (pega) g.coincide.forEach(t => terminos.add(t));
+    });
+  }
+  return [...terminos];
+}
+
+// Todo el texto de una tienda, junto y normalizado
+const textoDeTienda = (s) =>
+  normalizar([s.business_name, s.description, s.location].filter(Boolean).join(' '));
+
 function filterStores() {
-  const search = document.getElementById('searchInput').value.toLowerCase().trim();
-  const city = document.getElementById('filterCity').value.toLowerCase().trim();
-  const rubro = document.getElementById('filterRubro').value.toLowerCase().trim();
-  const address = document.getElementById('filterAddress').value.toLowerCase().trim();
+  const search  = document.getElementById('searchInput').value.trim();
+  const city    = normalizar(document.getElementById('filterCity').value.trim());
+  const rubro   = document.getElementById('filterRubro').value.trim();
+  const address = normalizar(document.getElementById('filterAddress').value.trim());
+
+  const terminos = terminosDeBusqueda(search);
+  const terminosRubro = terminosDeBusqueda(rubro);
 
   filteredStores = stores.filter(s => {
-    const nameMatch = !search || s.business_name.toLowerCase().includes(search);
-    const cityMatch = !city || (s.location && s.location.toLowerCase().includes(city));
-    const rubroMatch = !rubro || (s.description && s.description.toLowerCase().includes(rubro));
-    const addressMatch = !address || (s.phone && s.phone.toLowerCase().includes(address));
-    return nameMatch && cityMatch && rubroMatch && addressMatch;
+    const texto = textoDeTienda(s);
+    const coincideBusqueda = !terminos.length || terminos.some(t => texto.includes(t));
+    const coincideRubro    = !terminosRubro.length || terminosRubro.some(t => texto.includes(t));
+    const coincideCiudad   = !city || normalizar(s.location).includes(city);
+    const coincideDir      = !address || normalizar(s.phone).includes(address);
+    return coincideBusqueda && coincideRubro && coincideCiudad && coincideDir;
   });
 
   selectedStore = null;
@@ -1019,6 +1125,34 @@ function filterStores() {
 function updateStoreCount() {
   const count = filteredStores.length;
   document.getElementById('storesCount').textContent = count === 0 ? 'No se encontraron tiendas' : `${count} tienda${count === 1 ? '' : 's'}`;
+}
+
+// Los atajos escriben en el buscador y filtran. Tocar el mismo de nuevo lo
+// apaga, así el que se equivocó de rubro no queda encerrado sin salida.
+function configurarAtajos() {
+  const cont = document.getElementById('atajosRubro');
+  if (!cont) return;
+
+  cont.querySelectorAll('[data-atajo]').forEach(b => {
+    b.addEventListener('click', () => {
+      const yaEstaba = b.classList.contains('activo');
+      cont.querySelectorAll('[data-atajo]').forEach(o => o.classList.remove('activo'));
+
+      const input = document.getElementById('searchInput');
+      if (yaEstaba) {
+        input.value = '';
+      } else {
+        b.classList.add('activo');
+        input.value = b.dataset.atajo;
+      }
+      filterStores();
+    });
+  });
+
+  // Si escribe a mano, se apagan los atajos: mandan los dos a la vez confunde
+  document.getElementById('searchInput').addEventListener('input', () => {
+    cont.querySelectorAll('[data-atajo]').forEach(o => o.classList.remove('activo'));
+  });
 }
 
 function goToStore(event, slug) {
@@ -1187,6 +1321,7 @@ function configurarAvisoIA() {
 animarTitulo();
 configurarAvisoIA();
 configurarInstalacion();
+configurarAtajos();
 
 // El service worker es lo que habilita la instalación. Si falla, la web
 // sigue funcionando igual: solo se pierde el poder bajarla como app.
