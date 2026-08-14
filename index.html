@@ -916,7 +916,8 @@
          estuviera incrustado siempre, YouTube cargaría en cada visita a la
          portada aunque nadie lo mire. -->
     <div class="video-marco revelar" id="videoMarco">
-      <img src="https://img.youtube.com/vi/v0WjogCQ4WE/hqdefault.jpg"
+      <img id="videoPortada"
+           src="https://img.youtube.com/vi/v0WjogCQ4WE/hqdefault.jpg"
            alt="Guía de usuario de BRUWAL" loading="lazy">
       <button type="button" class="video-play" id="videoPlay" aria-label="Reproducir el video">
         <span></span>
@@ -1267,6 +1268,17 @@ function updateStoreCount() {
 function configurarVideo() {
   const marco = document.getElementById('videoMarco');
   if (!marco) return;
+
+  // Si la miniatura de YouTube no carga (conexión, bloqueadores, o el video
+  // sin portada generada), mostramos el degradé de la marca en vez de un
+  // rectángulo negro con un botón flotando.
+  const portada = document.getElementById('videoPortada');
+  if (portada) {
+    portada.addEventListener('error', () => {
+      portada.remove();
+      marco.style.background = 'linear-gradient(135deg,#15294D,#2F8FE0)';
+    });
+  }
 
   marco.addEventListener('click', () => {
     marco.innerHTML =
