@@ -464,7 +464,7 @@ async function init(){
   }
 
   if (store.phone){
-    byId('storePhone').href = 'https://wa.me/54' + store.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent('Hola! Vengo de tu tienda online');
+    byId('storePhone').href = 'https://wa.me/' + numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent('Hola! Vengo de tu tienda online');
     byId('menuPhone').href = byId('storePhone').href;
   } else {
     hide(byId('storePhone'));
@@ -701,6 +701,27 @@ function conectarTarjetas(list){
   list.querySelectorAll('.product-card').forEach(c => {
     c.addEventListener('click', () => abrirFicha(c.dataset.id));
   });
+}
+
+// Arma el número para el link de WhatsApp.
+//
+// Antes se le pegaba un "54" fijo adelante a cualquier número. Una tienda
+// con teléfono alemán (+49 176...) terminaba con 5449176..., que no existe:
+// los pedidos de esa tienda no le llegaban a nadie.
+//
+// Criterio: si la persona escribió el "+", ya puso su código de país y lo
+// respetamos tal cual. Si no, asumimos que es argentino.
+function numeroWhatsApp(tel) {
+  const bruto = String(tel || '').trim();
+  let d = bruto.replace(/\D/g, '');
+  if (!d) return '';
+
+  if (d.startsWith('00')) d = d.slice(2);          // 00 = prefijo internacional
+  if (bruto.includes('+')) return d;               // lo escribió completo
+  if (d.startsWith('54') && d.length >= 12) return d;  // ya trae el 54
+
+  if (d.startsWith('0')) d = d.slice(1);           // 0341... -> 341...
+  return '54' + d;
 }
 
 // Los productos cargados antes de esta distincion no tienen 'tipo':
@@ -1223,8 +1244,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       console.warn('No se pudo registrar el pedido:', e);
     }
 
-    const storePhone = store.phone.replace(/\D/g,'');
-    const waLink = 'https://wa.me/54' + storePhone + '?text=' + encodeURIComponent(detalles);
+    const waLink = 'https://wa.me/' + numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent(detalles);
     window.open(waLink, '_blank');
 
     // Ahora el horario queda efectivamente bloqueado en la agenda, asi que

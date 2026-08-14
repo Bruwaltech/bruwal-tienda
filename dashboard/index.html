@@ -1253,7 +1253,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head">👥 Clientes y compras</div>
         <table>
-          <thead><tr><th>Cliente</th><th>Compras</th><th>Total gastado</th><th>Última compra</th><th>Promedio</th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Compras</th><th>Total gastado</th><th>Última compra</th><th>Promedio</th><th></th></tr></thead>
           <tbody id="clientesBody"></tbody>
         </table>
       </div>
@@ -1284,6 +1284,11 @@ tr:last-child td { border-bottom: none; }
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
                 <label style="font-size:14px;color:var(--text-mute);">Cantidad:</label>
                 <input type="number" id="barcodeQty" value="1" min="1" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;" oninput="calculateTotal()">
+                <label style="font-size:14px;color:var(--text-mute);margin-left:10px;">Cliente:</label>
+                <input type="text" id="barcodeCliente" list="listaClientes" placeholder="opcional"
+                       autocomplete="off"
+                       style="flex:1;min-width:130px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+                <datalist id="listaClientes"></datalist>
               </div>
               <div style="border-top:1px solid var(--line);padding-top:12px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
@@ -1631,6 +1636,24 @@ let pedidosTodos = [];
 // Contarlo como facturación daría números que no existen.
 // Los pedidos viejos no tienen estado y se toman como confirmados, que es
 // lo que eran: ventas cargadas con el lector.
+// Arma el número para el link de WhatsApp.
+// Antes se pegaba un "54" fijo adelante de cualquier número: una tienda con
+// teléfono alemán (+49 176...) terminaba en 5449176..., que no existe.
+// Si la persona escribió el "+", ya puso su código de país y se respeta.
+// Si no lo escribió, se comporta igual que antes y asume Argentina.
+function numeroWhatsApp(tel) {
+  const bruto = String(tel || '').trim();
+  let d = bruto.replace(/\D/g, '');
+  if (!d) return '';
+
+  if (d.startsWith('00')) d = d.slice(2);
+  if (bruto.includes('+')) return d;
+  if (d.startsWith('54') && d.length >= 12) return d;
+
+  if (d.startsWith('0')) d = d.slice(1);
+  return '54' + d;
+}
+
 const estadoPedido = (o) => o.estado || 'confirmado';
 const cuentaComoVenta = (o) => !['pendiente', 'cancelado'].includes(estadoPedido(o));
 
@@ -2599,7 +2622,7 @@ async function renderAgenda() {
           '<td style="font-size:13px;">' + dia + ' ' + String(d).padStart(2,'0') + '/' + String(m).padStart(2,'0') + '</td>' +
           '<td style="font-weight:700;color:var(--navy);">' + escapeHtml(t.hora) + '</td>' +
           '<td>' + escapeHtml(t.cliente || '-') +
-            (t.telefono ? '<br><a href="https://wa.me/54' + String(t.telefono).replace(/\D/g,'') +
+            (t.telefono ? '<br><a href="https://wa.me/' + numeroWhatsApp(t.telefono) +
               '" target="_blank" style="font-size:12px;color:var(--celeste);">' + escapeHtml(t.telefono) + '</a>' : '') +
           '</td>' +
           '<td style="font-size:13px;">' + escapeHtml(t.servicio || '-') + '</td>' +
@@ -2917,7 +2940,7 @@ function renderOrders() {
     return '<tr>' +
       '<td>' + escapeHtml(o.customer_name || '—') +
         (tel && tel !== '0' && o.customer_phone !== 'scanner'
-          ? '<br><a href="https://wa.me/54' + tel + '" target="_blank" style="font-size:12px;color:var(--celeste);">' +
+          ? '<br><a href="https://wa.me/' + numeroWhatsApp(o.customer_phone) + '" target="_blank" style="font-size:12px;color:var(--celeste);">' +
             escapeHtml(o.customer_phone) + '</a>'
           : '') +
       '</td>' +
@@ -2978,8 +3001,66 @@ function renderClientes() {
     .sort((a, b) => b.total - a.total);
 
   byId('clientesBody').innerHTML = sorted.length ? sorted.map(c =>
-    '<tr><td><strong>' + escapeHtml(c.name) + '</strong></td><td>' + c.qty + '</td><td>' + money(c.total) + '</td><td>' + new Date(c.lastOrder).toLocaleDateString('es-AR') + '</td><td>' + money(c.avg) + '</td></tr>'
-  ).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin clientes</td></tr>';
+    '<tr>' +
+      '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
+      '<td>' + c.qty + '</td>' +
+      '<td>' + money(c.total) + '</td>' +
+      '<td>' + new Date(c.lastOrder).toLocaleDateString('es-AR') + '</td>' +
+      '<td>' + money(c.avg) + '</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="icon-btn" data-vender-a="' + escapeHtml(c.name) + '" title="Cargarle una venta">+ Venta</button>' +
+        '<button class="icon-btn" data-renombrar="' + escapeHtml(c.name) + '" title="Corregir el nombre">Editar</button>' +
+      '</div></td>' +
+    '</tr>'
+  ).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin clientes</td></tr>';
+
+  byId('clientesBody').querySelectorAll('[data-vender-a]').forEach(b =>
+    b.addEventListener('click', () => venderACliente(b.dataset.venderA)));
+  byId('clientesBody').querySelectorAll('[data-renombrar]').forEach(b =>
+    b.addEventListener('click', () => renombrarCliente(b.dataset.renombrar)));
+
+  // El desplegable de clientes en la pantalla de ventas
+  const dl = byId('listaClientes');
+  if (dl) dl.innerHTML = sorted.map(c => '<option value="' + escapeHtml(c.name) + '">').join('');
+}
+
+// Lleva a la pantalla de ventas con el cliente ya cargado
+function venderACliente(nombre) {
+  if (!puedeOperar()) return;
+  byId('tabVentas').click();
+  setTimeout(() => {
+    byId('barcodeCliente').value = nombre;
+    byId('barcodeInput').focus();
+  }, 250);
+}
+
+// Corrige el nombre en TODAS sus compras. El cliente no es una tabla: se
+// arma agrupando los pedidos por nombre, así que renombrar es actualizar
+// cada pedido suyo.
+async function renombrarCliente(actual) {
+  if (!puedeOperar()) return;
+
+  const nuevo = prompt('Nombre del cliente:', actual);
+  if (nuevo === null) return;
+
+  const limpio = nuevo.trim();
+  if (!limpio || limpio === actual) return;
+
+  const suyos = pedidosTodos.filter(o => o.customer_name === actual);
+  if (!confirm('Se va a cambiar el nombre en sus ' + suyos.length +
+               ' compra' + (suyos.length === 1 ? '' : 's') + '.\n\n"' +
+               actual + '"  →  "' + limpio + '"')) return;
+
+  const { error } = await sb.from('orders')
+    .update({ customer_name: limpio })
+    .eq('store_slug', currentStore.slug)
+    .eq('customer_name', actual);
+
+  if (error) {
+    alert('No se pudo cambiar el nombre:\n\n' + error.message);
+    return;
+  }
+  await refreshData();
 }
 
 function renderVentas() {
@@ -3214,42 +3295,51 @@ async function confirmBarcodeVenta() {
     return;
   }
 
+  // El nombre del cliente es opcional: si no lo ponen, queda la marca de hora
+  const cliente = (byId('barcodeCliente')?.value || '').trim();
+  const ok = await registrarVenta(product, qty, cliente);
+  if (ok) {
+    alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty));
+    if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
+    clearBarcodeResult();
+  }
+}
+
+// Registro de venta compartido: lo usan el lector de códigos y la carga
+// desde la ficha de un cliente. Estaba duplicado y el descuento de stock
+// vivía en un solo lado, así que una de las dos vías dejaba el inventario
+// sin tocar.
+async function registrarVenta(product, qty, nombreCliente) {
+  if (!puedeOperar()) return false;
+
   const total = product.price * qty;
-  const customerName = 'Venta escaneada ' + new Date().toLocaleTimeString('es-AR');
+  const nombre = (nombreCliente || '').trim() ||
+                 ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
 
   const { error } = await sb.from('orders').insert([{
     store_slug: currentStore.slug,
-    customer_name: customerName,
+    customer_name: nombre,
     customer_phone: 'scanner',
     items: [{ product_id: product.id, qty, name: product.name, price: product.price }],
     total: total,
+    estado: 'confirmado',        // una venta de mostrador ya ocurrió
     created_at: new Date().toISOString()
   }]);
 
   if (error) {
-    alert('Error al registrar venta: ' + error.message);
-    return;
+    alert('Error al registrar la venta:\n\n' + error.message);
+    return false;
   }
 
-  // Descontar del stock. Antes no se descontaba: se registraba la venta y el
-  // inventario quedaba igual, con lo cual el control de stock no controlaba
-  // nada. Los servicios no llevan stock, asi que no se tocan.
+  // Los servicios no llevan stock, así que no se tocan
   if (esProductoFisico(product)) {
     await sb.from('store_products')
       .update({ stock: Math.max(0, Number(product.stock || 0) - qty) })
       .eq('id', product.id);
   }
 
-  alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(total));
-  clearBarcodeResult();
-
-  // Recargar datos
-  const { data: ords } = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
-  guardarPedidos(ords);
-  renderDashboard();
-  renderOrders();
-  renderClientes();
-  renderVentas();
+  await refreshData();
+  return true;
 }
 
 // Permitir escanear con Enter en el input
