@@ -479,6 +479,114 @@
     .filters { grid-template-columns: 1fr; }
   }
 
+  /* ============ Video de guía de usuario ============ */
+  .video-seccion { background: #fff; padding: 64px 24px; }
+
+  .video-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 48px;
+    align-items: center;
+  }
+
+  .video-eyebrow {
+    display: inline-block;
+    background: #EAF4FD;
+    color: #15294D;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    padding: 6px 13px;
+    border-radius: 999px;
+    margin-bottom: 16px;
+  }
+
+  .video-seccion h2 {
+    font-size: 34px;
+    font-weight: 700;
+    color: #15294D;
+    line-height: 1.15;
+    margin-bottom: 14px;
+  }
+
+  .video-seccion p {
+    font-size: 16px;
+    color: #5C6B82;
+    line-height: 1.65;
+    margin-bottom: 24px;
+  }
+
+  .video-cta {
+    display: inline-block;
+    background: linear-gradient(135deg, #15294D, #2F8FE0);
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 10px;
+    transition: transform .22s ease, box-shadow .22s ease;
+  }
+  .video-cta:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(47,143,224,.35);
+  }
+
+  .video-marco {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 16 / 9;
+    box-shadow: 0 14px 40px rgba(21,41,77,.22);
+    cursor: pointer;
+  }
+  .video-marco img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    opacity: .82;
+    transition: opacity .3s ease, transform .5s ease;
+  }
+  .video-marco:hover img { opacity: 1; transform: scale(1.03); }
+
+  .video-play {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 76px; height: 76px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,.95);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 22px rgba(0,0,0,.35);
+    transition: transform .25s ease, background .25s ease;
+  }
+  .video-marco:hover .video-play {
+    transform: translate(-50%, -50%) scale(1.09);
+    background: #fff;
+  }
+  /* El triángulo de play, dibujado con bordes: sin imágenes ni íconos */
+  .video-play span {
+    width: 0; height: 0;
+    margin-left: 6px;
+    border-left: 22px solid #15294D;
+    border-top: 14px solid transparent;
+    border-bottom: 14px solid transparent;
+  }
+
+  @media (max-width: 900px) {
+    .video-inner { grid-template-columns: 1fr; gap: 30px; }
+    .video-seccion { padding: 46px 20px; }
+    .video-seccion h2 { font-size: 27px; }
+  }
+
   /* ============ AVISO: la IA atiende tus pedidos ============ */
   .ia-banda {
     background: linear-gradient(135deg, #0F1E3C 0%, #15294D 45%, #2F8FE0 100%);
@@ -791,6 +899,31 @@
     </div>
   </div>
 </div>
+
+<section class="video-seccion">
+  <div class="video-inner">
+    <div class="revelar">
+      <div class="video-eyebrow">Guía de usuario</div>
+      <h2>Mirá cómo funciona</h2>
+      <p>
+        En pocos minutos: cargá tus productos, compartí el link de tu tienda
+        y empezá a recibir pedidos por WhatsApp.
+      </p>
+      <a href="/dashboard" class="video-cta">Crear mi tienda gratis →</a>
+    </div>
+
+    <!-- Portada con botón de play. El video se carga recién al tocarlo: si
+         estuviera incrustado siempre, YouTube cargaría en cada visita a la
+         portada aunque nadie lo mire. -->
+    <div class="video-marco revelar" id="videoMarco">
+      <img src="https://img.youtube.com/vi/v0WjogCQ4WE/hqdefault.jpg"
+           alt="Guía de usuario de BRUWAL" loading="lazy">
+      <button type="button" class="video-play" id="videoPlay" aria-label="Reproducir el video">
+        <span></span>
+      </button>
+    </div>
+  </div>
+</section>
 
 <section class="ia-banda">
   <div class="ia-inner">
@@ -1129,6 +1262,22 @@ function updateStoreCount() {
 
 // Los atajos escriben en el buscador y filtran. Tocar el mismo de nuevo lo
 // apaga, así el que se equivocó de rubro no queda encerrado sin salida.
+// El video se incrusta recién cuando el visitante lo pide. Así la portada
+// no arrastra el peso de YouTube en cada visita.
+function configurarVideo() {
+  const marco = document.getElementById('videoMarco');
+  if (!marco) return;
+
+  marco.addEventListener('click', () => {
+    marco.innerHTML =
+      '<iframe src="https://www.youtube.com/embed/v0WjogCQ4WE?autoplay=1&rel=0" ' +
+      'style="position:absolute;inset:0;width:100%;height:100%;border:0;" ' +
+      'allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" ' +
+      'allowfullscreen title="Guía de usuario de BRUWAL"></iframe>';
+    marco.style.cursor = 'default';
+  }, { once: true });
+}
+
 function configurarAtajos() {
   const cont = document.getElementById('atajosRubro');
   if (!cont) return;
@@ -1322,6 +1471,7 @@ animarTitulo();
 configurarAvisoIA();
 configurarInstalacion();
 configurarAtajos();
+configurarVideo();
 
 // El service worker es lo que habilita la instalación. Si falla, la web
 // sigue funcionando igual: solo se pierde el poder bajarla como app.
