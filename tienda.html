@@ -1200,6 +1200,29 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       }
     }
 
+    // Guardamos el pedido ANTES de abrir WhatsApp.
+    //
+    // Queda como 'pendiente' a propósito: una vez que la persona se va a
+    // WhatsApp no tenemos forma de saber si apretó enviar. El navegador no
+    // avisa nada y WhatsApp tampoco. Lo único que sabemos con certeza es
+    // que llegó hasta acá. El vendedor lo pasa a confirmado cuando le
+    // llega el mensaje.
+    //
+    // Si falla el guardado NO frenamos la venta: es peor perder un cliente
+    // que perder un registro.
+    try {
+      await sb.from('orders').insert({
+        store_slug: getSlugFromUrl(),
+        customer_name: name,
+        customer_phone: phone,
+        items: items,
+        total: total,
+        estado: 'pendiente'
+      });
+    } catch (e) {
+      console.warn('No se pudo registrar el pedido:', e);
+    }
+
     const storePhone = store.phone.replace(/\D/g,'');
     const waLink = 'https://wa.me/54' + storePhone + '?text=' + encodeURIComponent(detalles);
     window.open(waLink, '_blank');

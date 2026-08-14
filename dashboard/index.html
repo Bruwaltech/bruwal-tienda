@@ -1234,10 +1234,12 @@ tr:last-child td { border-bottom: none; }
         </div>
       </div>
 
+      <div class="pulso pronto hidden" id="avisoPendientes" style="display:block;"></div>
+
       <div class="panel">
         <div class="panel-head">🛒 Pedidos recibidos</div>
         <table>
-          <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
           <tbody id="ordersBody"></tbody>
         </table>
       </div>
@@ -1619,6 +1621,23 @@ sb.auth.onAuthStateChange((evento) => {
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
 let currentUser = null, currentStore = null, products = [], orders = [];
+
+// Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
+// confirmados porque de ahí salen las estadísticas de venta.
+let pedidosTodos = [];
+
+// Un pedido de la tienda arranca 'pendiente': la persona tocó confirmar,
+// pero una vez que se va a WhatsApp no hay forma de saber si apretó enviar.
+// Contarlo como facturación daría números que no existen.
+// Los pedidos viejos no tienen estado y se toman como confirmados, que es
+// lo que eran: ventas cargadas con el lector.
+const estadoPedido = (o) => o.estado || 'confirmado';
+const cuentaComoVenta = (o) => !['pendiente', 'cancelado'].includes(estadoPedido(o));
+
+function guardarPedidos(lista) {
+  pedidosTodos = lista || [];
+  orders = pedidosTodos.filter(cuentaComoVenta);
+}
 let charts = {};
 
 // ===================== PLANES Y PRUEBA GRATIS =====================
@@ -2539,7 +2558,7 @@ async function refreshData() {
   products = prods || [];
 
   const { data: ords } = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
-  orders = ords || [];
+  guardarPedidos(ords);
 
   renderDashboard();
   renderProducts();
@@ -2869,16 +2888,78 @@ function renderProducts() {
 }
 
 function renderOrders() {
-  byId('ordersBody').innerHTML = orders.map(o => {
-    const items = Array.isArray(o.items) ? o.items.map(it => (it.qty || 1) + 'x ' + it.name).join(', ') : '';
+  const cuerpo = byId('ordersBody');
+
+  const ETIQUETAS = {
+    pendiente:  { texto: 'Sin confirmar', fondo: '#FEF3E2', color: '#8A5200' },
+    confirmado: { texto: 'Confirmado',    fondo: '#DCFCE7', color: '#1FA088' },
+    cancelado:  { texto: 'Cancelado',     fondo: '#FDECEC', color: '#97201D' }
+  };
+
+  cuerpo.innerHTML = pedidosTodos.map(o => {
+    const items = Array.isArray(o.items)
+      ? o.items.map(it => (it.qty || 1) + 'x ' + it.name +
+          (it.opciones && it.opciones.length ? ' (' + it.opciones.join(', ') + ')' : '')).join(', ')
+      : '';
+
+    const e = estadoPedido(o);
+    const et = ETIQUETAS[e] || ETIQUETAS.confirmado;
+    const tel = String(o.customer_phone || '').replace(/\D/g, '');
+
+    // Solo los pendientes necesitan decisión: los demás ya están resueltos
+    const acciones = e === 'pendiente'
+      ? '<div class="row-actions">' +
+          '<button class="icon-btn" data-confirmar="' + o.id + '" title="Marcar como confirmado" style="color:var(--stock);">✓ Confirmar</button>' +
+          '<button class="icon-btn danger" data-cancelar="' + o.id + '" title="No llegó nunca">✕</button>' +
+        '</div>'
+      : '';
+
     return '<tr>' +
-      '<td>' + escapeHtml(o.customer_name) + '</td>' +
-      '<td>' + escapeHtml(items) + '</td>' +
-      '<td>' + money(o.total) + '</td>' +
-      '<td>' + new Date(o.created_at).toLocaleDateString('es-AR') + '</td>' +
-      '<td><span style="background:#DCFCE7;color:#1FA088;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;">' + (o.status || 'nuevo') + '</span></td>' +
+      '<td>' + escapeHtml(o.customer_name || '—') +
+        (tel && tel !== '0' && o.customer_phone !== 'scanner'
+          ? '<br><a href="https://wa.me/54' + tel + '" target="_blank" style="font-size:12px;color:var(--celeste);">' +
+            escapeHtml(o.customer_phone) + '</a>'
+          : '') +
+      '</td>' +
+      '<td style="font-size:13px;">' + escapeHtml(items) + '</td>' +
+      '<td style="font-weight:600;">' + money(o.total) + '</td>' +
+      '<td style="font-size:12.5px;">' + new Date(o.created_at).toLocaleString('es-AR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
+      '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
+      '<td>' + acciones + '</td>' +
       '</tr>';
-  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos</td></tr>';
+
+  cuerpo.querySelectorAll('[data-confirmar]').forEach(b =>
+    b.addEventListener('click', () => cambiarEstadoPedido(b.dataset.confirmar, 'confirmado')));
+  cuerpo.querySelectorAll('[data-cancelar]').forEach(b =>
+    b.addEventListener('click', () => {
+      if (confirm('¿Marcar este pedido como no concretado?\n\nDeja de contar en tus ventas.')) {
+        cambiarEstadoPedido(b.dataset.cancelar, 'cancelado');
+      }
+    }));
+
+  // Aviso arriba de la tabla cuando hay pedidos esperando respuesta
+  const pendientes = pedidosTodos.filter(o => estadoPedido(o) === 'pendiente').length;
+  const aviso = byId('avisoPendientes');
+  if (aviso) {
+    if (pendientes) {
+      aviso.innerHTML = '⏳ Tenés <b>' + pendientes + ' pedido' + (pendientes === 1 ? '' : 's') +
+        ' sin confirmar</b>. Son personas que armaron el carrito y tocaron enviar. ' +
+        'Marcalos como confirmados cuando te llegue el mensaje: recién ahí cuentan como venta.';
+      show(aviso);
+    } else {
+      hide(aviso);
+    }
+  }
+}
+
+async function cambiarEstadoPedido(id, nuevo) {
+  const { error } = await sb.from('orders').update({ estado: nuevo }).eq('id', id);
+  if (error) {
+    alert('No se pudo actualizar el pedido:\n\n' + error.message);
+    return;
+  }
+  await refreshData();
 }
 
 function renderClientes() {
@@ -3164,7 +3245,7 @@ async function confirmBarcodeVenta() {
 
   // Recargar datos
   const { data: ords } = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
-  orders = ords || [];
+  guardarPedidos(ords);
   renderDashboard();
   renderOrders();
   renderClientes();
