@@ -152,3 +152,14 @@ order by tablename;
 --  Deja todo como estaba antes. Las políticas quedan guardadas
 --  pero sin efecto, así se puede reactivar después.
 -- ============================================================
+
+-- ---- AGREGADO: permiso de modificación en pedidos ----
+-- Faltaba. Sin esto el dueño no podía confirmar ni cancelar un pedido, ni
+-- corregir el nombre de un cliente: la base rechazaba el cambio en silencio,
+-- sin devolver error, así que el botón parecía andar y no hacía nada.
+drop policy if exists ord_editar_propios on public.orders;
+create policy ord_editar_propios on public.orders for update
+  using (exists (select 1 from public.store_profiles sp
+                 where sp.slug = orders.store_slug and sp.user_id = auth.uid()))
+  with check (exists (select 1 from public.store_profiles sp
+                 where sp.slug = orders.store_slug and sp.user_id = auth.uid()));
