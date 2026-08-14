@@ -1484,6 +1484,30 @@ tr:last-child td { border-bottom: none; }
       <form id="configForm">
         <div class="field"><label>Nombre de tu tienda</label><input type="text" id="configNombre" required></div>
         <div class="field"><label>Descripción (rubro)</label><input type="text" id="configDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales"></div>
+
+        <div class="field">
+          <label>Eslogan</label>
+          <input type="text" id="configEslogan" maxlength="90" placeholder="Ej: Las mejores del barrio, desde 1998">
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
+            Una frase corta que aparece bajo el nombre de tu tienda.
+          </small>
+        </div>
+
+        <div class="field">
+          <label>Foto de portada</label>
+          <div id="configPortadaPreview" style="width:100%;height:110px;border:2px dashed var(--line);border-radius:10px;background:var(--bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:var(--text-mute);font-size:13px;margin-bottom:8px;">
+            Sin portada
+          </div>
+          <input type="file" id="configPortadaInput" accept="image/*" style="display:none;">
+          <div style="display:flex;gap:8px;">
+            <button type="button" onclick="document.getElementById('configPortadaInput').click()" class="btn-action" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);flex:1;">Elegir foto</button>
+            <button type="button" id="quitarPortadaBtn" class="btn-action" style="background:var(--bg);color:var(--danger);border:1px solid var(--line);">Quitar</button>
+          </div>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Se ve de fondo en el encabezado de tu tienda. Una foto apaisada y
+            sin texto encima queda mejor. Máx 2MB.
+          </small>
+        </div>
         <div class="field"><label>Teléfono WhatsApp</label><input type="tel" id="configPhone" required></div>
         <div class="field"><label>Ubicación</label><input type="text" id="configLocation" placeholder="Ej: Paraná, Entre Ríos"></div>
         <div class="field"><label>Sitio web</label><input type="url" id="configWeb" placeholder="https://..."></div>
@@ -4000,6 +4024,43 @@ function mediosDePagoElegidos() {
   return [...byId('configMediosPago').querySelectorAll('input:checked')].map(i => i.value);
 }
 
+// ---- Portada de la tienda ----
+let quitarPortada = false;
+
+function pintarPortada(url) {
+  const caja = byId('configPortadaPreview');
+  if (!caja) return;
+  if (url) {
+    caja.style.backgroundImage = 'url(' + url + ')';
+    caja.textContent = '';
+    caja.style.border = '1px solid var(--line)';
+  } else {
+    caja.style.backgroundImage = 'none';
+    caja.textContent = 'Sin portada';
+    caja.style.border = '2px dashed var(--line)';
+  }
+}
+
+byId('configPortadaInput').addEventListener('change', (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  if (f.size > 2 * 1024 * 1024) {
+    alert('La portada debe pesar menos de 2MB');
+    e.target.value = '';
+    return;
+  }
+  quitarPortada = false;
+  const lector = new FileReader();
+  lector.onload = (ev) => pintarPortada(ev.target.result);
+  lector.readAsDataURL(f);
+});
+
+byId('quitarPortadaBtn').addEventListener('click', () => {
+  quitarPortada = true;                 // se aplica recién al guardar
+  byId('configPortadaInput').value = '';
+  pintarPortada(null);
+});
+
 async function cargarConfiguracion() {
   if (!currentStore) return;
 
@@ -4013,6 +4074,12 @@ async function cargarConfiguracion() {
     byId('configWeb').value = store.website || '';
     byId('configIg').value = store.instagram || '';
     byId('configGoogle').value = store.google_url || '';
+    byId('configEslogan').value = store.eslogan || '';
+
+    quitarPortada = false;
+    byId('configPortadaInput').value = '';
+    pintarPortada(store.portada_url);
+
     renderMediosDePago(store.medios_pago);
 
     const t = store.turnos || {};
@@ -4074,9 +4141,30 @@ async function guardarConfiguracion() {
     imageUrl = sb.storage.from('product-images').getPublicUrl(fileName).data.publicUrl;
   }
 
+  // Portada del encabezado de la tienda
+  const portadaFile = byId('configPortadaInput').files?.[0];
+  let portadaUrl = null;
+
+  if (portadaFile) {
+    if (portadaFile.size > 2 * 1024 * 1024) {
+      alert('La portada debe pesar menos de 2MB');
+      return;
+    }
+    const nombre = 'portadas/' + currentStore.slug + '-' + Date.now() + portadaFile.name.slice(-4);
+    const { error: errPortada } = await sb.storage.from('product-images')
+      .upload(nombre, portadaFile, { upsert: true });
+
+    if (errPortada) {
+      alert('Error al subir la portada: ' + errPortada.message);
+      return;
+    }
+    portadaUrl = sb.storage.from('product-images').getPublicUrl(nombre).data.publicUrl;
+  }
+
   const updateData = {
     business_name: byId('configNombre').value,
     description: byId('configDesc').value,
+    eslogan: byId('configEslogan').value.trim() || null,
     phone: byId('configPhone').value,
     location: byId('configLocation').value,
     website: byId('configWeb').value,
@@ -4087,6 +4175,11 @@ async function guardarConfiguracion() {
   };
 
   if (imageUrl) updateData.image_url = imageUrl;
+
+  // La portada solo se toca si eligió una nueva o pidió quitarla. Si no,
+  // se deja la que tenga: guardar la config no debería borrarle la foto.
+  if (portadaUrl) updateData.portada_url = portadaUrl;
+  else if (quitarPortada) updateData.portada_url = null;
 
   // Buscamos coordenadas para el mapa de la home si cambio la ubicacion,
   // o si la tienda todavia no tiene coordenadas cargadas.

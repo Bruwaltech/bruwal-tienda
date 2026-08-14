@@ -46,6 +46,23 @@
   .store-info-img img{width:100%;height:100%;object-fit:cover;}
   .store-info h1{font-size:32px;margin-bottom:8px;font-weight:700;}
   .store-desc{font-size:15px;color:#E0EBFF;margin-top:4px;font-weight:500;}
+
+  /* Eslogan del negocio, debajo del rubro */
+  .store-eslogan{
+    font-size:16px;color:#fff;margin-top:8px;font-weight:300;font-style:italic;
+    opacity:.95;max-width:520px;line-height:1.45;
+  }
+
+  /* Portada: la foto que sube el negocio, detrás del encabezado.
+     Lleva un velo oscuro encima porque el texto va en blanco: sin eso, una
+     portada clara dejaría el nombre de la tienda ilegible. */
+  header.con-portada{background-size:cover;background-position:center;}
+  header.con-portada::after{
+    content:'';position:absolute;inset:0;
+    background:linear-gradient(135deg, rgba(21,41,77,.90) 0%, rgba(21,41,77,.72) 55%, rgba(31,160,136,.72) 100%);
+    z-index:0;
+  }
+  header.con-portada .wrap{position:relative;z-index:1;}
   .store-contact{display:inline-flex;align-items:center;gap:8px;background:#fff;padding:12px 24px;border-radius:12px;font-size:15px;color:#15294D;text-decoration:none;font-weight:700;transition:all 0.3s;box-shadow:0 4px 16px rgba(0,0,0,0.15);}
   .store-contact:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,0.2);}
 
@@ -251,6 +268,7 @@
           <div>
             <h1 class="store-name" id="storeName"></h1>
             <div class="store-desc" id="storeDesc"></div>
+            <div class="store-eslogan hidden" id="storeEslogan"></div>
           </div>
         </div>
         <a class="store-contact" id="storePhone" href="#" target="_blank">💬 WhatsApp</a>
@@ -453,6 +471,17 @@ async function init(){
 
   byId('storeName').textContent = store.business_name || slug;
   byId('storeDesc').textContent = store.description || 'Catálogo online';
+
+  if (store.eslogan) {
+    byId('storeEslogan').textContent = store.eslogan;
+    show(byId('storeEslogan'));
+  }
+
+  if (store.portada_url) {
+    const enc = document.querySelector('header');
+    enc.style.backgroundImage = 'url(' + store.portada_url + ')';
+    enc.classList.add('con-portada');
+  }
 
   if (store.image_url) {
     byId('storeLogoHeader').src = store.image_url;
