@@ -1100,6 +1100,7 @@ tr:last-child td { border-bottom: none; }
     <div class="app-user">
       <span id="userBusiness"><b></b></span>
       <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
+      <button class="btn-ghost" id="verGuiaBtn" title="Ver el video de ayuda" style="display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-circle-play"></i> Cómo usar</button>
       <button class="btn-ghost hidden" id="instalarPanelBtn" title="Instalar el panel como app" style="display:none;align-items:center;gap:6px;"><i class="fa-solid fa-mobile-screen"></i> Descargar app</button>
       <a href="/" class="btn-ghost" title="Ir al inicio" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-house"></i> Inicio</a>
       <button class="btn-ghost" id="logoutBtn">Cerrar sesión</button>
@@ -1399,6 +1400,23 @@ tr:last-child td { border-bottom: none; }
         <img id="previewImg" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">
       </div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL GUÍA EN VIDEO -->
+<div class="modal-overlay hidden" id="guiaModal">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" id="cerrarGuia">✕</button>
+    <h3>🎬 Cómo usar BRUWAL</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 16px;">
+      En pocos minutos: cargar productos, compartir tu tienda y registrar ventas.
+    </p>
+    <!-- El video se inserta recién al abrir el modal: si estuviera siempre
+         acá, YouTube cargaría en cada visita al panel aunque nadie lo mire. -->
+    <div id="guiaVideo" style="position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#000;"></div>
+    <p style="color:var(--text-mute);font-size:12px;margin-top:14px;line-height:1.6;">
+      ¿Te quedó alguna duda? Escribinos por WhatsApp y te ayudamos.
+    </p>
   </div>
 </div>
 
@@ -2478,6 +2496,16 @@ async function onLoggedIn() {
   hide(byId('authView'));
   show(byId('appView'));
 
+  // La primera vez que entra, le mostramos la guía sola. Es justo cuando no
+  // sabe por dónde empezar. Después no vuelve a aparecer, y queda el botón
+  // "Cómo usar" en el encabezado por si la quiere de nuevo.
+  try {
+    if (!localStorage.getItem('bruwal_guia_vista')) {
+      localStorage.setItem('bruwal_guia_vista', '1');
+      setTimeout(() => byId('verGuiaBtn')?.click(), 1200);
+    }
+  } catch (e) { /* si el navegador bloquea el almacenamiento, no pasa nada */ }
+
   // Mostrar Dashboard por defecto
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('dashboardView').classList.add('visible');
@@ -3446,6 +3474,31 @@ byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
 byId('closeContactModal').addEventListener('click', () => hide(byId('contactModal')));
 
 byId('closeConfigModal').addEventListener('click', () => hide(byId('configModal')));
+
+// ---- Guía en video ----
+const VIDEO_GUIA = 'v0WjogCQ4WE';
+
+byId('verGuiaBtn').addEventListener('click', () => {
+  const caja = byId('guiaVideo');
+  // Se arma al abrir y se destruye al cerrar: así el video no queda sonando
+  // de fondo si cierran el modal a mitad de camino.
+  caja.innerHTML =
+    '<iframe src="https://www.youtube.com/embed/' + VIDEO_GUIA + '?rel=0" ' +
+    'style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" ' +
+    'allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" ' +
+    'allowfullscreen title="Cómo usar BRUWAL"></iframe>';
+  show(byId('guiaModal'));
+});
+
+function cerrarGuia() {
+  byId('guiaVideo').innerHTML = '';   // corta la reproducción
+  hide(byId('guiaModal'));
+}
+
+byId('cerrarGuia').addEventListener('click', cerrarGuia);
+byId('guiaModal').addEventListener('click', (e) => {
+  if (e.target === byId('guiaModal')) cerrarGuia();
+});
 
 byId('closePlanesModal').addEventListener('click', () => hide(byId('planesModal')));
 byId('verPlanesBtn').addEventListener('click', abrirPlanes);
