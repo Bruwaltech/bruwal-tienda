@@ -154,6 +154,11 @@
   .cat-nombre{font-size:17px;font-weight:700;line-height:1.2;text-shadow:0 1px 4px rgba(0,0,0,.5);}
   .cat-cuenta{font-size:12.5px;opacity:.9;margin-top:2px;}
 
+  .titulo-sueltos{
+    font-size:15px;font-weight:700;color:var(--navy);
+    margin:28px 0 14px;padding-top:20px;border-top:1px solid #e3ebf3;
+  }
+
   .volver-cat{
     display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;
     background:none;border:none;font-family:inherit;font-size:14px;font-weight:600;
@@ -512,26 +517,30 @@ async function init(){
   renderProducts();
 }
 
-const SIN_CATEGORIA = 'Otros';
-
+// Categorías reales cargadas por el vendedor. Ojo: hay productos con la
+// categoría en cadena vacía, no en null, así que filter(Boolean) los saca.
 function categoriasDeLaTienda(){
-  const nombres = [...new Set(products.map(p => p.category).filter(Boolean))];
-  // Los productos sin categoría se agrupan al final, para que no desaparezcan
-  if (products.some(p => !p.category) && nombres.length) nombres.push(SIN_CATEGORIA);
-  return nombres;
+  return [...new Set(products.map(p => (p.category || '').trim()).filter(Boolean))];
 }
 
-const productosDe = (cat) => cat === SIN_CATEGORIA
-  ? products.filter(p => !p.category)
-  : products.filter(p => p.category === cat);
+const productosDe = (cat) =>
+  products.filter(p => (p.category || '').trim() === cat);
+
+// Los que no tienen categoría. NO van escondidos detrás de una tarjeta
+// "Otros": se muestran directos en la primera pantalla. En una tienda real
+// el combo más caro estaba ahí adentro y nadie lo veía.
+const productosSinCategoria = () =>
+  products.filter(p => !(p.category || '').trim());
 
 // Vista inicial de una tienda con categorías: una tarjeta por rubro.
 // El cliente elige "Hamburguesas" y recién ahí ve las hamburguesas.
 function renderTarjetasDeCategoria(categorias){
   const list = byId('productsList');
-  list.className = 'products-grid';
+  list.className = '';   // acá adentro va la grilla de rubros y la de sueltos
 
-  list.innerHTML = categorias.map(cat => {
+  const sueltos = productosSinCategoria();
+
+  const htmlRubros = categorias.map(cat => {
     const dentro = productosDe(cat);
     const conFoto = dentro.find(p => fotosDe(p).length);
     const portada = conFoto ? fotosDe(conFoto)[0] : null;
@@ -550,6 +559,15 @@ function renderTarjetasDeCategoria(categorias){
     '</div>';
   }).join('');
 
+  list.innerHTML =
+    '<div class="products-grid">' + htmlRubros + '</div>' +
+    (sueltos.length
+      ? '<div class="titulo-sueltos">' +
+          (categorias.length ? 'También en la tienda' : 'Productos') +
+        '</div>' +
+        '<div class="products-grid compacta">' + sueltos.map(htmlTarjetaProducto).join('') + '</div>'
+      : '');
+
   list.querySelectorAll('.cat-card').forEach(c => {
     c.addEventListener('click', () => {
       selectedCategory = c.dataset.cat;
@@ -557,6 +575,8 @@ function renderTarjetasDeCategoria(categorias){
       byId('productsList').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+
+  conectarTarjetas(list);
 }
 
 function renderProducts(){
@@ -594,7 +614,13 @@ function renderProducts(){
 
   list.className = 'products-grid' + (categorias.length ? ' compacta' : '');
 
-  list.innerHTML = filteredProducts.map(p => {
+  list.innerHTML = filteredProducts.map(htmlTarjetaProducto).join('');
+  conectarTarjetas(list);
+}
+
+// El HTML de una tarjeta de producto, separado para poder usarlo tanto en
+// el listado de una categoría como junto a las tarjetas de rubro.
+function htmlTarjetaProducto(p){
     const qty = cantidadDelProducto(p.id);
     const servicio = !esProductoFisico(p);
     const tieneOpciones = Array.isArray(p.opciones) && p.opciones.length > 0;
@@ -639,8 +665,10 @@ function renderProducts(){
       '<div class="product-controls">' + ((servicio || p.stock > 0) ? controls : '') + '</div>' +
       '</div>' +
       '</div>';
-  }).join('');
+}
 
+// Engancha los botones de una zona con tarjetas de producto
+function conectarTarjetas(list){
   // stopPropagation: sin esto, tocar + o − tambien abriria la ficha
   list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', (ev) => {
     ev.stopPropagation();
