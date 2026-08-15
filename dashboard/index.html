@@ -3174,13 +3174,16 @@ function renderOrders() {
     const et = ETIQUETAS[e] || ETIQUETAS.confirmado;
     const tel = String(o.customer_phone || '').replace(/\D/g, '');
 
-    // Solo los pendientes necesitan decisión: los demás ya están resueltos
+    // Pendiente: hay que decidir. Confirmado: se puede deshacer si fue un
+    // error, y eso devuelve el stock que se descontó al confirmar.
     const acciones = e === 'pendiente'
       ? '<div class="row-actions">' +
-          '<button class="icon-btn" data-confirmar="' + o.id + '" title="Marcar como confirmado" style="color:var(--stock);">✓ Confirmar</button>' +
+          '<button class="icon-btn" data-confirmar="' + o.id + '" title="Marcar como confirmado y descontar stock" style="color:var(--stock);">✓ Confirmar</button>' +
           '<button class="icon-btn danger" data-cancelar="' + o.id + '" title="No llegó nunca">✕</button>' +
         '</div>'
-      : '';
+      : (e === 'confirmado'
+          ? '<button class="icon-btn danger" data-anular="' + o.id + '" title="Anular y devolver el stock">Anular</button>'
+          : '');
 
     return '<tr>' +
       '<td>' + escapeHtml(o.customer_name || '—') +
@@ -3205,6 +3208,12 @@ function renderOrders() {
         cambiarEstadoPedido(b.dataset.cancelar, 'cancelado');
       }
     }));
+  cuerpo.querySelectorAll('[data-anular]').forEach(b =>
+    b.addEventListener('click', () => {
+      if (confirm('¿Anular esta venta?\n\nSe devuelve el stock que se había descontado al confirmarla. No se puede deshacer.')) {
+        cambiarEstadoPedido(b.dataset.anular, 'cancelado');
+      }
+    }));
 
   // Aviso arriba de la tabla cuando hay pedidos esperando respuesta
   const pendientes = pedidosTodos.filter(o => estadoPedido(o) === 'pendiente').length;
@@ -3213,7 +3222,7 @@ function renderOrders() {
     if (pendientes) {
       aviso.innerHTML = '⏳ Tenés <b>' + pendientes + ' pedido' + (pendientes === 1 ? '' : 's') +
         ' sin confirmar</b>. Son personas que armaron el carrito y tocaron enviar. ' +
-        'Marcalos como confirmados cuando te llegue el mensaje: recién ahí cuentan como venta.';
+        'Marcalos como confirmados cuando te llegue el mensaje: recién ahí cuentan como venta y se descuenta el stock.';
       show(aviso);
     } else {
       hide(aviso);
@@ -3221,13 +3230,60 @@ function renderOrders() {
   }
 }
 
+// Suma o resta stock por un ítem de pedido. signo -1 = descontar (al
+// confirmar), +1 = devolver (al anular). Contempla productos con variantes
+// (descuenta la combinación puntual y recalcula el total) y servicios,
+// que no llevan stock y se ignoran.
+//
+// Igual que el resto del descuento de stock en la app, esto lee-y-escribe
+// en dos pasos, no es atómico: si dos pedidos del mismo producto se
+// confirman en el mismo instante desde pestañas distintas, uno podría
+// pisar al otro. Es el mismo riesgo que ya existe en el registro de
+// ventas por lector; no es una regresión nueva.
+async function aplicarStockDeItem(item, signo) {
+  const p = products.find(x => String(x.id) === String(item.product_id));
+  if (!p || !esProductoFisico(p)) return;   // producto borrado o servicio: nada que ajustar
+
+  const qty = Number(item.qty || 1);
+
+  if (item.variante && p.tiene_variantes && Array.isArray(p.variantes)) {
+    const clave = (obj) => Object.keys(obj).sort().map(k => k + ':' + obj[k]).join('~');
+    const claveItem = clave(item.variante);
+    const variantes = p.variantes.map(v => ({ ...v }));
+    const v = variantes.find(x => clave(x.atributos) === claveItem);
+    if (v) v.stock = Math.max(0, Number(v.stock || 0) + signo * qty);
+
+    const stockTotal = variantes.reduce((s, x) => s + Number(x.stock || 0), 0);
+    await sb.from('store_products').update({ variantes, stock: stockTotal }).eq('id', p.id);
+  } else {
+    const nuevoStock = Math.max(0, Number(p.stock || 0) + signo * qty);
+    await sb.from('store_products').update({ stock: nuevoStock }).eq('id', p.id);
+  }
+}
+
 async function cambiarEstadoPedido(id, nuevo) {
-  // Pedimos que devuelva la fila modificada. Si la base rechaza el cambio
-  // por permisos NO devuelve error: devuelve cero filas. Sin este control
-  // el botón parecía andar y no hacía nada.
+  const pedido = pedidosTodos.find(o => String(o.id) === String(id));
+  if (!pedido) return;
+
+  const anterior = estadoPedido(pedido);
+
+  // Solo estas transiciones tienen sentido. Evita, por ejemplo, "confirmar"
+  // algo que ya está cancelado.
+  const transicionValida =
+    (anterior === 'pendiente'  && (nuevo === 'confirmado' || nuevo === 'cancelado')) ||
+    (anterior === 'confirmado' && nuevo === 'cancelado');
+  if (!transicionValida) return;
+
+  // Pedimos que devuelva la fila modificada Y exigimos que el estado
+  // anterior siga siendo el que vimos. Sin el .eq('estado', anterior), dos
+  // clics rápidos (o dos pestañas) podrían descontar el mismo stock dos
+  // veces. Si la base rechaza el cambio por permisos, tampoco devuelve
+  // error: devuelve cero filas. Sin este control el botón parecía andar y
+  // no hacía nada.
   const { data, error } = await sb.from('orders')
     .update({ estado: nuevo })
     .eq('id', id)
+    .eq('estado', anterior)
     .select('id');
 
   if (error) {
@@ -3235,11 +3291,22 @@ async function cambiarEstadoPedido(id, nuevo) {
     return;
   }
   if (!data || !data.length) {
-    alert('No se pudo actualizar el pedido: la base rechazó el cambio.\n\n' +
-          'Falta el permiso de modificación en la tabla de pedidos. ' +
-          'Avisale a soporte y mencioná "política de update en orders".');
+    alert('No se pudo actualizar el pedido: la base rechazó el cambio, o ya lo habías cambiado en otro momento.\n\n' +
+          'Si el problema persiste, avisale a soporte y mencioná "política de update en orders".');
+    await refreshData();   // por si el estado real ya cambió, refrescar la vista
     return;
   }
+
+  // El stock se toca DESPUES de que el cambio de estado en la base fue
+  // exitoso: si el update de arriba hubiera fallado, no queremos haber
+  // descontado o devuelto stock de un pedido que en los hechos no cambió.
+  const items = Array.isArray(pedido.items) ? pedido.items : [];
+  if (anterior === 'pendiente' && nuevo === 'confirmado') {
+    for (const it of items) await aplicarStockDeItem(it, -1);
+  } else if (anterior === 'confirmado' && nuevo === 'cancelado') {
+    for (const it of items) await aplicarStockDeItem(it, +1);
+  }
+
   await refreshData();
 }
 
