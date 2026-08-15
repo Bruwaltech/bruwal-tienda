@@ -2185,8 +2185,7 @@ byId('pEsServicio').addEventListener('change', (e) => {
 const RUBROS_CON_VARIANTES = ['ropa','indument','moda','textil','boutique','calzado','zapatill','deportiv'];
 
 function rubroUsaVariantes() {
-  const rubro = ((currentStore?.description || '') + ' ' + (currentStore?.business_name || '')).toLowerCase();
-  return RUBROS_CON_VARIANTES.some(k => rubro.includes(k));
+  return categoriaDeRubro() === 'indumentaria';
 }
 
 // [{nombre:'Talle', valores:['S','M','L']}, {nombre:'Color', valores:['Azul','Rojo']}]
@@ -2350,6 +2349,13 @@ byId('variAgregarAtributo').addEventListener('click', () => {
   renderAtributosVariante();
 });
 
+// Los agregados (con precio, sin stock propio) solo tienen sentido para
+// comida y bebidas. Antes 'indumentaria' tenía acá una entrada con
+// "Talle S/M/L" como agregado simple, de cuando todavía no existía el
+// sistema de Variantes con stock real por combinación. Quedó redundante
+// y confusa: dos secciones distintas hablando de "talle", una con stock
+// y otra sin él. Se saca de acá; el talle/color vive únicamente en
+// RUBROS_CON_VARIANTES, más abajo.
 const OPCIONES_SUGERIDAS = {
   comida: {
     claves: ['hamburgues','comida','rotiser','pizz','delivery','resto','cocina','sandwi','lomo','parrilla','empanada'],
@@ -2361,23 +2367,35 @@ const OPCIONES_SUGERIDAS = {
     claves: ['bar','cerve','bebida','cafe','cafeteria','heladeria'],
     titulo: 'Opciones',
     ayuda: 'Cómo lo quiere el cliente: con hielo, con limón.',
-    lista: [['Con hielo',0],['Sin hielo',0],['Limón',0],['Vaso extra',0]] },
-  indumentaria: {
-    claves: ['ropa','indument','moda','textil','calzado','boutique'],
-    titulo: 'Talles y variantes',
-    ayuda: 'El cliente elige antes de agregar al carrito.',
-    lista: [['Talle S',0],['Talle M',0],['Talle L',0],['Talle XL',0]] }
+    lista: [['Con hielo',0],['Sin hielo',0],['Limón',0],['Vaso extra',0]] }
 };
+
+// Punto único que decide a qué rubro pertenece la tienda, usado tanto por
+// los Agregados como por las Variantes. Antes cada sistema tenía su propia
+// detección de rubro por separado, y con listas de palabras parecidas
+// (ambas incluían "indument"/"ropa"/"calzado") podían llegar a mostrarse
+// los dos a la vez para la misma tienda. Ahora es uno solo, y son
+// mutuamente excluyentes: indumentaria/calzado nunca ve agregados de
+// comida, y comida/bebidas nunca ve el selector de talle.
+function categoriaDeRubro() {
+  const texto = ((currentStore?.description || '') + ' ' + (currentStore?.business_name || '')).toLowerCase();
+
+  // Se chequea primero: si una tienda dice "moda urbana y cafetería" (caso
+  // raro pero posible), gana indumentaria antes que bebidas.
+  if (RUBROS_CON_VARIANTES.some(k => texto.includes(k))) return 'indumentaria';
+
+  for (const [clave, g] of Object.entries(OPCIONES_SUGERIDAS)) {
+    if (g.claves.some(k => texto.includes(k))) return clave;
+  }
+  return null;
+}
 
 let opcionesEnEdicion = [];
 
 // Devuelve el grupo que corresponde al rubro de la tienda, o null
 function grupoDeOpciones() {
-  const rubro = ((currentStore?.description || '') + ' ' + (currentStore?.business_name || '')).toLowerCase();
-  for (const g of Object.values(OPCIONES_SUGERIDAS)) {
-    if (g.claves.some(k => rubro.includes(k))) return g;
-  }
-  return null;
+  const cat = categoriaDeRubro();
+  return (cat && OPCIONES_SUGERIDAS[cat]) ? OPCIONES_SUGERIDAS[cat] : null;
 }
 
 function sugerenciasDeOpciones() {
@@ -3174,16 +3192,19 @@ function renderOrders() {
     const et = ETIQUETAS[e] || ETIQUETAS.confirmado;
     const tel = String(o.customer_phone || '').replace(/\D/g, '');
 
-    // Pendiente: hay que decidir. Confirmado: se puede deshacer si fue un
-    // error, y eso devuelve el stock que se descontó al confirmar.
+    // Pendiente: hay que decidir, o borrarlo directo si es basura (nunca
+    // tocó stock). Confirmado: primero hay que Anular (eso devuelve el
+    // stock); recién ahí se puede borrar. No se permite borrar un
+    // confirmado de un paso, para no perder el stock sin darse cuenta.
     const acciones = e === 'pendiente'
       ? '<div class="row-actions">' +
           '<button class="icon-btn" data-confirmar="' + o.id + '" title="Marcar como confirmado y descontar stock" style="color:var(--stock);">✓ Confirmar</button>' +
           '<button class="icon-btn danger" data-cancelar="' + o.id + '" title="No llegó nunca">✕</button>' +
+          '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar directamente">🗑</button>' +
         '</div>'
       : (e === 'confirmado'
           ? '<button class="icon-btn danger" data-anular="' + o.id + '" title="Anular y devolver el stock">Anular</button>'
-          : '');
+          : '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar de la lista">🗑</button>');
 
     return '<tr>' +
       '<td>' + escapeHtml(o.customer_name || '—') +
@@ -3214,6 +3235,8 @@ function renderOrders() {
         cambiarEstadoPedido(b.dataset.anular, 'cancelado');
       }
     }));
+  cuerpo.querySelectorAll('[data-eliminar-pedido]').forEach(b =>
+    b.addEventListener('click', () => eliminarPedido(b.dataset.eliminarPedido)));
 
   // Aviso arriba de la tabla cuando hay pedidos esperando respuesta
   const pendientes = pedidosTodos.filter(o => estadoPedido(o) === 'pendiente').length;
@@ -3259,6 +3282,31 @@ async function aplicarStockDeItem(item, signo) {
     const nuevoStock = Math.max(0, Number(p.stock || 0) + signo * qty);
     await sb.from('store_products').update({ stock: nuevoStock }).eq('id', p.id);
   }
+}
+
+// Borrado permanente. Solo para 'pendiente' (nunca tocó stock) y
+// 'cancelado' (si venía de un confirmado, el stock ya se devolvió al
+// anular). Un 'confirmado' nunca se borra directo: tiene que pasar por
+// Anular primero, así el stock no se pierde sin darse cuenta.
+async function eliminarPedido(id) {
+  if (!puedeOperar()) return;
+
+  const pedido = pedidosTodos.find(o => String(o.id) === String(id));
+  if (!pedido) return;
+
+  if (estadoPedido(pedido) === 'confirmado') {
+    alert('Este pedido está confirmado. Primero anulalo (eso devuelve el stock) y después vas a poder borrarlo.');
+    return;
+  }
+
+  if (!confirm('¿Borrar este pedido de la lista?\n\nNo se puede deshacer.')) return;
+
+  const { error } = await sb.from('orders').delete().eq('id', id);
+  if (error) {
+    alert('No se pudo borrar el pedido:\n\n' + error.message);
+    return;
+  }
+  await refreshData();
 }
 
 async function cambiarEstadoPedido(id, nuevo) {
@@ -3335,6 +3383,7 @@ function renderClientes() {
       '<td><div class="row-actions">' +
         '<button class="icon-btn" data-vender-a="' + escapeHtml(c.name) + '" title="Cargarle una venta">+ Venta</button>' +
         '<button class="icon-btn" data-renombrar="' + escapeHtml(c.name) + '" title="Corregir el nombre">Editar</button>' +
+        '<button class="icon-btn danger" data-eliminar-cliente="' + escapeHtml(c.name) + '" title="Borrar este cliente y sus compras">🗑</button>' +
       '</div></td>' +
     '</tr>'
   ).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin clientes</td></tr>';
@@ -3343,6 +3392,8 @@ function renderClientes() {
     b.addEventListener('click', () => venderACliente(b.dataset.venderA)));
   byId('clientesBody').querySelectorAll('[data-renombrar]').forEach(b =>
     b.addEventListener('click', () => renombrarCliente(b.dataset.renombrar)));
+  byId('clientesBody').querySelectorAll('[data-eliminar-cliente]').forEach(b =>
+    b.addEventListener('click', () => eliminarCliente(b.dataset.eliminarCliente)));
 
   // El desplegable de clientes en la pantalla de ventas
   const dl = byId('listaClientes');
@@ -3389,6 +3440,44 @@ async function renombrarCliente(actual) {
   if (!data || !data.length) {
     alert('No se pudo cambiar el nombre: la base rechazó el cambio.\n\n' +
           'Falta el permiso de modificación en la tabla de pedidos.');
+    return;
+  }
+  await refreshData();
+}
+
+// Un cliente no es una tabla propia: es un agrupamiento de pedidos por
+// nombre. "Borrar un cliente" es borrar todas sus compras para esta
+// tienda. Antes de borrar, devuelve el stock de las que estaban
+// confirmadas (mismo criterio que Anular): borrar una venta ya
+// descontada no puede dejar el inventario mal sin avisar.
+async function eliminarCliente(nombre) {
+  if (!puedeOperar()) return;
+
+  const suyos = pedidosTodos.filter(o => o.customer_name === nombre);
+  if (!suyos.length) return;
+
+  const total = suyos.reduce((s, o) => s + Number(o.total || 0), 0);
+  if (!confirm('¿Borrar a "' + nombre + '" y sus ' + suyos.length +
+               ' compra' + (suyos.length === 1 ? '' : 's') + ' (' + money(total) + ')?\n\n' +
+               'Las compras confirmadas devuelven su stock antes de borrarse. ' +
+               'No se puede deshacer.')) return;
+
+  for (const pedido of suyos) {
+    if (estadoPedido(pedido) === 'confirmado') {
+      for (const it of (Array.isArray(pedido.items) ? pedido.items : [])) {
+        await aplicarStockDeItem(it, +1);
+      }
+    }
+  }
+
+  const { error } = await sb.from('orders')
+    .delete()
+    .eq('store_slug', currentStore.slug)
+    .eq('customer_name', nombre);
+
+  if (error) {
+    alert('No se pudo borrar el cliente:\n\n' + error.message);
+    await refreshData();   // el stock ya se devolvió: refrescar para no perder de vista el estado real
     return;
   }
   await refreshData();
@@ -3959,6 +4048,8 @@ if (byId('newProductBtn')) {
     if (byId('pPrice')) byId('pPrice').value = '';
     if (byId('pEan')) byId('pEan').value = '';
     if (byId('pImageFile')) byId('pImageFile').value = '';
+    fotosEnEdicion = [];
+    renderFotosEnEdicion();
     if (byId('pStock')) byId('pStock').value = '0';
     if (byId('pCategory')) byId('pCategory').value = '';
     if (byId('productForm')) byId('productForm').dataset.id = '';
@@ -4053,42 +4144,117 @@ byId('contactForm').addEventListener('submit', async (e) => {
 
 const MAX_FOTOS = 4;
 
-// Vista previa de las fotos elegidas
-byId('pImageFile').addEventListener('change', (e) => {
-  const archivos = [...(e.target.files || [])];
+// ============ FOTOS DEL PRODUCTO ============
+// Antes, cada vez que el picker nativo se abría y elegía archivos,
+// REEMPLAZABA por completo la selección anterior (es como funciona
+// <input type="file"> en todos los navegadores: no acumula solo). Al
+// editar un producto eso era grave: elegir "una foto más" subía esa sola
+// foto y la guardaba como el set completo, BORRANDO las que ya estaban
+// guardadas en el servidor, no solo las recién elegidas.
+//
+// fotosEnEdicion mantiene el estado real, fuera del input nativo:
+//   { tipo:'url', url }      -> ya está guardada en el servidor
+//   { tipo:'archivo', file } -> nueva, se sube recién al guardar
+let fotosEnEdicion = [];
+
+// Reduce el tamaño en el propio navegador antes de subir. Soluciona el
+// problema de fotos pesadas de celular sin pedirle al vendedor que
+// instale nada ni cambie de plan: una foto de 8-12MB de un iPhone termina
+// pesando unos cientos de KB, sin que note diferencia de calidad a simple
+// vista en la tienda.
+function comprimirImagen(file, maxDim = 1600, calidad = 0.82) {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) { resolve(file); return; }
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const escala = maxDim / Math.max(width, height);
+        width = Math.round(width * escala);
+        height = Math.round(height * escala);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => {
+        // Si por algún motivo la version comprimida pesa igual o mas que
+        // la original (pasa con imagenes ya muy comprimidas), nos
+        // quedamos con la original en vez de empeorarla.
+        if (!blob || blob.size >= file.size) { resolve(file); return; }
+        resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+      }, 'image/jpeg', calidad);
+    };
+
+    // Si la imagen no se puede decodificar, seguimos con el archivo tal
+    // cual: mejor subirla pesada que no subir nada.
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+function renderFotosEnEdicion() {
   const caja = byId('imagePreview');
 
-  if (!archivos.length) { hide(caja); return; }
-
-  if (archivos.length > MAX_FOTOS) {
-    alert('Podés subir hasta ' + MAX_FOTOS + ' fotos por producto. Elegí de nuevo.');
-    e.target.value = '';
-    hide(caja);
-    return;
-  }
-
-  const pesada = archivos.find(f => f.size > 2 * 1024 * 1024);
-  if (pesada) {
-    alert('"' + pesada.name + '" pesa más de 2MB. Elegí las fotos de nuevo.');
-    e.target.value = '';
-    hide(caja);
-    return;
-  }
+  if (!fotosEnEdicion.length) { hide(caja); return; }
 
   show(caja);
   caja.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
-    archivos.map((_, i) =>
-      '<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg);">' +
-        '<img id="prev-' + i + '" style="width:100%;height:100%;object-fit:cover;">' +
+    fotosEnEdicion.map((f, i) => {
+      const src = f.tipo === 'url' ? f.url : (f.previsualizacion || '');
+      return '<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg);">' +
+        '<img src="' + escapeHtml(src) + '" style="width:100%;height:100%;object-fit:cover;">' +
         (i === 0 ? '<span style="position:absolute;left:4px;top:4px;background:var(--navy);color:#fff;' +
                    'font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;">PRINCIPAL</span>' : '') +
-      '</div>').join('') + '</div>';
+        '<button type="button" data-quitar-foto="' + i + '" title="Quitar" ' +
+          'style="position:absolute;right:4px;top:4px;width:22px;height:22px;border-radius:50%;border:none;' +
+          'background:rgba(0,0,0,.65);color:#fff;font-size:13px;cursor:pointer;line-height:1;">✕</button>' +
+      '</div>';
+    }).join('') + '</div>';
 
-  archivos.forEach((f, i) => {
-    const lector = new FileReader();
-    lector.onload = (evt) => { const img = byId('prev-' + i); if (img) img.src = evt.target.result; };
-    lector.readAsDataURL(f);
-  });
+  caja.querySelectorAll('[data-quitar-foto]').forEach(b => b.addEventListener('click', () => {
+    fotosEnEdicion.splice(+b.dataset.quitarFoto, 1);
+    renderFotosEnEdicion();
+  }));
+}
+
+byId('pImageFile').addEventListener('change', async (e) => {
+  const elegidos = [...(e.target.files || [])];
+  e.target.value = '';   // libera el input: sin esto, elegir el mismo archivo dos veces no dispara 'change'
+  if (!elegidos.length) return;
+
+  const lugar = MAX_FOTOS - fotosEnEdicion.length;
+  if (lugar <= 0) {
+    alert('Ya tenés las ' + MAX_FOTOS + ' fotos permitidas. Quitá alguna para agregar otra.');
+    return;
+  }
+  if (elegidos.length > lugar) {
+    alert('Se agregan las primeras ' + lugar + ': ya tenías ' + fotosEnEdicion.length + ' y el máximo es ' + MAX_FOTOS + '.');
+  }
+
+  for (const archivo of elegidos.slice(0, lugar)) {
+    const comprimido = await comprimirImagen(archivo);
+
+    if (comprimido.size > 2 * 1024 * 1024) {
+      alert('"' + archivo.name + '" sigue pesando mucho incluso comprimida. Probá con otra foto.');
+      continue;
+    }
+
+    const previsualizacion = await new Promise((resolve) => {
+      const lector = new FileReader();
+      lector.onload = (evt) => resolve(evt.target.result);
+      lector.readAsDataURL(comprimido);
+    });
+
+    fotosEnEdicion.push({ tipo: 'archivo', file: comprimido, previsualizacion });
+  }
+
+  renderFotosEnEdicion();
 });
 
 byId('productForm').addEventListener('submit', async (e) => {
@@ -4101,23 +4267,30 @@ byId('productForm').addEventListener('submit', async (e) => {
     return;
   }
 
-  const archivos = [...(byId('pImageFile').files || [])].slice(0, MAX_FOTOS);
-  let urls = [];
+  // fotosEnEdicion mezcla lo que ya estaba guardado (tipo:'url') con lo
+  // nuevo elegido en esta sesión (tipo:'archivo'). Solo hay que subir lo
+  // nuevo; lo que ya estaba guardado se mantiene tal cual, en su lugar.
+  const aSubir = fotosEnEdicion.filter(f => f.tipo === 'archivo');
+  const urlsFinales = [...fotosEnEdicion];   // se va completando abajo
 
-  if (archivos.length) {
+  if (aSubir.length) {
     const boton = e.target.querySelector('button[type=submit]');
     const textoOriginal = boton.textContent;
     boton.disabled = true;
 
     try {
-      for (let i = 0; i < archivos.length; i++) {
-        boton.textContent = 'Subiendo foto ' + (i + 1) + ' de ' + archivos.length + '...';
-        const f = archivos[i];
+      for (let i = 0; i < aSubir.length; i++) {
+        boton.textContent = 'Subiendo foto ' + (i + 1) + ' de ' + aSubir.length + '...';
+        const f = aSubir[i].file;
         const nombre = currentStore.slug + '/' + Date.now() + '_' + i + '_' +
                        f.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
         const { error } = await sb.storage.from('product-images').upload(nombre, f, { upsert: false });
         if (error) throw error;
-        urls.push(sb.storage.from('product-images').getPublicUrl(nombre).data.publicUrl);
+        const url = sb.storage.from('product-images').getPublicUrl(nombre).data.publicUrl;
+
+        // La reemplazamos en su posición original: si tenía url guardada,
+        // foto nueva y otra guardada, el orden en pantalla se respeta.
+        urlsFinales[urlsFinales.indexOf(aSubir[i])] = { tipo: 'url', url };
       }
     } catch (err) {
       alert('Error subiendo las fotos: ' + (err.message || 'error desconocido'));
@@ -4129,6 +4302,8 @@ byId('productForm').addEventListener('submit', async (e) => {
     boton.disabled = false;
     boton.textContent = textoOriginal;
   }
+
+  const urls = urlsFinales.map(f => f.url);
 
   const tieneVariantes = byId('pTieneVariantes').checked;
   // El stock general queda como la suma de las variantes: es lo que leen las
@@ -4155,13 +4330,14 @@ byId('productForm').addEventListener('submit', async (e) => {
     variantes: tieneVariantes ? variantesEnEdicion : []
   };
 
-  // Solo tocamos las fotos si eligio fotos nuevas. Antes se guardaba
-  // image_url: null siempre, asi que editar un producto sin volver a elegir
-  // imagen le borraba la que ya tenia.
-  if (urls.length) {
-    payload.imagenes = urls;
-    payload.image_url = urls[0];   // la principal, para lo que ya lee este campo
-  }
+  // fotosEnEdicion siempre refleja el estado completo que se quiere guardar:
+  // si no tocó nada, son las mismas URLs que ya estaban; si sacó una con la
+  // ✕, esa no está más. Por eso ahora sí se escribe siempre, no solo cuando
+  // hay archivos nuevos: antes, editar un producto sin volver a elegir foto
+  // no tocaba el campo (estaba bien), pero sacar una foto existente con la
+  // ✕ no tenía forma de guardarse porque el código ignoraba ese caso.
+  payload.imagenes = urls;
+  payload.image_url = urls[0] || null;
 
   // El error se ignoraba: si la base rechazaba el guardado, el formulario se
   // cerraba igual y el producto no aparecía en ningún lado. Un guardado que
@@ -4182,6 +4358,7 @@ byId('productForm').addEventListener('submit', async (e) => {
   }
 
   byId('pImageFile').value = '';
+  fotosEnEdicion = [];
   hide(byId('imagePreview'));
   hide(byId('productModal'));
   await refreshData();
@@ -4200,6 +4377,14 @@ async function editProduct(id) {
   if (byId('pCategory')) byId('pCategory').value = p.category || '';
   if (byId('pEan')) byId('pEan').value = p.ean || '';
   if (byId('pImageFile')) byId('pImageFile').value = '';
+
+  // Las fotos ya guardadas entran como tipo:'url', no como archivos: no
+  // hay que volver a subirlas, solo mantenerlas salvo que las saque.
+  const fotosGuardadas = (Array.isArray(p.imagenes) && p.imagenes.length)
+    ? p.imagenes
+    : (p.image_url ? [p.image_url] : []);
+  fotosEnEdicion = fotosGuardadas.map(url => ({ tipo: 'url', url }));
+  renderFotosEnEdicion();
 
   const servicio = !esProductoFisico(p);
   byId('pEsServicio').checked = servicio;
@@ -4244,6 +4429,8 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   byId('modalTitle').textContent = 'Nuevo producto (escaneado)';
   byId('pName').value = byId('pDesc').value = byId('pPrice').value = '';
   if (byId('pImageFile')) byId('pImageFile').value = '';
+  fotosEnEdicion = [];
+  renderFotosEnEdicion();
   byId('pStock').value = '1';
   byId('pCategory').value = '';
   byId('pEan').value = ean;
