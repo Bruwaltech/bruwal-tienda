@@ -1386,8 +1386,9 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field hidden" id="campoVariantes">
           <label>Variantes de este producto</label>
+          <div id="variSugeridos" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;"></div>
           <div id="variAtributos"></div>
-          <button type="button" id="variAgregarAtributo" class="btn-action" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);width:100%;margin-top:6px;">+ Agregar atributo (ej: Color)</button>
+          <button type="button" id="variAgregarAtributo" class="btn-action" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);width:100%;margin-top:6px;">+ Agregar otro atributo</button>
           <div id="variGrilla" style="margin-top:14px;"></div>
           <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.6;">
             Importante: el stock de cada variante lo actualizás vos a mano
@@ -2212,6 +2213,45 @@ function combinacionesDe(atributos) {
   }, []);
 }
 
+// Atributos que casi toda tienda de indumentaria/calzado usa. Un toque
+// carga el nombre Y los valores típicos juntos, así el vendedor no tiene
+// que escribir "Talle" y después tipear "S, M, L, XL" a mano.
+const ATRIBUTOS_SUGERIDOS = [
+  { nombre: 'Talle',       valores: ['S','M','L','XL','XXL'] },
+  { nombre: 'Talle numérico', valores: ['36','38','40','42','44'] },
+  { nombre: 'Color',       valores: ['Negro','Blanco','Azul','Rojo','Gris'] }
+];
+
+function renderSugeridosVariante() {
+  const cont = byId('variSugeridos');
+  if (!cont) return;
+
+  const yaCargados = variAtributosEnEdicion.map(a => a.nombre);
+  const pendientes = ATRIBUTOS_SUGERIDOS.filter(s => !yaCargados.includes(s.nombre));
+
+  cont.innerHTML = pendientes.length
+    ? pendientes.map(s =>
+        '<button type="button" class="chip-sug" data-sug-atributo="' + escapeHtml(s.nombre) + '">+ ' +
+        escapeHtml(s.nombre) + '</button>').join('')
+    : '';
+
+  cont.querySelectorAll('[data-sug-atributo]').forEach(b => {
+    b.addEventListener('click', () => {
+      const preset = ATRIBUTOS_SUGERIDOS.find(s => s.nombre === b.dataset.sugAtributo);
+      // Si venía el renglón vacío inicial (checkbox recién tildado), lo
+      // reemplaza en vez de sumar uno más al lado.
+      const vacio = variAtributosEnEdicion.findIndex(a => !a.nombre && !a.valores.length);
+      const nuevo = { nombre: preset.nombre, valores: [...preset.valores] };
+      if (vacio >= 0) variAtributosEnEdicion[vacio] = nuevo;
+      else if (variAtributosEnEdicion.length < MAX_ATRIBUTOS_VARIANTE) variAtributosEnEdicion.push(nuevo);
+      else return;   // ya tiene los 2 atributos, no hay lugar
+
+      renderAtributosVariante();
+      renderGrillaVariantes();
+    });
+  });
+}
+
 function renderAtributosVariante() {
   const cont = byId('variAtributos');
   cont.innerHTML = variAtributosEnEdicion.map((at, i) => `
@@ -2239,6 +2279,7 @@ function renderAtributosVariante() {
   }));
 
   byId('variAgregarAtributo').classList.toggle('hidden', variAtributosEnEdicion.length >= MAX_ATRIBUTOS_VARIANTE);
+  renderSugeridosVariante();
 }
 
 function renderGrillaVariantes() {
