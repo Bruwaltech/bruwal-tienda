@@ -1151,10 +1151,16 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
   const items = Object.values(cart).map(l => {
     const p = productoDe(l);
+    const nombre = p ? p.name : '';
     return {
       product_id: l.productId,
       qty: l.qty,
-      label: p ? p.name : '',
+      // El panel lee 'name' (así lo guarda el registro de ventas con
+      // lector). Este checkout guardaba 'label', así que un pedido hecho
+      // desde la tienda le aparecía al vendedor como "undefined". Se
+      // guardan las dos claves: no le como el campo a nada que ya lea 'label'.
+      name: nombre,
+      label: nombre,
       opciones: (l.opciones || []).map(o => o.nombre)
     };
   });

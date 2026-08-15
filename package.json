@@ -1,0 +1,9 @@
+{
+  "name": "bruwal-tienda",
+  "private": true,
+  "type": "commonjs",
+  "description": "Sitio y funciones de BRUWAL Tech. No tiene build: Vercel instala estas dependencias solo para las funciones de /api y sirve el resto de los archivos tal cual.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1"
+  }
+}

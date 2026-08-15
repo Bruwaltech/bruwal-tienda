@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asistente IA — Panel de contactos · BRUWAL</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#15294D">
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --navy: #15294D;
+  --celeste: #2F8FE0;
+  --bg: #F4F8FC;
+  --surface: #FFFFFF;
+  --line: #DCE6F0;
+  --text-dark: #15294D;
+  --text-mute: #5C6B82;
+  --ok: #1FA088;
+  --warn: #D97706;
+  --danger: #DC2626;
+  --radius: 12px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text-dark);
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
+
+/* ---------------- ingreso ---------------- */
+.pantalla-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.caja-login {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 34px 30px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 12px 40px -18px rgba(21, 41, 77, .35);
+}
+.marca {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}
+.marca-cuadro {
+  width: 34px; height: 34px; border-radius: 9px; background: var(--navy);
+  color: #fff; display: grid; place-items: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+}
+.marca-nombre { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 19px; }
+.bajada { color: var(--text-mute); font-size: 14px; margin-bottom: 22px; }
+
+.campo { margin-bottom: 15px; }
+.campo label {
+  display: block; font-size: 12px; font-weight: 600; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--text-mute); margin-bottom: 6px;
+}
+.campo input, .campo textarea, .campo select {
+  width: 100%; padding: 11px 13px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 15px; font-family: inherit;
+  background: #fff; color: var(--text-dark);
+}
+.campo input:focus, .campo textarea:focus, .campo select:focus {
+  outline: none; border-color: var(--celeste);
+}
+
+.btn {
+  border: none; border-radius: 8px; padding: 12px 18px; font-size: 15px;
+  font-family: inherit; font-weight: 600; cursor: pointer;
+}
+.btn-primario { background: var(--navy); color: #fff; width: 100%; }
+.btn-primario:hover { background: #1d3767; }
+.btn-primario:disabled { opacity: .55; cursor: default; }
+.btn-suave {
+  background: #fff; color: var(--navy); border: 1px solid var(--line);
+  padding: 8px 14px; font-size: 14px;
+}
+.btn-suave:hover { border-color: var(--celeste); }
+
+.aviso {
+  border-radius: 8px; padding: 11px 13px; font-size: 14px; margin-bottom: 15px;
+  line-height: 1.45;
+}
+.aviso-error { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+.aviso-ok { background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
+
+.link-suave {
+  background: none; border: none; color: var(--celeste); font-size: 13.5px;
+  cursor: pointer; font-family: inherit; padding: 0;
+}
+.link-suave:hover { text-decoration: underline; }
+.fila-recordar {
+  display: flex; align-items: center; gap: 8px; font-size: 14px;
+  color: var(--text-mute); margin-bottom: 16px;
+}
+
+/* ---------------- estructura ---------------- */
+.barra {
+  background: var(--navy); color: #fff; padding: 14px 22px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  flex-wrap: wrap;
+}
+.barra .quien { font-size: 13px; color: #B9CBE4; }
+.barra h1 { font-size: 17px; font-weight: 600; }
+.barra button {
+  background: rgba(255,255,255,.12); color: #fff; border: none;
+  border-radius: 8px; padding: 8px 14px; font-size: 14px;
+  font-family: inherit; cursor: pointer;
+}
+.barra button:hover { background: rgba(255,255,255,.22); }
+
+.contenido { max-width: 1180px; margin: 0 auto; padding: 22px; }
+
+.tarjetas {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px; margin-bottom: 22px;
+}
+.tarjeta {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 18px;
+}
+.tarjeta .rotulo {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-mute); font-weight: 600; margin-bottom: 6px;
+}
+.tarjeta .numero {
+  font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700;
+}
+.tarjeta.alerta .numero { color: var(--warn); }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.panel-cabecera {
+  padding: 15px 18px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.panel-cabecera h2 { font-size: 16px; font-weight: 600; margin-right: auto; }
+
+.filtros { display: flex; gap: 6px; flex-wrap: wrap; }
+.filtro {
+  border: 1px solid var(--line); background: #fff; color: var(--text-mute);
+  border-radius: 20px; padding: 6px 14px; font-size: 13.5px;
+  font-family: inherit; cursor: pointer;
+}
+.filtro.activo { background: var(--navy); color: #fff; border-color: var(--navy); }
+.buscador {
+  border: 1px solid var(--line); border-radius: 20px; padding: 7px 14px;
+  font-size: 14px; font-family: inherit; min-width: 190px;
+}
+.buscador:focus { outline: none; border-color: var(--celeste); }
+
+.tabla-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+th {
+  text-align: left; padding: 11px 18px; background: #F8FBFF;
+  font-size: 12px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-mute); font-weight: 600; white-space: nowrap;
+}
+td { padding: 13px 18px; border-top: 1px solid var(--line); vertical-align: top; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #F8FBFF; }
+.nombre-lead { font-weight: 600; }
+.dato-secundario { color: var(--text-mute); font-size: 13px; }
+
+.chip {
+  display: inline-block; border-radius: 20px; padding: 3px 10px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.chip-pendiente { background: #FEF3C7; color: #92400E; }
+.chip-atendido { background: #D1FAE5; color: #065F46; }
+.chip-nuevo { background: #DBEAFE; color: #1E40AF; }
+
+.vacio { padding: 46px 20px; text-align: center; color: var(--text-mute); }
+.vacio strong { display: block; margin-bottom: 6px; color: var(--text-dark); }
+
+/* ---------------- ficha del contacto ---------------- */
+.telon {
+  position: fixed; inset: 0; background: rgba(21, 41, 77, .45);
+  display: flex; justify-content: flex-end; z-index: 40;
+}
+.ficha {
+  background: var(--bg); width: 100%; max-width: 520px; height: 100%;
+  overflow-y: auto; display: flex; flex-direction: column;
+}
+.ficha-cabecera {
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 16px 20px; display: flex; align-items: flex-start; gap: 12px;
+  position: sticky; top: 0; z-index: 2;
+}
+.ficha-cabecera h3 { font-size: 17px; margin-bottom: 3px; }
+.cerrar {
+  background: none; border: none; font-size: 24px; line-height: 1;
+  color: var(--text-mute); cursor: pointer; margin-left: auto; padding: 0 4px;
+}
+.ficha-cuerpo { padding: 18px 20px 30px; }
+.bloque { margin-bottom: 22px; }
+.bloque > h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-mute); font-weight: 600; margin-bottom: 10px;
+}
+.datos { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.dato {
+  display: flex; gap: 12px; padding: 10px 14px; font-size: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.dato:last-child { border-bottom: none; }
+.dato .k { color: var(--text-mute); min-width: 108px; flex-shrink: 0; }
+.dato .v { word-break: break-word; }
+
+.charla {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px;
+  display: flex; flex-direction: column; gap: 9px;
+  max-height: 420px; overflow-y: auto;
+}
+.burbuja {
+  max-width: 82%; padding: 9px 12px; border-radius: 13px;
+  font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+}
+.burbuja.de-cliente {
+  background: #EEF3F9; align-self: flex-start; border-bottom-left-radius: 4px;
+}
+.burbuja.de-bot {
+  background: var(--navy); color: #fff; align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+.burbuja .hora { display: block; font-size: 11px; opacity: .65; margin-top: 4px; }
+
+.acciones { display: flex; gap: 10px; flex-wrap: wrap; }
+.acciones .btn { flex: 1; min-width: 150px; }
+.btn-ok { background: var(--ok); color: #fff; }
+.btn-ok:hover { background: #17806c; }
+
+@media (max-width: 720px) {
+  .contenido { padding: 15px; }
+  .panel-cabecera h2 { width: 100%; margin-bottom: 4px; }
+  th.opcional, td.opcional { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ INGRESO ============================ -->
+<div class="pantalla-login" id="pantallaLogin">
+  <div class="caja-login">
+    <div class="marca">
+      <div class="marca-cuadro">B</div>
+      <div class="marca-nombre">BRUWALTECH</div>
+    </div>
+    <p class="bajada">Panel de contactos de tu asistente IA</p>
+
+    <div class="aviso aviso-error hidden" id="avisoLogin"></div>
+    <div class="aviso aviso-ok hidden" id="avisoOk"></div>
+
+    <form id="formLogin">
+      <div class="campo">
+        <label for="email">Email</label>
+        <input type="email" id="email" autocomplete="username" required>
+      </div>
+      <div class="campo">
+        <label for="clave">Contraseña</label>
+        <input type="password" id="clave" autocomplete="current-password" required>
+      </div>
+      <label class="fila-recordar">
+        <input type="checkbox" id="recordarme" checked>
+        Mantenerme conectado
+      </label>
+      <button type="submit" class="btn btn-primario" id="btnEntrar">Ingresar</button>
+    </form>
+
+    <div style="text-align:center;margin-top:14px;">
+      <button type="button" class="link-suave" id="btnOlvide">¿Olvidaste tu contraseña?</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================= PANEL ============================= -->
+<div class="hidden" id="pantallaPanel">
+  <div class="barra">
+    <div>
+      <div class="quien" id="quienSoy"></div>
+      <h1 id="nombreCliente">Contactos</h1>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select id="selectorCliente" class="hidden"
+              style="padding:7px 10px;border-radius:8px;border:none;font-family:inherit;font-size:14px;"></select>
+      <button id="btnExportar">Exportar</button>
+      <button id="btnSalir">Salir</button>
+    </div>
+  </div>
+
+  <div class="contenido">
+    <div class="aviso aviso-error hidden" id="avisoConsumo" style="margin-bottom:18px;"></div>
+
+    <div class="tarjetas">
+      <div class="tarjeta alerta">
+        <div class="rotulo">Sin atender</div>
+        <div class="numero" id="numPendientes">0</div>
+      </div>
+      <div class="tarjeta">
+        <div class="rotulo">Plan de este mes</div>
+        <div class="numero" id="numConsumo">—</div>
+        <div style="margin-top:9px;height:5px;border-radius:3px;background:var(--line);overflow:hidden;">
+          <div id="barraConsumo" style="height:100%;width:0;background:var(--celeste);transition:width .3s;"></div>
+        </div>
+      </div>
+      <div class="tarjeta">
+        <div class="rotulo">Consultas hoy</div>
+        <div class="numero" id="numHoy">0</div>
+      </div>
+      <div class="tarjeta">
+        <div class="rotulo">Últimos 7 días</div>
+        <div class="numero" id="numSemana">0</div>
+      </div>
+      <div class="tarjeta">
+        <div class="rotulo">Contactos totales</div>
+        <div class="numero" id="numTotal">0</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-cabecera">
+        <h2>Contactos</h2>
+        <div class="filtros">
+          <button class="filtro activo" data-filtro="pendientes">Sin atender</button>
+          <button class="filtro" data-filtro="atendidos">Atendidos</button>
+          <button class="filtro" data-filtro="todos">Todos</button>
+        </div>
+        <input type="search" class="buscador" id="buscador" placeholder="Buscar nombre, empresa…">
+      </div>
+      <div class="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Contacto</th>
+              <th class="opcional">Interés</th>
+              <th class="opcional">Último mensaje</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="cuerpoTabla"></tbody>
+        </table>
+      </div>
+      <div class="vacio hidden" id="sinResultados"></div>
+    </div>
+  </div>
+</div>
+
+<!-- =========================== FICHA =========================== -->
+<div class="telon hidden" id="telon">
+  <div class="ficha">
+    <div class="ficha-cabecera">
+      <div>
+        <h3 id="fichaNombre"></h3>
+        <div class="dato-secundario" id="fichaTelefono"></div>
+      </div>
+      <button class="cerrar" id="btnCerrarFicha" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="ficha-cuerpo">
+      <div class="bloque">
+        <h4>Datos</h4>
+        <div class="datos" id="fichaDatos"></div>
+      </div>
+      <div class="bloque">
+        <h4>Conversación</h4>
+        <div class="charla" id="fichaCharla"></div>
+      </div>
+      <div class="bloque">
+        <h4>Notas internas</h4>
+        <div class="campo">
+          <textarea id="fichaNotas" rows="3"
+                    placeholder="Lo que anotes acá no lo ve el cliente"></textarea>
+        </div>
+      </div>
+      <div class="aviso aviso-error hidden" id="fichaError"></div>
+      <div class="acciones">
+        <button class="btn btn-ok" id="btnAtender">Marcar como atendido</button>
+        <button class="btn btn-suave" id="btnWhatsApp">Abrir en WhatsApp</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
+
+const $ = (id) => document.getElementById(id);
+const ver = (el) => el.classList.remove('hidden');
+const ocultar = (el) => el.classList.add('hidden');
+
+// Todo lo que se muestra acá viene de desconocidos que escriben por WhatsApp:
+// nombres, empresas, mensajes. Si lo insertáramos como HTML, cualquiera podría
+// mandar un mensaje con una etiqueta <script> y ejecutar código en el panel.
+const escapar = (t) => {
+  const d = document.createElement('div');
+  d.textContent = t == null ? '' : String(t);
+  return d.innerHTML;
+};
+
+const fecha = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const hoy = new Date();
+  const mismoDia = d.toDateString() === hoy.toDateString();
+  return mismoDia
+    ? d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+const fechaHora = (iso) =>
+  iso ? new Date(iso).toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+  }) : '';
+
+// Misma lógica que el dashboard: si el usuario no marcó "mantenerme conectado",
+// la sesión vive en sessionStorage y muere al cerrar la pestaña.
+const almacenamientoSesion = {
+  getItem: (k) => {
+    try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); }
+    catch (e) { return null; }
+  },
+  setItem: (k, v) => {
+    try {
+      if (localStorage.getItem('bruwal_remember_me') === 'true') {
+        localStorage.setItem(k, v); sessionStorage.removeItem(k);
+      } else {
+        sessionStorage.setItem(k, v); localStorage.removeItem(k);
+      }
+    } catch (e) {}
+  },
+  removeItem: (k) => {
+    try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch (e) {}
+  }
+};
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: almacenamientoSesion,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
+
+// Los tokens de sesión viajan en el # de la URL. Si alguien copia esa dirección
+// de la barra y la comparte, está regalando su sesión.
+(function limpiarTokensDeLaUrl() {
+  if (!/access_token=|refresh_token=|type=recovery/.test(window.location.hash || '')) return;
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+})();
+
+// ============================== estado ==============================
+
+let clientes = [];
+let clienteActual = null;
+let leads = [];
+let leadAbierto = null;
+let filtro = 'pendientes';
+let busqueda = '';
+
+// ============================== ingreso ==============================
+
+$('formLogin').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  ocultar($('avisoLogin'));
+  ocultar($('avisoOk'));
+
+  const boton = $('btnEntrar');
+  boton.disabled = true;
+  boton.textContent = 'Entrando…';
+
+  // Se define ANTES de entrar: el adaptador de almacenamiento lee esta marca en
+  // el momento en que Supabase guarda la sesión, que ocurre dentro del signIn.
+  if ($('recordarme').checked) localStorage.setItem('bruwal_remember_me', 'true');
+  else localStorage.removeItem('bruwal_remember_me');
+
+  const { error } = await sb.auth.signInWithPassword({
+    email: $('email').value.trim(),
+    password: $('clave').value
+  });
+
+  boton.disabled = false;
+  boton.textContent = 'Ingresar';
+
+  if (error) {
+    // Un mensaje distinto por causa: "email o contraseña incorrectos" para
+    // todo hace que quien no confirmó la cuenta reintente para siempre.
+    const m = (error.message || '').toLowerCase();
+    $('avisoLogin').textContent =
+      m.includes('not confirmed')
+        ? 'Falta confirmar tu cuenta. Revisá tu correo, incluido el no deseado.'
+        : m.includes('invalid login credentials')
+        ? 'El email o la contraseña no coinciden. Revisá que no haya quedado un espacio de más.'
+        : m.includes('rate limit') || /after \d+ seconds?/.test(m)
+        ? 'Demasiados intentos seguidos. Esperá un minuto y volvé a probar.'
+        : error.message;
+    ver($('avisoLogin'));
+    return;
+  }
+
+  await entrar();
+});
+
+$('btnOlvide').addEventListener('click', async () => {
+  const email = $('email').value.trim();
+  ocultar($('avisoLogin'));
+  ocultar($('avisoOk'));
+
+  if (!email) {
+    $('avisoLogin').textContent = 'Escribí tu email arriba y volvé a tocar el enlace.';
+    return ver($('avisoLogin'));
+  }
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/asistente'
+  });
+
+  if (error) {
+    $('avisoLogin').textContent = error.message;
+    return ver($('avisoLogin'));
+  }
+  $('avisoOk').textContent = 'Te mandamos un correo para que crees una contraseña nueva.';
+  ver($('avisoOk'));
+});
+
+$('btnSalir').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  window.location.reload();
+});
+
+// ============================== carga ==============================
+
+async function entrar() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+
+  // Las políticas de la base devuelven únicamente los clientes de este usuario.
+  // La página no filtra nada: si la consulta trajera de más, sería un problema
+  // de las políticas, no de acá.
+  const { data, error } = await sb
+    .from('clientes')
+    .select('id, slug, nombre, plan, limite_conversaciones, tope_duro')
+    .order('nombre');
+
+  if (error) {
+    $('avisoLogin').textContent = 'No se pudieron cargar tus datos: ' + error.message;
+    return ver($('avisoLogin'));
+  }
+
+  clientes = data || [];
+
+  if (!clientes.length) {
+    $('avisoLogin').innerHTML =
+      '<b>Tu usuario todavía no está vinculado a ningún negocio.</b><br>' +
+      '<span style="font-size:13px;">Escribinos y lo habilitamos.</span>';
+    ver($('avisoLogin'));
+    await sb.auth.signOut();
+    return;
+  }
+
+  clienteActual = clientes[0];
+  $('quienSoy').textContent = user.email;
+
+  // El selector solo aparece para quien atiende a más de un negocio.
+  if (clientes.length > 1) {
+    const sel = $('selectorCliente');
+    sel.innerHTML = clientes
+      .map((c) => '<option value="' + escapar(c.id) + '">' + escapar(c.nombre) + '</option>')
+      .join('');
+    sel.addEventListener('change', () => {
+      clienteActual = clientes.find((c) => c.id === sel.value);
+      cargarLeads();
+    });
+    ver(sel);
+  }
+
+  ocultar($('pantallaLogin'));
+  ver($('pantallaPanel'));
+  await cargarLeads();
+}
+
+async function cargarLeads() {
+  $('nombreCliente').textContent = clienteActual.nombre;
+
+  const { data, error } = await sb
+    .from('v_leads')
+    .select('*')
+    .eq('cliente_id', clienteActual.id)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    $('sinResultados').innerHTML =
+      '<strong>No se pudieron cargar los contactos</strong>' + escapar(error.message);
+    ver($('sinResultados'));
+    return;
+  }
+
+  leads = data || [];
+  pintarTarjetas();
+  pintarTabla();
+  await pintarConsumo();
+}
+
+// El consumo del mes contra lo que incluye el plan. Es el canal confiable:
+// el aviso por WhatsApp puede no llegar si el responsable no le escribió al
+// número del negocio en las últimas 24 horas.
+async function pintarConsumo() {
+  const periodo = new Date()
+    .toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+    .slice(0, 7);
+
+  const { data } = await sb
+    .from('v_consumo')
+    .select('conversaciones, excedentes')
+    .eq('cliente_id', clienteActual.id)
+    .eq('periodo', periodo)
+    .maybeSingle();
+
+  const usadas = (data && data.conversaciones) || 0;
+  const limite = clienteActual.limite_conversaciones;
+  ocultar($('avisoConsumo'));
+
+  if (!limite) {
+    $('numConsumo').textContent = usadas;
+    $('barraConsumo').style.width = '0';
+    return;
+  }
+
+  const proporcion = usadas / limite;
+  $('numConsumo').textContent = usadas + ' / ' + limite;
+  $('barraConsumo').style.width = Math.min(100, proporcion * 100) + '%';
+  $('barraConsumo').style.background =
+    proporcion >= 1 ? 'var(--danger)' : proporcion >= 0.8 ? 'var(--warn)' : 'var(--celeste)';
+
+  if (usadas >= limite) {
+    const extra = (data && data.excedentes) || 0;
+    $('avisoConsumo').innerHTML =
+      '<b>Pasaste las ' + limite + ' conversaciones de tu plan.</b><br>' +
+      '<span style="font-size:13.5px;">El asistente sigue atendiendo con normalidad. ' +
+      'Llevás ' + extra + ' conversaciones adicionales este mes, que se facturan aparte. ' +
+      'Si esto se repite, conviene pasar al plan siguiente.</span>';
+    ver($('avisoConsumo'));
+  } else if (proporcion >= 0.8) {
+    $('avisoConsumo').innerHTML =
+      '<b>Te quedan ' + (limite - usadas) + ' conversaciones este mes.</b><br>' +
+      '<span style="font-size:13.5px;">Al pasarte, el asistente sigue funcionando ' +
+      'y las adicionales se facturan aparte.</span>';
+    ver($('avisoConsumo'));
+  }
+}
+
+function pintarTarjetas() {
+  const ahora = Date.now();
+  const DIA = 24 * 60 * 60 * 1000;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  $('numTotal').textContent = leads.length;
+  $('numPendientes').textContent = leads.filter((l) => !l.atendido).length;
+  $('numHoy').textContent =
+    leads.filter((l) => l.ultimo_mensaje && new Date(l.ultimo_mensaje) >= hoy).length;
+  $('numSemana').textContent =
+    leads.filter((l) => l.ultimo_mensaje && ahora - new Date(l.ultimo_mensaje) <= 7 * DIA).length;
+}
+
+function nombreDe(l) {
+  const n = [l.nombre, l.apellido].filter(Boolean).join(' ').trim();
+  return n || 'Sin nombre';
+}
+
+function pintarTabla() {
+  const texto = busqueda.trim().toLowerCase();
+
+  const visibles = leads.filter((l) => {
+    if (filtro === 'pendientes' && l.atendido) return false;
+    if (filtro === 'atendidos' && !l.atendido) return false;
+    if (!texto) return true;
+    return [l.nombre, l.apellido, l.empresa, l.telefono, l.servicio_interes, l.ciudad]
+      .filter(Boolean)
+      .some((v) => String(v).toLowerCase().includes(texto));
+  });
+
+  const cuerpo = $('cuerpoTabla');
+
+  if (!visibles.length) {
+    cuerpo.innerHTML = '';
+    $('sinResultados').innerHTML = texto
+      ? '<strong>Sin resultados para “' + escapar(busqueda) + '”</strong>Probá con otro dato.'
+      : filtro === 'pendientes'
+      ? '<strong>No hay contactos sin atender</strong>Todo al día.'
+      : '<strong>Todavía no hay contactos</strong>Van a aparecer acá apenas alguien escriba.';
+    ver($('sinResultados'));
+    return;
+  }
+
+  ocultar($('sinResultados'));
+
+  cuerpo.innerHTML = visibles.map((l) => {
+    const nuevo = l.ultimo_mensaje &&
+      Date.now() - new Date(l.ultimo_mensaje) < 24 * 60 * 60 * 1000;
+    return '<tr data-id="' + escapar(l.id) + '">' +
+      '<td>' +
+        '<div class="nombre-lead">' + escapar(nombreDe(l)) + '</div>' +
+        '<div class="dato-secundario">' +
+          escapar(l.empresa || l.telefono) +
+        '</div>' +
+      '</td>' +
+      '<td class="opcional">' + escapar(l.servicio_interes || '—') + '</td>' +
+      '<td class="opcional dato-secundario">' + escapar(fecha(l.ultimo_mensaje)) + '</td>' +
+      '<td>' +
+        (l.atendido
+          ? '<span class="chip chip-atendido">Atendido</span>'
+          : '<span class="chip chip-pendiente">Sin atender</span>') +
+        (nuevo && !l.atendido ? ' <span class="chip chip-nuevo">Hoy</span>' : '') +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  cuerpo.querySelectorAll('tr').forEach((fila) => {
+    fila.addEventListener('click', () => abrirFicha(fila.dataset.id));
+  });
+}
+
+$('buscador').addEventListener('input', (e) => {
+  busqueda = e.target.value;
+  pintarTabla();
+});
+
+document.querySelectorAll('.filtro').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.filtro').forEach((x) => x.classList.remove('activo'));
+    b.classList.add('activo');
+    filtro = b.dataset.filtro;
+    pintarTabla();
+  });
+});
+
+// ============================== ficha ==============================
+
+async function abrirFicha(id) {
+  leadAbierto = leads.find((l) => String(l.id) === String(id));
+  if (!leadAbierto) return;
+
+  ocultar($('fichaError'));
+  $('fichaNombre').textContent = nombreDe(leadAbierto);
+  $('fichaTelefono').textContent = leadAbierto.telefono;
+  $('fichaNotas').value = leadAbierto.notas_internas || '';
+  $('btnAtender').textContent = leadAbierto.atendido
+    ? 'Marcar como pendiente'
+    : 'Marcar como atendido';
+
+  const filas = [
+    ['Empresa', leadAbierto.empresa],
+    ['Email', leadAbierto.email],
+    ['Ciudad', leadAbierto.ciudad],
+    ['Otro teléfono', leadAbierto.telefono_alternativo],
+    ['Interés', leadAbierto.servicio_interes],
+    ['Tipo', leadAbierto.tipo_objetivo],
+    ['Notas del bot', leadAbierto.notas],
+    ['Derivado', leadAbierto.derivado ? fechaHora(leadAbierto.derivado_at) : null],
+    ['Primer contacto', fechaHora(leadAbierto.created_at)]
+  ].filter(([, v]) => v);
+
+  $('fichaDatos').innerHTML = filas.map(([k, v]) =>
+    '<div class="dato"><span class="k">' + escapar(k) + '</span>' +
+    '<span class="v">' + escapar(v) + '</span></div>'
+  ).join('');
+
+  $('fichaCharla').innerHTML = '<div class="dato-secundario">Cargando…</div>';
+  ver($('telon'));
+
+  const { data, error } = await sb
+    .from('wa_mensajes')
+    .select('rol, texto, created_at')
+    .eq('cliente_id', leadAbierto.cliente_id)
+    .eq('telefono', leadAbierto.telefono)
+    .order('id');
+
+  $('fichaCharla').innerHTML = error
+    ? '<div class="dato-secundario">No se pudo cargar la conversación.</div>'
+    : (data || []).map((m) =>
+        '<div class="burbuja ' + (m.rol === 'user' ? 'de-cliente' : 'de-bot') + '">' +
+          escapar(m.texto) +
+          '<span class="hora">' + escapar(fechaHora(m.created_at)) + '</span>' +
+        '</div>'
+      ).join('') || '<div class="dato-secundario">Sin mensajes.</div>';
+}
+
+function cerrarFicha() {
+  ocultar($('telon'));
+  leadAbierto = null;
+}
+
+$('btnCerrarFicha').addEventListener('click', cerrarFicha);
+$('telon').addEventListener('click', (e) => { if (e.target === $('telon')) cerrarFicha(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('telon').classList.contains('hidden')) cerrarFicha();
+});
+
+$('btnAtender').addEventListener('click', async () => {
+  if (!leadAbierto) return;
+  const boton = $('btnAtender');
+  boton.disabled = true;
+  ocultar($('fichaError'));
+
+  const atendido = !leadAbierto.atendido;
+  // Solo estas tres columnas están habilitadas para el panel: los datos que
+  // capturó el bot no se tocan desde acá.
+  const { error } = await sb.from('wa_leads').update({
+    atendido,
+    atendido_at: atendido ? new Date().toISOString() : null,
+    notas_internas: $('fichaNotas').value || null
+  }).eq('id', leadAbierto.id);
+
+  boton.disabled = false;
+
+  if (error) {
+    $('fichaError').textContent = 'No se pudo guardar: ' + error.message;
+    return ver($('fichaError'));
+  }
+
+  cerrarFicha();
+  await cargarLeads();
+});
+
+$('btnWhatsApp').addEventListener('click', () => {
+  if (!leadAbierto) return;
+  const numero = String(leadAbierto.telefono).replace(/\D/g, '');
+  window.open('https://wa.me/' + numero, '_blank', 'noopener');
+});
+
+// ============================== exportar ==============================
+
+$('btnExportar').addEventListener('click', () => {
+  const columnas = [
+    'telefono', 'nombre', 'apellido', 'empresa', 'email', 'ciudad',
+    'servicio_interes', 'tipo_objetivo', 'notas', 'derivado', 'atendido',
+    'created_at', 'ultimo_mensaje'
+  ];
+
+  // Un valor que arranca con = + - o @ lo interpreta Excel como fórmula, y esos
+  // valores los escribe un desconocido por WhatsApp. El apóstrofe lo desarma.
+  const celda = (v) => {
+    let s = v == null ? '' : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  };
+
+  const lineas = [columnas.join(';')];
+  for (const l of leads) lineas.push(columnas.map((c) => celda(l[c])).join(';'));
+
+  // BOM al principio: sin eso Excel en Windows abre el archivo en ANSI y rompe
+  // todos los acentos.
+  const blob = new Blob(['﻿' + lineas.join('\r\n')], {
+    type: 'text/csv;charset=utf-8;'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'contactos-' + clienteActual.slug + '-' +
+    new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ============================== arranque ==============================
+
+(async function arrancar() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await entrar();
+})();
+</script>
+
+</body>
+</html>
