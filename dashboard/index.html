@@ -1375,7 +1375,10 @@ tr:last-child td { border-bottom: none; }
       </div>
 
       <div class="panel">
-        <div class="panel-head">📓 Deudores</div>
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <span>📓 Deudores</span>
+          <button type="button" id="abrirFiadoManualBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Cargar fiado anterior</button>
+        </div>
         <table>
           <thead><tr><th>Cliente</th><th>Detalle</th><th>Fecha</th><th style="text-align:right;">Adeuda</th><th></th></tr></thead>
           <tbody id="fiadoBody"></tbody>
@@ -1511,6 +1514,23 @@ tr:last-child td { border-bottom: none; }
     <div id="listaCategorias" style="display:flex;flex-wrap:wrap;gap:8px;min-height:44px;"></div>
 
     <button type="button" id="guardarCategoriasBtn" class="btn btn-primary" style="width:100%;margin-top:22px;">Guardar</button>
+  </div>
+</div>
+
+<!-- MODAL FIADO MANUAL -->
+<div class="modal-overlay hidden" id="fiadoManualModal">
+  <div class="modal" style="max-width:480px;">
+    <button class="modal-close" id="closeFiadoManualModal">✕</button>
+    <h3><i class="fa-solid fa-book" style="color:var(--celeste);"></i> Cargar fiado anterior</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;line-height:1.6;">
+      Para anotar una deuda que ya tenías anotada aparte (cuaderno, etc.), de antes
+      de usar el sistema. No descuenta stock: esa venta ya pasó.
+    </p>
+    <div class="field"><label>Nombre del cliente</label><input type="text" id="fmNombre" placeholder="Ej: Juan Pérez"></div>
+    <div class="field"><label>Teléfono (opcional)</label><input type="text" id="fmTelefono" placeholder="Ej: 11 2345 6789"></div>
+    <div class="field"><label>Monto que adeuda</label><input type="number" id="fmMonto" min="0" step="1" placeholder="0"></div>
+    <div class="field"><label>Detalle (qué se llevó)</label><input type="text" id="fmDetalle" placeholder="Ej: 2 remeras talle M y un pantalón"></div>
+    <button type="button" id="guardarFiadoManualBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar deuda</button>
   </div>
 </div>
 
@@ -3570,6 +3590,44 @@ function renderFiado() {
     b.addEventListener('click', () => verHistorialPagos(b.dataset.verPagos)));
 }
 
+// Para deudas que ya existían fuera del sistema (cuaderno, memoria, etc.).
+// A diferencia de una venta de mostrador, NO toca stock: esa venta ya pasó
+// antes de usar la app, así que no hay mercadería que descontar ahora.
+async function guardarFiadoManual() {
+  if (!puedeOperar()) return;
+
+  const nombre = byId('fmNombre').value.trim();
+  const telefono = byId('fmTelefono').value.trim();
+  const monto = Number(byId('fmMonto').value);
+  const detalle = byId('fmDetalle').value.trim();
+
+  if (!nombre) { alert('Poné el nombre del cliente.'); return; }
+  if (!Number.isFinite(monto) || monto <= 0) { alert('Escribí un monto mayor que 0.'); return; }
+
+  const { data, error } = await sb.from('orders').insert([{
+    store_slug: currentStore.slug,
+    customer_name: nombre,
+    customer_phone: telefono,
+    items: [{ name: detalle || 'Fiado anterior', qty: 1, price: monto }],
+    total: monto,
+    estado: 'confirmado',
+    saldo_pendiente: monto,
+    created_at: new Date().toISOString()
+  }]).select('id');
+
+  if (error || !data?.length) {
+    alert('No se pudo guardar la deuda:\n\n' + (error?.message || 'intentá de nuevo.'));
+    return;
+  }
+
+  byId('fmNombre').value = '';
+  byId('fmTelefono').value = '';
+  byId('fmMonto').value = '';
+  byId('fmDetalle').value = '';
+  hide(byId('fiadoManualModal'));
+  await refreshData();
+}
+
 async function registrarPago(orderId) {
   if (!puedeOperar()) return;
 
@@ -4718,6 +4776,10 @@ byId('tabFiado').addEventListener('click', () => {
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('fiadoView').classList.add('visible');
 });
+
+byId('abrirFiadoManualBtn').addEventListener('click', () => show(byId('fiadoManualModal')));
+byId('closeFiadoManualModal').addEventListener('click', () => hide(byId('fiadoManualModal')));
+byId('guardarFiadoManualBtn').addEventListener('click', guardarFiadoManual);
 
 
 byId('clientSearch').addEventListener('input', (e) => {
