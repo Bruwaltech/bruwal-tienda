@@ -1126,6 +1126,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabPedidos"><i class="fa-solid fa-cart-shopping"></i> Pedidos</button>
       <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
+      <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> Fiado</button>
     </div>
   </div>
 
@@ -1290,6 +1291,17 @@ tr:last-child td { border-bottom: none; }
                        style="flex:1;min-width:130px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
                 <datalist id="listaClientes"></datalist>
               </div>
+
+              <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+                <input type="checkbox" id="barcodeFiado" style="margin:0;width:auto;cursor:pointer;">
+                📓 Fiado — queda debiendo
+              </label>
+              <div class="hidden" id="campoFiadoMonto" style="margin-bottom:12px;">
+                <label style="font-size:13px;color:var(--text-mute);">¿Cuánto paga ahora? (dejalo en 0 si no paga nada)</label>
+                <input type="number" id="barcodeFiadoAbono" value="0" min="0" step="1"
+                       style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
+              </div>
+
               <div style="border-top:1px solid var(--line);padding-top:12px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
                   <span style="color:var(--text-mute);">Total:</span>
@@ -1347,6 +1359,28 @@ tr:last-child td { border-bottom: none; }
         </table>
       </div>
 
+    </div>
+
+    <!-- FIADO -->
+    <div id="fiadoView" class="hidden">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-card">
+          <div class="label">Total adeudado</div>
+          <div class="value" id="fiadoTotalAdeudado">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Clientes con deuda</div>
+          <div class="value" id="fiadoCantidadClientes">0</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">📓 Deudores</div>
+        <table>
+          <thead><tr><th>Cliente</th><th>Detalle</th><th>Fecha</th><th style="text-align:right;">Adeuda</th><th></th></tr></thead>
+          <tbody id="fiadoBody"></tbody>
+        </table>
+      </div>
     </div>
   </main>
 </div>
@@ -2845,6 +2879,7 @@ async function refreshData() {
   renderOrders();
   renderClientes();
   renderVentas();
+  renderFiado();
   refrescarListaDeCategorias();
   await renderAgenda();
 }
@@ -3163,15 +3198,30 @@ function renderProducts() {
                 '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;" title="' +
                   escapeHtml(p.variantes.map(v => Object.values(v.atributos).join(' ') + ': ' + v.stock).join(' · ')) +
                 '">' + p.variantes.length + ' variante' + (p.variantes.length === 1 ? '' : 's') + '</div>'
-              : p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>')
+              : p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
+                // Referencia de la última reposición: "tenía 10, repuse y quedé
+                // en 30" — un dato aparte del stock actual, que baja con cada
+                // venta. Sin esto, saber cuánto se vendió desde que llegó el
+                // último pedido al proveedor exige hacer la cuenta a mano.
+                (p.stock_ultima_carga != null
+                  ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">Última carga: ' +
+                    p.stock_ultima_carga +
+                    (p.fecha_ultima_carga ? ' (' + new Date(p.fecha_ultima_carga).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) + ')' : '') +
+                    '</div>'
+                  : ''))
         ) + '</td>' +
       '<td>' + (p.ean || '—') + '</td>' +
-      '<td><div class="row-actions"><button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
+      '<td><div class="row-actions">' +
+        (esProductoFisico(p) && !p.tiene_variantes
+          ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
+          : '') +
+        '<button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
       '</tr>';
   }).join('');
 
   byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
   byId('productsBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(b.getAttribute('data-del'))));
+  byId('productsBody').querySelectorAll('[data-reponer]').forEach(b => b.addEventListener('click', () => reponerStock(b.getAttribute('data-reponer'))));
 }
 
 function renderOrders() {
@@ -3483,6 +3533,111 @@ async function eliminarCliente(nombre) {
   await refreshData();
 }
 
+// ============ FIADO / DEUDORES ============
+// 'orders' ya viene filtrado a solo confirmados (ver guardarPedidos): una
+// venta fiada SÍ es una venta confirmada, solo que con saldo pendiente.
+function renderFiado() {
+  const cuerpo = byId('fiadoBody');
+  if (!cuerpo) return;
+
+  const deudas = orders
+    .filter(o => Number(o.saldo_pendiente || 0) > 0)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  const totalAdeudado = deudas.reduce((s, o) => s + Number(o.saldo_pendiente || 0), 0);
+  byId('fiadoTotalAdeudado').textContent = money(totalAdeudado);
+  byId('fiadoCantidadClientes').textContent = new Set(deudas.map(o => o.customer_name)).size;
+
+  cuerpo.innerHTML = deudas.length ? deudas.map(o => {
+    const detalle = Array.isArray(o.items)
+      ? o.items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it)).join(', ')
+      : '';
+    return '<tr>' +
+      '<td><strong>' + escapeHtml(o.customer_name || '—') + '</strong></td>' +
+      '<td style="font-size:13px;">' + escapeHtml(detalle) + '</td>' +
+      '<td style="font-size:12.5px;">' + new Date(o.created_at).toLocaleDateString('es-AR') + '</td>' +
+      '<td style="font-weight:700;color:var(--danger);text-align:right;">' + money(o.saldo_pendiente) + '</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="icon-btn" data-ver-pagos="' + o.id + '" title="Ver pagos anteriores">Historial</button>' +
+        '<button class="icon-btn" data-registrar-pago="' + o.id + '" style="color:var(--stock);" title="Anotar un pago">+ Pago</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Nadie te debe nada 🎉</td></tr>';
+
+  cuerpo.querySelectorAll('[data-registrar-pago]').forEach(b =>
+    b.addEventListener('click', () => registrarPago(b.dataset.registrarPago)));
+  cuerpo.querySelectorAll('[data-ver-pagos]').forEach(b =>
+    b.addEventListener('click', () => verHistorialPagos(b.dataset.verPagos)));
+}
+
+async function registrarPago(orderId) {
+  if (!puedeOperar()) return;
+
+  const deuda = orders.find(o => String(o.id) === String(orderId));
+  if (!deuda) return;
+
+  const saldoActual = Number(deuda.saldo_pendiente || 0);
+  const texto = prompt('¿Cuánto pagó ' + deuda.customer_name + '?\n\nDebe: ' + money(saldoActual),
+                        String(saldoActual));
+  if (texto === null) return;
+
+  const monto = Number(texto);
+  if (!Number.isFinite(monto) || monto <= 0) {
+    alert('Escribí un monto mayor que 0.');
+    return;
+  }
+
+  const nuevoSaldo = Math.max(0, saldoActual - monto);
+
+  // Se guarda el pago ANTES de tocar el saldo: si algo falla a mitad de
+  // camino, preferimos un pago de más en el historial (se nota y se
+  // corrige a mano) antes que un saldo bajado sin ningún registro de
+  // cuándo ni cuánto se pagó.
+  const { error: errPago } = await sb.from('store_pagos').insert({
+    order_id: deuda.id,
+    store_slug: currentStore.slug,
+    customer_name: deuda.customer_name,
+    monto: monto
+  });
+  if (errPago) {
+    alert('No se pudo registrar el pago:\n\n' + errPago.message);
+    return;
+  }
+
+  const { error: errSaldo } = await sb.from('orders')
+    .update({ saldo_pendiente: nuevoSaldo })
+    .eq('id', deuda.id);
+  if (errSaldo) {
+    alert('El pago quedó registrado, pero no se pudo actualizar el saldo pendiente:\n\n' +
+          errSaldo.message + '\n\nAvisale a soporte.');
+  }
+
+  await refreshData();
+}
+
+async function verHistorialPagos(orderId) {
+  const { data, error } = await sb.from('store_pagos')
+    .select('*')
+    .eq('order_id', orderId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    alert('No se pudo consultar el historial:\n\n' + error.message);
+    return;
+  }
+  if (!data || !data.length) {
+    alert('Todavía no se registró ningún pago para esta deuda.');
+    return;
+  }
+
+  const texto = data.map(p =>
+    '• ' + new Date(p.created_at).toLocaleDateString('es-AR') + ': ' + money(p.monto) +
+    (p.nota ? ' (' + p.nota + ')' : '')
+  ).join('\n');
+
+  alert('Historial de pagos:\n\n' + texto);
+}
+
 function renderVentas() {
   const total = orders.reduce((sum, o) => sum + Number(o.total), 0);
   const max = orders.length ? Math.max(...orders.map(o => Number(o.total))) : 0;
@@ -3715,40 +3870,77 @@ async function confirmBarcodeVenta() {
     return;
   }
 
-  // El nombre del cliente es opcional: si no lo ponen, queda la marca de hora
+  // El nombre del cliente es opcional... salvo si es fiado: un deudor sin
+  // nombre no sirve de nada, no habría a quién cobrarle.
   const cliente = (byId('barcodeCliente')?.value || '').trim();
-  const ok = await registrarVenta(product, qty, cliente);
+  const esFiado = byId('barcodeFiado').checked;
+
+  if (esFiado && !cliente) {
+    alert('Para anotarlo como fiado necesitás el nombre del cliente.');
+    byId('barcodeCliente').focus();
+    return;
+  }
+
+  const abonaAhora = esFiado ? (Number(byId('barcodeFiadoAbono').value) || 0) : 0;
+
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora });
   if (ok) {
     alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty));
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
+    byId('barcodeFiado').checked = false;
+    byId('campoFiadoMonto').classList.add('hidden');
+    byId('barcodeFiadoAbono').value = '0';
     clearBarcodeResult();
   }
 }
+
+byId('barcodeFiado').addEventListener('change', (e) => {
+  byId('campoFiadoMonto').classList.toggle('hidden', !e.target.checked);
+});
 
 // Registro de venta compartido: lo usan el lector de códigos y la carga
 // desde la ficha de un cliente. Estaba duplicado y el descuento de stock
 // vivía en un solo lado, así que una de las dos vías dejaba el inventario
 // sin tocar.
-async function registrarVenta(product, qty, nombreCliente) {
+//
+// opciones.fiado + opciones.abonaAhora: si la venta queda debiendo, se
+// guarda el saldo pendiente en la propia orden. Si pagó algo al momento
+// (una seña), ese pago inicial también queda anotado en el historial de
+// pagos, para que "cuándo pagó" incluya ese primer abono y no solo los
+// que lleguen después.
+async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
+  const { fiado = false, abonaAhora = 0 } = opciones || {};
   const total = product.price * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
+  const saldoPendiente = fiado ? Math.max(0, total - abonaAhora) : 0;
 
-  const { error } = await sb.from('orders').insert([{
+  const { data, error } = await sb.from('orders').insert([{
     store_slug: currentStore.slug,
     customer_name: nombre,
     customer_phone: 'scanner',
     items: [{ product_id: product.id, qty, name: product.name, price: product.price }],
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
+    saldo_pendiente: saldoPendiente,
     created_at: new Date().toISOString()
-  }]);
+  }]).select('id');
 
   if (error) {
     alert('Error al registrar la venta:\n\n' + error.message);
     return false;
+  }
+
+  if (fiado && abonaAhora > 0 && data?.[0]?.id) {
+    await sb.from('store_pagos').insert({
+      order_id: data[0].id,
+      store_slug: currentStore.slug,
+      customer_name: nombre,
+      monto: abonaAhora,
+      nota: 'Pago al momento de la venta'
+    });
   }
 
   // Los servicios no llevan stock, así que no se tocan
@@ -4397,6 +4589,43 @@ async function editProduct(id) {
   if (byId('pName')) byId('pName').focus();
 }
 
+// "Última carga" guarda el TOTAL que quedó justo después de reponer (no
+// la cantidad que se sumó), para que sirva de referencia fija: "la última
+// vez que traje mercadería, quedé con 30". Comparando contra el stock
+// actual se ve, sin hacer cuentas, cuánto se vendió desde entonces.
+//
+// A propósito es una acción aparte de editar el producto: si en cambio
+// tocara el campo Stock del formulario, no habría forma de distinguir
+// "llegó mercadería nueva" de "corregí un error de conteo".
+async function reponerStock(id) {
+  if (!puedeOperar()) return;
+
+  const p = products.find(x => String(x.id) === String(id));
+  if (!p) return;
+
+  const texto = prompt('¿Cuántas unidades de "' + p.name + '" sumás al stock?\n\nStock actual: ' + p.stock);
+  if (texto === null) return;
+
+  const cantidad = Number(texto);
+  if (!Number.isFinite(cantidad) || cantidad <= 0) {
+    alert('Escribí un número mayor que 0.');
+    return;
+  }
+
+  const nuevoStock = Number(p.stock || 0) + cantidad;
+  const { error } = await sb.from('store_products').update({
+    stock: nuevoStock,
+    stock_ultima_carga: nuevoStock,
+    fecha_ultima_carga: new Date().toISOString()
+  }).eq('id', id);
+
+  if (error) {
+    alert('No se pudo actualizar el stock:\n\n' + error.message);
+    return;
+  }
+  await refreshData();
+}
+
 async function deleteProduct(id) {
   if (!puedeOperar()) return;
   if (!confirm('¿Eliminar este producto?')) return;
@@ -4481,6 +4710,13 @@ byId('tabVentas').addEventListener('click', () => {
   byId('tabVentas').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('ventasView').classList.add('visible');
+});
+
+byId('tabFiado').addEventListener('click', () => {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabFiado').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('fiadoView').classList.add('visible');
 });
 
 
