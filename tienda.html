@@ -227,6 +227,11 @@
     border-color:var(--celeste);background:#EAF4FD;color:var(--navy);
     box-shadow:0 0 0 3px rgba(47,143,224,.12);
   }
+  /* Talle/color sin stock en ninguna combinación: se ve pero atenuado */
+  .opcion.opcion-agotada{opacity:.4;text-decoration:line-through;}
+
+  /* Chips de talle/color en la ficha: más chicos que los del checkout */
+  #fichaContenido .opcion{min-width:52px;flex:0 0 auto;padding:9px 14px;}
   .modal-close{float:right;background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-mute);padding:0;width:30px;height:30px;}
 
   .success-screen{text-align:center;padding:80px 20px;}
@@ -653,6 +658,7 @@ function htmlTarjetaProducto(p){
     const qty = cantidadDelProducto(p.id);
     const servicio = !esProductoFisico(p);
     const tieneOpciones = Array.isArray(p.opciones) && p.opciones.length > 0;
+    const tieneVariantes = !!p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length > 0;
 
     // Un servicio no se agota ni tiene unidades: mostrarle "quedan 3" o
     // "agotado" a un corte de pelo no tiene sentido.
@@ -678,9 +684,9 @@ function htmlTarjetaProducto(p){
       : '<div class="product-photo-placeholder">🛒</div>';
     // Si el producto lleva agregados, el + no alcanza: el cliente tiene que
     // elegir qué le pone. Por eso mostramos "Elegir", que abre la ficha.
-    const controls = tieneOpciones
+    const controls = (tieneOpciones || tieneVariantes)
       ? '<button class="btn-elegir" data-elegir="' + p.id + '">' +
-          (qty ? 'Agregar otra (' + qty + ')' : 'Elegir') + '</button>'
+          (qty ? 'Agregar otra (' + qty + ')' : (tieneVariantes ? 'Elegir talle' : 'Elegir')) + '</button>'
       : '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
 
     return '<div class="product-card" data-id="' + p.id + '">' +
@@ -770,8 +776,27 @@ function abrirFicha(id) {
 
   const fotos = fotosDe(p);
   const opciones = Array.isArray(p.opciones) ? p.opciones : [];
+  const campos = (p.tiene_variantes && Array.isArray(p.variante_campos)) ? p.variante_campos : [];
+  const variantes = Array.isArray(p.variantes) ? p.variantes : [];
   const disponible = !esProductoFisico(p) || p.stock > 0;
   let cantidad = 1;   // cuántas de ESTA combinación se agregan
+  const seleccion = {};   // {Talle:'M', Color:'Azul'} — se completa a medida que elige
+
+  // Con qué stock cuenta la combinación elegida. null = todavía no eligió
+  // todo, o esa combinación no existe.
+  const stockDeSeleccion = () => {
+    if (!campos.length) return null;
+    if (Object.keys(seleccion).length < campos.length) return null;
+    const clave = campos.map(c => c.nombre).sort().map(n => n + ':' + seleccion[n]).join('~');
+    const v = variantes.find(x => campos.map(c => c.nombre).sort().map(n => n + ':' + x.atributos[n]).join('~') === clave);
+    return v ? Number(v.stock || 0) : 0;
+  };
+
+  // Un valor se ve atenuado si en NINGUNA combinación con ese valor queda
+  // stock. Es una aproximación: no mira qué eligió en los demás atributos
+  // todavía, pero evita ofrecer un talle que ya se agotó en todos los colores.
+  const valorSinStock = (nombreAtributo, valor) =>
+    !variantes.some(v => v.atributos[nombreAtributo] === valor && Number(v.stock || 0) > 0);
 
   byId('fichaContenido').innerHTML =
     (fotos.length
@@ -787,9 +812,26 @@ function abrirFicha(id) {
     (p.category ? '<span class="ficha-cat">' + escapeHtml(p.category) + '</span>' : '') +
     '<h3 style="margin:0;">' + escapeHtml(p.name) + '</h3>' +
     '<div class="ficha-precio">' + money(p.price) + '</div>' +
-    '<div style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
-      (esProductoFisico(p) ? (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') : 'Servicio') + '</div>' +
+    '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
+      (campos.length
+        ? 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock'
+        : (esProductoFisico(p) ? (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') : 'Servicio')) +
+    '</div>' +
     (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
+
+    // Talle, color, etc. Cada atributo es un grupo de selección única, igual
+    // que "Casa o departamento" en el checkout.
+    campos.map(c =>
+      '<div style="margin-bottom:14px;">' +
+        '<label style="display:block;font-size:13px;font-weight:600;color:var(--text-dark);margin-bottom:7px;">' + escapeHtml(c.nombre) + '</label>' +
+        '<div class="opciones" id="fichaVar-' + escapeHtml(c.nombre) + '">' +
+          c.valores.map(v =>
+            '<button type="button" class="opcion' + (valorSinStock(c.nombre, v) ? ' opcion-agotada' : '') + '" ' +
+            'data-var-attr="' + escapeHtml(c.nombre) + '" data-var-valor="' + escapeHtml(v) + '">' + escapeHtml(v) + '</button>'
+          ).join('') +
+        '</div>' +
+      '</div>'
+    ).join('') +
 
     // Los agregados que cargó el dueño, con su precio
     (opciones.length
@@ -831,6 +873,8 @@ function abrirFicha(id) {
     .filter(i => i.checked)
     .map(i => opciones[Number(i.dataset.opc)]);
 
+  const btnAgregar = ficha.querySelector('#fichaAgregar');
+
   // El precio del botón se actualiza solo: el cliente ve cuánto va a pagar
   // ANTES de agregar, sin sorpresas en el total.
   const refrescarPrecio = () => {
@@ -839,9 +883,39 @@ function abrirFicha(id) {
     if (t) t.textContent = money((Number(p.price) + extras) * cantidad);
     const q = byId('fichaQty');
     if (q) q.textContent = cantidad;
+
+    if (!campos.length || !btnAgregar) return;
+
+    const stock = stockDeSeleccion();
+    const aviso = byId('fichaDisponibilidad');
+    if (stock === null) {
+      aviso.textContent = 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock';
+      aviso.style.color = 'var(--text-mute)';
+      btnAgregar.disabled = true;
+    } else if (stock <= 0) {
+      aviso.textContent = 'Sin stock en esa combinación';
+      aviso.style.color = 'var(--danger)';
+      btnAgregar.disabled = true;
+    } else {
+      aviso.textContent = stock + ' disponibles';
+      aviso.style.color = 'var(--text-mute)';
+      btnAgregar.disabled = false;
+    }
   };
 
   ficha.querySelectorAll('[data-opc]').forEach(i => i.addEventListener('change', refrescarPrecio));
+
+  // Un toque por atributo: exclusivo dentro de su grupo, como en el checkout
+  campos.forEach(c => {
+    const grupo = byId('fichaVar-' + c.nombre);
+    grupo?.querySelectorAll('.opcion').forEach(b => {
+      b.addEventListener('click', () => {
+        elegirOpcion(grupo, b);
+        seleccion[b.dataset.varAttr] = b.dataset.varValor;
+        refrescarPrecio();
+      });
+    });
+  });
 
   ficha.querySelector('#fichaMas')?.addEventListener('click', () => { cantidad++; refrescarPrecio(); });
   ficha.querySelector('#fichaMenos')?.addEventListener('click', () => {
@@ -849,8 +923,9 @@ function abrirFicha(id) {
     refrescarPrecio();
   });
 
-  ficha.querySelector('#fichaAgregar')?.addEventListener('click', () => {
-    sumarAlCarrito(p.id, elegidas(), cantidad);
+  btnAgregar?.addEventListener('click', () => {
+    if (campos.length && (Object.keys(seleccion).length < campos.length || stockDeSeleccion() <= 0)) return;
+    sumarAlCarrito(p.id, elegidas(), cantidad, campos.length ? { ...seleccion } : null);
     renderProducts();
     renderCartBar();
     hide(byId('fichaModal'));
@@ -887,9 +962,14 @@ function filterByCategory(category){
 // otra sin nada en el mismo pedido. Con un simple producto→cantidad las dos
 // se pisaban.
 
-// Misma hamburguesa con los mismos agregados = una sola línea que suma
-const claveLinea = (productoId, opciones) =>
-  productoId + '|' + (opciones || []).map(o => o.nombre).sort().join('~');
+// Misma hamburguesa con los mismos agregados Y la misma variante (talle,
+// color) = una sola línea que suma. Una remera S y una M son líneas
+// distintas: se descuentan de stocks distintos.
+const claveVariante = (variante) =>
+  variante ? Object.keys(variante).sort().map(k => k + ':' + variante[k]).join('~') : '';
+
+const claveLinea = (productoId, opciones, variante) =>
+  productoId + '|' + (opciones || []).map(o => o.nombre).sort().join('~') + '|' + claveVariante(variante);
 
 const productoDe = (linea) => products.find(x => String(x.id) === String(linea.productId));
 
@@ -902,15 +982,15 @@ const precioUnitario = (linea) => {
 const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => s + l.qty, 0);
 const totalDelCarrito   = () => Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0);
 
-// Cuántas unidades de un producto hay, sumando todas sus variantes
+// Cuántas unidades de un producto hay, sumando todas sus combinaciones
 const cantidadDelProducto = (productoId) =>
   Object.values(cart)
     .filter(l => String(l.productId) === String(productoId))
     .reduce((s, l) => s + l.qty, 0);
 
-function sumarAlCarrito(productoId, opciones, cantidad){
-  const k = claveLinea(productoId, opciones);
-  if (!cart[k]) cart[k] = { productId: productoId, qty: 0, opciones: opciones || [] };
+function sumarAlCarrito(productoId, opciones, cantidad, variante){
+  const k = claveLinea(productoId, opciones, variante);
+  if (!cart[k]) cart[k] = { productId: productoId, qty: 0, opciones: opciones || [], variante: variante || null };
   cart[k].qty += (cantidad === undefined ? 1 : cantidad);
   if (cart[k].qty <= 0) delete cart[k];
 }
@@ -1161,7 +1241,8 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       // guardan las dos claves: no le como el campo a nada que ya lea 'label'.
       name: nombre,
       label: nombre,
-      opciones: (l.opciones || []).map(o => o.nombre)
+      opciones: (l.opciones || []).map(o => o.nombre),
+      variante: l.variante || null
     };
   });
 
@@ -1173,7 +1254,12 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     if (p){
       const subtotal = precioUnitario(l) * l.qty;
       total += subtotal;
-      listaProductos += '• ' + p.name + ' x' + l.qty + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
+
+      // El talle/color va pegado al nombre: "Remera (Talle: M, Color: Azul)"
+      const variante = l.variante
+        ? ' (' + Object.entries(l.variante).map(([k,v]) => k + ': ' + v).join(', ') + ')'
+        : '';
+      listaProductos += '• ' + p.name + variante + ' x' + l.qty + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
 
       // Los agregados van indentados debajo del producto, para que el
       // cocinero lea de un vistazo qué lleva cada uno.
