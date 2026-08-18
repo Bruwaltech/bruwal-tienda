@@ -17,6 +17,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<!-- SheetJS: lee y escribe Excel/CSV en el navegador, para importar catalogos y descargar la plantilla -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <!-- ZXing: lee codigos de barras de producto (EAN-13, UPC, Code128) y ademas QR.
      Reemplaza a jsQR y qr-scanner, que solo leian QR y no servian para productos. -->
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -1204,6 +1206,7 @@ tr:last-child td { border-bottom: none; }
     <div id="productosView" class="hidden">
       <div class="toolbar">
         <button class="btn-action primary" id="newProductBtn">+ Nuevo producto</button>
+        <button class="btn-action" id="importarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-excel"></i> Importar Excel</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código..." autofocus>
       </div>
@@ -1514,6 +1517,32 @@ tr:last-child td { border-bottom: none; }
     <div id="listaCategorias" style="display:flex;flex-wrap:wrap;gap:8px;min-height:44px;"></div>
 
     <button type="button" id="guardarCategoriasBtn" class="btn btn-primary" style="width:100%;margin-top:22px;">Guardar</button>
+  </div>
+</div>
+
+<!-- MODAL IMPORTAR EXCEL -->
+<div class="modal-overlay hidden" id="importarExcelModal">
+  <div class="modal" style="max-width:640px;">
+    <button class="modal-close" id="closeImportarExcelModal">✕</button>
+    <h3><i class="fa-solid fa-file-excel" style="color:var(--stock);"></i> Importar productos desde Excel</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.6;">
+      Subí un archivo Excel o CSV con tus productos y los carga todos de una vez.
+      No sirve para productos con talles/colores — esos hay que cargarlos a mano, con sus variantes.
+    </p>
+
+    <button type="button" id="descargarPlantillaBtn" class="btn" style="width:auto;padding:9px 16px;font-size:13px;margin-bottom:18px;">
+      ⬇ Descargar plantilla de ejemplo
+    </button>
+
+    <div class="field">
+      <label>Archivo (.xlsx o .csv)</label>
+      <input type="file" id="importarExcelInput" accept=".xlsx,.xls,.csv">
+    </div>
+
+    <div id="importarExcelResumen" style="margin:12px 0;font-size:13.5px;line-height:1.5;"></div>
+    <div id="importarExcelPreview" style="max-height:280px;overflow:auto;margin-bottom:14px;"></div>
+
+    <button type="button" id="confirmarImportacionBtn" class="btn btn-primary hidden" style="width:100%;">Importar productos</button>
   </div>
 </div>
 
@@ -3590,6 +3619,165 @@ function renderFiado() {
     b.addEventListener('click', () => verHistorialPagos(b.dataset.verPagos)));
 }
 
+// ===================== IMPORTAR PRODUCTOS DESDE EXCEL =====================
+// Columnas aceptadas, buscadas por nombre sin importar mayusculas/acentos/
+// espacios (asi "Código de Barras" matchea igual que "codigo_barras").
+// Nombre y Precio son obligatorias; el resto es opcional.
+const COLUMNAS_IMPORTACION = {
+  name:        ['nombre', 'producto', 'articulo'],
+  description: ['descripcion', 'detalle'],
+  price:       ['precio'],
+  stock:       ['stock', 'cantidad', 'existencias'],
+  category:    ['categoria', 'rubro'],
+  ean:         ['ean', 'codigodebarras', 'codigobarras', 'codigo', 'barcode']
+};
+
+const clavePlana = (s) => normalizarTexto(s).replace(/[^a-z0-9]/g, '');
+
+function mapearColumnasImportacion(encabezados) {
+  const mapa = {};
+  encabezados.forEach((encabezado) => {
+    const plano = clavePlana(encabezado);
+    for (const [campo, sinonimos] of Object.entries(COLUMNAS_IMPORTACION)) {
+      if (!mapa[campo] && sinonimos.some((s) => clavePlana(s) === plano)) {
+        mapa[campo] = encabezado;
+      }
+    }
+  });
+  return mapa;
+}
+
+let filasImportacionValidas = [];
+
+function limpiarImportacionExcel() {
+  filasImportacionValidas = [];
+  byId('importarExcelInput').value = '';
+  byId('importarExcelResumen').textContent = '';
+  byId('importarExcelPreview').innerHTML = '';
+  byId('confirmarImportacionBtn').classList.add('hidden');
+}
+
+async function procesarArchivoImportacion(file) {
+  byId('confirmarImportacionBtn').classList.add('hidden');
+  filasImportacionValidas = [];
+  byId('importarExcelPreview').innerHTML = '';
+  byId('importarExcelResumen').textContent = 'Leyendo archivo...';
+
+  let filas;
+  try {
+    const buffer = await file.arrayBuffer();
+    const libro = XLSX.read(buffer, { type: 'array' });
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    filas = XLSX.utils.sheet_to_json(hoja, { defval: '' });
+  } catch (err) {
+    byId('importarExcelResumen').textContent =
+      'No se pudo leer el archivo. Probá exportarlo de nuevo como .xlsx o .csv.';
+    return;
+  }
+
+  if (!filas.length) {
+    byId('importarExcelResumen').textContent = 'El archivo no tiene filas con datos.';
+    return;
+  }
+
+  const mapa = mapearColumnasImportacion(Object.keys(filas[0]));
+  if (!mapa.name || !mapa.price) {
+    byId('importarExcelResumen').innerHTML =
+      '⚠️ No encontré las columnas <strong>Nombre</strong> y/o <strong>Precio</strong>. ' +
+      'Revisá los encabezados del archivo (usá la plantilla de ejemplo si no estás seguro).';
+    return;
+  }
+
+  const validas = [];
+  const invalidas = [];
+
+  filas.forEach((fila, i) => {
+    const nombre = String(fila[mapa.name] || '').trim();
+    const precio = Number(fila[mapa.price]);
+    const stockCrudo = mapa.stock ? Number(fila[mapa.stock]) : 0;
+
+    if (!nombre) { invalidas.push({ fila: i + 2, motivo: 'sin nombre' }); return; }
+    if (!Number.isFinite(precio) || precio < 0) { invalidas.push({ fila: i + 2, motivo: 'precio inválido' }); return; }
+
+    validas.push({
+      store_slug: currentStore.slug,
+      name: nombre,
+      description: mapa.description ? String(fila[mapa.description] || '').trim() : '',
+      price: precio,
+      stock: Number.isFinite(stockCrudo) ? Math.max(0, stockCrudo) : 0,
+      category: mapa.category ? (String(fila[mapa.category] || '').trim() || null) : null,
+      ean: mapa.ean ? (String(fila[mapa.ean] || '').trim() || null) : null,
+      tipo: 'producto',
+      opciones: [],
+      tiene_variantes: false,
+      variante_campos: [],
+      variantes: [],
+      imagenes: [],
+      image_url: null
+    });
+  });
+
+  filasImportacionValidas = validas;
+
+  byId('importarExcelResumen').innerHTML =
+    '✅ ' + validas.length + ' producto' + (validas.length === 1 ? '' : 's') + ' listo' +
+    (validas.length === 1 ? '' : 's') + ' para importar' +
+    (invalidas.length
+      ? '.<br>⚠️ ' + invalidas.length + ' fila' + (invalidas.length === 1 ? '' : 's') +
+        ' se van a omitir: ' + invalidas.map((x) => 'fila ' + x.fila + ' (' + x.motivo + ')').join(', ')
+      : '.');
+
+  byId('importarExcelPreview').innerHTML = validas.length
+    ? '<table><thead><tr><th>Nombre</th><th>Precio</th><th>Stock</th><th>Categoría</th></tr></thead><tbody>' +
+      validas.slice(0, 50).map((p) =>
+        '<tr><td>' + escapeHtml(p.name) + '</td><td>' + money(p.price) + '</td><td>' + p.stock +
+        '</td><td>' + escapeHtml(p.category || '—') + '</td></tr>'
+      ).join('') + '</tbody></table>' +
+      (validas.length > 50
+        ? '<p style="color:var(--text-mute);font-size:12px;margin-top:6px;">... y ' + (validas.length - 50) + ' más.</p>'
+        : '')
+    : '';
+
+  if (validas.length) byId('confirmarImportacionBtn').classList.remove('hidden');
+}
+
+async function confirmarImportacionExcel() {
+  if (!puedeOperar()) return;
+  if (!filasImportacionValidas.length) return;
+
+  const boton = byId('confirmarImportacionBtn');
+  const textoOriginal = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Importando...';
+
+  const { error } = await sb.from('store_products').insert(filasImportacionValidas);
+
+  boton.disabled = false;
+  boton.textContent = textoOriginal;
+
+  if (error) {
+    alert('No se pudieron importar los productos:\n\n' + error.message);
+    return;
+  }
+
+  const cantidad = filasImportacionValidas.length;
+  limpiarImportacionExcel();
+  hide(byId('importarExcelModal'));
+  await refreshData();
+  alert('¡Listo! Se importaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + '.');
+}
+
+function descargarPlantillaImportacion() {
+  const datos = [
+    ['Nombre', 'Descripción', 'Precio', 'Stock', 'Categoría', 'Código de barras'],
+    ['Remera básica blanca', 'Remera de algodón manga corta', 8500, 20, 'Remeras', '7791234567890']
+  ];
+  const hoja = XLSX.utils.aoa_to_sheet(datos);
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
+  XLSX.writeFile(libro, 'plantilla-productos-bruwal.xlsx');
+}
+
 // Para deudas que ya existían fuera del sistema (cuaderno, memoria, etc.).
 // A diferencia de una venta de mostrador, NO toca stock: esa venta ya pasó
 // antes de usar la app, así que no hay mercadería que descontar ahora.
@@ -4780,6 +4968,18 @@ byId('tabFiado').addEventListener('click', () => {
 byId('abrirFiadoManualBtn').addEventListener('click', () => show(byId('fiadoManualModal')));
 byId('closeFiadoManualModal').addEventListener('click', () => hide(byId('fiadoManualModal')));
 byId('guardarFiadoManualBtn').addEventListener('click', guardarFiadoManual);
+
+byId('importarExcelBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  limpiarImportacionExcel();
+  show(byId('importarExcelModal'));
+});
+byId('closeImportarExcelModal').addEventListener('click', () => hide(byId('importarExcelModal')));
+byId('descargarPlantillaBtn').addEventListener('click', descargarPlantillaImportacion);
+byId('importarExcelInput').addEventListener('change', (e) => {
+  if (e.target.files[0]) procesarArchivoImportacion(e.target.files[0]);
+});
+byId('confirmarImportacionBtn').addEventListener('click', confirmarImportacionExcel);
 
 
 byId('clientSearch').addEventListener('input', (e) => {
