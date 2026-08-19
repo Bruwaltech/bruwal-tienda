@@ -3101,9 +3101,17 @@ function renderTopProducts() {
   const sales = {};
   orders.forEach(o => {
     (Array.isArray(o.items) ? o.items : []).forEach(item => {
+      // Las ventas de mostrador guardan el precio en cada item ('price'), pero
+      // los pedidos hechos desde la tienda pública no guardan precio por item
+      // (tienda.html solo manda product_id/qty/name). Para esos, el único
+      // dato que queda es el precio ACTUAL del producto — no es exacto si el
+      // precio cambió después, pero es mejor que mostrar $0.
+      const p = products.find(x => String(x.id) === String(item.product_id));
+      const precioUnitario = Number(item.price ?? p?.price ?? 0);
+
       if (!sales[item.name]) sales[item.name] = { qty: 0, total: 0 };
       sales[item.name].qty += item.qty || 1;
-      sales[item.name].total += item.unitPrice * (item.qty || 1);
+      sales[item.name].total += precioUnitario * (item.qty || 1);
     });
   });
 
