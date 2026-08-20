@@ -185,9 +185,16 @@ h1, h2, h3 {
   /* Las tablas no entran a lo ancho en un celular. El sitio tiene el scroll
      horizontal bloqueado (overflow-x:hidden en body), asi que el arrastre
      tiene que pasar DENTRO del panel: sin esto las ultimas columnas
-     quedaban inalcanzables. */
+     quedaban inalcanzables.
+
+     El !important es necesario: mas abajo en este mismo archivo hay OTRA
+     regla ".panel" (la de siempre, para las esquinas redondeadas) que pone
+     "overflow: hidden" — como esa aparece despues en el CSS, sin forzarlo
+     aca terminaba ganando ELLA y el scroll quedaba bloqueado igual, aunque
+     esta regla dijera "auto". Por eso el cartel de "desliza para ver mas"
+     no hacia nada: el deslizamiento estaba frenado del todo. */
   .panel {
-    overflow-x: auto;
+    overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
   }
   .panel table {
