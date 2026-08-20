@@ -1519,7 +1519,7 @@ tr:last-child td { border-bottom: none; }
           <button type="button" id="nuevaReparacionBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nueva reparación</button>
         </div>
         <table>
-          <thead><tr><th>Ticket</th><th>Cliente</th><th>Equipo</th><th>Problema</th><th>Estado</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Margen</th><th></th></tr></thead>
+          <thead><tr><th>Ticket</th><th>Cliente</th><th>Equipo</th><th>Problema</th><th>Estado</th><th>Recibido</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Margen</th><th></th></tr></thead>
           <tbody id="reparacionesBody"></tbody>
         </table>
       </div>
@@ -4282,6 +4282,7 @@ function renderReparaciones() {
         (r.problema ? '<div' + (r.tipo_servicio?.length ? ' style="color:var(--text-mute);margin-top:2px;"' : '') + '>' + escapeHtml(r.problema) + '</div>' : (r.tipo_servicio?.length ? '' : '—')) +
       '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
+      '<td style="font-size:12.5px;white-space:nowrap;">' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit'}) + '</td>' +
       '<td style="text-align:right;">' + money(r.costo) + '</td>' +
       '<td style="text-align:right;">' + money(r.precio) + '</td>' +
       '<td style="text-align:right;font-weight:700;color:' + (margen >= 0 ? 'var(--stock)' : 'var(--danger)') + ';">' + money(margen) + '</td>' +
@@ -4294,7 +4295,7 @@ function renderReparaciones() {
         '<button class="icon-btn danger" data-eliminar-reparacion="' + r.id + '" title="Eliminar">🗑</button>' +
       '</div></td>' +
     '</tr>';
-  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ninguna reparación</td></tr>';
+  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ninguna reparación</td></tr>';
 
   cuerpo.querySelectorAll('[data-avanzar]').forEach(b =>
     b.addEventListener('click', () => avanzarReparacion(b.getAttribute('data-avanzar'))));
