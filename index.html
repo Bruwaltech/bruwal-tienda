@@ -1091,12 +1091,22 @@ async function init() {
   loadStores();
 }
 
+// Estas tres van siempre primero en el listado (en este orden), el resto
+// sigue como está: alfabético.
+const TIENDAS_DESTACADAS = ['josefina-indumentaria-y-accesorios', 'novalis', 'wabi-import'];
+
+function conDestacadasPrimero(lista) {
+  const destacadas = TIENDAS_DESTACADAS.map(slug => lista.find(s => s.slug === slug)).filter(Boolean);
+  const resto = lista.filter(s => !TIENDAS_DESTACADAS.includes(s.slug));
+  return [...destacadas, ...resto];
+}
+
 async function loadStores() {
   try {
     const { data, error } = await sb.from('store_profiles').select('*').order('business_name');
     if (error) throw error;
 
-    stores = data || [];
+    stores = conDestacadasPrimero(data || []);
     filteredStores = stores;
     mostrarPruebaSocial(stores.length);
     initMap();
