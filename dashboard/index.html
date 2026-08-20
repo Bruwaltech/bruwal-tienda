@@ -4468,8 +4468,49 @@ async function avanzarReparacion(id) {
   const payload = { estado: siguiente };
   if (siguiente === 'entregado') payload.fecha_entregado = new Date().toISOString();
 
-  const { error } = await sb.from('store_reparaciones').update(payload).eq('id', id);
+  // .eq('estado', r.estado) es guarda de concurrencia: si dos clicks (o dos
+  // pestañas) llegan a la vez, el segundo update no encuentra la fila en el
+  // estado esperado y no hace nada — entre otras cosas, evita contar el
+  // ingreso de la reparación dos veces más abajo.
+  const { data, error } = await sb.from('store_reparaciones')
+    .update(payload)
+    .eq('id', id)
+    .eq('estado', r.estado)
+    .select('id');
+
   if (error) { alert('No se pudo actualizar el estado:\n\n' + error.message); return; }
+  if (!data?.length) { await refreshData(); return; }   // alguien ya lo había avanzado
+
+  // Al entregar, el ingreso de la reparación pasa a contar como una venta
+  // más (un pedido confirmado) — así el Dashboard (ventas de hoy/semana/
+  // mes, gráficos, Top productos) no ignora la plata que entra por
+  // reparaciones. Si el precio quedó en 0 (garantía, cortesía) no genera
+  // pedido: no hay ingreso real que reflejar.
+  if (siguiente === 'entregado' && Number(r.precio) > 0) {
+    const detalle = Array.isArray(r.tipo_servicio) && r.tipo_servicio.length
+      ? r.tipo_servicio.join(', ')
+      : 'Reparación';
+    const equipo = ((r.marca ? r.marca + ' ' : '') + (r.equipo || '')).trim();
+
+    const { error: errorPedido } = await sb.from('orders').insert([{
+      store_slug: currentStore.slug,
+      customer_name: r.cliente_nombre,
+      customer_phone: r.cliente_telefono || '',
+      items: [{ name: detalle + (equipo ? ' — ' + equipo : ''), qty: 1, price: Number(r.precio) }],
+      total: Number(r.precio),
+      estado: 'confirmado',
+      reparacion_id: r.id,
+      created_at: new Date().toISOString()
+    }]);
+
+    // El estado de la reparación ya quedó guardado bien; si esto falla no
+    // lo dejamos pasar en silencio, porque significa que esa venta no va a
+    // aparecer en las estadísticas hasta que se resuelva.
+    if (errorPedido) {
+      alert('La reparación se marcó como entregada, pero no se pudo sumar al Dashboard:\n\n' + errorPedido.message);
+    }
+  }
+
   await refreshData();
 }
 
