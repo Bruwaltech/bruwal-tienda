@@ -196,9 +196,17 @@ h1, h2, h3 {
   .panel {
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
+    /* Sin decirle explícitamente al navegador que este gesto es "arrastre
+       horizontal", Safari en iOS queda ambiguo entre eso y seleccionar
+       texto — y termina pidiendo una pulsación larga o un toque previo
+       antes de dejar correr la vista. touch-action se lo aclara de una,
+       sin ambigüedad, apenas el dedo toca cualquier parte del panel. */
+    touch-action: pan-x;
   }
   .panel table {
     min-width: 560px;          /* obliga a desbordar en vez de aplastarse */
+    -webkit-user-select: none; /* si no, el primer arrastre en iOS a veces selecciona texto en vez de deslizar */
+    user-select: none;
   }
   .panel table th,
   .panel table td {
