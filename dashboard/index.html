@@ -598,6 +598,7 @@ h1, h2, h3 {
 .app-tabs {
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+  position: relative;
 }
 
 .wrap-tabs {
@@ -607,6 +608,27 @@ h1, h2, h3 {
   display: flex;
   gap: 4px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tab-texto-corto { display: none; }
+
+/* En el celular, con 6+ pestañas, las últimas quedaban fuera de pantalla
+   sin ningún indicio de que se podía deslizar para verlas. El degradé de
+   la derecha avisa que hay más, y el nombre largo de Cuentas Corrientes
+   se acorta para que entren más pestañas de entrada. */
+@media (max-width: 700px) {
+  .app-tabs::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 26px;
+    background: linear-gradient(to right, transparent, var(--surface));
+    pointer-events: none;
+  }
+  .wrap-tabs { padding-right: 30px; }
+  .tab-texto-largo { display: none; }
+  .tab-texto-corto { display: inline; }
 }
 
 .app-tab {
@@ -1128,7 +1150,8 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabPedidos"><i class="fa-solid fa-cart-shopping"></i> Pedidos</button>
       <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
-      <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> Cuentas corrientes (Fiados)</button>
+      <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
+      <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
     </div>
   </div>
 
@@ -1305,10 +1328,27 @@ tr:last-child td { border-bottom: none; }
                        style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
               </div>
 
+              <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+                <input type="checkbox" id="barcodeTradeIn" style="margin:0;width:auto;cursor:pointer;">
+                📱 Toma un equipo usado como parte de pago
+              </label>
+              <div class="hidden" id="campoTradeIn" style="margin-bottom:12px;">
+                <label style="font-size:13px;color:var(--text-mute);">¿Qué equipo recibís?</label>
+                <input type="text" id="barcodeTradeInDesc" placeholder="Ej: iPhone 8 64GB, pantalla con marcas"
+                       style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin:4px 0 8px;">
+                <label style="font-size:13px;color:var(--text-mute);">¿En cuánto lo tasás? (se descuenta del total)</label>
+                <input type="number" id="barcodeTradeInValor" value="0" min="0" step="1"
+                       style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
+              </div>
+
               <div style="border-top:1px solid var(--line);padding-top:12px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
                   <span style="color:var(--text-mute);">Total:</span>
                   <span id="barcodeTotal" style="font-weight:700;color:var(--navy);">$0</span>
+                </div>
+                <div class="hidden" id="filaTotalConEquipo" style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                  <span style="color:var(--text-mute);">Queda a pagar (con el equipo):</span>
+                  <span id="barcodeTotalConEquipo" style="font-weight:700;color:var(--celeste);">$0</span>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;">
                   <label style="font-size:14px;color:var(--text-mute);">Abono (pago):</label>
@@ -1385,6 +1425,31 @@ tr:last-child td { border-bottom: none; }
         <table>
           <thead><tr><th>Cliente</th><th>Detalle</th><th>Fecha</th><th style="text-align:right;">Adeuda</th><th></th></tr></thead>
           <tbody id="fiadoBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- REPARACIONES -->
+    <div id="reparacionesView" class="hidden">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-card">
+          <div class="label">En curso</div>
+          <div class="value" id="reparEnCurso">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Margen del mes (entregadas)</div>
+          <div class="value" id="reparMargenMes">$0</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <span>🔧 Reparaciones</span>
+          <button type="button" id="nuevaReparacionBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nueva reparación</button>
+        </div>
+        <table>
+          <thead><tr><th>Cliente</th><th>Equipo</th><th>Problema</th><th>Estado</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Margen</th><th></th></tr></thead>
+          <tbody id="reparacionesBody"></tbody>
         </table>
       </div>
     </div>
@@ -1543,6 +1608,29 @@ tr:last-child td { border-bottom: none; }
     <div id="importarExcelPreview" style="max-height:280px;overflow:auto;margin-bottom:14px;"></div>
 
     <button type="button" id="confirmarImportacionBtn" class="btn btn-primary hidden" style="width:100%;">Importar productos</button>
+  </div>
+</div>
+
+<!-- MODAL REPARACIÓN -->
+<div class="modal-overlay hidden" id="reparacionModal">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" id="closeReparacionModal">✕</button>
+    <h3 id="reparacionModalTitulo"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--celeste);"></i> Nueva reparación</h3>
+
+    <div class="field"><label>Cliente</label><input type="text" id="repCliente" placeholder="Ej: Marcos Díaz"></div>
+    <div class="field"><label>Teléfono (opcional)</label><input type="text" id="repTelefono" placeholder="Ej: 11 2345 6789"></div>
+    <div class="field"><label>Equipo</label><input type="text" id="repEquipo" placeholder="Ej: iPhone 11 128GB"></div>
+    <div class="field"><label>Problema / diagnóstico</label><input type="text" id="repProblema" placeholder="Ej: no carga, cambiar pin de carga"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>Costo (repuesto)</label><input type="number" id="repCosto" min="0" step="1" value="0"></div>
+      <div class="field"><label>Precio al cliente</label><input type="number" id="repPrecio" min="0" step="1" value="0"></div>
+    </div>
+    <div style="font-size:13px;color:var(--text-mute);margin:-8px 0 14px;">Margen: <strong id="repMargenPreview" style="color:var(--stock);">$0</strong></div>
+
+    <div class="field"><label>Notas (opcional)</label><input type="text" id="repNotas" placeholder="Ej: trae funda y protector de pantalla"></div>
+
+    <button type="button" id="guardarReparacionBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar reparación</button>
   </div>
 </div>
 
@@ -1758,7 +1846,7 @@ sb.auth.onAuthStateChange((evento) => {
 
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
-let currentUser = null, currentStore = null, products = [], orders = [];
+let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [];
 
 // Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
 // confirmados porque de ahí salen las estadísticas de venta.
@@ -2923,12 +3011,16 @@ async function refreshData() {
   const { data: ords } = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
   guardarPedidos(ords);
 
+  const { data: reps } = await sb.from('store_reparaciones').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  reparaciones = reps || [];
+
   renderDashboard();
   renderProducts();
   renderOrders();
   renderClientes();
   renderVentas();
   renderFiado();
+  renderReparaciones();
   refrescarListaDeCategorias();
   await renderAgenda();
 }
@@ -3320,7 +3412,12 @@ function renderOrders() {
             escapeHtml(o.customer_phone) + '</a>'
           : '') +
       '</td>' +
-      '<td style="font-size:13px;">' + escapeHtml(items) + '</td>' +
+      '<td style="font-size:13px;">' + escapeHtml(items) +
+        (o.trade_in_descripcion
+          ? '<div style="margin-top:4px;color:var(--celeste);font-weight:600;">📱 Toma: ' +
+              escapeHtml(o.trade_in_descripcion) + ' (' + money(o.trade_in_valor) + ')</div>'
+          : '') +
+      '</td>' +
       '<td style="font-weight:600;">' + money(o.total) + '</td>' +
       '<td style="font-size:12.5px;">' + new Date(o.created_at).toLocaleString('es-AR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
@@ -3786,6 +3883,147 @@ function descargarPlantillaImportacion() {
   XLSX.writeFile(libro, 'plantilla-productos-bruwal.xlsx');
 }
 
+// ===================== REPARACIONES =====================
+const REPARACION_SIGUIENTE = { recibido: 'en_reparacion', en_reparacion: 'listo', listo: 'entregado' };
+const REPARACION_ETIQUETAS = {
+  recibido:      { texto: 'Recibido',      fondo: '#EAF4FD', color: '#15294D' },
+  en_reparacion: { texto: 'En reparación', fondo: '#FEF3E2', color: '#8A5200' },
+  listo:         { texto: 'Listo',         fondo: '#DCFCE7', color: '#1FA088' },
+  entregado:     { texto: 'Entregado',     fondo: '#F1F3F6', color: '#5C6B82' }
+};
+
+function renderReparaciones() {
+  const cuerpo = byId('reparacionesBody');
+  if (!cuerpo) return;
+
+  const enCurso = reparaciones.filter(r => r.estado !== 'entregado');
+  byId('reparEnCurso').textContent = enCurso.length;
+
+  const hoy = new Date();
+  const margenMes = reparaciones
+    .filter(r => r.estado === 'entregado' && r.fecha_entregado &&
+      new Date(r.fecha_entregado).getMonth() === hoy.getMonth() &&
+      new Date(r.fecha_entregado).getFullYear() === hoy.getFullYear())
+    .reduce((s, r) => s + (Number(r.precio || 0) - Number(r.costo || 0)), 0);
+  byId('reparMargenMes').textContent = money(margenMes);
+
+  const ordenadas = [...reparaciones].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  cuerpo.innerHTML = ordenadas.length ? ordenadas.map(r => {
+    const et = REPARACION_ETIQUETAS[r.estado] || REPARACION_ETIQUETAS.recibido;
+    const margen = Number(r.precio || 0) - Number(r.costo || 0);
+    const siguiente = REPARACION_SIGUIENTE[r.estado];
+
+    return '<tr>' +
+      '<td><strong>' + escapeHtml(r.cliente_nombre) + '</strong>' +
+        (r.cliente_telefono ? '<br><span style="font-size:12px;color:var(--text-mute);">' + escapeHtml(r.cliente_telefono) + '</span>' : '') +
+      '</td>' +
+      '<td>' + escapeHtml(r.equipo) + '</td>' +
+      '<td style="font-size:13px;max-width:220px;">' + escapeHtml(r.problema || '—') + '</td>' +
+      '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
+      '<td style="text-align:right;">' + money(r.costo) + '</td>' +
+      '<td style="text-align:right;">' + money(r.precio) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + (margen >= 0 ? 'var(--stock)' : 'var(--danger)') + ';">' + money(margen) + '</td>' +
+      '<td><div class="row-actions">' +
+        (siguiente
+          ? '<button class="icon-btn" data-avanzar="' + r.id + '" style="color:var(--stock);" title="Pasar a ' + REPARACION_ETIQUETAS[siguiente].texto + '">→ ' + REPARACION_ETIQUETAS[siguiente].texto + '</button>'
+          : '') +
+        '<button class="icon-btn" data-editar-reparacion="' + r.id + '" title="Editar">✎</button>' +
+        '<button class="icon-btn danger" data-eliminar-reparacion="' + r.id + '" title="Eliminar">🗑</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ninguna reparación</td></tr>';
+
+  cuerpo.querySelectorAll('[data-avanzar]').forEach(b =>
+    b.addEventListener('click', () => avanzarReparacion(b.getAttribute('data-avanzar'))));
+  cuerpo.querySelectorAll('[data-editar-reparacion]').forEach(b =>
+    b.addEventListener('click', () => abrirModalReparacion(b.getAttribute('data-editar-reparacion'))));
+  cuerpo.querySelectorAll('[data-eliminar-reparacion]').forEach(b =>
+    b.addEventListener('click', () => eliminarReparacion(b.getAttribute('data-eliminar-reparacion'))));
+}
+
+// id === null -> alta nueva. id con valor -> edición de una existente.
+function abrirModalReparacion(id) {
+  const r = id ? reparaciones.find(x => String(x.id) === String(id)) : null;
+
+  byId('reparacionModal').dataset.id = r ? r.id : '';
+  byId('reparacionModalTitulo').innerHTML = '<i class="fa-solid fa-screwdriver-wrench" style="color:var(--celeste);"></i> ' +
+    (r ? 'Editar reparación' : 'Nueva reparación');
+
+  byId('repCliente').value = r ? (r.cliente_nombre || '') : '';
+  byId('repTelefono').value = r ? (r.cliente_telefono || '') : '';
+  byId('repEquipo').value = r ? (r.equipo || '') : '';
+  byId('repProblema').value = r ? (r.problema || '') : '';
+  byId('repCosto').value = r ? Number(r.costo || 0) : 0;
+  byId('repPrecio').value = r ? Number(r.precio || 0) : 0;
+  byId('repNotas').value = r ? (r.notas || '') : '';
+
+  actualizarMargenPreview();
+  show(byId('reparacionModal'));
+}
+
+function actualizarMargenPreview() {
+  const costo = Number(byId('repCosto').value) || 0;
+  const precio = Number(byId('repPrecio').value) || 0;
+  const margen = precio - costo;
+  const el = byId('repMargenPreview');
+  el.textContent = money(margen) + (costo > 0 ? ' (' + Math.round(margen / costo * 100) + '%)' : '');
+  el.style.color = margen >= 0 ? 'var(--stock)' : 'var(--danger)';
+}
+
+async function guardarReparacion() {
+  if (!puedeOperar()) return;
+
+  const cliente = byId('repCliente').value.trim();
+  const equipo = byId('repEquipo').value.trim();
+  if (!cliente) { alert('Poné el nombre del cliente.'); return; }
+  if (!equipo) { alert('Poné el equipo (ej: iPhone 11 128GB).'); return; }
+
+  const payload = {
+    store_slug: currentStore.slug,
+    cliente_nombre: cliente,
+    cliente_telefono: byId('repTelefono').value.trim(),
+    equipo: equipo,
+    problema: byId('repProblema').value.trim(),
+    costo: Number(byId('repCosto').value) || 0,
+    precio: Number(byId('repPrecio').value) || 0,
+    notas: byId('repNotas').value.trim()
+  };
+
+  const id = byId('reparacionModal').dataset.id;
+  const { error } = id
+    ? await sb.from('store_reparaciones').update(payload).eq('id', id)
+    : await sb.from('store_reparaciones').insert([payload]);
+
+  if (error) { alert('No se pudo guardar la reparación:\n\n' + error.message); return; }
+
+  hide(byId('reparacionModal'));
+  await refreshData();
+}
+
+async function avanzarReparacion(id) {
+  if (!puedeOperar()) return;
+  const r = reparaciones.find(x => String(x.id) === String(id));
+  const siguiente = r && REPARACION_SIGUIENTE[r.estado];
+  if (!siguiente) return;
+
+  const payload = { estado: siguiente };
+  if (siguiente === 'entregado') payload.fecha_entregado = new Date().toISOString();
+
+  const { error } = await sb.from('store_reparaciones').update(payload).eq('id', id);
+  if (error) { alert('No se pudo actualizar el estado:\n\n' + error.message); return; }
+  await refreshData();
+}
+
+async function eliminarReparacion(id) {
+  if (!puedeOperar()) return;
+  if (!confirm('¿Borrar esta ficha de reparación? No se puede deshacer.')) return;
+
+  const { error } = await sb.from('store_reparaciones').delete().eq('id', id);
+  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  await refreshData();
+}
+
 // Para deudas que ya existían fuera del sistema (cuaderno, memoria, etc.).
 // A diferencia de una venta de mostrador, NO toca stock: esa venta ya pasó
 // antes de usar la app, así que no hay mercadería que descontar ahora.
@@ -4096,8 +4334,16 @@ function calculateTotal() {
 function calculateChange() {
   const totalEl = byId('barcodeTotal').textContent;
   const total = parseFloat(totalEl.replace('$', '').replace('.', '').replace(',', '.')) || 0;
+
+  const tomaEquipo = byId('barcodeTradeIn')?.checked;
+  const tasacion = tomaEquipo ? (Number(byId('barcodeTradeInValor').value) || 0) : 0;
+  const aPagar = Math.max(0, total - tasacion);
+
+  byId('filaTotalConEquipo').classList.toggle('hidden', !tomaEquipo);
+  byId('barcodeTotalConEquipo').textContent = money(aPagar);
+
   const abono = parseFloat(byId('barcodeAbono').value) || 0;
-  const change = abono - total;
+  const change = abono - aPagar;
   byId('barcodeChange').textContent = money(Math.max(0, change));
 }
 
@@ -4137,13 +4383,27 @@ async function confirmBarcodeVenta() {
 
   const abonaAhora = esFiado ? (Number(byId('barcodeFiadoAbono').value) || 0) : 0;
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora });
+  const tomaEquipo = byId('barcodeTradeIn').checked;
+  if (tomaEquipo && !byId('barcodeTradeInDesc').value.trim()) {
+    alert('Describí qué equipo estás recibiendo (marca, modelo, estado).');
+    byId('barcodeTradeInDesc').focus();
+    return;
+  }
+  const tradeIn = tomaEquipo
+    ? { descripcion: byId('barcodeTradeInDesc').value.trim(), valor: Number(byId('barcodeTradeInValor').value) || 0 }
+    : null;
+
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn });
   if (ok) {
     alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty));
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
     byId('barcodeFiadoAbono').value = '0';
+    byId('barcodeTradeIn').checked = false;
+    byId('campoTradeIn').classList.add('hidden');
+    byId('barcodeTradeInDesc').value = '';
+    byId('barcodeTradeInValor').value = '0';
     clearBarcodeResult();
   }
 }
@@ -4151,6 +4411,12 @@ async function confirmBarcodeVenta() {
 byId('barcodeFiado').addEventListener('change', (e) => {
   byId('campoFiadoMonto').classList.toggle('hidden', !e.target.checked);
 });
+
+byId('barcodeTradeIn').addEventListener('change', (e) => {
+  byId('campoTradeIn').classList.toggle('hidden', !e.target.checked);
+  calculateChange();
+});
+byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 
 // Registro de venta compartido: lo usan el lector de códigos y la carga
 // desde la ficha de un cliente. Estaba duplicado y el descuento de stock
@@ -4165,11 +4431,15 @@ byId('barcodeFiado').addEventListener('change', (e) => {
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0 } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null } = opciones || {};
   const total = product.price * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
-  const saldoPendiente = fiado ? Math.max(0, total - abonaAhora) : 0;
+  // El total de la venta sigue siendo el precio de lista (así se calculan
+  // bien las estadísticas de ingresos): el equipo tomado no es un descuento
+  // sobre lo vendido, es una FORMA DE PAGO, igual que el abono en fiado.
+  const valorEquipo = tradeIn ? Number(tradeIn.valor || 0) : 0;
+  const saldoPendiente = fiado ? Math.max(0, total - valorEquipo - abonaAhora) : 0;
 
   const { data, error } = await sb.from('orders').insert([{
     store_slug: currentStore.slug,
@@ -4179,6 +4449,8 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
     saldo_pendiente: saldoPendiente,
+    trade_in_descripcion: tradeIn ? tradeIn.descripcion : null,
+    trade_in_valor: tradeIn ? valorEquipo : null,
     created_at: new Date().toISOString()
   }]).select('id');
 
@@ -4972,6 +5244,22 @@ byId('tabFiado').addEventListener('click', () => {
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('fiadoView').classList.add('visible');
 });
+
+byId('tabReparaciones').addEventListener('click', () => {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabReparaciones').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('reparacionesView').classList.add('visible');
+});
+
+byId('nuevaReparacionBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  abrirModalReparacion(null);
+});
+byId('closeReparacionModal').addEventListener('click', () => hide(byId('reparacionModal')));
+byId('guardarReparacionBtn').addEventListener('click', guardarReparacion);
+byId('repCosto').addEventListener('input', actualizarMargenPreview);
+byId('repPrecio').addEventListener('input', actualizarMargenPreview);
 
 byId('abrirFiadoManualBtn').addEventListener('click', () => show(byId('fiadoManualModal')));
 byId('closeFiadoManualModal').addEventListener('click', () => hide(byId('fiadoManualModal')));

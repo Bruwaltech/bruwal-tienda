@@ -248,7 +248,19 @@
   .store-menu-item-icon{font-size:22px;min-width:28px;display:flex;align-items:center;justify-content:center;}
   @media(max-width:768px){
     .store-layout{grid-template-columns:1fr;}
-    .store-menu{position:static;display:flex;gap:12px;padding:16px;overflow-x:auto;}
+    /* El logo y el título "Contacto" no tienen sentido metidos en una fila
+       horizontal de iconos (el logo ya se ve arriba, en el encabezado), y
+       le robaban ancho a los iconos de contacto — con varios cargados
+       (WhatsApp + sitio + Instagram + ubicación + reseñas) los últimos
+       quedaban afuera de la pantalla sin ningún aviso de que se podía
+       deslizar para verlos. */
+    .store-menu{position:relative;display:flex;gap:12px;padding:16px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    .store-menu > div:first-child, .store-menu-title{display:none;}
+    .store-menu-item{flex-shrink:0;}
+    .store-menu::after{
+      content:'';position:absolute;top:0;right:0;bottom:0;width:24px;
+      background:linear-gradient(to right,transparent,#f8f9fa);pointer-events:none;
+    }
   }
 </style>
 </head>
