@@ -1052,8 +1052,8 @@ tr:last-child td { border-bottom: none; }
   </div>
 
   <div style="text-align:center;margin-bottom:40px;max-width:600px;position:relative;z-index:1;">
-    <h1 style="font-size:42px;line-height:1.2;color:var(--navy);margin-bottom:12px;font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-0.5px;">TU NEGOCIO<br>EN LA PALMA<br>DE TU MANO</h1>
-    <p style="color:var(--text-mute);font-size:15px;line-height:1.6;">Gestiona tu tienda online, recibe pedidos y crece sin complicaciones.</p>
+    <h1 style="font-size:42px;line-height:1.2;color:#fff;margin-bottom:14px;font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-0.5px;text-shadow:0 2px 14px rgba(15,23,42,.35);">TU NEGOCIO<br>EN LA PALMA<br>DE TU MANO</h1>
+    <p style="color:rgba(255,255,255,.94);font-size:16px;font-weight:600;line-height:1.6;text-shadow:0 1px 8px rgba(15,23,42,.3);">Gestiona tu tienda online, recibe pedidos y crece sin complicaciones.</p>
   </div>
 
   <div class="auth-card" style="position:relative;z-index:10;">
@@ -1066,7 +1066,15 @@ tr:last-child td { border-bottom: none; }
 
     <form id="loginForm">
       <div class="field"><label>Email</label><input type="email" id="loginEmail" required></div>
-      <div class="field"><label>Contraseña</label><input type="password" id="loginPassword" required></div>
+      <div class="field"><label>Contraseña</label>
+        <div style="position:relative;">
+          <input type="password" id="loginPassword" required style="padding-right:44px;">
+          <button type="button" class="toggle-clave" data-target="loginPassword" tabindex="-1"
+                  style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-mute);padding:8px;font-size:15px;">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+      </div>
       <div class="checkbox-row">
         <input type="checkbox" id="rememberMe" checked>
         <label style="margin:0;">Mantenerme conectado</label>
@@ -1091,8 +1099,24 @@ tr:last-child td { border-bottom: none; }
       <div style="font-size:13.5px;color:var(--text-mute);line-height:1.6;margin-bottom:16px;">
         Ya validamos tu identidad. Elegí tu contraseña nueva.
       </div>
-      <div class="field"><label>Contraseña nueva</label><input type="password" id="nuevaClave" minlength="6" required></div>
-      <div class="field"><label>Repetila</label><input type="password" id="nuevaClave2" minlength="6" required></div>
+      <div class="field"><label>Contraseña nueva</label>
+        <div style="position:relative;">
+          <input type="password" id="nuevaClave" minlength="6" required style="padding-right:44px;">
+          <button type="button" class="toggle-clave" data-target="nuevaClave" tabindex="-1"
+                  style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-mute);padding:8px;font-size:15px;">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      <div class="field"><label>Repetila</label>
+        <div style="position:relative;">
+          <input type="password" id="nuevaClave2" minlength="6" required style="padding-right:44px;">
+          <button type="button" class="toggle-clave" data-target="nuevaClave2" tabindex="-1"
+                  style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-mute);padding:8px;font-size:15px;">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+      </div>
       <button type="submit" class="btn btn-primary">Guardar contraseña</button>
     </form>
 
@@ -1102,8 +1126,16 @@ tr:last-child td { border-bottom: none; }
       <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
-      <div class="field"><label>Contraseña</label><input type="password" id="regPassword" required minlength="6"></div>
-      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:14px;font-size:13.5px;">
+      <div class="field"><label>Contraseña</label>
+        <div style="position:relative;">
+          <input type="password" id="regPassword" required minlength="6" style="padding-right:44px;">
+          <button type="button" class="toggle-clave" data-target="regPassword" tabindex="-1"
+                  style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-mute);padding:8px;font-size:15px;">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      <label id="campoRegReparaciones" style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:14px;font-size:13.5px;">
         <input type="checkbox" id="regReparaciones" style="margin:0;cursor:pointer;width:auto;">
         📱 Hago reparaciones de celulares/electrónica
       </label>
@@ -1804,7 +1836,7 @@ tr:last-child td { border-bottom: none; }
             una búsqueda por tu nombre y ubicación.
           </small>
         </div>
-        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+        <div class="field hidden" id="campoConfigHaceReparaciones" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="configHaceReparaciones" style="margin:0;cursor:pointer;width:auto;">
             📱 Hago reparaciones de celulares/electrónica
@@ -2461,11 +2493,37 @@ function rubroUsaVariantes() {
 }
 
 function rubroEsElectronica() {
+  const cat = categoriaDeRubro();
+  // Veto absoluto: una tienda de ropa nunca puede ser "de electrónica" al
+  // mismo tiempo, ni siquiera si hace_reparaciones quedó tildado de antes
+  // (un dato viejo o cargado mal no alcanza para pisar el rubro real).
+  if (cat === 'indumentaria') return false;
+
   // Por palabras clave en el nombre/descripción, O porque lo tildó a mano
   // (al registrarse o después, en Configuración) — cualquiera de las dos
   // alcanza, así no depende de que la descripción diga exactamente lo que
   // el detector espera.
-  return categoriaDeRubro() === 'electronica' || !!currentStore?.hace_reparaciones;
+  return cat === 'electronica' || !!currentStore?.hace_reparaciones;
+}
+
+// Indumentaria y electrónica son mutuamente excluyentes: una tienda de
+// ropa no puede ser "de celulares" al mismo tiempo, así que ni siquiera le
+// mostramos la opción de reparaciones — ni al registrarse ni en
+// Configuración. Se evalúa sobre texto suelto (no sobre currentStore)
+// porque en los dos lugares donde se usa el rubro todavía no está guardado.
+function textoSugiereIndumentaria(texto) {
+  const t = (texto || '').toLowerCase();
+  return RUBROS_CON_VARIANTES.some(k => t.includes(k));
+}
+
+function actualizarVisibilidadReparacionesConfig() {
+  const campo = byId('campoConfigHaceReparaciones');
+  if (!campo) return;
+  const esIndumentaria = textoSugiereIndumentaria(
+    (byId('configNombre')?.value || '') + ' ' + (byId('configDesc')?.value || '')
+  );
+  campo.classList.toggle('hidden', esIndumentaria);
+  if (esIndumentaria) byId('configHaceReparaciones').checked = false;
 }
 
 // [{nombre:'Talle', valores:['S','M','L']}, {nombre:'Color', valores:['Azul','Rojo']}]
@@ -2940,6 +2998,31 @@ byId('loginForm').addEventListener('submit', async (e) => {
   }
 
   await onLoggedIn();
+});
+
+function actualizarVisibilidadReparacionesRegistro() {
+  const campo = byId('campoRegReparaciones');
+  if (!campo) return;
+  const esIndumentaria = textoSugiereIndumentaria(
+    (byId('regBusiness')?.value || '') + ' ' + (byId('regDesc')?.value || '')
+  );
+  campo.classList.toggle('hidden', esIndumentaria);
+  if (esIndumentaria) byId('regReparaciones').checked = false;
+}
+byId('regBusiness').addEventListener('input', actualizarVisibilidadReparacionesRegistro);
+byId('regDesc').addEventListener('input', actualizarVisibilidadReparacionesRegistro);
+
+// Ojito para ver la contraseña mientras se escribe, en los 4 campos que
+// la piden (login, registro, y las dos del cambio de contraseña).
+document.querySelectorAll('.toggle-clave').forEach(b => {
+  b.addEventListener('click', () => {
+    const input = byId(b.dataset.target);
+    const icon = b.querySelector('i');
+    if (!input) return;
+    const mostrar = input.type === 'password';
+    input.type = mostrar ? 'text' : 'password';
+    icon.className = mostrar ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+  });
 });
 
 // REGISTER
@@ -5146,6 +5229,8 @@ byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
 byId('closeContactModal').addEventListener('click', () => hide(byId('contactModal')));
 
 byId('closeConfigModal').addEventListener('click', () => hide(byId('configModal')));
+byId('configNombre').addEventListener('input', actualizarVisibilidadReparacionesConfig);
+byId('configDesc').addEventListener('input', actualizarVisibilidadReparacionesConfig);
 
 // ---- Guía en video ----
 const VIDEO_GUIA = 'v0WjogCQ4WE';
@@ -5899,6 +5984,7 @@ async function cargarConfiguracion() {
     byId('configGoogle').value = store.google_url || '';
     byId('configEslogan').value = store.eslogan || '';
     byId('configHaceReparaciones').checked = !!store.hace_reparaciones;
+    actualizarVisibilidadReparacionesConfig();
 
     quitarPortada = false;
     byId('configPortadaInput').value = '';
