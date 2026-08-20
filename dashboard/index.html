@@ -1290,7 +1290,7 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="importarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-excel"></i> Importar Excel</button>
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
-        <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código..." autofocus>
+        <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código...">
       </div>
       <div id="scannerStatus" class="scanner-status hidden"></div>
 
@@ -5787,12 +5787,19 @@ byId('tabDashboard').addEventListener('click', () => {
   byId('dashboardView').classList.add('visible');
 });
 
+// En el celular, enfocar un input a la fuerza abre el teclado solo y deja
+// el campo con el cursor/selección activa sin que nadie lo haya tocado —
+// justo lo que se interponía al querer deslizar la tabla apenas se entra
+// a Productos o Clientes. En computadora sigue sirviendo: deja escanear o
+// buscar sin tener que clickear el campo primero.
+const esMobile = () => window.innerWidth <= 700;
+
 byId('tabProductos').addEventListener('click', () => {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   byId('tabProductos').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('productosView').classList.add('visible');
-  setTimeout(() => byId('scannerInput').focus(), 100);
+  if (!esMobile()) setTimeout(() => byId('scannerInput').focus(), 100);
 });
 
 byId('tabPedidos').addEventListener('click', () => {
@@ -5807,7 +5814,7 @@ byId('tabClientes').addEventListener('click', () => {
   byId('tabClientes').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('clientesView').classList.add('visible');
-  setTimeout(() => byId('clientSearch').focus(), 100);
+  if (!esMobile()) setTimeout(() => byId('clientSearch').focus(), 100);
 });
 
 byId('tabVentas').addEventListener('click', () => {
