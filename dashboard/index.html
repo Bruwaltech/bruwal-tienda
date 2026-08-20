@@ -1519,7 +1519,7 @@ tr:last-child td { border-bottom: none; }
           <button type="button" id="nuevaReparacionBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nueva reparación</button>
         </div>
         <table>
-          <thead><tr><th>Cliente</th><th>Equipo</th><th>Problema</th><th>Estado</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Margen</th><th></th></tr></thead>
+          <thead><tr><th>Ticket</th><th>Cliente</th><th>Equipo</th><th>Problema</th><th>Estado</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Margen</th><th></th></tr></thead>
           <tbody id="reparacionesBody"></tbody>
         </table>
       </div>
@@ -4268,6 +4268,7 @@ function renderReparaciones() {
     const siguiente = REPARACION_SIGUIENTE[r.estado];
 
     return '<tr>' +
+      '<td style="font-weight:700;color:var(--celeste);white-space:nowrap;">' + codigoTicket(r) + '</td>' +
       '<td><strong>' + escapeHtml(r.cliente_nombre) + '</strong>' +
         (r.cliente_telefono ? '<br><span style="font-size:12px;color:var(--text-mute);">' + escapeHtml(r.cliente_telefono) + '</span>' : '') +
       '</td>' +
@@ -4289,17 +4290,69 @@ function renderReparaciones() {
           ? '<button class="icon-btn" data-avanzar="' + r.id + '" style="color:var(--stock);" title="Pasar a ' + REPARACION_ETIQUETAS[siguiente].texto + '">→ ' + REPARACION_ETIQUETAS[siguiente].texto + '</button>'
           : '') +
         '<button class="icon-btn" data-editar-reparacion="' + r.id + '" title="Editar">✎</button>' +
+        '<button class="icon-btn" data-imprimir-reparacion="' + r.id + '" title="Imprimir etiqueta" style="color:var(--celeste);">🖨️</button>' +
         '<button class="icon-btn danger" data-eliminar-reparacion="' + r.id + '" title="Eliminar">🗑</button>' +
       '</div></td>' +
     '</tr>';
-  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ninguna reparación</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ninguna reparación</td></tr>';
 
   cuerpo.querySelectorAll('[data-avanzar]').forEach(b =>
     b.addEventListener('click', () => avanzarReparacion(b.getAttribute('data-avanzar'))));
   cuerpo.querySelectorAll('[data-editar-reparacion]').forEach(b =>
     b.addEventListener('click', () => abrirModalReparacion(b.getAttribute('data-editar-reparacion'))));
+  cuerpo.querySelectorAll('[data-imprimir-reparacion]').forEach(b =>
+    b.addEventListener('click', () => imprimirEtiquetaReparacion(b.getAttribute('data-imprimir-reparacion'))));
   cuerpo.querySelectorAll('[data-eliminar-reparacion]').forEach(b =>
     b.addEventListener('click', () => eliminarReparacion(b.getAttribute('data-eliminar-reparacion'))));
+}
+
+// "R-0007": con padStart, para que se pueda escribir a mano en una
+// etiqueta chica y quede prolijo. Sin número asignado (reparaciones viejas,
+// de antes de esta función) muestra "—" en vez de "R-NaN".
+function codigoTicket(r) {
+  return Number.isFinite(Number(r.numero)) && r.numero
+    ? 'R-' + String(r.numero).padStart(4, '0')
+    : '—';
+}
+
+// Etiqueta chica para pegarle al equipo: el código grande es lo único que
+// hace falta para encontrarlo después entre varios celulares en el
+// mostrador; el resto es para confirmar que es el correcto sin abrir el
+// sistema. El estado queda "fotografiado" al momento de imprimir — si
+// después avanza, la etiqueta pegada no se actualiza sola.
+function imprimirEtiquetaReparacion(id) {
+  const r = reparaciones.find(x => String(x.id) === String(id));
+  if (!r) return;
+
+  const et = REPARACION_ETIQUETAS[r.estado] || REPARACION_ETIQUETAS.recibido;
+  const ventana = window.open('', '_blank', 'width=420,height=520');
+  if (!ventana) { alert('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return; }
+
+  ventana.document.write(
+    '<!doctype html><html><head><meta charset="utf-8"><title>Etiqueta ' + codigoTicket(r) + '</title>' +
+    '<style>' +
+      'body{font-family:Arial,sans-serif;padding:18px;color:#15294D;}' +
+      '.codigo{font-size:46px;font-weight:800;letter-spacing:1px;border:3px solid #15294D;border-radius:10px;' +
+        'padding:10px 14px;text-align:center;margin-bottom:14px;}' +
+      '.fila{font-size:14px;margin-bottom:6px;line-height:1.4;}' +
+      '.fila b{display:inline-block;min-width:74px;}' +
+      '.estado{display:inline-block;padding:3px 10px;border-radius:5px;font-size:12px;font-weight:700;' +
+        'background:' + et.fondo + ';color:' + et.color + ';}' +
+      '.pie{margin-top:14px;font-size:10.5px;color:#5C6B82;text-align:center;}' +
+      '@media print{ .no-print{display:none;} }' +
+    '</style></head><body>' +
+      '<div class="codigo">' + codigoTicket(r) + '</div>' +
+      '<div class="fila"><b>Cliente:</b> ' + escapeHtml(r.cliente_nombre || '—') + '</div>' +
+      (r.cliente_telefono ? '<div class="fila"><b>Teléfono:</b> ' + escapeHtml(r.cliente_telefono) + '</div>' : '') +
+      '<div class="fila"><b>Equipo:</b> ' + escapeHtml(((r.marca ? r.marca + ' ' : '') + (r.equipo || '')).trim()) + '</div>' +
+      (r.imei ? '<div class="fila"><b>IMEI:</b> ' + escapeHtml(r.imei) + '</div>' : '') +
+      '<div class="fila"><b>Estado:</b> <span class="estado">' + et.texto + '</span></div>' +
+      '<div class="fila"><b>Recibido:</b> ' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR') + '</div>' +
+      '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>' +
+      '<button class="no-print" onclick="window.print()" style="margin-top:16px;width:100%;padding:10px;font-size:14px;cursor:pointer;">Imprimir</button>' +
+    '</body></html>'
+  );
+  ventana.document.close();
 }
 
 // id === null -> alta nueva. id con valor -> edición de una existente.
@@ -4337,7 +4390,7 @@ function abrirModalReparacion(id) {
 
   byId('reparacionModal').dataset.id = r ? r.id : '';
   byId('reparacionModalTitulo').innerHTML = '<i class="fa-solid fa-screwdriver-wrench" style="color:var(--celeste);"></i> ' +
-    (r ? 'Editar reparación' : 'Nueva reparación');
+    (r ? ('Editar reparación · ' + codigoTicket(r)) : 'Nueva reparación');
 
   byId('repCliente').value = r ? (r.cliente_nombre || '') : '';
   byId('repTelefono').value = r ? (r.cliente_telefono || '') : '';
@@ -4388,9 +4441,16 @@ async function guardarReparacion() {
   };
 
   const id = byId('reparacionModal').dataset.id;
-  const { error } = id
-    ? await sb.from('store_reparaciones').update(payload).eq('id', id)
-    : await sb.from('store_reparaciones').insert([payload]);
+  let error;
+  if (id) {
+    ({ error } = await sb.from('store_reparaciones').update(payload).eq('id', id));
+  } else {
+    // Número de ticket para la etiqueta que se le pega al equipo — correlativo
+    // por tienda, no se toca más una vez asignado (por eso solo se calcula acá,
+    // al crear, y nunca al editar).
+    payload.numero = Math.max(0, ...reparaciones.map(r => Number(r.numero) || 0)) + 1;
+    ({ error } = await sb.from('store_reparaciones').insert([payload]));
+  }
 
   if (error) { alert('No se pudo guardar la reparación:\n\n' + error.message); return; }
 
