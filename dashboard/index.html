@@ -1328,7 +1328,7 @@ tr:last-child td { border-bottom: none; }
                        style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
               </div>
 
-              <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+              <label id="filaTradeIn" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="barcodeTradeIn" style="margin:0;width:auto;cursor:pointer;">
                 📱 Toma un equipo usado como parte de pago
               </label>
@@ -2386,8 +2386,17 @@ byId('pEsServicio').addEventListener('change', (e) => {
 // stock propio, solo suman precio).
 const RUBROS_CON_VARIANTES = ['ropa','indument','moda','textil','boutique','calzado','zapatill','deportiv'];
 
+// Para mostrar "Reparaciones" y "Toma equipo usado" solo donde tienen
+// sentido: una tienda de ropa no repara celulares.
+const RUBROS_ELECTRONICA = ['celular','electronic','tecnolog','informatic','computac',
+  'smartphone','telefonia','notebook','reparacion de cel','accesorios de cel','gadget'];
+
 function rubroUsaVariantes() {
   return categoriaDeRubro() === 'indumentaria';
+}
+
+function rubroEsElectronica() {
+  return categoriaDeRubro() === 'electronica';
 }
 
 // [{nombre:'Talle', valores:['S','M','L']}, {nombre:'Color', valores:['Azul','Rojo']}]
@@ -2585,6 +2594,7 @@ function categoriaDeRubro() {
   // Se chequea primero: si una tienda dice "moda urbana y cafetería" (caso
   // raro pero posible), gana indumentaria antes que bebidas.
   if (RUBROS_CON_VARIANTES.some(k => texto.includes(k))) return 'indumentaria';
+  if (RUBROS_ELECTRONICA.some(k => texto.includes(k))) return 'electronica';
 
   for (const [clave, g] of Object.entries(OPCIONES_SUGERIDAS)) {
     if (g.claves.some(k => texto.includes(k))) return clave;
@@ -3052,8 +3062,31 @@ async function refreshData() {
   renderVentas();
   renderFiado();
   renderReparaciones();
+  aplicarVisibilidadPorRubro();
   refrescarListaDeCategorias();
   await renderAgenda();
+}
+
+// Reparaciones y "toma equipo usado" solo sirven para tiendas de
+// electrónica/celulares — para el resto son ruido que no van a usar nunca.
+function aplicarVisibilidadPorRubro() {
+  const esElectronica = rubroEsElectronica();
+
+  const tabRep = byId('tabReparaciones');
+  if (tabRep) tabRep.classList.toggle('hidden', !esElectronica);
+
+  // Si estaba parado en Reparaciones y la tienda cambió de rubro (o se
+  // detectó distinto), no lo dejamos varado en una pestaña que ya no existe.
+  if (!esElectronica && tabRep && tabRep.classList.contains('active')) {
+    byId('tabDashboard').click();
+  }
+
+  const filaTradeIn = byId('filaTradeIn');
+  if (filaTradeIn) filaTradeIn.classList.toggle('hidden', !esElectronica);
+  if (!esElectronica) {
+    byId('barcodeTradeIn').checked = false;
+    byId('campoTradeIn').classList.add('hidden');
+  }
 }
 
 // Turnos reservados desde la tienda. Sin esta vista, un turno cargado por
