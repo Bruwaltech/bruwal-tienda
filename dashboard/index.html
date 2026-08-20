@@ -1565,9 +1565,9 @@ tr:last-child td { border-bottom: none; }
         <div class="field hidden" id="campoVariantesToggle">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="pTieneVariantes" style="margin:0;width:auto;cursor:pointer;">
-            Este producto tiene variantes (talle, color...)
+            Este producto tiene variantes <span id="variTipoParentesis">(talle, color...)</span>
           </label>
-          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+          <small id="variTipoAyuda" style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Cada combinación lleva su propio stock. "Remera talle M" y
             "Remera talle L" se agotan por separado.
           </small>
@@ -2809,7 +2809,22 @@ function renderGrillaVariantes() {
   }));
 }
 
+// La leyenda de la casilla ("...talle, color...") y su ejemplo son solo
+// texto de ayuda, no datos guardados — pero para una tienda de
+// electrónica igual desorienta ver "talle, color" ahí. Rubro-aware, igual
+// que el placeholder de los campos y los botones de sugeridos.
+function actualizarTextoVariantes() {
+  const esElec = rubroEsElectronica();
+  const parentesis = byId('variTipoParentesis');
+  if (parentesis) parentesis.textContent = esElec ? '(modelo de equipo...)' : '(talle, color...)';
+  const ayuda = byId('variTipoAyuda');
+  if (ayuda) ayuda.textContent = esElec
+    ? 'Cada combinación lleva su propio stock. "Pantalla iPhone 13" y "Pantalla iPhone 14" se agotan por separado.'
+    : 'Cada combinación lleva su propio stock. "Remera talle M" y "Remera talle L" se agotan por separado.';
+}
+
 function cargarVariantesEnFormulario(p) {
+  actualizarTextoVariantes();
   const tiene = !!p?.tiene_variantes;
   byId('pTieneVariantes').checked = tiene;
   byId('campoVariantes').classList.toggle('hidden', !tiene);
@@ -3465,6 +3480,7 @@ async function refreshData() {
 // electrónica/celulares — para el resto son ruido que no van a usar nunca.
 function aplicarVisibilidadPorRubro() {
   const esElectronica = rubroEsElectronica();
+  actualizarTextoVariantes();
 
   const tabRep = byId('tabReparaciones');
   if (tabRep) tabRep.classList.toggle('hidden', !esElectronica);
