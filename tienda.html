@@ -454,6 +454,62 @@ function escapeHtml(str){
   return d.innerHTML;
 }
 
+// ---- Paleta de colores de la tienda (opcional, la elige el dueño) ----
+function aclararColor(hex, cantidad){
+  const c = String(hex || '').replace('#', '');
+  if (c.length !== 6) return hex;
+  const r = Math.min(255, parseInt(c.substr(0, 2), 16) + cantidad);
+  const g = Math.min(255, parseInt(c.substr(2, 2), 16) + cantidad);
+  const b = Math.min(255, parseInt(c.substr(4, 2), 16) + cantidad);
+  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function hexARgb(hex){
+  const c = String(hex || '').replace('#', '');
+  if (c.length !== 6) return '21,41,77';
+  return [parseInt(c.substr(0, 2), 16), parseInt(c.substr(2, 2), 16), parseInt(c.substr(4, 2), 16)].join(',');
+}
+// Texto blanco sobre un banner oscuro, texto oscuro sobre uno claro — para
+// que "banner clarito" no termine con las letras invisibles.
+function textoLegibleSobre(hex){
+  const c = String(hex || '').replace('#', '');
+  if (c.length !== 6) return '#ffffff';
+  const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16);
+  const luminancia = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminancia > 0.6 ? '#15294D' : '#ffffff';
+}
+
+// Sin tema guardado, la tienda se ve exactamente como siempre (nada cambia
+// para los negocios que ya están usando BRUWAL).
+function aplicarTema(tema){
+  if (!tema || (!tema.tarjetas && !tema.texto && !tema.banner)) return;
+
+  const raiz = document.documentElement.style;
+  if (tema.tarjetas) raiz.setProperty('--bg', tema.tarjetas);
+  if (tema.texto) { raiz.setProperty('--navy', tema.texto); raiz.setProperty('--text-dark', tema.texto); }
+
+  const banner = tema.banner || '#2F8FE0';
+  raiz.setProperty('--celeste', banner);
+  raiz.setProperty('--celeste-soft', aclararColor(banner, 40));
+
+  const textoHeader = textoLegibleSobre(banner);
+  const textoEsloganHeader = textoHeader === '#ffffff' ? '#fff' : 'rgba(21,41,77,.75)';
+  const rgbBanner = hexARgb(banner);
+  const opacidad = (tema.opacidadPortada != null ? tema.opacidadPortada : 80) / 100;
+
+  const hoja = document.createElement('style');
+  hoja.textContent =
+    // Banner sin foto de portada: usa el color elegido en vez del celeste fijo.
+    'header:not(.con-portada){background:linear-gradient(135deg, ' + banner + ' 0%, ' + aclararColor(banner, 25) + ' 100%) !important;}' +
+    'header{color:' + textoHeader + ' !important;}' +
+    '.store-desc,.store-eslogan{color:' + textoEsloganHeader + ' !important;}' +
+    // Banner CON foto de portada: el velo usa el mismo color, con la
+    // opacidad que haya elegido (más baja = se ve más la foto).
+    'header.con-portada::after{background:linear-gradient(135deg, rgba(' + rgbBanner + ',' + opacidad + ') 0%, rgba(' + rgbBanner + ',' + (opacidad * 0.75).toFixed(2) + ') 100%) !important;}' +
+    // El "cuadro" donde va la foto del producto (o el ícono, si no tiene foto).
+    (tema.tarjetas ? '.product-photo-container,.cat-foto,.ficha-galeria{background:' + tema.tarjetas + ' !important;}' : '');
+  document.head.appendChild(hoja);
+}
+
 function getSlugFromUrl(){
   const params = new URLSearchParams(window.location.search);
   const querySlug = params.get('slug');
@@ -485,6 +541,8 @@ async function init(){
     show(byId('notFoundState'));
     return;
   }
+
+  aplicarTema(store.tema);
 
   byId('storeName').textContent = store.business_name || slug;
   byId('storeDesc').textContent = store.description || 'Catálogo online';
