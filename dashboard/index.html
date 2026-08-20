@@ -1734,6 +1734,13 @@ tr:last-child td { border-bottom: none; }
       <div class="field"><label>Equipo / modelo</label><input type="text" id="repEquipo" placeholder="Ej: iPhone 11 128GB"></div>
     </div>
     <div class="field"><label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label><input type="text" id="repImei" placeholder="Se marca *#06# en el equipo"></div>
+    <div class="field">
+      <label>Código o patrón de desbloqueo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+      <input type="text" id="repCodigoDesbloqueo" placeholder="Ej: 1234, o describí el patrón">
+      <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+        Solo se ve acá adentro — nunca sale en la etiqueta impresa, para no dejarlo a la vista pegado en el equipo.
+      </small>
+    </div>
 
     <div class="field">
       <label>Tipo de servicio</label>
@@ -4406,6 +4413,7 @@ function abrirModalReparacion(id) {
   byId('repMarca').value = r ? (r.marca || '') : '';
   byId('repEquipo').value = r ? (r.equipo || '') : '';
   byId('repImei').value = r ? (r.imei || '') : '';
+  byId('repCodigoDesbloqueo').value = r ? (r.codigo_desbloqueo || '') : '';
   byId('repProblema').value = r ? (r.problema || '') : '';
   byId('repCosto').value = r ? Number(r.costo || 0) : 0;
   byId('repPrecio').value = r ? Number(r.precio || 0) : 0;
@@ -4442,6 +4450,7 @@ async function guardarReparacion() {
     marca: byId('repMarca').value.trim(),
     equipo: equipo,
     imei: byId('repImei').value.trim(),
+    codigo_desbloqueo: byId('repCodigoDesbloqueo').value.trim(),
     tipo_servicio: tipoServicioEnEdicion,
     problema: byId('repProblema').value.trim(),
     costo: Number(byId('repCosto').value) || 0,
