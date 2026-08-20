@@ -63,6 +63,14 @@
     z-index:0;
   }
   header.con-portada .wrap{position:relative;z-index:1;}
+  /* El velo se puede bajar mucho de opacidad (para que se vea la foto real),
+     y ahí solo no alcanza para el contraste: una sombra debajo del texto
+     lo mantiene legible pase lo que pase en la foto de fondo. */
+  header.con-portada .store-info h1,
+  header.con-portada .store-desc,
+  header.con-portada .store-eslogan{
+    text-shadow: 0 2px 10px rgba(0,0,0,.55), 0 1px 4px rgba(0,0,0,.45);
+  }
   .store-contact{display:inline-flex;align-items:center;gap:8px;background:#fff;padding:12px 24px;border-radius:12px;font-size:15px;color:#15294D;text-decoration:none;font-weight:700;transition:all 0.3s;box-shadow:0 4px 16px rgba(0,0,0,0.15);}
   .store-contact:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,0.2);}
 
@@ -266,12 +274,29 @@
        quedaban afuera de la pantalla sin ningún aviso de que se podía
        deslizar para verlos. */
     .store-menu{position:relative;display:flex;gap:12px;padding:16px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-    .store-menu > div:first-child, .store-menu-title{display:none;}
+    /* El logo se pinta por JS con "style.display:block" en cuanto la tienda
+       tiene uno cargado — eso es un estilo inline, que le gana a cualquier
+       regla de clase salvo que se fuerce con !important. Sin esto, en una
+       tienda CON logo (la mayoría) esta regla no hacía nada: el logo
+       reaparecía metido en la fila de iconos y los tapaba/empujaba afuera. */
+    .store-menu > div:first-child{display:none !important;}
+    .store-menu-title{display:none;}
     .store-menu-item{flex-shrink:0;}
     .store-menu::after{
       content:'';position:absolute;top:0;right:0;bottom:0;width:24px;
       background:linear-gradient(to right,transparent,#f8f9fa);pointer-events:none;
     }
+
+    /* Encabezado: el nombre de la tienda y el botón de WhatsApp peleaban
+       por el mismo renglón horizontal. En una pantalla angosta el nombre
+       no tenía dónde encogerse (los items de flex no se achican solos por
+       debajo de su contenido) y terminaba superpuesto con el logo, con el
+       botón de WhatsApp cortado contra el borde. Apilado, cada uno tiene
+       todo el ancho para acomodarse solo. */
+    .header-top{flex-direction:column;align-items:stretch;gap:14px;}
+    .store-info{min-width:0;}
+    .store-info h1{font-size:24px;}
+    .store-contact{align-self:flex-start;}
   }
 </style>
 </head>
