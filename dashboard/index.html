@@ -4350,7 +4350,15 @@ function imprimirEtiquetaReparacion(id) {
       '<div class="fila"><b>Estado:</b> <span class="estado">' + et.texto + '</span></div>' +
       '<div class="fila"><b>Recibido:</b> ' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR') + '</div>' +
       '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>' +
-      '<button class="no-print" onclick="window.print()" style="margin-top:16px;width:100%;padding:10px;font-size:14px;cursor:pointer;">Imprimir</button>' +
+      '<button class="no-print" onclick="window.print()" style="margin-top:16px;width:100%;padding:10px;font-size:14px;cursor:pointer;background:#15294D;color:#fff;border:none;border-radius:6px;">Imprimir</button>' +
+      // En el celular esto se abre como pestaña nueva, sin ningún botón de
+      // "atrás" a la vista (más si la app está instalada como PWA) — sin
+      // esto, no había forma de volver al panel después de generar el
+      // ticket. window.close() cierra la pestaña si el navegador lo permite
+      // (siempre lo permite para una pestaña abierta por script, como
+      // ésta); si no lo permite, el setTimeout lleva de vuelta al panel igual.
+      '<button class="no-print" onclick="window.close(); setTimeout(function(){ window.location.href=\'/dashboard\'; }, 150);" ' +
+        'style="margin-top:8px;width:100%;padding:10px;font-size:14px;cursor:pointer;background:#fff;color:#15294D;border:1.5px solid #15294D;border-radius:6px;">← Volver al panel</button>' +
     '</body></html>'
   );
   ventana.document.close();
