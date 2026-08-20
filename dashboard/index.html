@@ -1728,7 +1728,23 @@ tr:last-child td { border-bottom: none; }
 
     <div class="field"><label>Cliente</label><input type="text" id="repCliente" placeholder="Ej: Marcos Díaz"></div>
     <div class="field"><label>Teléfono (opcional)</label><input type="text" id="repTelefono" placeholder="Ej: 11 2345 6789"></div>
-    <div class="field"><label>Equipo</label><input type="text" id="repEquipo" placeholder="Ej: iPhone 11 128GB"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>Marca</label><input type="text" id="repMarca" placeholder="Ej: Apple, Samsung"></div>
+      <div class="field"><label>Equipo / modelo</label><input type="text" id="repEquipo" placeholder="Ej: iPhone 11 128GB"></div>
+    </div>
+    <div class="field"><label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label><input type="text" id="repImei" placeholder="Se marca *#06# en el equipo"></div>
+
+    <div class="field">
+      <label>Tipo de servicio</label>
+      <div id="repTipoServicioLista" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="repTipoServicioNuevo" placeholder="Otro (Ej: Cambio de conector)" maxlength="40"
+               style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
+        <button type="button" id="repTipoServicioAgregar" class="btn btn-primary" style="width:auto;padding:9px 15px;font-size:13px;">+</button>
+      </div>
+    </div>
+
     <div class="field"><label>Problema / diagnóstico</label><input type="text" id="repProblema" placeholder="Ej: no carga, cambiar pin de carga"></div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -2534,8 +2550,7 @@ function rubroEsElectronica() {
 // Configuración. Se evalúa sobre texto suelto (no sobre currentStore)
 // porque en los dos lugares donde se usa el rubro todavía no está guardado.
 function textoSugiereIndumentaria(texto) {
-  const t = (texto || '').toLowerCase();
-  return RUBROS_CON_VARIANTES.some(k => t.includes(k));
+  return RUBROS_CON_VARIANTES.some(k => normalizarTexto(texto).includes(k));
 }
 
 function actualizarVisibilidadReparacionesConfig() {
@@ -2738,7 +2753,11 @@ const OPCIONES_SUGERIDAS = {
 // mutuamente excluyentes: indumentaria/calzado nunca ve agregados de
 // comida, y comida/bebidas nunca ve el selector de talle.
 function categoriaDeRubro() {
-  const texto = ((currentStore?.description || '') + ' ' + (currentStore?.business_name || '')).toLowerCase();
+  // normalizarTexto saca acentos y pasa a minúscula: sin esto, una
+  // descripción que dice "Electrónica" (con tilde) no matcheaba contra la
+  // palabra clave 'electronic' — Wabi Import se quedó sin Reparaciones por
+  // exactamente este motivo hasta que se corrigió.
+  const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
 
   // Se chequea primero: si una tienda dice "moda urbana y cafetería" (caso
   // raro pero posible), gana indumentaria antes que bebidas.
@@ -4252,8 +4271,15 @@ function renderReparaciones() {
       '<td><strong>' + escapeHtml(r.cliente_nombre) + '</strong>' +
         (r.cliente_telefono ? '<br><span style="font-size:12px;color:var(--text-mute);">' + escapeHtml(r.cliente_telefono) + '</span>' : '') +
       '</td>' +
-      '<td>' + escapeHtml(r.equipo) + '</td>' +
-      '<td style="font-size:13px;max-width:220px;">' + escapeHtml(r.problema || '—') + '</td>' +
+      '<td>' + (r.marca ? escapeHtml(r.marca) + ' ' : '') + escapeHtml(r.equipo) +
+        (r.imei ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">IMEI: ' + escapeHtml(r.imei) + '</div>' : '') +
+      '</td>' +
+      '<td style="font-size:13px;max-width:220px;">' +
+        (Array.isArray(r.tipo_servicio) && r.tipo_servicio.length
+          ? '<div style="font-weight:600;color:var(--navy);">' + escapeHtml(r.tipo_servicio.join(', ')) + '</div>'
+          : '') +
+        (r.problema ? '<div' + (r.tipo_servicio?.length ? ' style="color:var(--text-mute);margin-top:2px;"' : '') + '>' + escapeHtml(r.problema) + '</div>' : (r.tipo_servicio?.length ? '' : '—')) +
+      '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
       '<td style="text-align:right;">' + money(r.costo) + '</td>' +
       '<td style="text-align:right;">' + money(r.precio) + '</td>' +
@@ -4277,6 +4303,35 @@ function renderReparaciones() {
 }
 
 // id === null -> alta nueva. id con valor -> edición de una existente.
+// ---- Tipo de servicio (chips, multi-selección) ----
+const TIPOS_SERVICIO_SUGERIDOS = ['Cambio de pantalla', 'Cambio de batería', 'Cambio de conector de carga',
+  'Cambio de tapa trasera', 'Reparación de placa', 'Problema de software', 'Cámara', 'Parlante / micrófono'];
+let tipoServicioEnEdicion = [];
+
+function renderTipoServicio() {
+  const cont = byId('repTipoServicioLista');
+  if (!cont) return;
+
+  const todos = [...new Set([...TIPOS_SERVICIO_SUGERIDOS, ...tipoServicioEnEdicion])];
+  cont.innerHTML = todos.map(t => {
+    const activo = tipoServicioEnEdicion.includes(t);
+    return '<button type="button" data-tipo-serv="' + escapeHtml(t) + '" ' +
+      'style="padding:7px 12px;border-radius:7px;border:1.5px solid ' + (activo ? 'var(--celeste)' : 'var(--line)') +
+      ';background:' + (activo ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
+      escapeHtml(t) + '</button>';
+  }).join('');
+
+  cont.querySelectorAll('[data-tipo-serv]').forEach(b => {
+    b.addEventListener('click', () => {
+      const t = b.dataset.tipoServ;
+      const i = tipoServicioEnEdicion.indexOf(t);
+      if (i >= 0) tipoServicioEnEdicion.splice(i, 1);
+      else tipoServicioEnEdicion.push(t);
+      renderTipoServicio();
+    });
+  });
+}
+
 function abrirModalReparacion(id) {
   const r = id ? reparaciones.find(x => String(x.id) === String(id)) : null;
 
@@ -4286,11 +4341,16 @@ function abrirModalReparacion(id) {
 
   byId('repCliente').value = r ? (r.cliente_nombre || '') : '';
   byId('repTelefono').value = r ? (r.cliente_telefono || '') : '';
+  byId('repMarca').value = r ? (r.marca || '') : '';
   byId('repEquipo').value = r ? (r.equipo || '') : '';
+  byId('repImei').value = r ? (r.imei || '') : '';
   byId('repProblema').value = r ? (r.problema || '') : '';
   byId('repCosto').value = r ? Number(r.costo || 0) : 0;
   byId('repPrecio').value = r ? Number(r.precio || 0) : 0;
   byId('repNotas').value = r ? (r.notas || '') : '';
+
+  tipoServicioEnEdicion = (r && Array.isArray(r.tipo_servicio)) ? [...r.tipo_servicio] : [];
+  renderTipoServicio();
 
   actualizarMargenPreview();
   show(byId('reparacionModal'));
@@ -4317,7 +4377,10 @@ async function guardarReparacion() {
     store_slug: currentStore.slug,
     cliente_nombre: cliente,
     cliente_telefono: byId('repTelefono').value.trim(),
+    marca: byId('repMarca').value.trim(),
     equipo: equipo,
+    imei: byId('repImei').value.trim(),
+    tipo_servicio: tipoServicioEnEdicion,
     problema: byId('repProblema').value.trim(),
     costo: Number(byId('repCosto').value) || 0,
     precio: Number(byId('repPrecio').value) || 0,
@@ -5848,6 +5911,13 @@ byId('confirmarReponerVarianteBtn').addEventListener('click', confirmarReponerVa
 byId('guardarReparacionBtn').addEventListener('click', guardarReparacion);
 byId('repCosto').addEventListener('input', actualizarMargenPreview);
 byId('repPrecio').addEventListener('input', actualizarMargenPreview);
+byId('repTipoServicioAgregar').addEventListener('click', () => {
+  const t = byId('repTipoServicioNuevo').value.trim();
+  if (!t) return;
+  if (!tipoServicioEnEdicion.includes(t)) tipoServicioEnEdicion.push(t);
+  byId('repTipoServicioNuevo').value = '';
+  renderTipoServicio();
+});
 
 byId('abrirFiadoManualBtn').addEventListener('click', () => show(byId('fiadoManualModal')));
 byId('closeFiadoManualModal').addEventListener('click', () => hide(byId('fiadoManualModal')));
