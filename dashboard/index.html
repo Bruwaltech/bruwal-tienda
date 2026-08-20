@@ -2634,36 +2634,96 @@ function combinacionesDe(atributos) {
 // Atributos que casi toda tienda de indumentaria/calzado usa. Un toque
 // carga el nombre Y los valores típicos juntos, así el vendedor no tiene
 // que escribir "Talle" y después tipear "S, M, L, XL" a mano.
-const ATRIBUTOS_SUGERIDOS = [
+//
+// "etiqueta" es lo que se ve en el botón (para distinguir "Modelo (iPhone)"
+// de "Modelo (Samsung)"); "nombre" es el campo que se guarda de verdad —
+// las dos quedan siempre en "Modelo", para que sea UN solo atributo
+// aunque haya varios botones que lo puedan completar. El valor sugerido
+// es de arranque nomás: el vendedor edita el texto y saca los modelos que
+// no le sirven, o agrega los que falten.
+const ATRIBUTOS_SUGERIDOS_INDUMENTARIA = [
   { nombre: 'Talle',       valores: ['S','M','L','XL','XXL'] },
   { nombre: 'Talle numérico', valores: ['36','38','40','42','44'] },
-  { nombre: 'Color',       valores: ['Negro','Blanco','Azul','Rojo','Gris'] },
-  { nombre: 'Modelo',      valores: [] }   // repuestos de electrónica: cada uno escribe los modelos que le sirven
+  { nombre: 'Color',       valores: ['Negro','Blanco','Azul','Rojo','Gris'] }
 ];
+
+const ATRIBUTOS_SUGERIDOS_ELECTRONICA = [
+  { nombre: 'Modelo', etiqueta: 'Modelo (iPhone)', valores: [
+    'iPhone 6', 'iPhone 6 Plus', 'iPhone 6s', 'iPhone 6s Plus', 'iPhone SE (1ª gen)',
+    'iPhone 7', 'iPhone 7 Plus', 'iPhone 8', 'iPhone 8 Plus',
+    'iPhone X', 'iPhone XR', 'iPhone XS', 'iPhone XS Max',
+    'iPhone 11', 'iPhone 11 Pro', 'iPhone 11 Pro Max', 'iPhone SE (2ª gen)',
+    'iPhone 12', 'iPhone 12 mini', 'iPhone 12 Pro', 'iPhone 12 Pro Max',
+    'iPhone 13', 'iPhone 13 mini', 'iPhone 13 Pro', 'iPhone 13 Pro Max', 'iPhone SE (3ª gen)',
+    'iPhone 14', 'iPhone 14 Plus', 'iPhone 14 Pro', 'iPhone 14 Pro Max',
+    'iPhone 15', 'iPhone 15 Plus', 'iPhone 15 Pro', 'iPhone 15 Pro Max'
+  ] },
+  { nombre: 'Modelo', etiqueta: 'Modelo (Samsung)', valores: [
+    'Galaxy A10', 'Galaxy A20', 'Galaxy A20s', 'Galaxy A30', 'Galaxy A32', 'Galaxy A50', 'Galaxy A51',
+    'Galaxy A52', 'Galaxy A53', 'Galaxy A54', 'Galaxy A70',
+    'Galaxy S9', 'Galaxy S10', 'Galaxy S10+', 'Galaxy S20', 'Galaxy S20+', 'Galaxy S21', 'Galaxy S21+',
+    'Galaxy S22', 'Galaxy S22+', 'Galaxy S23', 'Galaxy S23+', 'Galaxy S23 Ultra',
+    'Galaxy Note 10', 'Galaxy Note 20'
+  ] },
+  { nombre: 'Modelo', etiqueta: 'Modelo (Motorola)', valores: [
+    'Moto G6', 'Moto G7', 'Moto G8', 'Moto G8 Plus', 'Moto G9', 'Moto G9 Plus',
+    'Moto G10', 'Moto G20', 'Moto G22', 'Moto G30', 'Moto G32', 'Moto G40', 'Moto G50',
+    'Moto G60', 'Moto G62', 'Moto G73', 'Moto G84',
+    'Moto E6', 'Moto E7', 'Moto E20', 'Moto E22', 'Moto Edge 20', 'Moto Edge 30'
+  ] },
+  { nombre: 'Modelo', etiqueta: 'Modelo (Xiaomi)', valores: [
+    'Redmi 9', 'Redmi 9A', 'Redmi 9C', 'Redmi 10', 'Redmi 10C',
+    'Redmi Note 8', 'Redmi Note 9', 'Redmi Note 10', 'Redmi Note 11', 'Redmi Note 12',
+    'Mi A2', 'Mi A3', 'Poco X3', 'Poco M4'
+  ] }
+];
+
+// Indumentaria y electrónica nunca se mezclan: cada rubro ve solo sus
+// propias sugerencias (talles/colores por un lado, modelos de teléfono
+// por otro), aunque las dos tiendas usen el mismo motor de variantes.
+function grupoAtributosSugeridos() {
+  return rubroEsElectronica() ? ATRIBUTOS_SUGERIDOS_ELECTRONICA : ATRIBUTOS_SUGERIDOS_INDUMENTARIA;
+}
 
 function renderSugeridosVariante() {
   const cont = byId('variSugeridos');
   if (!cont) return;
 
+  const grupo = grupoAtributosSugeridos();
   const yaCargados = variAtributosEnEdicion.map(a => a.nombre);
-  const pendientes = ATRIBUTOS_SUGERIDOS.filter(s => !yaCargados.includes(s.nombre));
+  // En electrónica hay varios botones de marca que apuntan al mismo
+  // atributo "Modelo" (iPhone, Samsung, Motorola, Xiaomi...): esos se
+  // dejan siempre visibles para poder sumar más marcas al mismo campo,
+  // en vez de desaparecer apenas se usa el primero.
+  const pendientes = grupo
+    .map((s, i) => ({ ...s, i }))
+    .filter(s => s.nombre === 'Modelo' || !yaCargados.includes(s.nombre));
 
   cont.innerHTML = pendientes.length
     ? pendientes.map(s =>
-        '<button type="button" class="chip-sug" data-sug-atributo="' + escapeHtml(s.nombre) + '">+ ' +
-        escapeHtml(s.nombre) + '</button>').join('')
+        '<button type="button" class="chip-sug" data-sug-idx="' + s.i + '">+ ' +
+        escapeHtml(s.etiqueta || s.nombre) + '</button>').join('')
     : '';
 
-  cont.querySelectorAll('[data-sug-atributo]').forEach(b => {
+  cont.querySelectorAll('[data-sug-idx]').forEach(b => {
     b.addEventListener('click', () => {
-      const preset = ATRIBUTOS_SUGERIDOS.find(s => s.nombre === b.dataset.sugAtributo);
-      // Si venía el renglón vacío inicial (checkbox recién tildado), lo
-      // reemplaza en vez de sumar uno más al lado.
-      const vacio = variAtributosEnEdicion.findIndex(a => !a.nombre && !a.valores.length);
-      const nuevo = { nombre: preset.nombre, valores: [...preset.valores] };
-      if (vacio >= 0) variAtributosEnEdicion[vacio] = nuevo;
-      else if (variAtributosEnEdicion.length < MAX_ATRIBUTOS_VARIANTE) variAtributosEnEdicion.push(nuevo);
-      else return;   // ya tiene los 2 atributos, no hay lugar
+      const preset = grupo[Number(b.dataset.sugIdx)];
+      if (!preset) return;
+
+      const existente = variAtributosEnEdicion.find(a => a.nombre === preset.nombre);
+      if (existente) {
+        // Ya hay un atributo con ese nombre (ej. "Modelo"): suma los
+        // valores de la marca elegida sin duplicar ni pisar lo cargado.
+        preset.valores.forEach(v => { if (!existente.valores.includes(v)) existente.valores.push(v); });
+      } else {
+        // Si venía el renglón vacío inicial (checkbox recién tildado), lo
+        // reemplaza en vez de sumar uno más al lado.
+        const vacio = variAtributosEnEdicion.findIndex(a => !a.nombre && !a.valores.length);
+        const nuevo = { nombre: preset.nombre, valores: [...preset.valores] };
+        if (vacio >= 0) variAtributosEnEdicion[vacio] = nuevo;
+        else if (variAtributosEnEdicion.length < MAX_ATRIBUTOS_VARIANTE) variAtributosEnEdicion.push(nuevo);
+        else return;   // ya tiene los 2 atributos, no hay lugar
+      }
 
       renderAtributosVariante();
       renderGrillaVariantes();
