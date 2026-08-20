@@ -2656,13 +2656,16 @@ const ATRIBUTOS_SUGERIDOS_ELECTRONICA = [
     'iPhone 12', 'iPhone 12 mini', 'iPhone 12 Pro', 'iPhone 12 Pro Max',
     'iPhone 13', 'iPhone 13 mini', 'iPhone 13 Pro', 'iPhone 13 Pro Max', 'iPhone SE (3ª gen)',
     'iPhone 14', 'iPhone 14 Plus', 'iPhone 14 Pro', 'iPhone 14 Pro Max',
-    'iPhone 15', 'iPhone 15 Plus', 'iPhone 15 Pro', 'iPhone 15 Pro Max'
+    'iPhone 15', 'iPhone 15 Plus', 'iPhone 15 Pro', 'iPhone 15 Pro Max',
+    'iPhone 16', 'iPhone 16 Plus', 'iPhone 16 Pro', 'iPhone 16 Pro Max', 'iPhone 16e',
+    'iPhone 17', 'iPhone Air', 'iPhone 17 Pro', 'iPhone 17 Pro Max'
   ] },
   { nombre: 'Modelo', etiqueta: 'Modelo (Samsung)', valores: [
     'Galaxy A10', 'Galaxy A20', 'Galaxy A20s', 'Galaxy A30', 'Galaxy A32', 'Galaxy A50', 'Galaxy A51',
-    'Galaxy A52', 'Galaxy A53', 'Galaxy A54', 'Galaxy A70',
+    'Galaxy A52', 'Galaxy A53', 'Galaxy A54', 'Galaxy A55', 'Galaxy A70',
     'Galaxy S9', 'Galaxy S10', 'Galaxy S10+', 'Galaxy S20', 'Galaxy S20+', 'Galaxy S21', 'Galaxy S21+',
     'Galaxy S22', 'Galaxy S22+', 'Galaxy S23', 'Galaxy S23+', 'Galaxy S23 Ultra',
+    'Galaxy S24', 'Galaxy S24+', 'Galaxy S24 Ultra', 'Galaxy S25', 'Galaxy S25+', 'Galaxy S25 Ultra',
     'Galaxy Note 10', 'Galaxy Note 20'
   ] },
   { nombre: 'Modelo', etiqueta: 'Modelo (Motorola)', valores: [
@@ -2820,6 +2823,18 @@ byId('pTieneVariantes').addEventListener('change', (e) => {
     variAtributosEnEdicion = [{ nombre: '', valores: [] }];
     renderAtributosVariante();
     renderGrillaVariantes();
+  }
+});
+
+// En electrónica, "Uso interno" es casi siempre un repuesto (pantalla,
+// batería...) que se separa por modelo de equipo. En vez de obligar a
+// tildar dos checkboxes para llegar a los botones de modelo, tildar
+// "Uso interno" ya abre directo la sección de variantes.
+byId('pSoloInterno').addEventListener('change', (e) => {
+  if (e.target.checked && rubroEsElectronica() && !byId('pTieneVariantes').checked) {
+    byId('pTieneVariantes').checked = true;
+    byId('pTieneVariantes').dispatchEvent(new Event('change'));
+    byId('campoVariantes').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 });
 
