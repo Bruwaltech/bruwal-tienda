@@ -1736,7 +1736,7 @@ tr:last-child td { border-bottom: none; }
     <div class="field"><label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label><input type="text" id="repImei" placeholder="Se marca *#06# en el equipo"></div>
     <div class="field">
       <label>Código o patrón de desbloqueo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
-      <input type="text" id="repCodigoDesbloqueo" placeholder="Ej: 1234, o describí el patrón">
+      <input type="text" id="repCodigoDesbloqueo" placeholder="Ej: 1234, 123456, o describí el patrón">
       <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
         Solo se ve acá adentro — nunca sale en la etiqueta impresa, para no dejarlo a la vista pegado en el equipo.
       </small>
@@ -1750,6 +1750,22 @@ tr:last-child td { border-bottom: none; }
                style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
         <button type="button" id="repTipoServicioAgregar" class="btn btn-primary" style="width:auto;padding:9px 15px;font-size:13px;">+</button>
       </div>
+    </div>
+
+    <div class="field">
+      <label>Repuestos usados <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+      <div id="repRepuestosLista" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="repRepuestoBuscar" list="listaProductosReparacion" placeholder="Escribí para buscar (Ej: Pantalla, Batería...)" autocomplete="off"
+               style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
+        <datalist id="listaProductosReparacion"></datalist>
+        <input type="number" id="repRepuestoCant" value="1" min="1" step="1"
+               style="width:56px;padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;text-align:center;">
+        <button type="button" id="repRepuestoAgregar" class="btn btn-primary" style="width:auto;padding:9px 15px;font-size:13px;">+</button>
+      </div>
+      <small style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+        Elegí de tus productos cargados. Al marcar la reparación como Entregada, se descuenta el stock de cada uno.
+      </small>
     </div>
 
     <div class="field"><label>Problema / diagnóstico</label><input type="text" id="repProblema" placeholder="Ej: no carga, cambiar pin de carga"></div>
@@ -4401,6 +4417,56 @@ function renderTipoServicio() {
   });
 }
 
+// ---- Repuestos usados (descuentan stock de tus productos al entregar) ----
+let repuestosEnEdicion = [];
+
+function renderListaProductosReparacion() {
+  const dl = byId('listaProductosReparacion');
+  if (!dl) return;
+  dl.innerHTML = products
+    .filter(p => esProductoFisico(p) && !p.tiene_variantes)
+    .map(p => '<option value="' + escapeHtml(p.name) + '">').join('');
+}
+
+function renderRepuestos() {
+  const cont = byId('repRepuestosLista');
+  if (!cont) return;
+
+  cont.innerHTML = repuestosEnEdicion.length
+    ? repuestosEnEdicion.map((rp, i) => {
+        const p = products.find(x => String(x.id) === String(rp.product_id));
+        const stockActual = p ? Number(p.stock || 0) : null;
+        const sinStock = stockActual !== null && stockActual < rp.qty;
+        return '<div style="display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:7px;padding:7px 10px;font-size:13px;">' +
+          '<span style="flex:1;">' + escapeHtml(rp.name) + ' <b>x' + rp.qty + '</b></span>' +
+          (sinStock
+            ? '<span style="color:var(--danger);font-size:11.5px;font-weight:700;">sin stock (' + stockActual + ')</span>'
+            : (stockActual !== null ? '<span style="color:var(--text-mute);font-size:11.5px;">stock: ' + stockActual + '</span>' : '')) +
+          '<button type="button" data-quitar-repuesto="' + i + '" style="background:none;border:none;color:var(--text-mute);cursor:pointer;font-size:15px;">✕</button>' +
+        '</div>';
+      }).join('')
+    : '<span style="color:var(--text-mute);font-size:12.5px;">Sin repuestos cargados.</span>';
+
+  cont.querySelectorAll('[data-quitar-repuesto]').forEach(b => {
+    b.addEventListener('click', () => {
+      repuestosEnEdicion.splice(+b.dataset.quitarRepuesto, 1);
+      renderRepuestos();
+    });
+  });
+}
+
+function agregarRepuesto(nombreProducto, cantidad) {
+  const p = products.find(x => x.name.trim().toLowerCase() === (nombreProducto || '').trim().toLowerCase());
+  if (!p) { alert('No encontré ese producto en tu catálogo. Elegilo de la lista mientras escribís.'); return; }
+
+  const qty = Math.max(1, Number(cantidad) || 1);
+  const existente = repuestosEnEdicion.find(rp => String(rp.product_id) === String(p.id));
+  if (existente) existente.qty += qty;
+  else repuestosEnEdicion.push({ product_id: p.id, name: p.name, qty });
+
+  renderRepuestos();
+}
+
 function abrirModalReparacion(id) {
   const r = id ? reparaciones.find(x => String(x.id) === String(id)) : null;
 
@@ -4421,6 +4487,12 @@ function abrirModalReparacion(id) {
 
   tipoServicioEnEdicion = (r && Array.isArray(r.tipo_servicio)) ? [...r.tipo_servicio] : [];
   renderTipoServicio();
+
+  repuestosEnEdicion = (r && Array.isArray(r.repuestos)) ? r.repuestos.map(rp => ({ ...rp })) : [];
+  renderListaProductosReparacion();
+  renderRepuestos();
+  byId('repRepuestoBuscar').value = '';
+  byId('repRepuestoCant').value = '1';
 
   actualizarMargenPreview();
   show(byId('reparacionModal'));
@@ -4452,6 +4524,7 @@ async function guardarReparacion() {
     imei: byId('repImei').value.trim(),
     codigo_desbloqueo: byId('repCodigoDesbloqueo').value.trim(),
     tipo_servicio: tipoServicioEnEdicion,
+    repuestos: repuestosEnEdicion,
     problema: byId('repProblema').value.trim(),
     costo: Number(byId('repCosto').value) || 0,
     precio: Number(byId('repPrecio').value) || 0,
@@ -4481,6 +4554,22 @@ async function avanzarReparacion(id) {
   const r = reparaciones.find(x => String(x.id) === String(id));
   const siguiente = r && REPARACION_SIGUIENTE[r.estado];
   if (!siguiente) return;
+
+  // Antes de entregar (y descontar stock de verdad), nos fijamos que
+  // alcance — así no se puede dejar el stock de un repuesto en negativo,
+  // y el vendedor se entera ANTES de cerrar la reparación, no después.
+  if (siguiente === 'entregado' && Array.isArray(r.repuestos) && r.repuestos.length) {
+    const faltantes = r.repuestos.filter(rp => {
+      const p = products.find(x => String(x.id) === String(rp.product_id));
+      return !p || Number(p.stock || 0) < Number(rp.qty || 1);
+    });
+    if (faltantes.length) {
+      alert('No hay stock suficiente para entregar:\n\n' +
+        faltantes.map(rp => '• ' + rp.name + ' (pedís ' + rp.qty + ')').join('\n') +
+        '\n\nRevisá el stock de esos productos antes de marcarla como Entregada.');
+      return;
+    }
+  }
 
   const payload = { estado: siguiente };
   if (siguiente === 'entregado') payload.fecha_entregado = new Date().toISOString();
@@ -4525,6 +4614,15 @@ async function avanzarReparacion(id) {
     // aparecer en las estadísticas hasta que se resuelva.
     if (errorPedido) {
       alert('La reparación se marcó como entregada, pero no se pudo sumar al Dashboard:\n\n' + errorPedido.message);
+    }
+  }
+
+  // Descontar el stock de cada repuesto usado — recién acá, ya confirmado
+  // que la reparación se entregó de verdad (la validación de arriba evita
+  // llegar hasta este punto sin stock suficiente).
+  if (siguiente === 'entregado' && Array.isArray(r.repuestos) && r.repuestos.length) {
+    for (const rp of r.repuestos) {
+      await aplicarStockDeItem({ product_id: rp.product_id, qty: rp.qty, variante: null }, -1);
     }
   }
 
@@ -6036,6 +6134,12 @@ byId('repTipoServicioAgregar').addEventListener('click', () => {
   if (!tipoServicioEnEdicion.includes(t)) tipoServicioEnEdicion.push(t);
   byId('repTipoServicioNuevo').value = '';
   renderTipoServicio();
+});
+byId('repRepuestoAgregar').addEventListener('click', () => {
+  agregarRepuesto(byId('repRepuestoBuscar').value, byId('repRepuestoCant').value);
+  byId('repRepuestoBuscar').value = '';
+  byId('repRepuestoCant').value = '1';
+  byId('repRepuestoBuscar').focus();
 });
 
 byId('abrirFiadoManualBtn').addEventListener('click', () => show(byId('fiadoManualModal')));
