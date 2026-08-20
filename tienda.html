@@ -273,7 +273,11 @@
        (WhatsApp + sitio + Instagram + ubicación + reseñas) los últimos
        quedaban afuera de la pantalla sin ningún aviso de que se podía
        deslizar para verlos. */
-    .store-menu{position:relative;display:flex;gap:12px;padding:16px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    /* top:0 es necesario: la regla de escritorio deja "top:100px" puesto
+       (para el position:sticky de esa vista) y position:relative NO lo
+       resetea solo. Sin esto, el menú se corría 100px hacia abajo de su
+       lugar y quedaba tapando las tarjetas de categoría de más abajo. */
+    .store-menu{position:relative;top:0;display:flex;gap:12px;padding:16px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
     /* El logo se pinta por JS con "style.display:block" en cuanto la tienda
        tiene uno cargado — eso es un estilo inline, que le gana a cualquier
        regla de clase salvo que se fuerce con !important. Sin esto, en una
