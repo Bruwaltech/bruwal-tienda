@@ -656,7 +656,12 @@ async function init(){
   armarTurnos(store);
 
   const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
-  products = prods || [];
+  // solo_interno: repuestos y demás productos que el dueño usa desde el
+  // panel (por ejemplo, en una reparación) pero que nunca deberían poder
+  // comprarse acá. Se filtra ACÁ, antes de cualquier otra cosa, para que
+  // ninguna otra parte del código (categorías, grilla, ficha) los llegue
+  // a mostrar por accidente.
+  products = (prods || []).filter(p => !p.solo_interno);
 
   hide(byId('loadingState'));
   show(byId('storeView'));
