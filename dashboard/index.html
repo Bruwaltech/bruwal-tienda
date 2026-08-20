@@ -1103,6 +1103,10 @@ tr:last-child td { border-bottom: none; }
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
       <div class="field"><label>Contraseña</label><input type="password" id="regPassword" required minlength="6"></div>
+      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:14px;font-size:13.5px;">
+        <input type="checkbox" id="regReparaciones" style="margin:0;cursor:pointer;width:auto;">
+        📱 Hago reparaciones de celulares/electrónica
+      </label>
       <div style="font-size:12px;color:var(--text-mute);margin-bottom:14px;background:#EAF4FD;padding:10px 12px;border-radius:8px;">
         💡 Tip: Los pedidos de tus clientes se enviarán a este número de WhatsApp
       </div>
@@ -1316,6 +1320,11 @@ tr:last-child td { border-bottom: none; }
                        autocomplete="off"
                        style="flex:1;min-width:130px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
                 <datalist id="listaClientes"></datalist>
+              </div>
+
+              <div class="hidden" id="barcodeVarianteBloque" style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:8px;">
+                <div id="barcodeVarianteCampos"></div>
+                <div id="barcodeVarianteStock" style="font-size:12.5px;color:var(--text-mute);margin-top:2px;"></div>
               </div>
 
               <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
@@ -1611,6 +1620,28 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL REPONER VARIANTE -->
+<div class="modal-overlay hidden" id="reponerVarianteModal">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" id="closeReponerVarianteModal">✕</button>
+    <h3 id="reponerVarianteTitulo" style="font-size:17px;">Reponer stock</h3>
+    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;">Elegí la combinación exacta que estás reponiendo.</p>
+
+    <div id="reponerVarianteCampos" style="margin-bottom:12px;"></div>
+
+    <div class="field">
+      <label>Stock actual de esa combinación</label>
+      <div id="reponerVarianteStockActual" style="font-weight:700;color:var(--navy);font-size:15px;padding:6px 0;">Elegí las opciones de arriba</div>
+    </div>
+    <div class="field">
+      <label>¿Cuántas unidades sumás?</label>
+      <input type="number" id="reponerVarianteCantidad" min="1" step="1" value="1">
+    </div>
+
+    <button type="button" id="confirmarReponerVarianteBtn" class="btn btn-primary" style="width:100%;">Sumar al stock</button>
+  </div>
+</div>
+
 <!-- MODAL REPARACIÓN -->
 <div class="modal-overlay hidden" id="reparacionModal">
   <div class="modal" style="max-width:520px;">
@@ -1749,6 +1780,16 @@ tr:last-child td { border-bottom: none; }
             una búsqueda por tu nombre y ubicación.
           </small>
         </div>
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="configHaceReparaciones" style="margin:0;cursor:pointer;width:auto;">
+            📱 Hago reparaciones de celulares/electrónica
+          </label>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Activa la pestaña Reparaciones y "Toma un equipo usado" en la venta de mostrador.
+          </small>
+        </div>
+
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="turnosActivo" style="margin:0;cursor:pointer;width:auto;">
@@ -2396,7 +2437,11 @@ function rubroUsaVariantes() {
 }
 
 function rubroEsElectronica() {
-  return categoriaDeRubro() === 'electronica';
+  // Por palabras clave en el nombre/descripción, O porque lo tildó a mano
+  // (al registrarse o después, en Configuración) — cualquiera de las dos
+  // alcanza, así no depende de que la descripción diga exactamente lo que
+  // el detector espera.
+  return categoriaDeRubro() === 'electronica' || !!currentStore?.hace_reparaciones;
 }
 
 // [{nombre:'Talle', valores:['S','M','L']}, {nombre:'Color', valores:['Azul','Rojo']}]
@@ -2817,6 +2862,7 @@ byId('registerForm').addEventListener('submit', async (e) => {
   const phone = byId('regPhone').value.trim();
   const email = byId('regEmail').value.trim();
   const password = byId('regPassword').value;
+  const hace_reparaciones = byId('regReparaciones').checked;
 
   const boton = e.target.querySelector('button[type=submit]');
   boton.disabled = true;
@@ -2827,7 +2873,7 @@ byId('registerForm').addEventListener('submit', async (e) => {
     email,
     password,
     options: {
-      data: { business_name, phone },
+      data: { business_name, phone, hace_reparaciones },
       // A dónde vuelve después de confirmar el mail. Sin esto Supabase usa
       // su Site URL por defecto, que puede no ser bruwaltech.com.ar.
       emailRedirectTo: window.location.origin + '/dashboard'
@@ -2973,7 +3019,8 @@ async function onLoggedIn() {
         user_id: user.id,
         slug: slug,
         business_name: business_name,
-        phone: phone
+        phone: phone,
+        hace_reparaciones: !!user.user_metadata?.hace_reparaciones
       }).select().single();
 
       if (errorAlta) throw errorAlta;
@@ -3425,7 +3472,7 @@ function renderProducts() {
         ) + '</td>' +
       '<td>' + (p.ean || '—') + '</td>' +
       '<td><div class="row-actions">' +
-        (esProductoFisico(p) && !p.tiene_variantes
+        (esProductoFisico(p)
           ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
           : '') +
         '<button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
@@ -3434,7 +3481,13 @@ function renderProducts() {
 
   byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
   byId('productsBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(b.getAttribute('data-del'))));
-  byId('productsBody').querySelectorAll('[data-reponer]').forEach(b => b.addEventListener('click', () => reponerStock(b.getAttribute('data-reponer'))));
+  // Con variantes hay que elegir talle/color antes de sumar stock; sin
+  // variantes es directo, como siempre.
+  byId('productsBody').querySelectorAll('[data-reponer]').forEach(b => b.addEventListener('click', () => {
+    const p = products.find(x => String(x.id) === String(b.getAttribute('data-reponer')));
+    if (p && p.tiene_variantes) abrirReponerVariante(p.id);
+    else reponerStock(b.getAttribute('data-reponer'));
+  }));
 }
 
 function renderOrders() {
@@ -4377,14 +4430,89 @@ function seleccionarProductoVenta(id) {
   if (!product) return;
 
   currentBarcodeProduct = product;
+  varianteSeleccionadaVenta = {};
   hide(byId('barcodeMatches'));
   byId('barcodeProductName').textContent = product.name;
   byId('barcodeProductPrice').textContent = money(product.price);
   byId('barcodeQty').value = '1';
   byId('barcodeAbono').value = '0';
+  renderVarianteVenta();
   calculateTotal();
   show(byId('barcodeResult'));
   byId('barcodeQty').focus();
+}
+
+// ---- Elegir talle/color al vender por el lector ----
+// Sin esto, una venta de mostrador de un producto con variantes descontaba
+// del total general (la suma de todos los talles/colores) en vez de la
+// combinación real que se llevó el cliente. El stock por talle quedaba
+// mal desde el primer día.
+let varianteSeleccionadaVenta = {};
+
+function productoDeVentaTieneVariantes() {
+  const p = currentBarcodeProduct;
+  return !!(p && p.tiene_variantes && Array.isArray(p.variante_campos) && p.variante_campos.length);
+}
+
+function renderVarianteVenta() {
+  const bloque = byId('barcodeVarianteBloque');
+  if (!productoDeVentaTieneVariantes()) {
+    bloque.classList.add('hidden');
+    return;
+  }
+  bloque.classList.remove('hidden');
+
+  const p = currentBarcodeProduct;
+  byId('barcodeVarianteCampos').innerHTML = p.variante_campos.map(c =>
+    '<div style="margin-bottom:8px;">' +
+      '<label style="font-size:11.5px;color:var(--text-mute);display:block;margin-bottom:5px;">' + escapeHtml(c.nombre) + '</label>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+        c.valores.map(v => {
+          const activo = varianteSeleccionadaVenta[c.nombre] === v;
+          return '<button type="button" data-venta-attr="' + escapeHtml(c.nombre) + '" data-venta-valor="' + escapeHtml(v) + '" ' +
+            'style="padding:6px 11px;border-radius:7px;border:1.5px solid ' + (activo ? 'var(--celeste)' : 'var(--line)') +
+            ';background:' + (activo ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
+            escapeHtml(v) + '</button>';
+        }).join('') +
+      '</div>' +
+    '</div>'
+  ).join('');
+
+  byId('barcodeVarianteCampos').querySelectorAll('[data-venta-attr]').forEach(b => {
+    b.addEventListener('click', () => {
+      varianteSeleccionadaVenta[b.dataset.ventaAttr] = b.dataset.ventaValor;
+      renderVarianteVenta();
+    });
+  });
+
+  actualizarStockVarianteVenta();
+}
+
+function stockDeVarianteVenta() {
+  const p = currentBarcodeProduct;
+  if (!productoDeVentaTieneVariantes()) return null;
+  if (Object.keys(varianteSeleccionadaVenta).length < p.variante_campos.length) return null;
+
+  const claveElegida = claveVariante(varianteSeleccionadaVenta);
+  const v = (p.variantes || []).find(x => claveVariante(x.atributos) === claveElegida);
+  return v ? Number(v.stock || 0) : 0;
+}
+
+function actualizarStockVarianteVenta() {
+  const p = currentBarcodeProduct;
+  const aviso = byId('barcodeVarianteStock');
+  const stock = stockDeVarianteVenta();
+
+  if (stock === null) {
+    aviso.textContent = 'Elegí ' + p.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock';
+    aviso.style.color = 'var(--text-mute)';
+  } else if (stock <= 0) {
+    aviso.textContent = 'Sin stock en esa combinación';
+    aviso.style.color = 'var(--danger)';
+  } else {
+    aviso.textContent = stock + ' disponibles en esa combinación';
+    aviso.style.color = 'var(--text-mute)';
+  }
 }
 
 function calculateTotal() {
@@ -4447,6 +4575,21 @@ async function confirmBarcodeVenta() {
 
   const abonaAhora = esFiado ? (Number(byId('barcodeFiadoAbono').value) || 0) : 0;
 
+  let variante = null;
+  if (productoDeVentaTieneVariantes()) {
+    if (Object.keys(varianteSeleccionadaVenta).length < product.variante_campos.length) {
+      alert('Elegí ' + product.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' antes de registrar la venta.');
+      return;
+    }
+    const stockDisponible = stockDeVarianteVenta();
+    if (!stockDisponible || stockDisponible < qty) {
+      alert('No hay stock suficiente en esa combinación: quedan ' + (stockDisponible || 0) +
+            (stockDisponible === 1 ? ' unidad' : ' unidades') + '.');
+      return;
+    }
+    variante = { ...varianteSeleccionadaVenta };
+  }
+
   const tomaEquipo = byId('barcodeTradeIn').checked;
   if (tomaEquipo && !byId('barcodeTradeInDesc').value.trim()) {
     alert('Describí qué equipo estás recibiendo (marca, modelo, estado).');
@@ -4457,7 +4600,7 @@ async function confirmBarcodeVenta() {
     ? { descripcion: byId('barcodeTradeInDesc').value.trim(), valor: Number(byId('barcodeTradeInValor').value) || 0 }
     : null;
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn });
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante });
   if (ok) {
     alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty));
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
@@ -4468,6 +4611,8 @@ async function confirmBarcodeVenta() {
     byId('campoTradeIn').classList.add('hidden');
     byId('barcodeTradeInDesc').value = '';
     byId('barcodeTradeInValor').value = '0';
+    varianteSeleccionadaVenta = {};
+    byId('barcodeVarianteBloque').classList.add('hidden');
     clearBarcodeResult();
   }
 }
@@ -4495,7 +4640,7 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null } = opciones || {};
   const total = product.price * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
@@ -4505,11 +4650,17 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   const valorEquipo = tradeIn ? Number(tradeIn.valor || 0) : 0;
   const saldoPendiente = fiado ? Math.max(0, total - valorEquipo - abonaAhora) : 0;
 
+  // El talle/color elegido queda pegado al nombre, así se ve en Pedidos,
+  // Fiado y Top productos sin tocar nada más de esas pantallas.
+  const nombreItem = product.name + (variante
+    ? ' (' + Object.entries(variante).map(([k, v]) => k + ': ' + v).join(', ') + ')'
+    : '');
+
   const { data, error } = await sb.from('orders').insert([{
     store_slug: currentStore.slug,
     customer_name: nombre,
     customer_phone: 'scanner',
-    items: [{ product_id: product.id, qty, name: product.name, price: product.price }],
+    items: [{ product_id: product.id, qty, name: nombreItem, price: product.price, variante }],
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
     saldo_pendiente: saldoPendiente,
@@ -4533,11 +4684,11 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     });
   }
 
-  // Los servicios no llevan stock, así que no se tocan
+  // Los servicios no llevan stock, así que no se tocan. El resto se
+  // descuenta por variante si corresponde — misma lógica que al confirmar
+  // un pedido hecho desde la tienda, así el talle correcto es el que baja.
   if (esProductoFisico(product)) {
-    await sb.from('store_products')
-      .update({ stock: Math.max(0, Number(product.stock || 0) - qty) })
-      .eq('id', product.id);
+    await aplicarStockDeItem({ product_id: product.id, qty, variante }, -1);
   }
 
   await refreshData();
@@ -5216,6 +5367,113 @@ async function reponerStock(id) {
   await refreshData();
 }
 
+// ---- Reponer stock de un producto CON variantes (talle/color) ----
+// A diferencia de reponerStock(), acá no hay un solo número de stock: hay
+// que elegir la combinación exacta que llegó (no es lo mismo sumar 10 a
+// "Talle M" que a "Talle L"). No actualiza "Última carga": esa referencia
+// es v1 solo para productos simples.
+let reponerVarianteProductoId = null;
+let reponerVarianteSeleccion = {};
+
+const claveVariante = (obj) => Object.keys(obj).sort().map(k => k + ':' + obj[k]).join('~');
+
+function abrirReponerVariante(id) {
+  if (!puedeOperar()) return;
+  const p = products.find(x => String(x.id) === String(id));
+  if (!p || !p.tiene_variantes) return;
+
+  reponerVarianteProductoId = id;
+  reponerVarianteSeleccion = {};
+  byId('reponerVarianteTitulo').textContent = 'Reponer stock — ' + p.name;
+  byId('reponerVarianteCantidad').value = '1';
+  renderCamposReponerVariante();
+  show(byId('reponerVarianteModal'));
+}
+
+function renderCamposReponerVariante() {
+  const p = products.find(x => String(x.id) === String(reponerVarianteProductoId));
+  if (!p) return;
+  const campos = Array.isArray(p.variante_campos) ? p.variante_campos : [];
+
+  byId('reponerVarianteCampos').innerHTML = campos.map(c =>
+    '<div style="margin-bottom:10px;">' +
+      '<label style="font-size:11.5px;color:var(--text-mute);display:block;margin-bottom:5px;">' + escapeHtml(c.nombre) + '</label>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+        c.valores.map(v => {
+          const activo = reponerVarianteSeleccion[c.nombre] === v;
+          return '<button type="button" data-rep-attr="' + escapeHtml(c.nombre) + '" data-rep-valor="' + escapeHtml(v) + '" ' +
+            'style="padding:7px 12px;border-radius:7px;border:1.5px solid ' + (activo ? 'var(--celeste)' : 'var(--line)') +
+            ';background:' + (activo ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:13px;cursor:pointer;">' +
+            escapeHtml(v) + '</button>';
+        }).join('') +
+      '</div>' +
+    '</div>'
+  ).join('');
+
+  byId('reponerVarianteCampos').querySelectorAll('[data-rep-attr]').forEach(b => {
+    b.addEventListener('click', () => {
+      reponerVarianteSeleccion[b.dataset.repAttr] = b.dataset.repValor;
+      renderCamposReponerVariante();
+    });
+  });
+
+  actualizarStockActualReponer();
+}
+
+function actualizarStockActualReponer() {
+  const p = products.find(x => String(x.id) === String(reponerVarianteProductoId));
+  const campos = (p && Array.isArray(p.variante_campos)) ? p.variante_campos : [];
+  const el = byId('reponerVarianteStockActual');
+
+  if (Object.keys(reponerVarianteSeleccion).length < campos.length) {
+    el.textContent = 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ');
+    return;
+  }
+  const claveElegida = claveVariante(reponerVarianteSeleccion);
+  const v = (p.variantes || []).find(x => claveVariante(x.atributos) === claveElegida);
+  el.textContent = (v ? Number(v.stock || 0) : 0) + ' unidades';
+}
+
+async function confirmarReponerVariante() {
+  if (!puedeOperar()) return;
+  const p = products.find(x => String(x.id) === String(reponerVarianteProductoId));
+  if (!p) return;
+
+  const campos = Array.isArray(p.variante_campos) ? p.variante_campos : [];
+  if (Object.keys(reponerVarianteSeleccion).length < campos.length) {
+    alert('Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
+    return;
+  }
+
+  const cantidad = Number(byId('reponerVarianteCantidad').value);
+  if (!Number.isFinite(cantidad) || cantidad <= 0) {
+    alert('Escribí un número mayor que 0.');
+    return;
+  }
+
+  const claveElegida = claveVariante(reponerVarianteSeleccion);
+  const variantes = (p.variantes || []).map(v => ({ ...v }));
+  const idx = variantes.findIndex(x => claveVariante(x.atributos) === claveElegida);
+
+  if (idx >= 0) {
+    variantes[idx] = { ...variantes[idx], stock: Number(variantes[idx].stock || 0) + cantidad };
+  } else {
+    // Combinación que todavía no tenía fila propia (raro, pero por las dudas).
+    variantes.push({ atributos: { ...reponerVarianteSeleccion }, stock: cantidad });
+  }
+
+  const stockTotal = variantes.reduce((s, v) => s + Number(v.stock || 0), 0);
+  const { error } = await sb.from('store_products').update({ variantes, stock: stockTotal }).eq('id', p.id);
+
+  if (error) {
+    alert('No se pudo actualizar el stock:\n\n' + error.message);
+    return;
+  }
+
+  hide(byId('reponerVarianteModal'));
+  await refreshData();
+}
+
 async function deleteProduct(id) {
   if (!puedeOperar()) return;
   if (!confirm('¿Eliminar este producto?')) return;
@@ -5321,6 +5579,8 @@ byId('nuevaReparacionBtn').addEventListener('click', () => {
   abrirModalReparacion(null);
 });
 byId('closeReparacionModal').addEventListener('click', () => hide(byId('reparacionModal')));
+byId('closeReponerVarianteModal').addEventListener('click', () => hide(byId('reponerVarianteModal')));
+byId('confirmarReponerVarianteBtn').addEventListener('click', confirmarReponerVariante);
 byId('guardarReparacionBtn').addEventListener('click', guardarReparacion);
 byId('repCosto').addEventListener('input', actualizarMargenPreview);
 byId('repPrecio').addEventListener('input', actualizarMargenPreview);
@@ -5486,6 +5746,7 @@ async function cargarConfiguracion() {
     byId('configIg').value = store.instagram || '';
     byId('configGoogle').value = store.google_url || '';
     byId('configEslogan').value = store.eslogan || '';
+    byId('configHaceReparaciones').checked = !!store.hace_reparaciones;
 
     quitarPortada = false;
     byId('configPortadaInput').value = '';
@@ -5590,7 +5851,8 @@ async function guardarConfiguracion() {
     google_url: byId('configGoogle').value.trim() || null,
     medios_pago: mediosDePagoElegidos(),
     turnos: configuracionDeTurnos(),
-    tema: temaElegido()
+    tema: temaElegido(),
+    hace_reparaciones: byId('configHaceReparaciones').checked
   };
 
   if (imageUrl) updateData.image_url = imageUrl;
@@ -5622,6 +5884,7 @@ async function guardarConfiguracion() {
   alert('✓ Configuración guardada correctamente!');
   currentStore = { ...currentStore, ...updateData };
   byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
+  aplicarVisibilidadPorRubro();
   hide(byId('configModal'));
 }
 

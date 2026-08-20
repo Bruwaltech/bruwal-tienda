@@ -234,6 +234,14 @@
   #fichaContenido .opcion{min-width:52px;flex:0 0 auto;padding:9px 14px;}
   .modal-close{float:right;background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-mute);padding:0;width:30px;height:30px;}
 
+  .aviso-toast{
+    position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(14px);
+    background:var(--navy);color:#fff;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;
+    box-shadow:0 8px 24px rgba(21,41,77,.3);z-index:250;opacity:0;pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease;max-width:88vw;text-align:center;
+  }
+  .aviso-toast.visible{opacity:1;transform:translateX(-50%) translateY(0);}
+
   .success-screen{text-align:center;padding:80px 20px;}
   .success-screen .mark{width:70px;height:70px;border-radius:50%;background:var(--stock);color:#fff;font-size:36px;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;box-shadow:0 8px 24px rgba(31,160,136,0.3);}
   .success-screen h2{color:var(--navy);font-size:24px;margin-bottom:12px;}
@@ -332,6 +340,8 @@
       <button class="checkout-btn" id="openCheckoutBtn">Hacer pedido</button>
     </div>
   </div>
+
+  <div class="aviso-toast" id="avisoToast"></div>
 </div>
 
 <!-- ============ MODAL: datos de contacto para el pedido ============ -->
@@ -786,7 +796,9 @@ function conectarTarjetas(list){
   // stopPropagation: sin esto, tocar + o − tambien abriria la ficha
   list.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    sumarAlCarrito(b.getAttribute('data-plus'), [], 1);
+    if (!sumarAlCarrito(b.getAttribute('data-plus'), [], 1)) {
+      mostrarAviso('Por ahora contamos con este stock — no podés agregar más.');
+    }
     renderProducts(); renderCartBar();
   }));
   list.querySelectorAll('[data-minus]').forEach(b => b.addEventListener('click', (ev) => {
@@ -996,7 +1008,23 @@ function abrirFicha(id) {
     });
   });
 
-  ficha.querySelector('#fichaMas')?.addEventListener('click', () => { cantidad++; refrescarPrecio(); });
+  // Tope de cuánto se puede pedir de esta ficha: el stock de la combinación
+  // elegida (o el del producto entero, si no tiene variantes).
+  const stockMaximoDeFicha = () => {
+    if (campos.length) {
+      const s = stockDeSeleccion();
+      return s === null ? Infinity : s;
+    }
+    return esProductoFisico(p) ? Number(p.stock || 0) : Infinity;
+  };
+
+  ficha.querySelector('#fichaMas')?.addEventListener('click', () => {
+    if (cantidad >= stockMaximoDeFicha()) {
+      mostrarAviso('Por ahora contamos con este stock — no podés agregar más.');
+      return;
+    }
+    cantidad++; refrescarPrecio();
+  });
   ficha.querySelector('#fichaMenos')?.addEventListener('click', () => {
     if (cantidad > 1) cantidad--;
     refrescarPrecio();
@@ -1004,7 +1032,8 @@ function abrirFicha(id) {
 
   btnAgregar?.addEventListener('click', () => {
     if (campos.length && (Object.keys(seleccion).length < campos.length || stockDeSeleccion() <= 0)) return;
-    sumarAlCarrito(p.id, elegidas(), cantidad, campos.length ? { ...seleccion } : null);
+    const pudoSumarTodo = sumarAlCarrito(p.id, elegidas(), cantidad, campos.length ? { ...seleccion } : null);
+    if (!pudoSumarTodo) mostrarAviso('Por ahora contamos con este stock — no podés agregar más.');
     renderProducts();
     renderCartBar();
     hide(byId('fichaModal'));
@@ -1067,11 +1096,36 @@ const cantidadDelProducto = (productoId) =>
     .filter(l => String(l.productId) === String(productoId))
     .reduce((s, l) => s + l.qty, 0);
 
+// Cuánto se puede vender de ESA combinación puntual (o del producto entero,
+// si no tiene variantes). Un servicio no tiene stock físico: sin tope.
+function stockDisponibleParaLinea(productoId, variante){
+  const p = products.find(x => String(x.id) === String(productoId));
+  if (!p) return 0;
+  if (!esProductoFisico(p)) return Infinity;
+
+  if (p.tiene_variantes && variante && Array.isArray(p.variantes)) {
+    const clave = claveVariante(variante);
+    const v = p.variantes.find(x => claveVariante(x.atributos) === clave);
+    return v ? Number(v.stock || 0) : 0;
+  }
+  return Number(p.stock || 0);
+}
+
+// Devuelve false cuando no pudo sumar todo lo pedido porque se llegó al
+// stock disponible de esa combinación — así quien llama puede avisarle al
+// cliente en vez de dejarlo pedir de más silenciosamente.
 function sumarAlCarrito(productoId, opciones, cantidad, variante){
   const k = claveLinea(productoId, opciones, variante);
   if (!cart[k]) cart[k] = { productId: productoId, qty: 0, opciones: opciones || [], variante: variante || null };
-  cart[k].qty += (cantidad === undefined ? 1 : cantidad);
+
+  const pedida = cantidad === undefined ? 1 : cantidad;
+  const nuevaQty = cart[k].qty + pedida;
+  const tope = stockDisponibleParaLinea(productoId, variante);
+  const alcanzoElTope = pedida > 0 && nuevaQty > tope;
+
+  cart[k].qty = alcanzoElTope ? Math.max(0, tope) : nuevaQty;
   if (cart[k].qty <= 0) delete cart[k];
+  return !alcanzoElTope;
 }
 
 // Resta del producto, empezando por la última línea agregada
@@ -1081,6 +1135,16 @@ function restarDelCarrito(productoId){
   if (!k) return;
   cart[k].qty -= 1;
   if (cart[k].qty <= 0) delete cart[k];
+}
+
+let avisoTimeout = null;
+function mostrarAviso(texto){
+  const el = byId('avisoToast');
+  if (!el) return;
+  el.textContent = texto;
+  el.classList.add('visible');
+  clearTimeout(avisoTimeout);
+  avisoTimeout = setTimeout(() => el.classList.remove('visible'), 2600);
 }
 
 function renderCartBar(){
