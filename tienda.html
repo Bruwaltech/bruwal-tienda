@@ -201,6 +201,9 @@
   .ficha-cat{display:inline-block;background:#EAF4FD;color:var(--navy);font-size:11px;
     font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:9px;}
   .ficha-precio{font-size:27px;font-weight:700;color:var(--navy);margin:10px 0 4px;}
+  .ficha-specs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;}
+  .ficha-spec-chip{background:#F4F8FC;border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:12.5px;color:var(--text-dark);}
+  .ficha-spec-chip b{color:var(--text-mute);font-weight:600;}
 
   /* Puntitos para cambiar entre las fotos del producto */
   .foto-puntos{
@@ -909,6 +912,14 @@ function abrirFicha(id) {
         : (esProductoFisico(p) ? (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') : 'Servicio')) +
     '</div>' +
     (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
+
+    // Batería, almacenamiento, RAM, estado — lo que el vendedor haya
+    // cargado. No son variantes: son datos del equipo puntual.
+    (Array.isArray(p.specs) && p.specs.length
+      ? '<div class="ficha-specs">' + p.specs.map(s =>
+          '<span class="ficha-spec-chip"><b>' + escapeHtml(s.clave) + ':</b> ' + escapeHtml(s.valor) + '</span>'
+        ).join('') + '</div>'
+      : '') +
 
     // Talle, color, etc. Cada atributo es un grupo de selección única, igual
     // que "Casa o departamento" en el checkout.
