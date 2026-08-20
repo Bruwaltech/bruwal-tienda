@@ -1234,6 +1234,7 @@ tr:last-child td { border-bottom: none; }
       <div class="toolbar">
         <button class="btn-action primary" id="newProductBtn">+ Nuevo producto</button>
         <button class="btn-action" id="importarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-excel"></i> Importar Excel</button>
+        <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código..." autofocus>
       </div>
@@ -1320,6 +1321,13 @@ tr:last-child td { border-bottom: none; }
                        autocomplete="off"
                        style="flex:1;min-width:130px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
                 <datalist id="listaClientes"></datalist>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+                <label style="font-size:14px;color:var(--text-mute);">Atendió:</label>
+                <input type="text" id="barcodeVendedor" list="listaVendedores" placeholder="Tu nombre o el de quien vende"
+                       autocomplete="off"
+                       style="flex:1;min-width:130px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+                <datalist id="listaVendedores"></datalist>
               </div>
 
               <div class="hidden" id="barcodeVarianteBloque" style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:8px;">
@@ -3528,6 +3536,9 @@ function renderOrders() {
           ? '<br><a href="https://wa.me/' + numeroWhatsApp(o.customer_phone) + '" target="_blank" style="font-size:12px;color:var(--celeste);">' +
             escapeHtml(o.customer_phone) + '</a>'
           : '') +
+        (o.vendedor
+          ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">Atendió: ' + escapeHtml(o.vendedor) + '</div>'
+          : '') +
       '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(items) +
         (o.trade_in_descripcion
@@ -4000,6 +4011,28 @@ function descargarPlantillaImportacion() {
   XLSX.writeFile(libro, 'plantilla-productos-bruwal.xlsx');
 }
 
+// Todo el catálogo a un Excel, para tenerlo de respaldo o pasarlo a otro
+// lado. Mismas columnas que la plantilla de importación, así el archivo
+// que exportás de acá lo podés volver a importar sin tocarle nada.
+// Alcance v1, igual que la importación: solo los campos simples — no
+// incluye el desglose de talles/colores de los productos con variantes.
+function exportarCatalogoExcel() {
+  if (!products.length) {
+    alert('Todavía no cargaste ningún producto.');
+    return;
+  }
+
+  const datos = [['Nombre', 'Descripción', 'Precio', 'Stock', 'Categoría', 'Código de barras']]
+    .concat(products.map(p => [p.name || '', p.description || '', Number(p.price || 0), Number(p.stock || 0), p.category || '', p.ean || '']));
+
+  const hoja = XLSX.utils.aoa_to_sheet(datos);
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(libro, 'catalogo-' + (currentStore?.slug || 'bruwal') + '-' + fecha + '.xlsx');
+}
+
 // ===================== REPARACIONES =====================
 const REPARACION_SIGUIENTE = { recibido: 'en_reparacion', en_reparacion: 'listo', listo: 'entregado' };
 const REPARACION_ETIQUETAS = {
@@ -4425,6 +4458,27 @@ function mostrarCoincidencias(lista, huboTipeo) {
   show(byId('barcodeMatches'));
 }
 
+// ---- Quién atendió la venta ----
+// Se guarda por tienda (no en una clave global) para que un dispositivo
+// compartido entre negocios distintos no mezcle nombres de uno con otro.
+const claveVendedores = () => 'bruwal_vendedores_' + (currentStore?.slug || '');
+const claveUltimoVendedor = () => 'bruwal_ultimo_vendedor_' + (currentStore?.slug || '');
+
+function nombresVendedoresGuardados() {
+  try { return JSON.parse(localStorage.getItem(claveVendedores()) || '[]'); }
+  catch (e) { return []; }
+}
+function guardarNombreVendedor(nombre) {
+  if (!nombre) return;
+  const lista = [nombre, ...nombresVendedoresGuardados().filter(n => n !== nombre)].slice(0, 8);
+  localStorage.setItem(claveVendedores(), JSON.stringify(lista));
+  localStorage.setItem(claveUltimoVendedor(), nombre);
+}
+function renderListaVendedores() {
+  byId('listaVendedores').innerHTML = nombresVendedoresGuardados()
+    .map(n => '<option value="' + escapeHtml(n) + '">').join('');
+}
+
 function seleccionarProductoVenta(id) {
   const product = products.find(p => String(p.id) === String(id));
   if (!product) return;
@@ -4436,6 +4490,12 @@ function seleccionarProductoVenta(id) {
   byId('barcodeProductPrice').textContent = money(product.price);
   byId('barcodeQty').value = '1';
   byId('barcodeAbono').value = '0';
+  renderListaVendedores();
+  // Solo lo autocompleta si todavía no escribió nada: así, si en la misma
+  // sesión ya puso su nombre, no se lo vuelve a pisar en cada venta.
+  if (!byId('barcodeVendedor').value) {
+    byId('barcodeVendedor').value = localStorage.getItem(claveUltimoVendedor()) || '';
+  }
   renderVarianteVenta();
   calculateTotal();
   show(byId('barcodeResult'));
@@ -4600,8 +4660,11 @@ async function confirmBarcodeVenta() {
     ? { descripcion: byId('barcodeTradeInDesc').value.trim(), valor: Number(byId('barcodeTradeInValor').value) || 0 }
     : null;
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante });
+  const vendedor = (byId('barcodeVendedor')?.value || '').trim();
+
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor });
   if (ok) {
+    guardarNombreVendedor(vendedor);
     alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty));
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
     byId('barcodeFiado').checked = false;
@@ -4640,7 +4703,7 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '' } = opciones || {};
   const total = product.price * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
@@ -4666,6 +4729,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     saldo_pendiente: saldoPendiente,
     trade_in_descripcion: tradeIn ? tradeIn.descripcion : null,
     trade_in_valor: tradeIn ? valorEquipo : null,
+    vendedor: vendedor || null,
     created_at: new Date().toISOString()
   }]).select('id');
 
@@ -5588,6 +5652,8 @@ byId('repPrecio').addEventListener('input', actualizarMargenPreview);
 byId('abrirFiadoManualBtn').addEventListener('click', () => show(byId('fiadoManualModal')));
 byId('closeFiadoManualModal').addEventListener('click', () => hide(byId('fiadoManualModal')));
 byId('guardarFiadoManualBtn').addEventListener('click', guardarFiadoManual);
+
+byId('exportarExcelBtn').addEventListener('click', exportarCatalogoExcel);
 
 byId('importarExcelBtn').addEventListener('click', () => {
   if (!puedeOperar()) return;
