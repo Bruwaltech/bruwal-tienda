@@ -662,10 +662,19 @@ function htmlTarjetaProducto(p){
 
     // Un servicio no se agota ni tiene unidades: mostrarle "quedan 3" o
     // "agotado" a un corte de pelo no tiene sentido.
+    //
+    // Un producto con variantes (talle/color) tampoco: p.stock ahí es la SUMA
+    // de todas las combinaciones, no lo que hay de un talle puntual. Mostrar
+    // "6 disponibles" en la tarjeta de un jean que en realidad tiene 1 o 2
+    // unidades por talle es engañoso — el cliente cree que hay 6 de ese
+    // mismo talle. El desglose real se ve recién adentro, al elegir talle
+    // y color (ahí sí se calcula por combinación exacta).
     const stockBadge = servicio
       ? '<div class="product-badge stock">Disponible</div>'
       : (p.stock > 0
-          ? '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock > 10 ? 'En stock' : '⚠️ ' + p.stock + ' ud') + '</div>'
+          ? (tieneVariantes
+              ? '<div class="product-badge stock">Disponible</div>'
+              : '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock > 10 ? 'En stock' : '⚠️ ' + p.stock + ' ud') + '</div>')
           : '<div class="product-badge" style="background:#DC2626;color:#fff;">Agotado</div>');
     // Fotos del producto: las nuevas vienen en 'imagenes'; los productos
     // viejos solo tienen image_url. Contemplamos los dos casos.
@@ -696,7 +705,7 @@ function htmlTarjetaProducto(p){
       '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
       (p.description ? '<div class="product-description">' + escapeHtml(p.description) + '</div>' : '') +
       '<div class="product-price">' + money(p.price) + '</div>' +
-      '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock')) + '</div>' +
+      '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes ? 'Elegí talle/color para ver el stock' : p.stock + ' disponibles') : 'Sin stock')) + '</div>' +
       '<div class="product-controls">' + ((servicio || p.stock > 0) ? controls : '') + '</div>' +
       '</div>' +
       '</div>';
