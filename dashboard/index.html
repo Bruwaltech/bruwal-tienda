@@ -2683,9 +2683,14 @@ const ATRIBUTOS_SUGERIDOS_ELECTRONICA = [
 
 // Indumentaria y electrónica nunca se mezclan: cada rubro ve solo sus
 // propias sugerencias (talles/colores por un lado, modelos de teléfono
-// por otro), aunque las dos tiendas usen el mismo motor de variantes.
+// por otro), aunque las dos tiendas usen el mismo motor de variantes. Un
+// rubro que no es ninguno de los dos (comida, servicios...) no hereda
+// las sugerencias de indumentaria por default — no ve ninguna, así no se
+// mezclan datos de un rubro con otro.
 function grupoAtributosSugeridos() {
-  return rubroEsElectronica() ? ATRIBUTOS_SUGERIDOS_ELECTRONICA : ATRIBUTOS_SUGERIDOS_INDUMENTARIA;
+  if (rubroEsElectronica()) return ATRIBUTOS_SUGERIDOS_ELECTRONICA;
+  if (categoriaDeRubro() === 'indumentaria') return ATRIBUTOS_SUGERIDOS_INDUMENTARIA;
+  return [];
 }
 
 function renderSugeridosVariante() {
@@ -2736,11 +2741,19 @@ function renderSugeridosVariante() {
 
 function renderAtributosVariante() {
   const cont = byId('variAtributos');
+  // El texto de ejemplo (placeholder, no un dato real) también tiene que
+  // ser del rubro correcto: a una tienda de electrónica no le sirve ver
+  // "Ej: Talle" en un campo vacío, aunque no sea información cargada de
+  // verdad — confunde igual.
+  const phNombre = rubroEsElectronica() ? 'Ej: Modelo' : 'Ej: Talle';
+  const phValores = rubroEsElectronica()
+    ? 'Valores separados por coma: iPhone 13, Galaxy A54'
+    : 'Valores separados por coma: S, M, L';
   cont.innerHTML = variAtributosEnEdicion.map((at, i) => `
     <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-start;">
-      <input type="text" placeholder="Ej: Talle" value="${escapeHtml(at.nombre)}"
+      <input type="text" placeholder="${phNombre}" value="${escapeHtml(at.nombre)}"
              data-at-nombre="${i}" style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
-      <input type="text" placeholder="Valores separados por coma: S, M, L" value="${escapeHtml((at.valores || []).join(', '))}"
+      <input type="text" placeholder="${phValores}" value="${escapeHtml((at.valores || []).join(', '))}"
              data-at-valores="${i}" style="flex:2;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
       <button type="button" data-at-quitar="${i}" class="icon-btn danger" style="padding:9px 12px;">✕</button>
     </div>`).join('');
