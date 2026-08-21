@@ -2539,17 +2539,35 @@ async function obtenerCotizacion(moneda) {
   }
 }
 
-// Hint en vivo debajo de un input de precio: "≈ $45.000 ARS al blue de
-// hoy ($1.500)". No hace nada si la moneda elegida es ARS.
+// Hint en vivo debajo de un input de precio. Funciona en los dos
+// sentidos: si está en USD/EUR muestra a cuánto pesos equivale ("≈
+// $45.000 ARS al blue de hoy"); si está en ARS muestra a cuántos dólares
+// equivale ese mismo monto ("≈ US$29 al blue de hoy") — así el vendedor
+// ve la conversión sin importar en qué moneda esté pensando el precio.
 async function actualizarHintMoneda(inputId, selectId, hintId) {
   const input = byId(inputId), select = byId(selectId), hint = byId(hintId);
   if (!input || !select || !hint) return;
   const moneda = select.value;
-  if (moneda === 'ARS') { hide(hint); return; }
-
   const monto = Number(input.value) || 0;
+  if (!monto) { hide(hint); return; }
+
   hint.textContent = 'Buscando cotización…';
   show(hint);
+
+  if (moneda === 'ARS') {
+    // Solo en electrónica: en el resto de los rubros el precio en pesos no
+    // tiene por qué compararse contra el dólar (Gastos es la excepción —
+    // ahí el selector de moneda ya está siempre visible para todos, pero
+    // este "pesos a dólares" es específicamente el pedido para precios de
+    // electrónica, así que no se agrega ahí para no salirse de lo pedido).
+    if (!rubroEsElectronica()) { hide(hint); return; }
+    const cot = await obtenerCotizacion('USD');
+    if (!cot) { hint.textContent = 'No se pudo consultar la cotización.'; return; }
+    hint.textContent = '≈ US$' + (monto / cot.venta).toLocaleString('es-AR', { maximumFractionDigits: 2 }) +
+      ' al blue de hoy ($' + cot.venta.toLocaleString('es-AR') + ')';
+    return;
+  }
+
   const cot = await obtenerCotizacion(moneda);
   if (!cot) { hint.textContent = 'No se pudo consultar la cotización — se va a reintentar al guardar.'; return; }
   hint.textContent = '≈ ' + money(monto * cot.venta) + ' ARS al blue de hoy ($' + cot.venta.toLocaleString('es-AR') + ')';
