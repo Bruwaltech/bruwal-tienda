@@ -4343,17 +4343,22 @@ function renderCategoryChart() {
       const p = products.find(x => String(x.id) === String(item.product_id));
       const cat = p?.category || 'Sin categoría';
       const precioUnitario = Number(item.price ?? p?.price ?? 0);
-      cats[cat] = (cats[cat] || 0) + precioUnitario * (item.qty || 1);
+      const cantidad = item.qty || 1;
+      if (!cats[cat]) cats[cat] = { total: 0, unidades: 0 };
+      cats[cat].total += precioUnitario * cantidad;
+      cats[cat].unidades += cantidad;
     });
   });
+
+  const labels = Object.keys(cats);
 
   if (charts.category) charts.category.destroy();
   charts.category = new Chart(byId('categoryChart'), {
     type: 'doughnut',
     data: {
-      labels: Object.keys(cats),
+      labels: labels,
       datasets: [{
-        data: Object.values(cats),
+        data: labels.map(c => cats[c].total),
         backgroundColor: ['#2F8FE0', '#1FA088', '#D97706', '#DC2626', '#9333EA', '#0EA5E9', '#EC4899', '#84CC16']
       }]
     },
@@ -4361,8 +4366,28 @@ function renderCategoryChart() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'bottom' },
-        tooltip: { callbacks: { label: (ctx) => ctx.label + ': ' + money(ctx.raw) } }
+        legend: {
+          position: 'bottom',
+          // Las unidades vendidas van directo en la leyenda (no solo en el
+          // tooltip al pasar el mouse) — en el celular, tocar el gráfico
+          // para ver el tooltip no es obvio, esto se ve de una.
+          labels: {
+            generateLabels: (chart) => chart.data.labels.map((label, i) => {
+              const u = cats[label].unidades;
+              return {
+                text: label + ' (' + u + (u === 1 ? ' u.' : ' u.') + ')',
+                fillStyle: chart.data.datasets[0].backgroundColor[i],
+                index: i
+              };
+            })
+          }
+        },
+        // Muestra el monto Y las unidades vendidas de esa categoría, no
+        // solo la plata — para saber si $2.000 son 2 unidades caras o 20 baratas.
+        tooltip: { callbacks: { label: (ctx) => {
+          const u = cats[ctx.label].unidades;
+          return ctx.label + ': ' + money(ctx.raw) + ' (' + u + (u === 1 ? ' unidad' : ' unidades') + ')';
+        } } }
       }
     }
   });
