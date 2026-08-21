@@ -7706,19 +7706,39 @@ async function guardarPinCostos() {
   if (!pin) { alert('Escribí un PIN de 4 dígitos.'); return; }
   if (!/^\d{4}$/.test(pin)) { alert('El PIN tiene que ser de 4 dígitos, solo números.'); return; }
 
+  // Si ya había un PIN cargado, para CAMBIARLO hay que probar primero que
+  // se sabe el actual (con el PIN mismo o la huella) — si no, cualquiera
+  // con el panel abierto podría pisárselo a otro sin saber cuál era. Se
+  // pide siempre, sin importar si ya estaba desbloqueado en esta sesión:
+  // cambiar la seguridad es más sensible que solo mirar un dato.
+  if (hayPinConfigurado()) {
+    abrirPinCostosModal(() => guardarPinCostosConfirmado(pin));
+    return;
+  }
+  await guardarPinCostosConfirmado(pin);
+}
+
+async function guardarPinCostosConfirmado(pin) {
   const hash = await hashPin(pin);
   const { error } = await sb.from('store_profiles').update({ pin_costos: hash }).eq('slug', currentStore.slug);
   if (error) { alert('No se pudo guardar el PIN:\n\n' + error.message); return; }
 
   currentStore.pin_costos = hash;
   byId('configPinNuevo').value = '';
-  costosDesbloqueados = true;   // acaba de configurarlo desde adentro del panel: no tiene sentido pedírselo de nuevo ya mismo
+  costosDesbloqueados = true;   // acaba de probar que lo sabe (o lo acaba de crear): no tiene sentido pedírselo de nuevo ya mismo
   await actualizarEstadoPinCostos();
   renderReparaciones();
   alert('✓ PIN guardado. A partir de ahora se va a pedir para ver Gastos, Costo/Margen y proveedores.');
 }
 
 async function quitarPinCostos() {
+  if (!hayPinConfigurado()) return;
+  // Mismo criterio que para cambiarlo: sacar la protección es una acción
+  // sensible, así que primero hay que probar que se sabe el PIN actual.
+  abrirPinCostosModal(quitarPinCostosConfirmado);
+}
+
+async function quitarPinCostosConfirmado() {
   if (!confirm('¿Sacar el PIN? Gastos, Costo/Margen y los datos de proveedores van a quedar visibles para cualquiera con acceso al panel, como antes.')) return;
 
   const { error } = await sb.from('store_profiles').update({ pin_costos: null }).eq('slug', currentStore.slug);
