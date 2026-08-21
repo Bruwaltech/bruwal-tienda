@@ -4852,23 +4852,34 @@ function generarBarcodeSVG(valor) {
   }
 }
 
+// Medida real del rollo: 60mm de ancho x 30mm de alto, apaisada (más ancha
+// que alta) — así entra horizontal en el equipo, no vertical. Todo el
+// contenido va en DOS columnas dentro de .etiqueta: el código+barra a la
+// izquierda (angosta, fija) y el resto de los datos a la derecha (lo que
+// sobra de ancho), porque una etiqueta tan chica no tiene alto para apilar
+// todo en una sola columna como antes.
 function estilosEtiquetaTermica() {
-  return '@page { size: 58mm auto; margin: 2mm; }' +
-    'body{font-family:Arial,sans-serif;padding:4px;color:#15294D;width:54mm;}' +
-    '.codigo{font-size:22px;font-weight:800;letter-spacing:0.5px;border:2px solid #15294D;border-radius:6px;' +
-      'padding:4px 6px;text-align:center;margin-bottom:6px;word-break:break-word;}' +
-    '.fila{font-size:9.5px;margin-bottom:3px;line-height:1.3;word-break:break-word;}' +
-    '.fila b{display:inline-block;margin-right:3px;}' +
-    '.estado{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;}' +
-    '.precio{font-size:15px;font-weight:800;text-align:center;margin:4px 0;}' +
-    '.codigo-barras{text-align:center;margin:5px 0;}' +
-    '.codigo-barras svg{max-width:100%;height:auto;}' +
-    '.pie{margin-top:6px;font-size:8px;color:#5C6B82;text-align:center;}' +
+  return '@page { size: 60mm 30mm; margin: 1mm; }' +
+    'body{font-family:Arial,sans-serif;color:#15294D;margin:0;padding:0;}' +
+    '.etiqueta{width:58mm;height:28mm;overflow:hidden;display:flex;flex-direction:row;gap:3px;box-sizing:border-box;}' +
+    '.col-codigo{flex:0 0 19mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow:hidden;}' +
+    '.codigo{font-size:12px;font-weight:800;border:1.3px solid #15294D;border-radius:3px;' +
+      'padding:1px 2px;text-align:center;margin-bottom:2px;line-height:1.1;width:100%;box-sizing:border-box;word-break:break-word;}' +
+    '.codigo-barras{margin:1px 0;width:100%;text-align:center;}' +
+    '.codigo-barras svg{width:100%;max-width:18mm;height:auto;max-height:8mm;}' +
+    '.col-info{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}' +
+    '.fila{font-size:6.5px;margin-bottom:0.5px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+    '.fila b{margin-right:2px;}' +
+    '.estado{display:inline-block;padding:0.5px 3px;border-radius:2px;font-size:6px;font-weight:700;}' +
+    '.precio{font-size:9px;font-weight:800;margin:1px 0;}' +
+    '.pie{margin-top:auto;font-size:5.5px;color:#5C6B82;}' +
     '@media print{ .no-print{display:none;} }';
 }
 
 function abrirVentanaEtiquetaTermica(titulo, contenidoHtml) {
-  const ventana = window.open('', '_blank', 'width=300,height=460');
+  // La ventana de previsualización ya no necesita ser alta y angosta: la
+  // etiqueta ahora es apaisada (60x30mm), así que la ventana también.
+  const ventana = window.open('', '_blank', 'width=360,height=280');
   if (!ventana) { alert('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return null; }
 
   ventana.document.write(
@@ -4901,14 +4912,17 @@ function imprimirEtiquetaReparacion(id) {
   if (!r) return;
 
   const et = REPARACION_ETIQUETAS[r.estado] || REPARACION_ETIQUETAS.recibido;
-  const contenido =
+
+  const columnaCodigo =
     '<div class="codigo">' + codigoTicket(r) + '</div>' +
+    (r.imei ? '<div class="codigo-barras">' + generarBarcodeSVG(r.imei) + '</div>' : '');
+
+  const columnaInfo =
     '<div class="fila"><b>Cliente:</b>' + escapeHtml(r.cliente_nombre || '—') + '</div>' +
     (r.cliente_telefono ? '<div class="fila"><b>Tel:</b>' + escapeHtml(r.cliente_telefono) + '</div>' : '') +
     (r.sucursal ? '<div class="fila"><b>Sucursal:</b>' + escapeHtml(r.sucursal) + '</div>' : '') +
     '<div class="fila"><b>Equipo:</b>' + escapeHtml(((r.marca ? r.marca + ' ' : '') + (r.equipo || '')).trim()) + '</div>' +
     (r.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(r.imei) + '</div>' : '') +
-    (r.imei ? '<div class="codigo-barras">' + generarBarcodeSVG(r.imei) + '</div>' : '') +
     (r.estado_equipo ? '<div class="fila"><b>Estado equipo:</b>' + escapeHtml(r.estado_equipo) + '</div>' : '') +
     (r.codigo_desbloqueo ? '<div class="fila"><b>Clave:</b>' + escapeHtml(r.codigo_desbloqueo) + '</div>' : '') +
     (Array.isArray(r.tipo_servicio) && r.tipo_servicio.length
@@ -4918,6 +4932,8 @@ function imprimirEtiquetaReparacion(id) {
     '<div class="fila"><b>Estado:</b> <span class="estado" style="background:' + et.fondo + ';color:' + et.color + ';">' + et.texto + '</span></div>' +
     '<div class="fila"><b>Recibido:</b>' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR') + '</div>' +
     '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>';
+
+  const contenido = '<div class="etiqueta"><div class="col-codigo">' + columnaCodigo + '</div><div class="col-info">' + columnaInfo + '</div></div>';
 
   abrirVentanaEtiquetaTermica('Etiqueta ' + codigoTicket(r), contenido);
 }
@@ -6952,24 +6968,28 @@ function imprimirEtiquetaProducto(id, variante) {
   // si no el EAN (identifica el producto/modelo en general) — el mismo que se
   // usa como texto más abajo, para no mostrar dos números distintos.
   const codigoParaBarras = p.imei || p.ean || '';
-  const contenido =
+
+  const columnaCodigo =
     '<div class="codigo">' + codigoProducto(p) + '</div>' +
-    '<div class="fila" style="font-size:12px;font-weight:700;">' + escapeHtml(nombreCompleto) + '</div>' +
+    (codigoParaBarras ? '<div class="codigo-barras">' + generarBarcodeSVG(codigoParaBarras) + '</div>' : '');
+
+  const columnaInfo =
+    '<div class="fila" style="font-weight:700;">' + escapeHtml(nombreCompleto) + '</div>' +
     (p.estado_equipo ? '<div class="fila"><b>Estado:</b>' + escapeHtml(p.estado_equipo) + '</div>' : '') +
     (p.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(p.imei) + '</div>' :
       (p.ean ? '<div class="fila"><b>EAN:</b>' + escapeHtml(p.ean) + '</div>' : '')) +
-    (codigoParaBarras ? '<div class="codigo-barras">' + generarBarcodeSVG(codigoParaBarras) + '</div>' : '') +
     (p.category ? '<div class="fila"><b>Cat:</b>' + escapeHtml(p.category) + '</div>' : '') +
-    '<div class="precio">' + money(p.price) + '</div>' +
-    // El precio final siempre sale en pesos (ya convertido) — si se cargó
-    // en USD/EUR, se agrega el monto original abajo para que se vea con
-    // qué moneda se compró/cotizó, no solo el equivalente en pesos.
-    // Sin var(--...) acá: esta ventana tiene su propio <style> aparte, sin
-    // las variables de color del panel.
-    (p.moneda ? '<div class="fila" style="text-align:center;color:#5C6B82;">(' +
-      (p.moneda === 'USD' ? 'US$' : '€') + Number(p.precio_original).toLocaleString('es-AR') + ')</div>' : '') +
+    '<div class="precio">' + money(p.price) +
+      // El precio final siempre sale en pesos (ya convertido); si se cargó
+      // en USD/EUR, el monto original va al lado, no abajo — no hay alto
+      // de sobra para una línea aparte en una etiqueta de 30mm.
+      (p.moneda ? ' <span style="font-size:6.5px;font-weight:400;color:#5C6B82;">(' +
+        (p.moneda === 'USD' ? 'US$' : '€') + Number(p.precio_original).toLocaleString('es-AR') + ')</span>' : '') +
+    '</div>' +
     '<div class="fila"><b>Ingreso:</b>' + new Date(p.created_at).toLocaleDateString('es-AR') + '</div>' +
     '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>';
+
+  const contenido = '<div class="etiqueta"><div class="col-codigo">' + columnaCodigo + '</div><div class="col-info">' + columnaInfo + '</div></div>';
 
   abrirVentanaEtiquetaTermica('Etiqueta ' + p.name, contenido);
 }
