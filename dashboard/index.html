@@ -4326,12 +4326,25 @@ function renderWeeklyChart() {
   });
 }
 
+// "Ventas por categoría" — antes contaba cuántos PRODUCTOS hay cargados
+// en cada categoría (composición del catálogo), no cuánto se vendió de
+// verdad, aunque el título del panel dice "ventas". Ahora recorre los
+// pedidos de verdad y suma el importe por categoría, usando la categoría
+// que el vendedor ya cargó en cada producto (product_id de cada línea del
+// pedido) — mismo criterio de precio que renderTopProducts(): el precio
+// del item si lo tiene (ventas de mostrador), si no el precio actual del
+// producto (pedidos desde la tienda pública, que no guardan precio por
+// línea). Sin match de producto (reparación entregada, fiado viejo,
+// producto borrado) cae en "Sin categoría", no se pierde de la suma.
 function renderCategoryChart() {
   const cats = {};
-  products.forEach(p => {
-    const cat = p.category || 'Sin categoría';
-    if (!cats[cat]) cats[cat] = 0;
-    cats[cat] += 1;
+  orders.forEach(o => {
+    (Array.isArray(o.items) ? o.items : []).forEach(item => {
+      const p = products.find(x => String(x.id) === String(item.product_id));
+      const cat = p?.category || 'Sin categoría';
+      const precioUnitario = Number(item.price ?? p?.price ?? 0);
+      cats[cat] = (cats[cat] || 0) + precioUnitario * (item.qty || 1);
+    });
   });
 
   if (charts.category) charts.category.destroy();
@@ -4341,10 +4354,17 @@ function renderCategoryChart() {
       labels: Object.keys(cats),
       datasets: [{
         data: Object.values(cats),
-        backgroundColor: ['#2F8FE0', '#1FA088', '#D97706', '#DC2626', '#9333EA']
+        backgroundColor: ['#2F8FE0', '#1FA088', '#D97706', '#DC2626', '#9333EA', '#0EA5E9', '#EC4899', '#84CC16']
       }]
     },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: { callbacks: { label: (ctx) => ctx.label + ': ' + money(ctx.raw) } }
+      }
+    }
   });
 }
 
