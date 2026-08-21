@@ -74,7 +74,12 @@
   .store-contact{display:inline-flex;align-items:center;gap:8px;background:#fff;padding:12px 24px;border-radius:12px;font-size:15px;color:#15294D;text-decoration:none;font-weight:700;transition:all 0.3s;box-shadow:0 4px 16px rgba(0,0,0,0.15);}
   .store-contact:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,0.2);}
 
-  main{padding:32px 0 140px;}
+  /* main.wrap (no "main" solo): ".wrap{padding:0 20px}" es una clase, tiene
+     más especificidad que el selector de elemento "main" solo, así que le
+     pisaba el padding vertical de acá entero (el shorthand resetea los 4
+     lados) y el contenido quedaba pegado justo debajo del banner, sin
+     separación. Apuntando a "main.wrap" (elemento + clase) esta regla gana. */
+  main.wrap{padding-top:32px;padding-bottom:140px;}
   .category-filters{display:flex;gap:10px;overflow-x:auto;margin-bottom:24px;padding-bottom:8px;}
   .category-filter{padding:10px 20px;border:2px solid var(--line);border-radius:20px;cursor:pointer;font-weight:600;font-size:14px;white-space:nowrap;transition:all 0.3s;background:#fff;color:var(--text-dark);}
   .category-filter.active{background:var(--celeste);color:#fff;border-color:var(--celeste);}
