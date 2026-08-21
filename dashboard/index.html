@@ -2605,6 +2605,26 @@ function etiquetaMonedaOriginal(montoOriginal, moneda) {
   const simbolo = moneda === 'USD' ? 'US$' : '€';
   return ' <span style="color:var(--text-mute);font-size:11px;">(' + simbolo + Number(montoOriginal).toLocaleString('es-AR') + ')</span>';
 }
+
+// Para el precio de un producto en la tabla: el equivalente en la otra
+// moneda va ABAJO (no al lado) y en otro color, para los dos casos — si el
+// producto se cargó en USD/EUR, muestra el monto original tal cual; si se
+// cargó directo en pesos, muestra a cuántos dólares equivale (mismo
+// sentido que el hint del formulario). Solo en electrónica, y solo con la
+// cotización ya en caché — no dispara una consulta nueva por cada fila.
+function precioSecundarioProducto(p) {
+  if (p.moneda) {
+    const simbolo = p.moneda === 'USD' ? 'US$' : '€';
+    return '<div style="color:var(--celeste);font-size:11px;margin-top:2px;">' +
+      simbolo + Number(p.precio_original).toLocaleString('es-AR') + '</div>';
+  }
+  if (rubroEsElectronica() && cotizacionCache.USD) {
+    const usd = Number(p.price || 0) / cotizacionCache.USD.venta;
+    return '<div style="color:var(--celeste);font-size:11px;margin-top:2px;">≈ US$' +
+      usd.toLocaleString('es-AR', { maximumFractionDigits: 2 }) + '</div>';
+  }
+  return '';
+}
 // ============================================================================
 
 // Cuantas letras hay que cambiar para llegar de la clave a ALGUN comienzo de
@@ -4169,6 +4189,14 @@ function renderProducts() {
   hide(byId('emptyProducts'));
   show(byId('productsPanel'));
 
+  // Para que el equivalente en dólares de los precios en pesos aparezca ya
+  // en la primera carga (no recién después de guardar algo): si todavía no
+  // hay cotización en caché, se pide una vez y se vuelve a renderizar sola
+  // cuando llega.
+  if (rubroEsElectronica() && !cotizacionCache.USD) {
+    obtenerCotizacion('USD').then(() => renderProducts());
+  }
+
   byId('productsBody').innerHTML = products.map(p => {
     const low = p.stock <= (p.min_stock || 0);
     const imgHtml = p.image_url ?
@@ -4179,7 +4207,7 @@ function renderProducts() {
       '<td><strong>' + escapeHtml(p.name) + '</strong>' +
         (p.solo_interno ? ' <span class="badge" style="background:#F1F3F6;color:var(--text-mute);" title="No se vende en tu tienda online">🔒 Interno</span>' : '') +
       '</td>' +
-      '<td>' + money(p.price) + etiquetaMonedaOriginal(p.precio_original, p.moneda) + '</td>' +
+      '<td>' + money(p.price) + precioSecundarioProducto(p) + '</td>' +
       '<td>' + (
         !esProductoFisico(p)
           ? '<span class="badge" style="background:#EAF4FD;color:var(--navy);">SERVICIO</span>'
