@@ -1213,7 +1213,11 @@ const GRUPOS_DE_RUBRO = [
     coincide:['ropa','indument','moda','textil','boutique','calzado','zapatill','deportiv'] },
 
   { busca:   ['tecnologia','tecnologico','electronica','celular','computacion','compu'],
-    coincide:['electronic','tecno','celular','computac','informatic','notebook','accesorio'] },
+    // "accesorio" salió de acá: es una palabra demasiado genérica — una
+    // tienda de ropa que se describe como "indumentaria y accesorios"
+    // (carteras, bijou, etc.) terminaba apareciendo en el filtro de
+    // Tecnología por esa sola palabra, sin tener nada de electrónica.
+    coincide:['electronic','tecno','celular','computac','informatic','notebook'] },
 
   { busca:   ['belleza','peluqueria','estetica','uñas','barberia','cabello','pelo'],
     coincide:['peluquer','barber','estetic','belleza','uñas','unas','spa','manicur','cosmetic'] },
