@@ -1213,6 +1213,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
+      <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
     </div>
   </div>
 
@@ -1223,26 +1224,34 @@ tr:last-child td { border-bottom: none; }
 
       <div id="pulsoSemanal" class="pulso hidden"></div>
 
+      <div id="cotizacionBanner" class="hidden" style="font-size:12.5px;color:var(--text-mute);margin-bottom:10px;">
+        💵 Cotización del día (blue): <strong id="cotizacionValor" style="color:var(--navy);">—</strong>
+      </div>
+
       <div class="stats-row">
         <div class="stat-card">
           <div class="label">Ventas hoy</div>
           <div class="value" id="statToday">$0</div>
           <div class="trend" id="trendToday">↑ +0%</div>
+          <div class="trend campo-electronica hidden" id="statTodayUsd"></div>
         </div>
         <div class="stat-card">
           <div class="label">Ventas semana</div>
           <div class="value" id="statWeek">$0</div>
           <div class="trend">últimos 7 días</div>
+          <div class="trend campo-electronica hidden" id="statWeekUsd"></div>
         </div>
         <div class="stat-card">
           <div class="label">Ventas mes</div>
           <div class="value" id="statMonth">$0</div>
           <div class="trend">este mes</div>
+          <div class="trend campo-electronica hidden" id="statMonthUsd"></div>
         </div>
         <div class="stat-card">
           <div class="label">Ticket promedio</div>
           <div class="value" id="statAvgTicket">$0</div>
           <div class="trend" id="trendTicket">estimado</div>
+          <div class="trend campo-electronica hidden" id="statAvgTicketUsd"></div>
         </div>
       </div>
 
@@ -1527,6 +1536,36 @@ tr:last-child td { border-bottom: none; }
         </table>
       </div>
     </div>
+
+    <!-- GASTOS -->
+    <div id="gastosView" class="hidden">
+      <div class="stats-row" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-card">
+          <div class="label">Gastos este mes</div>
+          <div class="value" id="gastoMesArs">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Gastos este mes (USD)</div>
+          <div class="value" id="gastoMesUsd">—</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">📊 Gastos por mes (este año)</div>
+        <div class="chart-container"><canvas id="gastosChart"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <span>🧾 Gastos</span>
+          <button type="button" id="nuevoGastoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nuevo gasto</button>
+        </div>
+        <table>
+          <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th style="text-align:right;">Monto</th><th></th></tr></thead>
+          <tbody id="gastosBody"></tbody>
+        </table>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -1539,7 +1578,16 @@ tr:last-child td { border-bottom: none; }
       <form id="productForm">
         <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
         <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
-        <div class="field"><label>Precio</label><input type="number" id="pPrice" min="0" step="0.01" required></div>
+        <div class="field">
+          <label>Precio</label>
+          <div style="display:flex;gap:6px;">
+            <input type="number" id="pPrice" min="0" step="0.01" required style="flex:1;">
+            <select id="pPriceMoneda" class="campo-electronica hidden" style="padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+              <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
+            </select>
+          </div>
+          <small id="pPriceHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
+        </div>
         <div class="field">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="pEsServicio" style="margin:0;width:auto;cursor:pointer;">
@@ -1559,6 +1607,24 @@ tr:last-child td { border-bottom: none; }
             Para repuestos y demás cosas que usás vos (por ejemplo, en
             Reparaciones) pero que un cliente no debería poder comprar.
           </small>
+        </div>
+        <div class="field campo-electronica hidden">
+          <label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="pImei" placeholder="Se marca *#06# en el equipo, o escaneá el código de la caja" style="flex:1;">
+            <button type="button" onclick="toggleProductImeiCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 16px;font-size:14px;">📷</button>
+          </div>
+          <div id="productImeiCameraScanner" class="hidden" style="margin-top:8px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
+            <div id="qr-reader-product-imei" style="width:100%;height:250px;"></div>
+            <button type="button" onclick="stopProductImeiCameraScanner()" class="btn-ghost" style="width:100%;padding:10px;background:#f0f0f0;border:none;cursor:pointer;font-weight:600;font-size:14px;">Cerrar cámara</button>
+          </div>
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
+            Escanear este número en Ventas encuentra el equipo y arranca la venta, igual que un EAN.
+          </small>
+        </div>
+        <div class="field campo-electronica hidden">
+          <label>Estado del equipo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <input type="text" id="pEstadoEquipo" placeholder="Ej: usado como nuevo, excelente estado">
         </div>
         <div class="field" id="campoStock"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
 
@@ -1733,6 +1799,19 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL ELEGIR VARIANTE PARA ETIQUETA -->
+<div class="modal-overlay hidden" id="etiquetaVarianteModal">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" id="closeEtiquetaVarianteModal">✕</button>
+    <h3 style="font-size:17px;">🏷️ Imprimir etiqueta</h3>
+    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;">Elegí la combinación exacta que vas a etiquetar.</p>
+
+    <div id="etiquetaVarianteCampos" style="margin-bottom:12px;"></div>
+
+    <button type="button" id="confirmarEtiquetaVarianteBtn" class="btn btn-primary" style="width:100%;">Imprimir etiqueta</button>
+  </div>
+</div>
+
 <!-- MODAL REPARACIÓN -->
 <div class="modal-overlay hidden" id="reparacionModal">
   <div class="modal" style="max-width:520px;">
@@ -1741,17 +1820,29 @@ tr:last-child td { border-bottom: none; }
 
     <div class="field"><label>Cliente</label><input type="text" id="repCliente" placeholder="Ej: Marcos Díaz"></div>
     <div class="field"><label>Teléfono (opcional)</label><input type="text" id="repTelefono" placeholder="Ej: 11 2345 6789"></div>
+    <div class="field"><label>Sucursal <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label><input type="text" id="repSucursal" placeholder="Ej: Casa central, Sucursal Rosario"></div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div class="field"><label>Marca</label><input type="text" id="repMarca" placeholder="Ej: Apple, Samsung"></div>
       <div class="field"><label>Equipo / modelo</label><input type="text" id="repEquipo" placeholder="Ej: iPhone 11 128GB"></div>
     </div>
-    <div class="field"><label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label><input type="text" id="repImei" placeholder="Se marca *#06# en el equipo"></div>
+    <div class="field">
+      <label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="repImei" placeholder="Se marca *#06# en el equipo, o escaneá el código" style="flex:1;">
+        <button type="button" onclick="toggleRepImeiCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 16px;font-size:14px;">📷</button>
+      </div>
+      <div id="repImeiCameraScanner" class="hidden" style="margin-top:8px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
+        <div id="qr-reader-rep-imei" style="width:100%;height:250px;"></div>
+        <button type="button" onclick="stopRepImeiCameraScanner()" class="btn-ghost" style="width:100%;padding:10px;background:#f0f0f0;border:none;cursor:pointer;font-weight:600;font-size:14px;">Cerrar cámara</button>
+      </div>
+    </div>
+    <div class="field"><label>Estado del equipo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label><input type="text" id="repEstadoEquipo" placeholder="Ej: usado como nuevo, batería 87%"></div>
     <div class="field">
       <label>Código o patrón de desbloqueo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
       <input type="text" id="repCodigoDesbloqueo" placeholder="Ej: 1234, 123456, o describí el patrón">
       <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
-        Solo se ve acá adentro — nunca sale en la etiqueta impresa, para no dejarlo a la vista pegado en el equipo.
+        Sale en la etiqueta impresa que se pega en el equipo — cargalo solo si es necesario tenerlo a mano ahí.
       </small>
     </div>
 
@@ -1791,14 +1882,68 @@ tr:last-child td { border-bottom: none; }
     <div class="field"><label>Problema / diagnóstico</label><input type="text" id="repProblema" placeholder="Ej: no carga, cambiar pin de carga"></div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div class="field"><label>Costo (repuesto)</label><input type="number" id="repCosto" min="0" step="1" value="0"></div>
-      <div class="field"><label>Precio al cliente</label><input type="number" id="repPrecio" min="0" step="1" value="0"></div>
+      <div class="field">
+        <label>Costo (repuesto)</label>
+        <div style="display:flex;gap:6px;">
+          <input type="number" id="repCosto" min="0" step="1" value="0" style="flex:1;">
+          <select id="repCostoMoneda" class="campo-electronica hidden" style="padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+            <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
+          </select>
+        </div>
+        <small id="repCostoHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
+      </div>
+      <div class="field">
+        <label>Precio al cliente</label>
+        <div style="display:flex;gap:6px;">
+          <input type="number" id="repPrecio" min="0" step="1" value="0" style="flex:1;">
+          <select id="repPrecioMoneda" class="campo-electronica hidden" style="padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+            <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
+          </select>
+        </div>
+        <small id="repPrecioHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
+      </div>
     </div>
-    <div style="font-size:13px;color:var(--text-mute);margin:-8px 0 14px;">Margen: <strong id="repMargenPreview" style="color:var(--stock);">$0</strong></div>
+    <div style="font-size:13px;color:var(--text-mute);margin:2px 0 14px;">Margen: <strong id="repMargenPreview" style="color:var(--stock);">$0</strong></div>
 
     <div class="field"><label>Notas (opcional)</label><input type="text" id="repNotas" placeholder="Ej: trae funda y protector de pantalla"></div>
 
     <button type="button" id="guardarReparacionBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar reparación</button>
+  </div>
+</div>
+
+<!-- MODAL GASTO -->
+<div class="modal-overlay hidden" id="gastoModal">
+  <div class="modal" style="max-width:460px;">
+    <button class="modal-close" id="closeGastoModal">✕</button>
+    <h3 id="gastoModalTitulo"><i class="fa-solid fa-file-invoice-dollar" style="color:var(--celeste);"></i> Nuevo gasto</h3>
+
+    <div class="field"><label>Concepto</label><input type="text" id="gastoConcepto" placeholder="Ej: Alquiler del local"></div>
+
+    <div class="field">
+      <label>Categoría</label>
+      <div id="gastoCategoriaLista" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="gastoCategoriaNueva" placeholder="Otra (Ej: Mantenimiento)" maxlength="40"
+               style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
+        <button type="button" id="gastoCategoriaAgregar" class="btn btn-primary" style="width:auto;padding:9px 15px;font-size:13px;">+</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr auto;gap:12px;">
+      <div class="field"><label>Monto</label><input type="number" id="gastoMonto" min="0" step="1" value="0"></div>
+      <div class="field">
+        <label>Moneda</label>
+        <select id="gastoMoneda" style="padding:9px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+          <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
+        </select>
+      </div>
+    </div>
+    <small id="gastoMontoHint" class="hidden" style="display:block;margin:-8px 0 12px;color:var(--celeste);font-size:11.5px;"></small>
+
+    <div class="field"><label>Fecha</label><input type="date" id="gastoFecha"></div>
+    <div class="field"><label>Notas (opcional)</label><input type="text" id="gastoNotas" placeholder="Detalle adicional"></div>
+
+    <button type="button" id="guardarGastoBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar gasto</button>
   </div>
 </div>
 
@@ -2055,7 +2200,7 @@ sb.auth.onAuthStateChange((evento) => {
 
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
-let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [];
+let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [], gastos = [];
 
 // Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
 // confirmados porque de ahí salen las estadísticas de venta.
@@ -2312,6 +2457,100 @@ function normalizarTexto(txt) {
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');   // á -> a, ñ -> n
 }
+
+// ===================== MULTI-MONEDA (dólar/euro blue) =====================
+// Repuestos y equipos de electrónica muchas veces se compran en dólares o
+// euros. En vez de obligar a convertir a mano, se elige la moneda al
+// cargar el precio y acá se resuelve la cotización del día sola. Las
+// columnas de siempre (costo/precio/price) SIEMPRE quedan en pesos ya
+// convertidos — así el Dashboard, el margen y todo lo que ya suma esos
+// números sigue andando sin tocarlo. Las columnas *_moneda/_original/
+// _cotizacion son solo memoria de lo que se tipeó, para poder mostrarlo
+// de nuevo tal cual al editar.
+const COTIZACION_TTL_MS = 60 * 60 * 1000;   // 1 hora: no tiene sentido pedirla en cada tecla
+const COTIZACION_ENDPOINTS = {
+  USD: 'https://dolarapi.com/v1/dolares/blue',
+  EUR: 'https://dolarapi.com/v1/cotizaciones/eur'
+};
+let cotizacionCache = {};   // { USD: {venta, obtenidoEn}, EUR: {...} } — en memoria, por sesión
+
+async function obtenerCotizacion(moneda) {
+  const ahora = Date.now();
+  if (cotizacionCache[moneda] && (ahora - cotizacionCache[moneda].obtenidoEn) < COTIZACION_TTL_MS) {
+    return cotizacionCache[moneda];
+  }
+
+  const claveLS = 'bruwal_cotizacion_' + moneda;
+  try {
+    const resp = await fetch(COTIZACION_ENDPOINTS[moneda]);
+    const data = await resp.json();
+    const valor = { venta: Number(data.venta), obtenidoEn: ahora };
+    if (!valor.venta) throw new Error('respuesta sin venta');
+    cotizacionCache[moneda] = valor;
+    localStorage.setItem(claveLS, JSON.stringify(valor));
+    return valor;
+  } catch (e) {
+    // Sin conexión o el servicio caído: mejor usar la última cotización
+    // guardada (aunque tenga unas horas) que trabar todo un guardado.
+    const guardada = localStorage.getItem(claveLS);
+    if (guardada) {
+      const valor = JSON.parse(guardada);
+      cotizacionCache[moneda] = valor;
+      return valor;
+    }
+    return null;
+  }
+}
+
+// Hint en vivo debajo de un input de precio: "≈ $45.000 ARS al blue de
+// hoy ($1.500)". No hace nada si la moneda elegida es ARS.
+async function actualizarHintMoneda(inputId, selectId, hintId) {
+  const input = byId(inputId), select = byId(selectId), hint = byId(hintId);
+  if (!input || !select || !hint) return;
+  const moneda = select.value;
+  if (moneda === 'ARS') { hide(hint); return; }
+
+  const monto = Number(input.value) || 0;
+  hint.textContent = 'Buscando cotización…';
+  show(hint);
+  const cot = await obtenerCotizacion(moneda);
+  if (!cot) { hint.textContent = 'No se pudo consultar la cotización — se va a reintentar al guardar.'; return; }
+  hint.textContent = '≈ ' + money(monto * cot.venta) + ' ARS al blue de hoy ($' + cot.venta.toLocaleString('es-AR') + ')';
+}
+
+function wireSelectorMoneda(inputId, selectId, hintId) {
+  const input = byId(inputId), select = byId(selectId);
+  if (!input || !select) return;
+  const actualizar = () => actualizarHintMoneda(inputId, selectId, hintId);
+  input.addEventListener('input', actualizar);
+  select.addEventListener('change', actualizar);
+}
+
+// Al guardar: vuelve a resolver la cotización (no confía en el hint visual,
+// que puede haber quedado desactualizado) y devuelve el monto ya convertido
+// a pesos junto con lo que se tipeó de verdad. Null + alerta si no se pudo
+// conseguir la cotización, para no guardar un precio mal convertido.
+async function valorConvertido(inputId, selectId) {
+  const monto = Number(byId(inputId).value) || 0;
+  const moneda = byId(selectId).value;
+  if (moneda === 'ARS') return { monto_ars: monto, moneda: null, monto_original: null, cotizacion: null };
+
+  const cot = await obtenerCotizacion(moneda);
+  if (!cot) {
+    alert('No se pudo consultar la cotización del ' + moneda + ' para convertir el precio. Probá de nuevo en un momento.');
+    return null;
+  }
+  return { monto_ars: Math.round(monto * cot.venta), moneda, monto_original: monto, cotizacion: cot.venta };
+}
+
+// Texto chico "(US$50)" al lado de un monto ya en pesos, para mostrar en
+// qué moneda se cargó originalmente. Vacío si se cargó directo en ARS.
+function etiquetaMonedaOriginal(montoOriginal, moneda) {
+  if (!moneda || montoOriginal == null) return '';
+  const simbolo = moneda === 'USD' ? 'US$' : '€';
+  return ' <span style="color:var(--text-mute);font-size:11px;">(' + simbolo + Number(montoOriginal).toLocaleString('es-AR') + ')</span>';
+}
+// ============================================================================
 
 // Cuantas letras hay que cambiar para llegar de la clave a ALGUN comienzo de
 // la palabra (Levenshtein contra todos los prefijos del token, que es la ultima
@@ -3464,6 +3703,9 @@ async function refreshData() {
   const { data: reps } = await sb.from('store_reparaciones').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
   reparaciones = reps || [];
 
+  const { data: gts } = await sb.from('store_gastos').select('*').eq('store_slug', currentStore.slug).order('fecha', { ascending: false });
+  gastos = gts || [];
+
   renderDashboard();
   renderProducts();
   renderOrders();
@@ -3471,6 +3713,7 @@ async function refreshData() {
   renderVentas();
   renderFiado();
   renderReparaciones();
+  renderGastos();
   aplicarVisibilidadPorRubro();
   refrescarListaDeCategorias();
   await renderAgenda();
@@ -3496,6 +3739,22 @@ function aplicarVisibilidadPorRubro() {
   if (!esElectronica) {
     byId('barcodeTradeIn').checked = false;
     byId('campoTradeIn').classList.add('hidden');
+  }
+
+  // Selectores de moneda (USD/EUR) e IMEI/estado del equipo: solo tienen
+  // sentido para electrónica (repuestos y equipos importados). Al volver a
+  // ropa/comida/etc se resetean a ARS para no dejar un valor de otro rubro
+  // guardado a mitad de cargar.
+  document.querySelectorAll('.campo-electronica').forEach(el => el.classList.toggle('hidden', !esElectronica));
+  if (!esElectronica) {
+    ['repCostoMoneda', 'repPrecioMoneda', 'pPriceMoneda'].forEach(id => { if (byId(id)) byId(id).value = 'ARS'; });
+    ['repCostoHint', 'repPrecioHint', 'pPriceHint'].forEach(id => { if (byId(id)) hide(byId(id)); });
+  }
+
+  const cotizacionBanner = byId('cotizacionBanner');
+  if (cotizacionBanner) {
+    cotizacionBanner.classList.toggle('hidden', !esElectronica);
+    if (esElectronica) actualizarCotizacionBanner();
   }
 }
 
@@ -3646,6 +3905,8 @@ function renderDashboard() {
   byId('statMonth').textContent = money(monthTotal);
   byId('statAvgTicket').textContent = money(avgTicket);
 
+  if (rubroEsElectronica()) actualizarStatsUsd(todayTotal, weekTotal, monthTotal, avgTicket);
+
   const yesterdayStart = new Date(today.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayEnd = today;
   const yesterdayOrders = orders.filter(o => {
@@ -3661,6 +3922,27 @@ function renderDashboard() {
   renderWeeklyChart();
   renderCategoryChart();
   renderYearlyChart();
+}
+
+// Debajo de cada stat-card en pesos, el equivalente en dólares al blue de
+// hoy — solo para electrónica, donde tiene sentido comparar contra el
+// dólar (repuestos y equipos importados). Usa la cotización cacheada; si
+// todavía no está en caché, la pide una vez y vuelve a llamarse sola
+// cuando llega (sin loop: obtenerCotizacion ya cachea, así que la segunda
+// vez entra directo).
+async function actualizarStatsUsd(today, week, month, avgTicket) {
+  const cot = await obtenerCotizacion('USD');
+  if (!cot) return;
+  const usd = (n) => 'USD$' + Math.round(n / cot.venta).toLocaleString('es-AR');
+  byId('statTodayUsd').textContent = usd(today);
+  byId('statWeekUsd').textContent = usd(week);
+  byId('statMonthUsd').textContent = usd(month);
+  byId('statAvgTicketUsd').textContent = usd(avgTicket);
+}
+
+async function actualizarCotizacionBanner() {
+  const cot = await obtenerCotizacion('USD');
+  byId('cotizacionValor').textContent = cot ? ('$' + cot.venta.toLocaleString('es-AR')) : 'no disponible';
 }
 
 function renderTopProducts() {
@@ -3814,7 +4096,7 @@ function renderProducts() {
       '<td><strong>' + escapeHtml(p.name) + '</strong>' +
         (p.solo_interno ? ' <span class="badge" style="background:#F1F3F6;color:var(--text-mute);" title="No se vende en tu tienda online">🔒 Interno</span>' : '') +
       '</td>' +
-      '<td>' + money(p.price) + '</td>' +
+      '<td>' + money(p.price) + etiquetaMonedaOriginal(p.precio_original, p.moneda) + '</td>' +
       '<td>' + (
         !esProductoFisico(p)
           ? '<span class="badge" style="background:#EAF4FD;color:var(--navy);">SERVICIO</span>'
@@ -3840,6 +4122,7 @@ function renderProducts() {
         (esProductoFisico(p)
           ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
           : '') +
+        '<button class="icon-btn" data-etiqueta="' + p.id + '" title="Imprimir etiqueta" style="color:var(--celeste);">🏷️</button>' +
         '<button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
       '</tr>';
   }).join('');
@@ -3852,6 +4135,14 @@ function renderProducts() {
     const p = products.find(x => String(x.id) === String(b.getAttribute('data-reponer')));
     if (p && p.tiene_variantes) abrirReponerVariante(p.id);
     else reponerStock(b.getAttribute('data-reponer'));
+  }));
+  // Con variantes hay que elegir cuál combinación exacta se está
+  // etiquetando (ej: "Buzo negro XL") antes de poder imprimir.
+  byId('productsBody').querySelectorAll('[data-etiqueta]').forEach(b => b.addEventListener('click', () => {
+    const p = products.find(x => String(x.id) === String(b.getAttribute('data-etiqueta')));
+    if (!p) return;
+    if (p.tiene_variantes) abrirEtiquetaVariante(p.id);
+    else imprimirEtiquetaProducto(p.id, null);
   }));
 }
 
@@ -4437,8 +4728,8 @@ function renderReparaciones() {
       '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
       '<td style="font-size:12.5px;white-space:nowrap;">' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit'}) + '</td>' +
-      '<td style="text-align:right;">' + money(r.costo) + '</td>' +
-      '<td style="text-align:right;">' + money(r.precio) + '</td>' +
+      '<td style="text-align:right;">' + money(r.costo) + etiquetaMonedaOriginal(r.costo_original, r.costo_moneda) + '</td>' +
+      '<td style="text-align:right;">' + money(r.precio) + etiquetaMonedaOriginal(r.precio_original, r.precio_moneda) + '</td>' +
       '<td style="text-align:right;font-weight:700;color:' + (margen >= 0 ? 'var(--stock)' : 'var(--danger)') + ';">' + money(margen) + '</td>' +
       '<td><div class="row-actions">' +
         (siguiente
@@ -4470,41 +4761,32 @@ function codigoTicket(r) {
     : '—';
 }
 
-// Etiqueta chica para pegarle al equipo: el código grande es lo único que
-// hace falta para encontrarlo después entre varios celulares en el
-// mostrador; el resto es para confirmar que es el correcto sin abrir el
-// sistema. El estado queda "fotografiado" al momento de imprimir — si
-// después avanza, la etiqueta pegada no se actualiza sola.
-function imprimirEtiquetaReparacion(id) {
-  const r = reparaciones.find(x => String(x.id) === String(id));
-  if (!r) return;
+// ---- Etiquetas térmicas (58mm) — layout compartido por reparaciones y
+// productos, así el ancho/tipografía/botones no se mantienen sincronizados
+// a mano en dos lugares. Pensado para que no quede más grande que el
+// equipo al que se le pega.
+function estilosEtiquetaTermica() {
+  return '@page { size: 58mm auto; margin: 2mm; }' +
+    'body{font-family:Arial,sans-serif;padding:4px;color:#15294D;width:54mm;}' +
+    '.codigo{font-size:22px;font-weight:800;letter-spacing:0.5px;border:2px solid #15294D;border-radius:6px;' +
+      'padding:4px 6px;text-align:center;margin-bottom:6px;word-break:break-word;}' +
+    '.fila{font-size:9.5px;margin-bottom:3px;line-height:1.3;word-break:break-word;}' +
+    '.fila b{display:inline-block;margin-right:3px;}' +
+    '.estado{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;}' +
+    '.precio{font-size:15px;font-weight:800;text-align:center;margin:4px 0;}' +
+    '.pie{margin-top:6px;font-size:8px;color:#5C6B82;text-align:center;}' +
+    '@media print{ .no-print{display:none;} }';
+}
 
-  const et = REPARACION_ETIQUETAS[r.estado] || REPARACION_ETIQUETAS.recibido;
-  const ventana = window.open('', '_blank', 'width=420,height=520');
-  if (!ventana) { alert('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return; }
+function abrirVentanaEtiquetaTermica(titulo, contenidoHtml) {
+  const ventana = window.open('', '_blank', 'width=300,height=460');
+  if (!ventana) { alert('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return null; }
 
   ventana.document.write(
-    '<!doctype html><html><head><meta charset="utf-8"><title>Etiqueta ' + codigoTicket(r) + '</title>' +
-    '<style>' +
-      'body{font-family:Arial,sans-serif;padding:18px;color:#15294D;}' +
-      '.codigo{font-size:46px;font-weight:800;letter-spacing:1px;border:3px solid #15294D;border-radius:10px;' +
-        'padding:10px 14px;text-align:center;margin-bottom:14px;}' +
-      '.fila{font-size:14px;margin-bottom:6px;line-height:1.4;}' +
-      '.fila b{display:inline-block;min-width:74px;}' +
-      '.estado{display:inline-block;padding:3px 10px;border-radius:5px;font-size:12px;font-weight:700;' +
-        'background:' + et.fondo + ';color:' + et.color + ';}' +
-      '.pie{margin-top:14px;font-size:10.5px;color:#5C6B82;text-align:center;}' +
-      '@media print{ .no-print{display:none;} }' +
-    '</style></head><body>' +
-      '<div class="codigo">' + codigoTicket(r) + '</div>' +
-      '<div class="fila"><b>Cliente:</b> ' + escapeHtml(r.cliente_nombre || '—') + '</div>' +
-      (r.cliente_telefono ? '<div class="fila"><b>Teléfono:</b> ' + escapeHtml(r.cliente_telefono) + '</div>' : '') +
-      '<div class="fila"><b>Equipo:</b> ' + escapeHtml(((r.marca ? r.marca + ' ' : '') + (r.equipo || '')).trim()) + '</div>' +
-      (r.imei ? '<div class="fila"><b>IMEI:</b> ' + escapeHtml(r.imei) + '</div>' : '') +
-      '<div class="fila"><b>Estado:</b> <span class="estado">' + et.texto + '</span></div>' +
-      '<div class="fila"><b>Recibido:</b> ' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR') + '</div>' +
-      '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>' +
-      '<button class="no-print" onclick="window.print()" style="margin-top:16px;width:100%;padding:10px;font-size:14px;cursor:pointer;background:#15294D;color:#fff;border:none;border-radius:6px;">Imprimir</button>' +
+    '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(titulo) + '</title>' +
+    '<style>' + estilosEtiquetaTermica() + '</style></head><body>' +
+      contenidoHtml +
+      '<button class="no-print" onclick="window.print()" style="margin-top:8px;width:100%;padding:8px;font-size:12px;cursor:pointer;background:#15294D;color:#fff;border:none;border-radius:6px;">Imprimir</button>' +
       // En el celular esto se abre como pestaña nueva, sin ningún botón de
       // "atrás" a la vista (más si la app está instalada como PWA) — sin
       // esto, no había forma de volver al panel después de generar el
@@ -4512,10 +4794,42 @@ function imprimirEtiquetaReparacion(id) {
       // (siempre lo permite para una pestaña abierta por script, como
       // ésta); si no lo permite, el setTimeout lleva de vuelta al panel igual.
       '<button class="no-print" onclick="window.close(); setTimeout(function(){ window.location.href=\'/dashboard\'; }, 150);" ' +
-        'style="margin-top:8px;width:100%;padding:10px;font-size:14px;cursor:pointer;background:#fff;color:#15294D;border:1.5px solid #15294D;border-radius:6px;">← Volver al panel</button>' +
+        'style="margin-top:6px;width:100%;padding:8px;font-size:12px;cursor:pointer;background:#fff;color:#15294D;border:1.5px solid #15294D;border-radius:6px;">← Volver al panel</button>'  +
     '</body></html>'
   );
   ventana.document.close();
+  return ventana;
+}
+
+// Etiqueta chica para pegarle al equipo en reparación: el código grande es
+// lo único que hace falta para encontrarlo después entre varios celulares
+// en el mostrador; el resto es para confirmar que es el correcto y tener a
+// mano lo necesario sin abrir el sistema. El estado del proceso queda
+// "fotografiado" al momento de imprimir — si después avanza, la etiqueta
+// pegada no se actualiza sola.
+function imprimirEtiquetaReparacion(id) {
+  const r = reparaciones.find(x => String(x.id) === String(id));
+  if (!r) return;
+
+  const et = REPARACION_ETIQUETAS[r.estado] || REPARACION_ETIQUETAS.recibido;
+  const contenido =
+    '<div class="codigo">' + codigoTicket(r) + '</div>' +
+    '<div class="fila"><b>Cliente:</b>' + escapeHtml(r.cliente_nombre || '—') + '</div>' +
+    (r.cliente_telefono ? '<div class="fila"><b>Tel:</b>' + escapeHtml(r.cliente_telefono) + '</div>' : '') +
+    (r.sucursal ? '<div class="fila"><b>Sucursal:</b>' + escapeHtml(r.sucursal) + '</div>' : '') +
+    '<div class="fila"><b>Equipo:</b>' + escapeHtml(((r.marca ? r.marca + ' ' : '') + (r.equipo || '')).trim()) + '</div>' +
+    (r.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(r.imei) + '</div>' : '') +
+    (r.estado_equipo ? '<div class="fila"><b>Estado equipo:</b>' + escapeHtml(r.estado_equipo) + '</div>' : '') +
+    (r.codigo_desbloqueo ? '<div class="fila"><b>Clave:</b>' + escapeHtml(r.codigo_desbloqueo) + '</div>' : '') +
+    (Array.isArray(r.tipo_servicio) && r.tipo_servicio.length
+      ? '<div class="fila"><b>Servicio:</b>' + escapeHtml(r.tipo_servicio.join(', ')) + '</div>' : '') +
+    (r.problema ? '<div class="fila"><b>Falla:</b>' + escapeHtml(r.problema) + '</div>' : '') +
+    (r.notas ? '<div class="fila"><b>Obs:</b>' + escapeHtml(r.notas) + '</div>' : '') +
+    '<div class="fila"><b>Estado:</b> <span class="estado" style="background:' + et.fondo + ';color:' + et.color + ';">' + et.texto + '</span></div>' +
+    '<div class="fila"><b>Recibido:</b>' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR') + '</div>' +
+    '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>';
+
+  abrirVentanaEtiquetaTermica('Etiqueta ' + codigoTicket(r), contenido);
 }
 
 // id === null -> alta nueva. id con valor -> edición de una existente.
@@ -4666,14 +4980,22 @@ function abrirModalReparacion(id) {
 
   byId('repCliente').value = r ? (r.cliente_nombre || '') : '';
   byId('repTelefono').value = r ? (r.cliente_telefono || '') : '';
+  byId('repSucursal').value = r ? (r.sucursal || '') : '';
   byId('repMarca').value = r ? (r.marca || '') : '';
   byId('repEquipo').value = r ? (r.equipo || '') : '';
   byId('repImei').value = r ? (r.imei || '') : '';
+  byId('repEstadoEquipo').value = r ? (r.estado_equipo || '') : '';
   byId('repCodigoDesbloqueo').value = r ? (r.codigo_desbloqueo || '') : '';
   byId('repProblema').value = r ? (r.problema || '') : '';
-  byId('repCosto').value = r ? Number(r.costo || 0) : 0;
-  byId('repPrecio').value = r ? Number(r.precio || 0) : 0;
+  // Muestra el monto tal cual se tipeó (en su moneda original), no el
+  // número ya convertido a pesos — si no, editar "borraría" la moneda.
+  byId('repCostoMoneda').value = (r && r.costo_moneda) || 'ARS';
+  byId('repCosto').value = r ? Number((r.costo_moneda ? r.costo_original : r.costo) || 0) : 0;
+  byId('repPrecioMoneda').value = (r && r.precio_moneda) || 'ARS';
+  byId('repPrecio').value = r ? Number((r.precio_moneda ? r.precio_original : r.precio) || 0) : 0;
   byId('repNotas').value = r ? (r.notas || '') : '';
+  actualizarHintMoneda('repCosto', 'repCostoMoneda', 'repCostoHint');
+  actualizarHintMoneda('repPrecio', 'repPrecioMoneda', 'repPrecioHint');
 
   tipoServicioEnEdicion = (r && Array.isArray(r.tipo_servicio)) ? [...r.tipo_servicio] : [];
   renderTipoServicio();
@@ -4691,9 +5013,22 @@ function abrirModalReparacion(id) {
   show(byId('reparacionModal'));
 }
 
+// Si costo o precio están en USD/EUR, hay que pasarlos a pesos antes de
+// restar — si no, "U$D 50 de costo" contra "$80.000 de precio" da un
+// margen sin sentido. Usa lo que ya esté en caché (no dispara una consulta
+// nueva por cada tecla); si todavía no hay cotización cacheada para esa
+// moneda, listo (queda en 0) hasta que el usuario dispare el hint del campo.
+function valorEnArsPreview(inputId, selectId) {
+  const monto = Number(byId(inputId).value) || 0;
+  const moneda = byId(selectId).value;
+  if (moneda === 'ARS') return monto;
+  const cot = cotizacionCache[moneda];
+  return cot ? monto * cot.venta : 0;
+}
+
 function actualizarMargenPreview() {
-  const costo = Number(byId('repCosto').value) || 0;
-  const precio = Number(byId('repPrecio').value) || 0;
+  const costo = valorEnArsPreview('repCosto', 'repCostoMoneda');
+  const precio = valorEnArsPreview('repPrecio', 'repPrecioMoneda');
   const margen = precio - costo;
   const el = byId('repMargenPreview');
   el.textContent = money(margen) + (costo > 0 ? ' (' + Math.round(margen / costo * 100) + '%)' : '');
@@ -4708,19 +5043,32 @@ async function guardarReparacion() {
   if (!cliente) { alert('Poné el nombre del cliente.'); return; }
   if (!equipo) { alert('Poné el equipo (ej: iPhone 11 128GB).'); return; }
 
+  const costoConv = await valorConvertido('repCosto', 'repCostoMoneda');
+  if (!costoConv) return;
+  const precioConv = await valorConvertido('repPrecio', 'repPrecioMoneda');
+  if (!precioConv) return;
+
   const payload = {
     store_slug: currentStore.slug,
     cliente_nombre: cliente,
     cliente_telefono: byId('repTelefono').value.trim(),
+    sucursal: byId('repSucursal').value.trim(),
     marca: byId('repMarca').value.trim(),
     equipo: equipo,
     imei: byId('repImei').value.trim(),
+    estado_equipo: byId('repEstadoEquipo').value.trim(),
     codigo_desbloqueo: byId('repCodigoDesbloqueo').value.trim(),
     tipo_servicio: tipoServicioEnEdicion,
     repuestos: repuestosEnEdicion,
     problema: byId('repProblema').value.trim(),
-    costo: Number(byId('repCosto').value) || 0,
-    precio: Number(byId('repPrecio').value) || 0,
+    costo: costoConv.monto_ars,
+    costo_moneda: costoConv.moneda,
+    costo_original: costoConv.monto_original,
+    costo_cotizacion: costoConv.cotizacion,
+    precio: precioConv.monto_ars,
+    precio_moneda: precioConv.moneda,
+    precio_original: precioConv.monto_original,
+    precio_cotizacion: precioConv.cotizacion,
     notas: byId('repNotas').value.trim()
   };
 
@@ -4829,6 +5177,180 @@ async function eliminarReparacion(id) {
   const { error } = await sb.from('store_reparaciones').delete().eq('id', id);
   if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
   await refreshData();
+}
+
+// ===================== GASTOS (impuestos, mercadería, publicidad...) =====================
+// A diferencia de Reparaciones, esto se ve en TODOS los rubros — un
+// impuesto o el alquiler del local le pasa a cualquier negocio, no solo a
+// electrónica.
+const GASTOS_CATEGORIAS_SUGERIDAS = ['Impuestos', 'Mercadería', 'Publicidad', 'Repuestos', 'Otro'];
+let gastoCategoriaSeleccionada = '';
+
+function renderGastoCategorias() {
+  const cont = byId('gastoCategoriaLista');
+  if (!cont) return;
+
+  const todas = [...new Set([...GASTOS_CATEGORIAS_SUGERIDAS, ...(gastoCategoriaSeleccionada ? [gastoCategoriaSeleccionada] : [])])];
+  cont.innerHTML = todas.map(c => {
+    const activa = gastoCategoriaSeleccionada === c;
+    return '<button type="button" data-gasto-cat="' + escapeHtml(c) + '" ' +
+      'style="padding:7px 12px;border-radius:7px;border:1.5px solid ' + (activa ? 'var(--celeste)' : 'var(--line)') +
+      ';background:' + (activa ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
+      escapeHtml(c) + '</button>';
+  }).join('');
+
+  cont.querySelectorAll('[data-gasto-cat]').forEach(b => {
+    b.addEventListener('click', () => {
+      // Un solo clic elige, otro clic sobre la misma la destilda — un gasto
+      // tiene una sola categoría, a diferencia del tipo de servicio de
+      // reparaciones que sí admite varias.
+      gastoCategoriaSeleccionada = gastoCategoriaSeleccionada === b.dataset.gastoCat ? '' : b.dataset.gastoCat;
+      renderGastoCategorias();
+    });
+  });
+}
+
+function abrirModalGasto(id) {
+  const g = id ? gastos.find(x => String(x.id) === String(id)) : null;
+
+  byId('gastoModal').dataset.id = g ? g.id : '';
+  byId('gastoModalTitulo').innerHTML = '<i class="fa-solid fa-file-invoice-dollar" style="color:var(--celeste);"></i> ' +
+    (g ? 'Editar gasto' : 'Nuevo gasto');
+
+  byId('gastoConcepto').value = g ? (g.concepto || '') : '';
+  gastoCategoriaSeleccionada = g ? (g.categoria || '') : '';
+  renderGastoCategorias();
+  byId('gastoCategoriaNueva').value = '';
+
+  byId('gastoMoneda').value = (g && g.moneda) || 'ARS';
+  byId('gastoMonto').value = g ? Number((g.moneda ? g.monto_original : g.monto) || 0) : 0;
+  actualizarHintMoneda('gastoMonto', 'gastoMoneda', 'gastoMontoHint');
+
+  byId('gastoFecha').value = g ? (g.fecha || '') : new Date().toISOString().slice(0, 10);
+  byId('gastoNotas').value = g ? (g.notas || '') : '';
+
+  show(byId('gastoModal'));
+}
+
+async function guardarGasto() {
+  if (!puedeOperar()) return;
+
+  const concepto = byId('gastoConcepto').value.trim();
+  if (!concepto) { alert('Poné un concepto para el gasto.'); return; }
+
+  const conv = await valorConvertido('gastoMonto', 'gastoMoneda');
+  if (!conv) return;
+
+  const payload = {
+    store_slug: currentStore.slug,
+    concepto: concepto,
+    categoria: gastoCategoriaSeleccionada || byId('gastoCategoriaNueva').value.trim() || null,
+    monto: conv.monto_ars,
+    moneda: conv.moneda,
+    monto_original: conv.monto_original,
+    cotizacion: conv.cotizacion,
+    fecha: byId('gastoFecha').value || new Date().toISOString().slice(0, 10),
+    notas: byId('gastoNotas').value.trim()
+  };
+
+  const id = byId('gastoModal').dataset.id;
+  const { error } = id
+    ? await sb.from('store_gastos').update(payload).eq('id', id)
+    : await sb.from('store_gastos').insert([payload]);
+
+  if (error) { alert('No se pudo guardar el gasto:\n\n' + error.message); return; }
+
+  hide(byId('gastoModal'));
+  await refreshData();
+}
+
+async function eliminarGasto(id) {
+  if (!puedeOperar()) return;
+  if (!confirm('¿Borrar este gasto? No se puede deshacer.')) return;
+
+  const { error } = await sb.from('store_gastos').delete().eq('id', id);
+  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  await refreshData();
+}
+
+function renderGastos() {
+  const cuerpo = byId('gastosBody');
+  if (!cuerpo) return;
+
+  const hoy = new Date();
+  const delMes = gastos.filter(g => {
+    const d = new Date(g.fecha);
+    return d.getMonth() === hoy.getMonth() && d.getFullYear() === hoy.getFullYear();
+  });
+  const totalMesArs = delMes.reduce((s, g) => s + Number(g.monto || 0), 0);
+  byId('gastoMesArs').textContent = money(totalMesArs);
+
+  // El equivalente en USD usa la cotización de HOY (no la de cuando se
+  // cargó cada gasto) — es "cuánto representan mis gastos de este mes al
+  // dólar actual", no una suma de conversiones históricas.
+  obtenerCotizacion('USD').then(cot => {
+    byId('gastoMesUsd').textContent = cot ? ('US$' + Math.round(totalMesArs / cot.venta).toLocaleString('es-AR')) : '—';
+  });
+
+  const ordenados = [...gastos].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+  cuerpo.innerHTML = ordenados.length ? ordenados.map(g => {
+    return '<tr>' +
+      '<td style="font-size:12.5px;white-space:nowrap;">' + new Date(g.fecha).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit'}) + '</td>' +
+      '<td>' + escapeHtml(g.concepto) + '</td>' +
+      '<td>' + (g.categoria ? escapeHtml(g.categoria) : '—') + '</td>' +
+      '<td style="text-align:right;">' + money(g.monto) + etiquetaMonedaOriginal(g.monto_original, g.moneda) + '</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="icon-btn" data-editar-gasto="' + g.id + '" title="Editar">✎</button>' +
+        '<button class="icon-btn danger" data-eliminar-gasto="' + g.id + '" title="Eliminar">🗑</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ningún gasto</td></tr>';
+
+  cuerpo.querySelectorAll('[data-editar-gasto]').forEach(b =>
+    b.addEventListener('click', () => abrirModalGasto(b.getAttribute('data-editar-gasto'))));
+  cuerpo.querySelectorAll('[data-eliminar-gasto]').forEach(b =>
+    b.addEventListener('click', () => eliminarGasto(b.getAttribute('data-eliminar-gasto'))));
+
+  renderGastosChart();
+}
+
+async function renderGastosChart() {
+  const cont = byId('gastosChart');
+  if (!cont) return;
+
+  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const montosPorMes = months.map(() => 0);
+  const anioActual = new Date().getFullYear();
+
+  gastos.forEach(g => {
+    const d = new Date(g.fecha);
+    if (d.getFullYear() === anioActual) montosPorMes[d.getMonth()] += Number(g.monto || 0);
+  });
+
+  const cot = await obtenerCotizacion('USD');
+  const usdPorMes = montosPorMes.map(ars => cot ? ars / cot.venta : 0);
+
+  if (charts.gastos) charts.gastos.destroy();
+  charts.gastos = new Chart(cont, {
+    data: {
+      labels: months,
+      datasets: [
+        { type: 'bar', label: 'Gastos (ARS)', data: montosPorMes, backgroundColor: '#DC2626', borderRadius: 6, yAxisID: 'y' },
+        { type: 'line', label: 'Gastos (USD)', data: usdPorMes, borderColor: '#1FA088', backgroundColor: '#1FA088',
+          borderWidth: 2, tension: 0.3, pointRadius: 3, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'bottom' } },
+      scales: {
+        y:  { type: 'linear', position: 'left',  beginAtZero: true, ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } },
+        y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { callback: v => 'US$' + v.toFixed(0) } }
+      }
+    }
+  });
 }
 
 // Para deudas que ya existían fuera del sistema (cuaderno, memoria, etc.).
@@ -5051,9 +5573,13 @@ async function searchByBarcode() {
   }
 
   // El EAN es unico: si hay match exacto no hace falta preguntar nada.
+  // El IMEI (equipos de electrónica en stock) funciona igual: escanear el
+  // código pegado en la caja/equipo encuentra el producto y arranca la
+  // venta directo, sin tener que buscarlo por nombre.
   const porEan = products.find(p => normalizarTexto(p.ean) === query);
-  if (porEan) {
-    seleccionarProductoVenta(porEan.id);
+  const porImei = !porEan && products.find(p => normalizarTexto(p.imei) === query);
+  if (porEan || porImei) {
+    seleccionarProductoVenta((porEan || porImei).id);
     return;
   }
 
@@ -5423,7 +5949,7 @@ byId('barcodeInput').addEventListener('keypress', (e) => {
 
 // ============ ESCANEO CON LA CAMARA ============
 // Un lector por pantalla: el de ventas y el del alta de producto.
-const lectores = { venta: null, producto: null };
+const lectores = { venta: null, producto: null, productoImei: null, repImei: null };
 
 function avisarLectura() {
   if (navigator.vibrate) navigator.vibrate(60);
@@ -5693,6 +6219,31 @@ function stopProductCameraScanner() {
   cerrarCamara('producto', 'productCameraScanner', 'qr-reader-product');
 }
 
+// El IMEI también suele venir en un código de barras (Code128) pegado en
+// la caja o en la parte de atrás del equipo — mismo motor ZXing que ya
+// lee EAN, solo que el resultado va al campo IMEI en vez de al de EAN.
+function toggleProductImeiCameraScanner() {
+  if (lectores.productoImei) { stopProductImeiCameraScanner(); return; }
+  abrirCamara('productoImei', 'productImeiCameraScanner', 'qr-reader-product-imei', (codigo) => {
+    byId('pImei').value = codigo;
+  });
+}
+
+function stopProductImeiCameraScanner() {
+  cerrarCamara('productoImei', 'productImeiCameraScanner', 'qr-reader-product-imei');
+}
+
+function toggleRepImeiCameraScanner() {
+  if (lectores.repImei) { stopRepImeiCameraScanner(); return; }
+  abrirCamara('repImei', 'repImeiCameraScanner', 'qr-reader-rep-imei', (codigo) => {
+    byId('repImei').value = codigo;
+  });
+}
+
+function stopRepImeiCameraScanner() {
+  cerrarCamara('repImei', 'repImeiCameraScanner', 'qr-reader-rep-imei');
+}
+
 if (byId('newProductBtn')) {
   byId('newProductBtn').addEventListener('click', () => {
     if (!puedeOperar()) return;
@@ -5700,7 +6251,11 @@ if (byId('newProductBtn')) {
     if (byId('pName')) byId('pName').value = '';
     if (byId('pDesc')) byId('pDesc').value = '';
     if (byId('pPrice')) byId('pPrice').value = '';
+    if (byId('pPriceMoneda')) byId('pPriceMoneda').value = 'ARS';
+    if (byId('pPriceHint')) hide(byId('pPriceHint'));
     if (byId('pEan')) byId('pEan').value = '';
+    if (byId('pImei')) byId('pImei').value = '';
+    if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
     if (byId('pImageFile')) byId('pImageFile').value = '';
     fotosEnEdicion = [];
     renderFotosEnEdicion();
@@ -5719,6 +6274,8 @@ if (byId('newProductBtn')) {
     if (byId('pName')) byId('pName').focus();
   });
 }
+
+wireSelectorMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
 
 byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
 
@@ -5926,6 +6483,12 @@ byId('productForm').addEventListener('submit', async (e) => {
     return;
   }
 
+  // Se resuelve ANTES de subir fotos: si falla la cotización, mejor
+  // frenar acá que subir imágenes para un guardado que después no va a
+  // completarse.
+  const precioConv = await valorConvertido('pPrice', 'pPriceMoneda');
+  if (!precioConv) return;
+
   // fotosEnEdicion mezcla lo que ya estaba guardado (tipo:'url') con lo
   // nuevo elegido en esta sesión (tipo:'archivo'). Solo hay que subir lo
   // nuevo; lo que ya estaba guardado se mantiene tal cual, en su lugar.
@@ -5978,10 +6541,15 @@ byId('productForm').addEventListener('submit', async (e) => {
     store_slug: currentStore.slug,
     name: byId('pName').value,
     description: byId('pDesc').value,
-    price: Number(byId('pPrice').value),
+    price: precioConv.monto_ars,
+    moneda: precioConv.moneda,
+    precio_original: precioConv.monto_original,
+    cotizacion: precioConv.cotizacion,
     stock: stockGeneral,
     category: byId('pCategory').value,
     ean: byId('pEan').value || null,
+    imei: byId('pImei') ? (byId('pImei').value.trim() || null) : null,
+    estado_equipo: byId('pEstadoEquipo') ? (byId('pEstadoEquipo').value.trim() || null) : null,
     opciones: opcionesEnEdicion,
     specs: specsEnEdicion,
     tipo: byId('pEsServicio').checked ? 'servicio' : 'producto',
@@ -5990,6 +6558,11 @@ byId('productForm').addEventListener('submit', async (e) => {
     variante_campos: tieneVariantes ? variAtributosEnEdicion.filter(a => a.nombre && a.valores.length) : [],
     variantes: tieneVariantes ? variantesEnEdicion : []
   };
+
+  // ID interno para la etiqueta ("P-0123") — igual que el número de
+  // reparación: correlativo por tienda, se calcula solo al crear y nunca se
+  // reasigna al editar.
+  if (!id) payload.numero = Math.max(0, ...products.map(p => Number(p.numero) || 0)) + 1;
 
   // fotosEnEdicion siempre refleja el estado completo que se quiere guardar:
   // si no tocó nada, son las mismas URLs que ya estaban; si sacó una con la
@@ -6033,10 +6606,16 @@ async function editProduct(id) {
   if (byId('modalTitle')) byId('modalTitle').textContent = 'Editar producto';
   if (byId('pName')) byId('pName').value = p.name;
   if (byId('pDesc')) byId('pDesc').value = p.description || '';
-  if (byId('pPrice')) byId('pPrice').value = p.price;
+  // Muestra el monto tal cual se tipeó (en su moneda original), no el
+  // número ya convertido a pesos — si no, editar "borraría" la moneda.
+  if (byId('pPriceMoneda')) byId('pPriceMoneda').value = p.moneda || 'ARS';
+  if (byId('pPrice')) byId('pPrice').value = p.moneda ? p.precio_original : p.price;
+  actualizarHintMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
   if (byId('pStock')) byId('pStock').value = p.stock;
   if (byId('pCategory')) byId('pCategory').value = p.category || '';
   if (byId('pEan')) byId('pEan').value = p.ean || '';
+  if (byId('pImei')) byId('pImei').value = p.imei || '';
+  if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = p.estado_equipo || '';
   if (byId('pImageFile')) byId('pImageFile').value = '';
 
   // Las fotos ya guardadas entran como tipo:'url', no como archivos: no
@@ -6205,6 +6784,94 @@ async function confirmarReponerVariante() {
   await refreshData();
 }
 
+// ---- Etiqueta térmica de producto (equipo en stock para vender, o
+// cualquier producto de cualquier rubro — "Buzo negro XL", una pantalla de
+// repuesto, etc.) — distinta de la etiqueta de reparación: esta es para lo
+// que está en stock, no para un trabajo en curso. ----
+let etiquetaVarianteProductoId = null;
+let etiquetaVarianteSeleccion = {};
+
+function abrirEtiquetaVariante(id) {
+  const p = products.find(x => String(x.id) === String(id));
+  if (!p || !p.tiene_variantes) return;
+
+  etiquetaVarianteProductoId = id;
+  etiquetaVarianteSeleccion = {};
+  renderCamposEtiquetaVariante();
+  show(byId('etiquetaVarianteModal'));
+}
+
+function renderCamposEtiquetaVariante() {
+  const p = products.find(x => String(x.id) === String(etiquetaVarianteProductoId));
+  if (!p) return;
+  const campos = Array.isArray(p.variante_campos) ? p.variante_campos : [];
+
+  byId('etiquetaVarianteCampos').innerHTML = campos.map(c =>
+    '<div style="margin-bottom:10px;">' +
+      '<label style="font-size:11.5px;color:var(--text-mute);display:block;margin-bottom:5px;">' + escapeHtml(c.nombre) + '</label>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+        c.valores.map(v => {
+          const activo = etiquetaVarianteSeleccion[c.nombre] === v;
+          return '<button type="button" data-etq-attr="' + escapeHtml(c.nombre) + '" data-etq-valor="' + escapeHtml(v) + '" ' +
+            'style="padding:7px 12px;border-radius:7px;border:1.5px solid ' + (activo ? 'var(--celeste)' : 'var(--line)') +
+            ';background:' + (activo ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:13px;cursor:pointer;">' +
+            escapeHtml(v) + '</button>';
+        }).join('') +
+      '</div>' +
+    '</div>'
+  ).join('');
+
+  byId('etiquetaVarianteCampos').querySelectorAll('[data-etq-attr]').forEach(b => {
+    b.addEventListener('click', () => {
+      etiquetaVarianteSeleccion[b.dataset.etqAttr] = b.dataset.etqValor;
+      renderCamposEtiquetaVariante();
+    });
+  });
+}
+
+function confirmarEtiquetaVariante() {
+  const p = products.find(x => String(x.id) === String(etiquetaVarianteProductoId));
+  if (!p) return;
+
+  const campos = Array.isArray(p.variante_campos) ? p.variante_campos : [];
+  if (Object.keys(etiquetaVarianteSeleccion).length < campos.length) {
+    alert('Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
+    return;
+  }
+
+  hide(byId('etiquetaVarianteModal'));
+  imprimirEtiquetaProducto(p.id, { ...etiquetaVarianteSeleccion });
+}
+
+// "P-0123": mismo criterio que codigoTicket() para reparaciones — se
+// calcula al crear el producto como el máximo existente + 1 y no se
+// reasigna nunca al editar. Los productos de antes de esta función no
+// tienen número hasta que se vuelvan a guardar.
+function codigoProducto(p) {
+  return Number.isFinite(Number(p.numero)) && p.numero
+    ? 'P-' + String(p.numero).padStart(4, '0')
+    : '—';
+}
+
+function imprimirEtiquetaProducto(id, variante) {
+  const p = products.find(x => String(x.id) === String(id));
+  if (!p) return;
+
+  const nombreCompleto = p.name + (variante ? ' ' + Object.values(variante).join(' ') : '');
+  const contenido =
+    '<div class="codigo">' + codigoProducto(p) + '</div>' +
+    '<div class="fila" style="font-size:12px;font-weight:700;">' + escapeHtml(nombreCompleto) + '</div>' +
+    (p.estado_equipo ? '<div class="fila"><b>Estado:</b>' + escapeHtml(p.estado_equipo) + '</div>' : '') +
+    (p.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(p.imei) + '</div>' :
+      (p.ean ? '<div class="fila"><b>EAN:</b>' + escapeHtml(p.ean) + '</div>' : '')) +
+    (p.category ? '<div class="fila"><b>Cat:</b>' + escapeHtml(p.category) + '</div>' : '') +
+    '<div class="precio">' + money(p.price) + '</div>' +
+    '<div class="fila"><b>Ingreso:</b>' + new Date(p.created_at).toLocaleDateString('es-AR') + '</div>' +
+    '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>';
+
+  abrirVentanaEtiquetaTermica('Etiqueta ' + p.name, contenido);
+}
+
 async function deleteProduct(id) {
   if (!puedeOperar()) return;
   if (!confirm('¿Eliminar este producto?')) return;
@@ -6314,16 +6981,43 @@ byId('tabReparaciones').addEventListener('click', () => {
   byId('reparacionesView').classList.add('visible');
 });
 
+byId('tabGastos').addEventListener('click', () => {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabGastos').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('gastosView').classList.add('visible');
+});
+
 byId('nuevaReparacionBtn').addEventListener('click', () => {
   if (!puedeOperar()) return;
   abrirModalReparacion(null);
 });
+byId('nuevoGastoBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  abrirModalGasto(null);
+});
+byId('closeGastoModal').addEventListener('click', () => hide(byId('gastoModal')));
+byId('guardarGastoBtn').addEventListener('click', guardarGasto);
+byId('gastoCategoriaAgregar').addEventListener('click', () => {
+  const nueva = byId('gastoCategoriaNueva').value.trim();
+  if (!nueva) return;
+  gastoCategoriaSeleccionada = nueva;
+  byId('gastoCategoriaNueva').value = '';
+  renderGastoCategorias();
+});
+wireSelectorMoneda('gastoMonto', 'gastoMoneda', 'gastoMontoHint');
 byId('closeReparacionModal').addEventListener('click', () => hide(byId('reparacionModal')));
 byId('closeReponerVarianteModal').addEventListener('click', () => hide(byId('reponerVarianteModal')));
 byId('confirmarReponerVarianteBtn').addEventListener('click', confirmarReponerVariante);
+byId('closeEtiquetaVarianteModal').addEventListener('click', () => hide(byId('etiquetaVarianteModal')));
+byId('confirmarEtiquetaVarianteBtn').addEventListener('click', confirmarEtiquetaVariante);
 byId('guardarReparacionBtn').addEventListener('click', guardarReparacion);
 byId('repCosto').addEventListener('input', actualizarMargenPreview);
 byId('repPrecio').addEventListener('input', actualizarMargenPreview);
+byId('repCostoMoneda').addEventListener('change', actualizarMargenPreview);
+byId('repPrecioMoneda').addEventListener('change', actualizarMargenPreview);
+wireSelectorMoneda('repCosto', 'repCostoMoneda', 'repCostoHint');
+wireSelectorMoneda('repPrecio', 'repPrecioMoneda', 'repPrecioHint');
 byId('repTipoServicioAgregar').addEventListener('click', () => {
   const t = byId('repTipoServicioNuevo').value.trim();
   if (!t) return;
