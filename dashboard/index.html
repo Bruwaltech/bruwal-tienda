@@ -7019,9 +7019,19 @@ function imprimirEtiquetaProducto(id, variante) {
     '<div class="codigo">' + codigoProducto(p) + '</div>' +
     (codigoParaBarras ? '<div class="codigo-barras">' + generarBarcodeSVG(codigoParaBarras) + '</div>' : '');
 
+  // Batería, almacenamiento, RAM — lo que el vendedor haya cargado en
+  // "Características técnicas" del producto (mismo campo que ya se ve en
+  // la tienda pública). Se juntan en un solo renglón separadas por "·"
+  // para no gastar una línea entera por cada una — en una etiqueta de
+  // 30mm de alto no sobra alto para eso.
+  const specsTexto = Array.isArray(p.specs) && p.specs.length
+    ? p.specs.map(s => s.clave + ': ' + s.valor).join(' · ')
+    : '';
+
   const columnaInfo =
     '<div class="fila" style="font-weight:700;">' + escapeHtml(nombreCompleto) + '</div>' +
     (p.estado_equipo ? '<div class="fila"><b>Estado:</b>' + escapeHtml(p.estado_equipo) + '</div>' : '') +
+    (specsTexto ? '<div class="fila">' + escapeHtml(specsTexto) + '</div>' : '') +
     (p.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(p.imei) + '</div>' :
       (p.ean ? '<div class="fila"><b>EAN:</b>' + escapeHtml(p.ean) + '</div>' : '')) +
     (p.category ? '<div class="fila"><b>Cat:</b>' + escapeHtml(p.category) + '</div>' : '') +
