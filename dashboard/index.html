@@ -22,6 +22,10 @@
 <!-- ZXing: lee codigos de barras de producto (EAN-13, UPC, Code128) y ademas QR.
      Reemplaza a jsQR y qr-scanner, que solo leian QR y no servian para productos. -->
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<!-- JsBarcode: DIBUJA codigos de barra (al reves que ZXing, que los lee) —
+     para que las etiquetas impresas lleven un codigo escaneable de verdad,
+     no solo el numero como texto. -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
 :root {
   --navy: #15294D;
@@ -1224,8 +1228,15 @@ tr:last-child td { border-bottom: none; }
 
       <div id="pulsoSemanal" class="pulso hidden"></div>
 
-      <div id="cotizacionBanner" class="hidden" style="font-size:12.5px;color:var(--text-mute);margin-bottom:10px;">
-        💵 Cotización del día (blue): <strong id="cotizacionValor" style="color:var(--navy);">—</strong>
+      <div id="cotizacionBanner" class="hidden" style="font-size:12.5px;color:var(--text-mute);margin-bottom:10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;">
+        <span>💵 Dólar blue: <strong id="cotizacionValorUSD" style="color:var(--navy);">—</strong>
+          <span id="cotizacionOrigenUSD" style="font-style:italic;"></span>
+          <button type="button" id="editarCotizacionUSD" title="Cargar a mano" style="background:none;border:none;color:var(--celeste);cursor:pointer;font-size:12px;padding:0 2px;">✎</button>
+        </span>
+        <span>💶 Euro: <strong id="cotizacionValorEUR" style="color:var(--navy);">—</strong>
+          <span id="cotizacionOrigenEUR" style="font-style:italic;"></span>
+          <button type="button" id="editarCotizacionEUR" title="Cargar a mano" style="background:none;border:none;color:var(--celeste);cursor:pointer;font-size:12px;padding:0 2px;">✎</button>
+        </span>
       </div>
 
       <div class="stats-row">
@@ -2474,9 +2485,35 @@ const COTIZACION_ENDPOINTS = {
 };
 let cotizacionCache = {};   // { USD: {venta, obtenidoEn}, EUR: {...} } — en memoria, por sesión
 
+// Automática (dolarapi.com) por default, pero se puede cargar a mano —
+// por ejemplo si un día el vendedor prefiere usar el número que ve en
+// infodolar u otro lado en vez del de la API. Una vez cargada a mano, se
+// usa esa hasta que el vendedor la borre (vuelve a automática) o cargue
+// otra — no vence sola ni se pisa con la consulta automática.
+function claveCotizacionManual(moneda) { return 'bruwal_cotizacion_manual_' + moneda; }
+
+function cotizacionManual(moneda) {
+  const guardada = localStorage.getItem(claveCotizacionManual(moneda));
+  return guardada ? JSON.parse(guardada) : null;
+}
+
+function fijarCotizacionManual(moneda, venta) {
+  const valor = { venta: Number(venta), obtenidoEn: Date.now(), manual: true };
+  localStorage.setItem(claveCotizacionManual(moneda), JSON.stringify(valor));
+  cotizacionCache[moneda] = valor;
+}
+
+function quitarCotizacionManual(moneda) {
+  localStorage.removeItem(claveCotizacionManual(moneda));
+  delete cotizacionCache[moneda];
+}
+
 async function obtenerCotizacion(moneda) {
+  const manual = cotizacionManual(moneda);
+  if (manual) { cotizacionCache[moneda] = manual; return manual; }
+
   const ahora = Date.now();
-  if (cotizacionCache[moneda] && (ahora - cotizacionCache[moneda].obtenidoEn) < COTIZACION_TTL_MS) {
+  if (cotizacionCache[moneda] && !cotizacionCache[moneda].manual && (ahora - cotizacionCache[moneda].obtenidoEn) < COTIZACION_TTL_MS) {
     return cotizacionCache[moneda];
   }
 
@@ -3941,8 +3978,36 @@ async function actualizarStatsUsd(today, week, month, avgTicket) {
 }
 
 async function actualizarCotizacionBanner() {
-  const cot = await obtenerCotizacion('USD');
-  byId('cotizacionValor').textContent = cot ? ('$' + cot.venta.toLocaleString('es-AR')) : 'no disponible';
+  for (const moneda of ['USD', 'EUR']) {
+    const cot = await obtenerCotizacion(moneda);
+    byId('cotizacionValor' + moneda).textContent = cot ? ('$' + cot.venta.toLocaleString('es-AR')) : 'no disponible';
+    byId('cotizacionOrigen' + moneda).textContent = cot ? (cot.manual ? '(cargada a mano)' : '(automática)') : '';
+  }
+}
+
+// El vendedor puede preferir cargar la cotización a mano un día puntual
+// (por ejemplo, si el número que ve en otro lado no coincide con el de la
+// API) en vez de usar la automática. Se guarda en localStorage y se usa
+// hasta que se borre — "Quitar" vuelve a la automática de dolarapi.com.
+async function editarCotizacionManual(moneda) {
+  const actual = cotizacionManual(moneda) || await obtenerCotizacion(moneda);
+  const nombre = moneda === 'USD' ? 'dólar blue' : 'euro';
+  const entrada = prompt(
+    '¿A cuánto está el ' + nombre + ' hoy? (dejalo vacío para volver a la cotización automática)',
+    actual ? actual.venta : ''
+  );
+  if (entrada === null) return;   // canceló
+
+  if (entrada.trim() === '') {
+    quitarCotizacionManual(moneda);
+  } else {
+    const valor = Number(entrada.replace(',', '.'));
+    if (!valor || valor <= 0) { alert('Poné un número válido.'); return; }
+    fijarCotizacionManual(moneda, valor);
+  }
+
+  await actualizarCotizacionBanner();
+  if (rubroEsElectronica()) renderDashboard();
 }
 
 function renderTopProducts() {
@@ -4765,6 +4830,28 @@ function codigoTicket(r) {
 // productos, así el ancho/tipografía/botones no se mantienen sincronizados
 // a mano en dos lugares. Pensado para que no quede más grande que el
 // equipo al que se le pega.
+// Dibuja un código de barras escaneable de verdad (no solo el número como
+// texto) para IMEI/EAN. CODE128 en vez de EAN-13 a propósito: no todo EAN
+// cargado tiene 13 dígitos válidos con checksum, y un IMEI tiene 15 — CODE128
+// acepta cualquier largo y lo lee cualquier lector (el mismo motor ZXing que
+// ya usa este panel para escanear, y cualquier lector físico de mostrador).
+// Se dibuja acá, en la ventana de siempre (donde ya está cargado JsBarcode),
+// y se manda el SVG ya armado como texto a la ventana de impresión — así esa
+// ventana no depende de que termine de cargar una librería externa antes de
+// poder imprimir.
+function generarBarcodeSVG(valor) {
+  if (!valor) return '';
+  try {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    JsBarcode(svg, String(valor), {
+      format: 'CODE128', width: 1.3, height: 32, fontSize: 9, margin: 2, displayValue: true
+    });
+    return svg.outerHTML;
+  } catch (e) {
+    return '';   // valor con caracteres raros: mejor sin código de barras que romper la etiqueta
+  }
+}
+
 function estilosEtiquetaTermica() {
   return '@page { size: 58mm auto; margin: 2mm; }' +
     'body{font-family:Arial,sans-serif;padding:4px;color:#15294D;width:54mm;}' +
@@ -4774,6 +4861,8 @@ function estilosEtiquetaTermica() {
     '.fila b{display:inline-block;margin-right:3px;}' +
     '.estado{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;}' +
     '.precio{font-size:15px;font-weight:800;text-align:center;margin:4px 0;}' +
+    '.codigo-barras{text-align:center;margin:5px 0;}' +
+    '.codigo-barras svg{max-width:100%;height:auto;}' +
     '.pie{margin-top:6px;font-size:8px;color:#5C6B82;text-align:center;}' +
     '@media print{ .no-print{display:none;} }';
 }
@@ -4819,6 +4908,7 @@ function imprimirEtiquetaReparacion(id) {
     (r.sucursal ? '<div class="fila"><b>Sucursal:</b>' + escapeHtml(r.sucursal) + '</div>' : '') +
     '<div class="fila"><b>Equipo:</b>' + escapeHtml(((r.marca ? r.marca + ' ' : '') + (r.equipo || '')).trim()) + '</div>' +
     (r.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(r.imei) + '</div>' : '') +
+    (r.imei ? '<div class="codigo-barras">' + generarBarcodeSVG(r.imei) + '</div>' : '') +
     (r.estado_equipo ? '<div class="fila"><b>Estado equipo:</b>' + escapeHtml(r.estado_equipo) + '</div>' : '') +
     (r.codigo_desbloqueo ? '<div class="fila"><b>Clave:</b>' + escapeHtml(r.codigo_desbloqueo) + '</div>' : '') +
     (Array.isArray(r.tipo_servicio) && r.tipo_servicio.length
@@ -6858,12 +6948,17 @@ function imprimirEtiquetaProducto(id, variante) {
   if (!p) return;
 
   const nombreCompleto = p.name + (variante ? ' ' + Object.values(variante).join(' ') : '');
+  // Código de barras: IMEI si el equipo tiene (identifica ESE aparato puntual),
+  // si no el EAN (identifica el producto/modelo en general) — el mismo que se
+  // usa como texto más abajo, para no mostrar dos números distintos.
+  const codigoParaBarras = p.imei || p.ean || '';
   const contenido =
     '<div class="codigo">' + codigoProducto(p) + '</div>' +
     '<div class="fila" style="font-size:12px;font-weight:700;">' + escapeHtml(nombreCompleto) + '</div>' +
     (p.estado_equipo ? '<div class="fila"><b>Estado:</b>' + escapeHtml(p.estado_equipo) + '</div>' : '') +
     (p.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(p.imei) + '</div>' :
       (p.ean ? '<div class="fila"><b>EAN:</b>' + escapeHtml(p.ean) + '</div>' : '')) +
+    (codigoParaBarras ? '<div class="codigo-barras">' + generarBarcodeSVG(codigoParaBarras) + '</div>' : '') +
     (p.category ? '<div class="fila"><b>Cat:</b>' + escapeHtml(p.category) + '</div>' : '') +
     '<div class="precio">' + money(p.price) + '</div>' +
     '<div class="fila"><b>Ingreso:</b>' + new Date(p.created_at).toLocaleDateString('es-AR') + '</div>' +
@@ -7006,6 +7101,8 @@ byId('gastoCategoriaAgregar').addEventListener('click', () => {
   renderGastoCategorias();
 });
 wireSelectorMoneda('gastoMonto', 'gastoMoneda', 'gastoMontoHint');
+byId('editarCotizacionUSD').addEventListener('click', () => editarCotizacionManual('USD'));
+byId('editarCotizacionEUR').addEventListener('click', () => editarCotizacionManual('EUR'));
 byId('closeReparacionModal').addEventListener('click', () => hide(byId('reparacionModal')));
 byId('closeReponerVarianteModal').addEventListener('click', () => hide(byId('reponerVarianteModal')));
 byId('confirmarReponerVarianteBtn').addEventListener('click', confirmarReponerVariante);
