@@ -6961,6 +6961,13 @@ function imprimirEtiquetaProducto(id, variante) {
     (codigoParaBarras ? '<div class="codigo-barras">' + generarBarcodeSVG(codigoParaBarras) + '</div>' : '') +
     (p.category ? '<div class="fila"><b>Cat:</b>' + escapeHtml(p.category) + '</div>' : '') +
     '<div class="precio">' + money(p.price) + '</div>' +
+    // El precio final siempre sale en pesos (ya convertido) — si se cargó
+    // en USD/EUR, se agrega el monto original abajo para que se vea con
+    // qué moneda se compró/cotizó, no solo el equivalente en pesos.
+    // Sin var(--...) acá: esta ventana tiene su propio <style> aparte, sin
+    // las variables de color del panel.
+    (p.moneda ? '<div class="fila" style="text-align:center;color:#5C6B82;">(' +
+      (p.moneda === 'USD' ? 'US$' : '€') + Number(p.precio_original).toLocaleString('es-AR') + ')</div>' : '') +
     '<div class="fila"><b>Ingreso:</b>' + new Date(p.created_at).toLocaleDateString('es-AR') + '</div>' +
     '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>';
 
