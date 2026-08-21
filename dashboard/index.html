@@ -1539,7 +1539,10 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
           <span>🔧 Reparaciones</span>
-          <button type="button" id="nuevaReparacionBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nueva reparación</button>
+          <div style="display:flex;gap:8px;">
+            <button type="button" id="verCostosReparacionesBtn" class="hidden btn-ghost" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver costos</button>
+            <button type="button" id="nuevaReparacionBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nueva reparación</button>
+          </div>
         </div>
         <table>
           <thead><tr><th>Ticket</th><th>Cliente</th><th>Equipo</th><th>Problema</th><th>Estado</th><th>Recibido</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Margen</th><th></th></tr></thead>
@@ -1637,6 +1640,20 @@ tr:last-child td { border-bottom: none; }
           <label>Estado del equipo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <input type="text" id="pEstadoEquipo" placeholder="Ej: usado como nuevo, excelente estado">
         </div>
+
+        <div class="field">
+          <label>🔒 Proveedor <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <button type="button" id="pProveedorVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar proveedor</button>
+          <div id="pProveedorCampos" class="hidden" style="margin-top:8px;">
+            <input type="text" id="pProveedorNombre" placeholder="Nombre del proveedor" style="margin-bottom:8px;">
+            <input type="tel" id="pProveedorTelefono" placeholder="Teléfono" style="margin-bottom:8px;">
+            <input type="email" id="pProveedorEmail" placeholder="Email">
+          </div>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+            A quién le comprás esto — para reponer. Protegido con el mismo PIN que Costos, si lo configuraste.
+          </small>
+        </div>
+
         <div class="field" id="campoStock"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
 
         <div class="field hidden" id="campoVariantesToggle">
@@ -1820,6 +1837,22 @@ tr:last-child td { border-bottom: none; }
     <div id="etiquetaVarianteCampos" style="margin-bottom:12px;"></div>
 
     <button type="button" id="confirmarEtiquetaVarianteBtn" class="btn btn-primary" style="width:100%;">Imprimir etiqueta</button>
+  </div>
+</div>
+
+<!-- MODAL PIN DE COSTOS -->
+<div class="modal-overlay hidden" id="pinCostosModal">
+  <div class="modal" style="max-width:340px;">
+    <button class="modal-close" id="closePinCostosModal">✕</button>
+    <h3 style="font-size:17px;">🔒 Información protegida</h3>
+    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;">Ingresá el PIN para ver esta información.</p>
+    <div class="field">
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinCostosInput"
+             placeholder="••••" style="font-size:26px;letter-spacing:12px;text-align:center;padding:12px;">
+    </div>
+    <div id="pinCostosError" class="hidden" style="color:var(--danger);font-size:12.5px;margin:-6px 0 10px;text-align:center;">PIN incorrecto.</div>
+    <button type="button" id="pinCostosConfirmar" class="btn btn-primary" style="width:100%;margin-bottom:8px;">Desbloquear</button>
+    <button type="button" id="pinCostosHuella" class="hidden btn" style="width:100%;background:var(--bg);color:var(--navy);">👆 Usar huella</button>
   </div>
 </div>
 
@@ -2081,6 +2114,27 @@ tr:last-child td { border-bottom: none; }
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Activa la pestaña Reparaciones y "Toma un equipo usado" en la venta de mostrador.
           </small>
+        </div>
+
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label>🔒 PIN para ver costos y proveedores <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <small style="display:block;margin-bottom:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Si lo activás, se va a pedir este PIN para entrar a Gastos, ver el Costo/Margen de las
+            reparaciones, y ver los datos de proveedores — así esa info la maneja solo quien tenga
+            el PIN. Si lo dejás vacío, queda como siempre (sin restricción). Ojo: un PIN de 4
+            dígitos es un freno casero, no seguridad bancaria.
+          </small>
+          <div id="pinCostosEstado" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;">Sin configurar</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="configPinNuevo"
+                   placeholder="PIN nuevo (4 dígitos)" style="flex:1;min-width:140px;">
+            <button type="button" id="guardarPinCostosBtn" class="btn" style="width:auto;">Guardar PIN</button>
+            <button type="button" id="quitarPinCostosBtn" class="btn-ghost hidden" style="width:auto;color:var(--danger);">Quitar PIN</button>
+          </div>
+          <div id="huellaConfigBloque" class="hidden" style="margin-top:10px;">
+            <button type="button" id="registrarHuellaBtn" class="btn" style="width:auto;background:var(--bg);color:var(--navy);">👆 Habilitar huella en este dispositivo</button>
+            <div id="huellaEstado" style="font-size:12px;color:var(--text-mute);margin-top:6px;"></div>
+          </div>
         </div>
 
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
@@ -2624,6 +2678,152 @@ function precioSecundarioProducto(p) {
       usd.toLocaleString('es-AR', { maximumFractionDigits: 2 }) + '</div>';
   }
   return '';
+}
+// ============================================================================
+
+// ===================== PIN PARA COSTOS (Gastos, Costo/Margen) =====================
+// Freno casero, no seguridad bancaria: un PIN de 4 dígitos tiene 10.000
+// combinaciones, así que esto frena a un empleado que no debería estar
+// viendo cuánto cuesta cada cosa, no a alguien decidido a forzarlo. Si la
+// tienda nunca configuró un PIN (pin_costos null), no se pide nada — el
+// comportamiento de siempre, para no bloquear a nadie por sorpresa.
+let costosDesbloqueados = false;
+let alDesbloquearCostos = null;   // callback pendiente, si se abrió el modal para una acción puntual
+
+async function hashPin(pin) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('bruwal_pin_' + pin));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hayPinConfigurado() { return !!currentStore?.pin_costos; }
+function requiereDesbloqueoCostos() { return hayPinConfigurado() && !costosDesbloqueados; }
+
+// La huella es un atajo LOCAL a ese dispositivo puntual (Windows Hello/Touch
+// ID/huella de Android vía el navegador) — sin servidor propio no hay forma
+// de verificar la firma de verdad, así que no reemplaza al PIN: es solo una
+// forma más cómoda de "tocar y listo" en el mismo aparato donde ya se
+// registró una vez. El PIN sigue siendo el único mecanismo que funciona en
+// cualquier dispositivo.
+function claveHuellaLS() { return 'bruwal_huella_' + (currentStore?.slug || ''); }
+
+async function huellaDisponible() {
+  return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(() => false));
+}
+
+async function registrarHuella() {
+  try {
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: 'BRUWAL', id: location.hostname },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: currentStore.slug, displayName: currentStore.business_name || currentStore.slug },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000
+      }
+    });
+    if (!cred) return false;
+    localStorage.setItem(claveHuellaLS(), cred.id);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function intentarHuella() {
+  const credId = localStorage.getItem(claveHuellaLS());
+  if (!credId) return false;
+  try {
+    const asercion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: Uint8Array.from(atob(credId.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)), type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000
+      }
+    });
+    return !!asercion;   // no se verifica la firma (no hay servidor): que el navegador lo haya resuelto ya implica que pasó la huella/Face ID del sistema
+  } catch (e) {
+    return false;   // canceló o falló — cae al PIN, sin drama
+  }
+}
+
+// Abre el modal de PIN. "alDesbloquear" es lo que se ejecuta apenas se
+// desbloquea (mostrar la vista de Gastos, refrescar la tabla de
+// reparaciones, etc.) — así una sola función de modal sirve para todos los
+// puntos donde se pide el PIN.
+async function abrirPinCostosModal(alDesbloquear) {
+  alDesbloquearCostos = alDesbloquear;
+  byId('pinCostosInput').value = '';
+  hide(byId('pinCostosError'));
+  const conHuella = localStorage.getItem(claveHuellaLS()) && await huellaDisponible();
+  byId('pinCostosHuella').classList.toggle('hidden', !conHuella);
+  show(byId('pinCostosModal'));
+  byId('pinCostosInput').focus();
+}
+
+async function verificarPinCostos() {
+  const pin = byId('pinCostosInput').value.trim();
+  if (!/^\d{4}$/.test(pin)) { mostrarErrorPinCostos('Escribí los 4 dígitos.'); return; }
+
+  const hash = await hashPin(pin);
+  if (hash !== currentStore.pin_costos) { mostrarErrorPinCostos('PIN incorrecto.'); return; }
+
+  costosDesbloqueados = true;
+  hide(byId('pinCostosModal'));
+  const cb = alDesbloquearCostos;
+  alDesbloquearCostos = null;
+  if (cb) cb();
+}
+
+function mostrarErrorPinCostos(msg) {
+  byId('pinCostosError').textContent = msg;
+  show(byId('pinCostosError'));
+  byId('pinCostosInput').value = '';
+  byId('pinCostosInput').focus();
+}
+
+async function verificarHuellaCostos() {
+  const ok = await intentarHuella();
+  if (!ok) { mostrarErrorPinCostos('No se pudo verificar. Probá con el PIN.'); return; }
+  costosDesbloqueados = true;
+  hide(byId('pinCostosModal'));
+  const cb = alDesbloquearCostos;
+  alDesbloquearCostos = null;
+  if (cb) cb();
+}
+
+// ---- Proveedor de un producto (a quién se le compra) — mismo PIN ----
+let proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
+
+function renderCampoProveedor() {
+  const bloqueado = requiereDesbloqueoCostos();
+  byId('pProveedorVerBtn').classList.toggle('hidden', !bloqueado);
+  byId('pProveedorCampos').classList.toggle('hidden', bloqueado);
+  if (!bloqueado) {
+    byId('pProveedorNombre').value = proveedorEnEdicion.nombre;
+    byId('pProveedorTelefono').value = proveedorEnEdicion.telefono;
+    byId('pProveedorEmail').value = proveedorEnEdicion.email;
+  }
+}
+
+// Si los campos siguen tapados (nunca se desbloqueó en esta carga del
+// formulario), se manda lo que el producto ya tenía guardado — leer del
+// input en ese caso mandaría vacío y borraría el proveedor por accidente
+// con solo guardar el producto por cualquier otro cambio.
+function valoresProveedorParaGuardar() {
+  if (byId('pProveedorCampos').classList.contains('hidden')) {
+    return {
+      nombre: proveedorEnEdicion.nombre || null,
+      telefono: proveedorEnEdicion.telefono || null,
+      email: proveedorEnEdicion.email || null
+    };
+  }
+  return {
+    nombre: byId('pProveedorNombre').value.trim() || null,
+    telefono: byId('pProveedorTelefono').value.trim() || null,
+    email: byId('pProveedorEmail').value.trim() || null
+  };
 }
 // ============================================================================
 
@@ -4814,7 +5014,16 @@ function renderReparaciones() {
       new Date(r.fecha_entregado).getMonth() === hoy.getMonth() &&
       new Date(r.fecha_entregado).getFullYear() === hoy.getFullYear())
     .reduce((s, r) => s + (Number(r.precio || 0) - Number(r.costo || 0)), 0);
-  byId('reparMargenMes').textContent = money(margenMes);
+
+  // Costo y Margen quedan tapados hasta ingresar el PIN — Precio (lo que
+  // se le cobra al cliente) no se toca, eso no es información de costos.
+  const verCostos = !requiereDesbloqueoCostos();
+  byId('reparMargenMes').textContent = verCostos ? money(margenMes) : '🔒 ····';
+
+  const btnVerCostos = byId('verCostosReparacionesBtn');
+  if (btnVerCostos) {
+    btnVerCostos.classList.toggle('hidden', !hayPinConfigurado() || verCostos);
+  }
 
   const ordenadas = [...reparaciones].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -4839,9 +5048,9 @@ function renderReparaciones() {
       '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
       '<td style="font-size:12.5px;white-space:nowrap;">' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit'}) + '</td>' +
-      '<td style="text-align:right;">' + money(r.costo) + etiquetaMonedaOriginal(r.costo_original, r.costo_moneda) + '</td>' +
+      '<td style="text-align:right;">' + (verCostos ? money(r.costo) + etiquetaMonedaOriginal(r.costo_original, r.costo_moneda) : '🔒') + '</td>' +
       '<td style="text-align:right;">' + money(r.precio) + etiquetaMonedaOriginal(r.precio_original, r.precio_moneda) + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:' + (margen >= 0 ? 'var(--stock)' : 'var(--danger)') + ';">' + money(margen) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + (margen >= 0 ? 'var(--stock)' : 'var(--danger)') + ';">' + (verCostos ? money(margen) : '🔒') + '</td>' +
       '<td><div class="row-actions">' +
         (siguiente
           ? '<button class="icon-btn" data-avanzar="' + r.id + '" style="color:var(--stock);" title="Pasar a ' + REPARACION_ETIQUETAS[siguiente].texto + '">→ ' + REPARACION_ETIQUETAS[siguiente].texto + '</button>'
@@ -6408,6 +6617,8 @@ if (byId('newProductBtn')) {
     if (byId('pEan')) byId('pEan').value = '';
     if (byId('pImei')) byId('pImei').value = '';
     if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
+    proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
+    renderCampoProveedor();
     if (byId('pImageFile')) byId('pImageFile').value = '';
     fotosEnEdicion = [];
     renderFotosEnEdicion();
@@ -6689,6 +6900,11 @@ byId('productForm').addEventListener('submit', async (e) => {
     : Number(byId('pStock').value);
 
   const id = byId('productForm').dataset.id;
+  // Si nunca se desbloqueó el proveedor en esta carga, se manda lo que ya
+  // tenía guardado (no lo que hay en el input, que quedó vacío por estar
+  // oculto) — si no, guardar el producto por cualquier otro motivo lo
+  // borraría sin querer.
+  const proveedorAGuardar = valoresProveedorParaGuardar();
   const payload = {
     store_slug: currentStore.slug,
     name: byId('pName').value,
@@ -6702,6 +6918,9 @@ byId('productForm').addEventListener('submit', async (e) => {
     ean: byId('pEan').value || null,
     imei: byId('pImei') ? (byId('pImei').value.trim() || null) : null,
     estado_equipo: byId('pEstadoEquipo') ? (byId('pEstadoEquipo').value.trim() || null) : null,
+    proveedor_nombre: proveedorAGuardar.nombre,
+    proveedor_telefono: proveedorAGuardar.telefono,
+    proveedor_email: proveedorAGuardar.email,
     opciones: opcionesEnEdicion,
     specs: specsEnEdicion,
     tipo: byId('pEsServicio').checked ? 'servicio' : 'producto',
@@ -6768,6 +6987,8 @@ async function editProduct(id) {
   if (byId('pEan')) byId('pEan').value = p.ean || '';
   if (byId('pImei')) byId('pImei').value = p.imei || '';
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = p.estado_equipo || '';
+  proveedorEnEdicion = { nombre: p.proveedor_nombre || '', telefono: p.proveedor_telefono || '', email: p.proveedor_email || '' };
+  renderCampoProveedor();
   if (byId('pImageFile')) byId('pImageFile').value = '';
 
   // Las fotos ya guardadas entran como tipo:'url', no como archivos: no
@@ -7090,6 +7311,10 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   byId('productForm').dataset.id = '';
   byId('pEsServicio').checked = false;
   byId('campoStock').classList.remove('hidden');
+  if (byId('pImei')) byId('pImei').value = '';
+  if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
+  proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
+  renderCampoProveedor();
   cargarVariantesEnFormulario(null);
   opcionesEnEdicion = [];
   renderOpciones();
@@ -7159,11 +7384,20 @@ byId('tabReparaciones').addEventListener('click', () => {
   byId('reparacionesView').classList.add('visible');
 });
 
-byId('tabGastos').addEventListener('click', () => {
+function mostrarVistaGastos() {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   byId('tabGastos').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('gastosView').classList.add('visible');
+}
+
+byId('tabGastos').addEventListener('click', () => {
+  if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaGastos); return; }
+  mostrarVistaGastos();
+});
+
+byId('verCostosReparacionesBtn').addEventListener('click', () => {
+  abrirPinCostosModal(renderReparaciones);
 });
 
 byId('nuevaReparacionBtn').addEventListener('click', () => {
@@ -7190,6 +7424,21 @@ byId('closeReparacionModal').addEventListener('click', () => hide(byId('reparaci
 byId('closeReponerVarianteModal').addEventListener('click', () => hide(byId('reponerVarianteModal')));
 byId('confirmarReponerVarianteBtn').addEventListener('click', confirmarReponerVariante);
 byId('closeEtiquetaVarianteModal').addEventListener('click', () => hide(byId('etiquetaVarianteModal')));
+
+byId('closePinCostosModal').addEventListener('click', () => { hide(byId('pinCostosModal')); alDesbloquearCostos = null; });
+byId('pinCostosConfirmar').addEventListener('click', verificarPinCostos);
+byId('pinCostosHuella').addEventListener('click', verificarHuellaCostos);
+byId('pinCostosInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') verificarPinCostos(); });
+byId('guardarPinCostosBtn').addEventListener('click', guardarPinCostos);
+byId('quitarPinCostosBtn').addEventListener('click', quitarPinCostos);
+byId('registrarHuellaBtn').addEventListener('click', async () => {
+  const ok = await registrarHuella();
+  alert(ok ? '✓ Huella habilitada en este dispositivo.' : 'No se pudo habilitar la huella. Probá de nuevo.');
+  await actualizarEstadoPinCostos();
+});
+byId('pProveedorVerBtn').addEventListener('click', () => {
+  abrirPinCostosModal(renderCampoProveedor);
+});
 byId('confirmarEtiquetaVarianteBtn').addEventListener('click', confirmarEtiquetaVariante);
 byId('guardarReparacionBtn').addEventListener('click', guardarReparacion);
 byId('repCosto').addEventListener('input', actualizarMargenPreview);
@@ -7392,6 +7641,12 @@ async function cargarConfiguracion() {
     byId('configHaceReparaciones').checked = !!store.hace_reparaciones;
     actualizarVisibilidadReparacionesConfig();
 
+    // El PIN puede haber cambiado desde otra sesión/dispositivo — se
+    // refresca currentStore con lo que hay de verdad en la base.
+    currentStore.pin_costos = store.pin_costos || null;
+    byId('configPinNuevo').value = '';
+    await actualizarEstadoPinCostos();
+
     quitarPortada = false;
     byId('configPortadaInput').value = '';
     pintarPortada(store.portada_url);
@@ -7423,6 +7678,57 @@ async function cargarConfiguracion() {
       byId('configLogoPreview').textContent = '🏪';
     }
   }
+}
+
+// ---- PIN de costos (Configuración) ----
+async function actualizarEstadoPinCostos() {
+  const configurado = hayPinConfigurado();
+  byId('pinCostosEstado').innerHTML = configurado
+    ? '✓ PIN configurado — se pide para ver Gastos, Costo/Margen y proveedores.'
+    : 'Sin configurar — cualquiera con acceso al panel ve esa información, como hasta ahora.';
+  byId('pinCostosEstado').style.color = configurado ? 'var(--stock)' : 'var(--text-mute)';
+  byId('quitarPinCostosBtn').classList.toggle('hidden', !configurado);
+  byId('configPinNuevo').placeholder = configurado ? 'Cambiar PIN (4 dígitos)' : 'PIN nuevo (4 dígitos)';
+
+  const conHuella = await huellaDisponible();
+  byId('huellaConfigBloque').classList.toggle('hidden', !configurado || !conHuella);
+  if (configurado && conHuella) {
+    const yaRegistrada = !!localStorage.getItem(claveHuellaLS());
+    byId('huellaEstado').textContent = yaRegistrada
+      ? '✓ Huella habilitada en este dispositivo.'
+      : 'Todavía no la habilitaste en este dispositivo.';
+    byId('registrarHuellaBtn').textContent = yaRegistrada ? '👆 Volver a registrar huella' : '👆 Habilitar huella en este dispositivo';
+  }
+}
+
+async function guardarPinCostos() {
+  const pin = byId('configPinNuevo').value.trim();
+  if (!pin) { alert('Escribí un PIN de 4 dígitos.'); return; }
+  if (!/^\d{4}$/.test(pin)) { alert('El PIN tiene que ser de 4 dígitos, solo números.'); return; }
+
+  const hash = await hashPin(pin);
+  const { error } = await sb.from('store_profiles').update({ pin_costos: hash }).eq('slug', currentStore.slug);
+  if (error) { alert('No se pudo guardar el PIN:\n\n' + error.message); return; }
+
+  currentStore.pin_costos = hash;
+  byId('configPinNuevo').value = '';
+  costosDesbloqueados = true;   // acaba de configurarlo desde adentro del panel: no tiene sentido pedírselo de nuevo ya mismo
+  await actualizarEstadoPinCostos();
+  renderReparaciones();
+  alert('✓ PIN guardado. A partir de ahora se va a pedir para ver Gastos, Costo/Margen y proveedores.');
+}
+
+async function quitarPinCostos() {
+  if (!confirm('¿Sacar el PIN? Gastos, Costo/Margen y los datos de proveedores van a quedar visibles para cualquiera con acceso al panel, como antes.')) return;
+
+  const { error } = await sb.from('store_profiles').update({ pin_costos: null }).eq('slug', currentStore.slug);
+  if (error) { alert('No se pudo quitar el PIN:\n\n' + error.message); return; }
+
+  currentStore.pin_costos = null;
+  localStorage.removeItem(claveHuellaLS());   // la huella era un atajo del PIN — sin PIN, no tiene sentido dejarla registrada
+  costosDesbloqueados = true;
+  await actualizarEstadoPinCostos();
+  renderReparaciones();
 }
 
 // Convierte un texto de ubicacion en coordenadas usando Nominatim (OpenStreetMap, gratis).
