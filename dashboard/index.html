@@ -1213,6 +1213,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab active" id="tabDashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</button>
       <button class="app-tab" id="tabProductos"><i class="fa-solid fa-box"></i> Productos</button>
       <button class="app-tab" id="tabPedidos"><i class="fa-solid fa-cart-shopping"></i> Pedidos</button>
+      <button class="app-tab hidden" id="tabAgenda"><i class="fa-solid fa-calendar-days"></i> Agenda</button>
       <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
       <button class="app-tab" id="tabCaja"><i class="fa-solid fa-sack-dollar"></i> Caja</button>
@@ -1334,16 +1335,6 @@ tr:last-child td { border-bottom: none; }
 
     <!-- PEDIDOS -->
     <div id="pedidosView" class="hidden">
-      <div class="panel hidden" id="panelAgenda">
-        <div class="panel-head">📅 Turnos reservados</div>
-        <div style="padding:0 0 4px;">
-          <table>
-            <thead><tr><th>Día</th><th>Hora</th><th>Cliente</th><th>Servicio</th><th></th></tr></thead>
-            <tbody id="agendaBody"></tbody>
-          </table>
-        </div>
-      </div>
-
       <div class="pulso pronto hidden" id="avisoPendientes" style="display:block;"></div>
 
       <div class="panel">
@@ -1352,6 +1343,31 @@ tr:last-child td { border-bottom: none; }
           <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
           <tbody id="ordersBody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- AGENDA -->
+    <div id="agendaView" class="hidden">
+      <div class="panel hidden" id="panelRecordatorios">
+        <div class="panel-head">🔔 Para recordar (hoy y mañana)</div>
+        <div id="recordatoriosLista" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <div class="panel" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button type="button" id="agendaAnteriorBtn" class="btn-ghost" style="width:auto;padding:8px 14px;font-size:15px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">‹</button>
+        <div id="agendaFechaLabel" style="font-weight:700;color:var(--navy);min-width:200px;text-align:center;text-transform:capitalize;"></div>
+        <button type="button" id="agendaSiguienteBtn" class="btn-ghost" style="width:auto;padding:8px 14px;font-size:15px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">›</button>
+        <button type="button" id="agendaHoyBtn" class="btn-ghost" style="width:auto;padding:8px 14px;font-size:13px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Hoy</button>
+        <input type="date" id="agendaFecha" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;">
+        <div style="flex:1;"></div>
+        <button type="button" id="nuevoTurnoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nuevo turno</button>
+      </div>
+
+      <div id="agendaFueraDeHorario" class="hidden" style="padding:14px 16px;color:var(--text-mute);font-size:13.5px;"></div>
+
+      <div class="panel">
+        <div class="panel-head">📅 Turnos del día</div>
+        <div id="agendaGrid" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
     </div>
 
@@ -2075,6 +2091,37 @@ tr:last-child td { border-bottom: none; }
     <div class="field"><label>Notas (opcional)</label><input type="text" id="movCajaNotas" placeholder="Detalle adicional"></div>
 
     <button type="button" id="guardarMovimientoCajaBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar movimiento</button>
+  </div>
+</div>
+
+<!-- MODAL TURNO -->
+<div class="modal-overlay hidden" id="turnoModal">
+  <div class="modal" style="max-width:440px;">
+    <button class="modal-close" id="closeTurnoModal">✕</button>
+    <h3><i class="fa-solid fa-calendar-days" style="color:var(--celeste);"></i> Turno</h3>
+    <div id="turnoModalFechaHora" style="font-size:13px;color:var(--text-mute);margin:-8px 0 14px;"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="field"><label>Fecha</label><input type="date" id="turnoFechaCampo"></div>
+      <div class="field"><label>Hora</label><input type="time" id="turnoHoraCampo"></div>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-radius:8px;">
+      <input type="checkbox" id="turnoSoloBloquear" style="margin:0;cursor:pointer;width:auto;">
+      Bloquear el horario sin cargar un cliente
+    </label>
+
+    <div id="turnoDatosCliente">
+      <div class="field"><label>Cliente</label><input type="text" id="turnoCliente" placeholder="Nombre del cliente"></div>
+      <div class="field"><label>Teléfono</label><input type="text" id="turnoTelefono" placeholder="Para el link de WhatsApp"></div>
+      <div class="field"><label>Servicio</label><input type="text" id="turnoServicio" placeholder="Ej: Corte y color"></div>
+    </div>
+    <div class="field hidden" id="turnoMotivoBloqueoCampo">
+      <label>Motivo (opcional)</label>
+      <input type="text" id="turnoMotivoBloqueo" placeholder="Ej: Almuerzo, día libre">
+    </div>
+
+    <button type="button" id="guardarTurnoBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar</button>
   </div>
 </div>
 
@@ -4084,8 +4131,9 @@ async function refreshData() {
   renderGastos();
   renderCaja();
   aplicarVisibilidadPorRubro();
+  aplicarVisibilidadPorTurnos();
   refrescarListaDeCategorias();
-  await renderAgenda();
+  await renderAgendaDia();
 }
 
 // Reparaciones y "toma equipo usado" solo sirven para tiendas de
@@ -4127,57 +4175,299 @@ function aplicarVisibilidadPorRubro() {
   }
 }
 
-// Turnos reservados desde la tienda. Sin esta vista, un turno cargado por
-// error bloquearia ese horario para siempre y el vendedor no podria verlo
-// ni liberarlo.
-async function renderAgenda() {
-  const panel = byId('panelAgenda');
-  const cuerpo = byId('agendaBody');
-  if (!panel || !cuerpo || !currentStore) return;
+// Agenda de turnos, en calendario por día. Antes era solo una lista de lo
+// que reservaron los clientes; ahora el dueño también puede cargar un turno
+// a mano o bloquear un horario sin cliente (almuerzo, permiso, lo que sea),
+// tocando directamente el horario libre en la grilla.
+const DIAS_SEMANA_LARGO = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
-  if (!currentStore.turnos || !currentStore.turnos.activo) { hide(panel); return; }
+function aplicarVisibilidadPorTurnos() {
+  const activo = !!(currentStore && currentStore.turnos && currentStore.turnos.activo);
+  const tab = byId('tabAgenda');
+  if (tab) tab.classList.toggle('hidden', !activo);
+  if (!activo && tab && tab.classList.contains('active')) byId('tabDashboard').click();
+}
 
-  const hoy = new Date().toISOString().slice(0, 10);
+// Mismo cálculo que usa tienda.html para ofrecerle horarios al comprador —
+// si se desalinean, el dueño vería una grilla distinta de la que el
+// cliente usó para reservar.
+function horariosDelDiaAgenda() {
+  const t = currentStore && currentStore.turnos;
+  if (!t) return [];
+  const aMin = (s) => { const [h, m] = String(s).split(':').map(Number); return h * 60 + m; };
+  const inicio = aMin(t.desde || '09:00');
+  const fin = aMin(t.hasta || '18:00');
+  const paso = Number(t.intervalo) || 30;
+
+  const salida = [];
+  for (let m = inicio; m + paso <= fin; m += paso) {
+    salida.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'));
+  }
+  return salida;
+}
+
+function fechaAgendaActual() {
+  if (!byId('agendaFecha').value) byId('agendaFecha').value = new Date().toISOString().slice(0, 10);
+  return byId('agendaFecha').value;
+}
+
+async function renderAgendaDia() {
+  const grid = byId('agendaGrid');
+  if (!grid || !currentStore) return;
+  if (!currentStore.turnos || !currentStore.turnos.activo) return;
+
+  const fecha = fechaAgendaActual();
+  const [a, m, d] = fecha.split('-').map(Number);
+  const fechaObj = new Date(a, m - 1, d);
+  const diaSemana = fechaObj.getDay();
+
+  byId('agendaFechaLabel').textContent =
+    DIAS_SEMANA_LARGO[diaSemana] + ' ' + String(d).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + a;
+
   const { data, error } = await sb.from('store_turnos')
     .select('*')
     .eq('store_slug', currentStore.slug)
-    .gte('fecha', hoy)                 // los pasados no interesan
-    .order('fecha').order('hora');
+    .eq('fecha', fecha)
+    .order('hora');
 
-  if (error) { hide(panel); return; }
-  show(panel);
+  if (error) {
+    grid.innerHTML = '<div style="color:var(--danger);padding:16px;">No se pudo cargar la agenda: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
 
-  const DIAS = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+  const turnos = data || [];
+  const dias = Array.isArray(currentStore.turnos.dias) && currentStore.turnos.dias.length
+    ? currentStore.turnos.dias : [1, 2, 3, 4, 5];
+  const atiende = dias.includes(diaSemana);
 
-  cuerpo.innerHTML = (data && data.length)
-    ? data.map(t => {
-        const [a, m, d] = t.fecha.split('-').map(Number);
-        const dia = DIAS[new Date(a, m - 1, d).getDay()];
-        return '<tr>' +
-          '<td style="font-size:13px;">' + dia + ' ' + String(d).padStart(2,'0') + '/' + String(m).padStart(2,'0') + '</td>' +
-          '<td style="font-weight:700;color:var(--navy);">' + escapeHtml(t.hora) + '</td>' +
-          '<td>' + escapeHtml(t.cliente || '-') +
-            (t.telefono ? '<br><a href="https://wa.me/' + numeroWhatsApp(t.telefono) +
-              '" target="_blank" style="font-size:12px;color:var(--celeste);">' + escapeHtml(t.telefono) + '</a>' : '') +
-          '</td>' +
-          '<td style="font-size:13px;">' + escapeHtml(t.servicio || '-') + '</td>' +
-          '<td style="text-align:right;"><button class="icon-btn" data-liberar="' + t.id +
-            '" title="Liberar este horario" style="color:var(--danger);">🗑</button></td>' +
-          '</tr>';
-      }).join('')
-    : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:18px;">Sin turnos reservados.</td></tr>';
+  const avisoFuera = byId('agendaFueraDeHorario');
+  if (!atiende) {
+    avisoFuera.textContent = 'Este día no está configurado como día de atención — igual podés cargar un turno con "+ Nuevo turno" si hacés una excepción.';
+    show(avisoFuera);
+  } else {
+    hide(avisoFuera);
+  }
 
-  cuerpo.querySelectorAll('[data-liberar]').forEach(b => {
-    b.addEventListener('click', async () => {
-      const t = data.find(x => String(x.id) === String(b.dataset.liberar));
-      if (!confirm('¿Liberar el turno de ' + (t?.cliente || 'este cliente') + ' (' + t?.hora + ')?\n\n' +
-                   'El horario vuelve a quedar disponible. Avisale vos al cliente.')) return;
-      const { error } = await sb.from('store_turnos').delete().eq('id', b.dataset.liberar);
-      if (error) { alert('No se pudo liberar: ' + error.message); return; }
-      await renderAgenda();
+  const horarios = atiende ? horariosDelDiaAgenda() : [];
+  const porHora = {};
+  turnos.forEach(t => { porHora[t.hora] = t; });
+
+  // Un turno cargado fuera de los horarios configurados (una excepción) no
+  // debe desaparecer solo porque no está en la grilla estándar del día.
+  const horasExtra = turnos.map(t => t.hora).filter(h => !horarios.includes(h));
+  const todasLasHoras = [...horarios, ...horasExtra].sort();
+
+  grid.innerHTML = todasLasHoras.length ? todasLasHoras.map(hora => {
+    const t = porHora[hora];
+    if (!t) {
+      return '<div class="turno-slot turno-libre" data-slot-libre="' + hora + '" ' +
+        'style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed var(--line);border-radius:8px;cursor:pointer;color:var(--text-mute);">' +
+        '<span style="font-weight:700;color:var(--navy);min-width:52px;">' + hora + '</span>' +
+        '<span style="font-size:13.5px;">Libre — tocá para cargar o bloquear</span>' +
+      '</div>';
+    }
+    if (t.bloqueado) {
+      return '<div class="turno-slot" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border-radius:8px;">' +
+        '<span style="font-weight:700;color:var(--navy);min-width:52px;">' + escapeHtml(hora) + '</span>' +
+        '<span style="flex:1;font-size:13.5px;color:var(--text-mute);">🔒 Bloqueado' + (t.servicio ? ' — ' + escapeHtml(t.servicio) : '') + '</span>' +
+        '<button class="icon-btn" data-liberar-turno="' + t.id + '" title="Liberar este horario" style="color:var(--danger);">🗑</button>' +
+      '</div>';
+    }
+    return '<div class="turno-slot" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#EAF4FD;border-radius:8px;">' +
+      '<span style="font-weight:700;color:var(--navy);min-width:52px;">' + escapeHtml(hora) + '</span>' +
+      '<span style="flex:1;">' +
+        '<span style="font-size:14px;font-weight:600;">' + escapeHtml(t.cliente || 'Sin nombre') + '</span>' +
+        (t.servicio ? ' <span style="font-size:12.5px;color:var(--text-mute);">— ' + escapeHtml(t.servicio) + '</span>' : '') +
+        (t.telefono ? '<br><a href="https://wa.me/' + numeroWhatsApp(t.telefono) + '" target="_blank" style="font-size:12px;color:var(--celeste);">' + escapeHtml(t.telefono) + '</a>' : '') +
+      '</span>' +
+      '<button class="icon-btn" data-liberar-turno="' + t.id + '" title="Liberar este horario" style="color:var(--danger);">🗑</button>' +
+    '</div>';
+  }).join('') : '<div style="text-align:center;color:var(--text-mute);padding:20px;">No hay horarios configurados para este día.</div>';
+
+  grid.querySelectorAll('[data-slot-libre]').forEach(el => {
+    el.addEventListener('click', () => abrirModalTurno(fecha, el.getAttribute('data-slot-libre')));
+  });
+  grid.querySelectorAll('[data-liberar-turno]').forEach(b => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const t = turnos.find(x => String(x.id) === String(b.dataset.liberarTurno));
+      if (!confirm('¿Liberar el turno de ' + (t?.bloqueado ? 'este bloqueo' : (t?.cliente || 'este cliente')) + ' (' + t?.hora + ')?\n\n' +
+                   (t?.bloqueado ? 'El horario vuelve a quedar disponible.' : 'El horario vuelve a quedar disponible. Avisale vos al cliente si corresponde.'))) return;
+      const { error: errDel } = await sb.from('store_turnos').delete().eq('id', b.dataset.liberarTurno);
+      if (errDel) { alert('No se pudo liberar: ' + errDel.message); return; }
+      await renderAgendaDia();
     });
   });
+
+  await renderRecordatorios();
 }
+
+// Cola manual de recordatorios: no hay forma de mandar un WhatsApp
+// espontáneo sin que Meta apruebe una plantilla, así que en vez de
+// prometer "automático" armamos el mensaje y el dueño lo manda con un
+// toque. recordatorio_enviado solo saca al turno de esta lista — no
+// confirma que el cliente lo haya leído.
+async function renderRecordatorios() {
+  const panel = byId('panelRecordatorios');
+  const lista = byId('recordatoriosLista');
+  if (!panel || !lista || !currentStore) return;
+  if (!currentStore.turnos || !currentStore.turnos.activo) { hide(panel); return; }
+
+  const ahora = new Date();
+  const hoyStr = ahora.toISOString().slice(0, 10);
+  const mananaStr = new Date(ahora.getTime() + 86400000).toISOString().slice(0, 10);
+
+  const { data, error } = await sb.from('store_turnos')
+    .select('*')
+    .eq('store_slug', currentStore.slug)
+    .gte('fecha', hoyStr)
+    .lte('fecha', mananaStr)
+    .eq('bloqueado', false)
+    .eq('recordatorio_enviado', false)
+    .order('fecha').order('hora');
+
+  if (error || !data) { hide(panel); return; }
+
+  const ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
+  const pendientes = data.filter(t => {
+    if (t.fecha !== hoyStr) return true;
+    const [hh, mm] = String(t.hora).split(':').map(Number);
+    return (hh * 60 + mm) > ahoraMin;
+  });
+
+  if (!pendientes.length) { hide(panel); return; }
+  show(panel);
+
+  lista.innerHTML = pendientes.map(t => {
+    const cuando = t.fecha === hoyStr ? 'Hoy' : (t.fecha === mananaStr ? 'Mañana' : t.fecha);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border-radius:8px;flex-wrap:wrap;">' +
+      '<span style="font-size:13px;color:var(--text-mute);min-width:110px;">' + cuando + ' ' + escapeHtml(t.hora) + '</span>' +
+      '<span style="flex:1;font-weight:600;">' + escapeHtml(t.cliente || 'Sin nombre') + '</span>' +
+      (t.telefono
+        ? '<button type="button" class="btn" data-recordar="' + t.id + '" style="width:auto;padding:7px 14px;font-size:12.5px;background:#1FA088;">📲 Recordar</button>'
+        : '<span style="font-size:12px;color:var(--text-mute);">Sin teléfono cargado</span>') +
+    '</div>';
+  }).join('');
+
+  lista.querySelectorAll('[data-recordar]').forEach(b => {
+    b.addEventListener('click', () => enviarRecordatorio(pendientes.find(t => String(t.id) === b.dataset.recordar)));
+  });
+}
+
+async function enviarRecordatorio(turno) {
+  if (!turno) return;
+
+  const ahora = new Date();
+  const hoyStr = ahora.toISOString().slice(0, 10);
+  const mananaStr = new Date(ahora.getTime() + 86400000).toISOString().slice(0, 10);
+  const cuando = turno.fecha === hoyStr ? 'hoy' : (turno.fecha === mananaStr ? 'mañana' : turno.fecha);
+
+  const negocio = (currentStore && currentStore.business_name) || 'nuestro local';
+  const mensaje = 'Hola' + (turno.cliente ? ' ' + turno.cliente : '') + '! Te escribimos de ' + negocio +
+    ' para recordarte tu turno de ' + cuando + ' a las ' + turno.hora +
+    (turno.servicio ? ' (' + turno.servicio + ')' : '') + '. ¡Te esperamos!';
+
+  window.open('https://wa.me/' + numeroWhatsApp(turno.telefono) + '?text=' + encodeURIComponent(mensaje), '_blank');
+
+  await sb.from('store_turnos').update({ recordatorio_enviado: true }).eq('id', turno.id);
+  await renderRecordatorios();
+}
+
+function abrirModalTurno(fecha, hora) {
+  if (!puedeOperar()) return;
+  byId('turnoFechaCampo').value = fecha;
+  byId('turnoHoraCampo').value = hora || '';
+  byId('turnoSoloBloquear').checked = false;
+  byId('turnoCliente').value = '';
+  byId('turnoTelefono').value = '';
+  byId('turnoServicio').value = '';
+  byId('turnoMotivoBloqueo').value = '';
+  actualizarModalTurno();
+  show(byId('turnoModal'));
+}
+
+function actualizarModalTurno() {
+  const bloqueo = byId('turnoSoloBloquear').checked;
+  byId('turnoDatosCliente').classList.toggle('hidden', bloqueo);
+  byId('turnoMotivoBloqueoCampo').classList.toggle('hidden', !bloqueo);
+
+  const fecha = byId('turnoFechaCampo').value;
+  const hora = byId('turnoHoraCampo').value;
+  if (fecha) {
+    const [a, m, d] = fecha.split('-').map(Number);
+    byId('turnoModalFechaHora').textContent =
+      DIAS_SEMANA_LARGO[new Date(a, m - 1, d).getDay()] + ' ' + String(d).padStart(2,'0') + '/' + String(m).padStart(2,'0') +
+      (hora ? ', ' + hora : '');
+  }
+}
+
+byId('turnoSoloBloquear').addEventListener('change', actualizarModalTurno);
+byId('turnoFechaCampo').addEventListener('change', actualizarModalTurno);
+byId('turnoHoraCampo').addEventListener('change', actualizarModalTurno);
+
+byId('nuevoTurnoBtn').addEventListener('click', () => abrirModalTurno(fechaAgendaActual(), ''));
+byId('closeTurnoModal').addEventListener('click', () => hide(byId('turnoModal')));
+
+async function guardarTurno() {
+  if (!puedeOperar()) return;
+
+  const fecha = byId('turnoFechaCampo').value;
+  const hora = byId('turnoHoraCampo').value;
+  if (!fecha || !hora) { alert('Elegí fecha y hora para el turno.'); return; }
+
+  const bloqueo = byId('turnoSoloBloquear').checked;
+  const cliente = bloqueo ? null : byId('turnoCliente').value.trim();
+  if (!bloqueo && !cliente) { alert('Poné el nombre del cliente, o marcá "Bloquear sin cliente".'); return; }
+
+  const payload = {
+    store_slug: currentStore.slug,
+    fecha: fecha,
+    hora: hora,
+    bloqueado: bloqueo,
+    cliente: bloqueo ? 'Bloqueado por el local' : cliente,
+    telefono: bloqueo ? null : (byId('turnoTelefono').value.trim() || null),
+    servicio: bloqueo ? (byId('turnoMotivoBloqueo').value.trim() || null) : (byId('turnoServicio').value.trim() || null),
+    estado: 'confirmado'
+  };
+
+  const { error } = await sb.from('store_turnos').insert([payload]);
+  if (error) {
+    const ocupado = error.code === '23505' || /duplicate|unique/i.test(error.message || '');
+    alert(ocupado ? 'Ese horario ya está ocupado — refrescá la agenda.' : 'No se pudo guardar el turno:\n\n' + error.message);
+    return;
+  }
+
+  hide(byId('turnoModal'));
+  await renderAgendaDia();
+}
+byId('guardarTurnoBtn').addEventListener('click', guardarTurno);
+
+byId('agendaFecha').addEventListener('change', renderAgendaDia);
+byId('agendaHoyBtn').addEventListener('click', () => {
+  byId('agendaFecha').value = new Date().toISOString().slice(0, 10);
+  renderAgendaDia();
+});
+byId('agendaAnteriorBtn').addEventListener('click', () => {
+  const f = new Date(fechaAgendaActual() + 'T00:00:00');
+  f.setDate(f.getDate() - 1);
+  byId('agendaFecha').value = f.toISOString().slice(0, 10);
+  renderAgendaDia();
+});
+byId('agendaSiguienteBtn').addEventListener('click', () => {
+  const f = new Date(fechaAgendaActual() + 'T00:00:00');
+  f.setDate(f.getDate() + 1);
+  byId('agendaFecha').value = f.toISOString().slice(0, 10);
+  renderAgendaDia();
+});
+
+function mostrarVistaAgenda() {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabAgenda').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('agendaView').classList.add('visible');
+  renderAgendaDia();
+}
+byId('tabAgenda').addEventListener('click', mostrarVistaAgenda);
 
 // Compara los ultimos 7 dias contra los 7 anteriores.
 // Criterio de redaccion: cuando baja no inventamos animo vacio. A alguien que
