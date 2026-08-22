@@ -6804,7 +6804,13 @@ async function confirmBarcodeVenta() {
   const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago });
   if (ok) {
     guardarNombreVendedor(vendedor);
-    alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty));
+    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty);
+    if (ok.tradeIn) {
+      mensaje += ok.equipoTomadoOk
+        ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos (sin publicar — ponele precio real y subí el stock cuando quieras venderlo).'
+        : '\n\n⚠️ La venta quedó registrada, pero no se pudo cargar el equipo tomado como stock. Cargalo a mano en Productos.';
+    }
+    alert(mensaje);
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
@@ -6897,8 +6903,30 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     await aplicarStockDeItem({ product_id: product.id, qty, variante }, -1);
   }
 
+  // El equipo que se toma en parte de pago quedaba solo como texto suelto
+  // en la orden (trade_in_descripcion): la venta cerraba bien pero el
+  // equipo nunca aparecía como stock disponible para revenderlo. Se crea
+  // como producto con stock 0 a propósito — no se publica solo, aparece
+  // "Agotado" en la tienda hasta que el dueño le pone precio real y fotos
+  // y sube el stock a mano. El precio inicial es lo que se le acreditó al
+  // cliente, así que sin editarlo la reventa saldría sin margen.
+  let equipoTomadoOk = null;
+  if (tradeIn && tradeIn.descripcion) {
+    const { error: errEquipo } = await sb.from('store_products').insert([{
+      store_slug: currentStore.slug,
+      name: tradeIn.descripcion,
+      description: 'Tomado en parte de pago el ' + new Date().toLocaleDateString('es-AR') +
+        ' (venta a ' + nombre + '). Revisá precio, estado y fotos antes de publicarlo.',
+      price: valorEquipo,
+      stock: 0,
+      category: 'Usados / Parte de pago'
+    }]);
+    equipoTomadoOk = !errEquipo;
+    if (errEquipo) console.error('No se pudo cargar el equipo tomado como stock:', errEquipo.message);
+  }
+
   await refreshData();
-  return true;
+  return { ok: true, tradeIn: !!tradeIn, equipoTomadoOk };
 }
 
 // Permitir escanear con Enter en el input
