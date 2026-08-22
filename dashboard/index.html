@@ -1215,6 +1215,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabPedidos"><i class="fa-solid fa-cart-shopping"></i> Pedidos</button>
       <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
+      <button class="app-tab" id="tabCaja"><i class="fa-solid fa-sack-dollar"></i> Caja</button>
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
       <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
@@ -1448,6 +1449,13 @@ tr:last-child td { border-bottom: none; }
                   <label style="font-size:14px;color:var(--text-mute);">Abono (pago):</label>
                   <input type="number" id="barcodeAbono" value="0" min="0" step="0.01" style="width:100px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;" oninput="calculateChange()">
                 </div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+                  <label style="font-size:14px;color:var(--text-mute);">Medio de pago:</label>
+                  <select id="barcodeMedioPago" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+                    <option value="">Sin especificar</option>
+                    <option>Efectivo</option><option>Débito</option><option>Crédito</option><option>Transferencia</option><option>Mercado Pago</option>
+                  </select>
+                </div>
                 <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);">
                   <span style="font-weight:700;color:#1FA088;">Vuelto:</span>
                   <span id="barcodeChange" style="font-weight:700;font-size:16px;color:#1FA088;">$0</span>
@@ -1496,6 +1504,45 @@ tr:last-child td { border-bottom: none; }
         </table>
       </div>
 
+    </div>
+
+    <!-- CAJA -->
+    <div id="cajaView" class="hidden">
+      <div class="panel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:14px;color:var(--text-mute);">Día:</label>
+        <input type="date" id="cajaFecha" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;">
+        <button type="button" id="cajaHoyBtn" class="btn-ghost" style="width:auto;padding:8px 14px;font-size:13px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Hoy</button>
+        <div style="flex:1;"></div>
+        <button type="button" id="nuevoMovimientoCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Movimiento manual</button>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="label">Ingresos del día</div>
+          <div class="value" id="cajaIngresos" style="color:#1FA088;">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Egresos del día</div>
+          <div class="value" id="cajaEgresos" style="color:#DC2626;">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Saldo del día</div>
+          <div class="value" id="cajaSaldo">$0</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">💳 Por medio de pago</div>
+        <div id="cajaPorMedio" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">📒 Movimientos del día</div>
+        <table>
+          <thead><tr><th>Hora</th><th>Tipo</th><th>Concepto</th><th>Medio</th><th style="text-align:right;">Monto</th><th></th></tr></thead>
+          <tbody id="cajaMovimientosBody"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- FIADO -->
@@ -1985,9 +2032,49 @@ tr:last-child td { border-bottom: none; }
     <small id="gastoMontoHint" class="hidden" style="display:block;margin:-8px 0 12px;color:var(--celeste);font-size:11.5px;"></small>
 
     <div class="field"><label>Fecha</label><input type="date" id="gastoFecha"></div>
+    <div class="field">
+      <label>Medio de pago</label>
+      <select id="gastoMedioPago" style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+        <option value="">Sin especificar</option>
+        <option>Efectivo</option><option>Débito</option><option>Crédito</option><option>Transferencia</option><option>Mercado Pago</option>
+      </select>
+    </div>
     <div class="field"><label>Notas (opcional)</label><input type="text" id="gastoNotas" placeholder="Detalle adicional"></div>
 
     <button type="button" id="guardarGastoBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar gasto</button>
+  </div>
+</div>
+
+<!-- MODAL MOVIMIENTO DE CAJA -->
+<div class="modal-overlay hidden" id="movimientoCajaModal">
+  <div class="modal" style="max-width:460px;">
+    <button class="modal-close" id="closeMovimientoCajaModal">✕</button>
+    <h3><i class="fa-solid fa-sack-dollar" style="color:var(--celeste);"></i> Movimiento manual de caja</h3>
+
+    <div class="field">
+      <label>Tipo</label>
+      <select id="movCajaTipo" style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+        <option value="ingreso">Ingreso — entra dinero</option>
+        <option value="egreso">Egreso — sale dinero</option>
+      </select>
+    </div>
+    <div class="field"><label>Concepto</label><input type="text" id="movCajaConcepto" placeholder="Ej: Aporte de capital, retiro personal"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>Monto (ARS)</label><input type="number" id="movCajaMonto" min="0" step="1" value="0"></div>
+      <div class="field"><label>Fecha</label><input type="date" id="movCajaFecha"></div>
+    </div>
+
+    <div class="field">
+      <label>Medio de pago</label>
+      <select id="movCajaMedioPago" style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+        <option value="">Sin especificar</option>
+        <option>Efectivo</option><option>Débito</option><option>Crédito</option><option>Transferencia</option><option>Mercado Pago</option>
+      </select>
+    </div>
+    <div class="field"><label>Notas (opcional)</label><input type="text" id="movCajaNotas" placeholder="Detalle adicional"></div>
+
+    <button type="button" id="guardarMovimientoCajaBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar movimiento</button>
   </div>
 </div>
 
@@ -2265,7 +2352,7 @@ sb.auth.onAuthStateChange((evento) => {
 
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
-let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [], gastos = [];
+let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [], gastos = [], pagos = [], movimientosCaja = [];
 
 // Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
 // confirmados porque de ahí salen las estadísticas de venta.
@@ -3981,6 +4068,12 @@ async function refreshData() {
   const { data: gts } = await sb.from('store_gastos').select('*').eq('store_slug', currentStore.slug).order('fecha', { ascending: false });
   gastos = gts || [];
 
+  const { data: pgs } = await sb.from('store_pagos').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  pagos = pgs || [];
+
+  const { data: movs } = await sb.from('store_movimientos_caja').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  movimientosCaja = movs || [];
+
   renderDashboard();
   renderProducts();
   renderOrders();
@@ -3989,6 +4082,7 @@ async function refreshData() {
   renderFiado();
   renderReparaciones();
   renderGastos();
+  renderCaja();
   aplicarVisibilidadPorRubro();
   refrescarListaDeCategorias();
   await renderAgenda();
@@ -5633,6 +5727,7 @@ function abrirModalGasto(id) {
   actualizarHintMoneda('gastoMonto', 'gastoMoneda', 'gastoMontoHint');
 
   byId('gastoFecha').value = g ? (g.fecha || '') : new Date().toISOString().slice(0, 10);
+  byId('gastoMedioPago').value = g ? (g.medio_pago || '') : '';
   byId('gastoNotas').value = g ? (g.notas || '') : '';
 
   show(byId('gastoModal'));
@@ -5656,6 +5751,7 @@ async function guardarGasto() {
     monto_original: conv.monto_original,
     cotizacion: conv.cotizacion,
     fecha: byId('gastoFecha').value || new Date().toISOString().slice(0, 10),
+    medio_pago: byId('gastoMedioPago').value || null,
     notas: byId('gastoNotas').value.trim()
   };
 
@@ -5757,6 +5853,169 @@ async function renderGastosChart() {
       }
     }
   });
+}
+
+// La caja del día junta cuatro fuentes que ya existen por separado —
+// ventas, cobros de fiado, gastos y movimientos sueltos — en una sola
+// vista de "qué entró, qué salió, cómo se cobró". No hay apertura/cierre
+// de turno: es un resumen del día, no un arqueo formal.
+//
+// El abono inicial de una venta fiada queda guardado dos veces (en el
+// total de la orden y en store_pagos, con nota 'Pago al momento de la
+// venta') para que el historial de pagos del cliente esté completo. Acá
+// se descarta ese pago para no contarlo dos veces: ya está adentro del
+// "cobrado" de la venta.
+function renderCaja() {
+  const cuerpo = byId('cajaMovimientosBody');
+  if (!cuerpo) return;
+
+  const fecha = byId('cajaFecha').value || new Date().toISOString().slice(0, 10);
+  const esDelDia = (fechaHora) => (fechaHora || '').slice(0, 10) === fecha;
+
+  const movimientos = [];
+
+  orders.filter(o => cuentaComoVenta(o) && esDelDia(o.created_at)).forEach(o => {
+    const equipo = Number(o.trade_in_valor || 0);
+    const cobradoDinero = Number(o.total || 0) - Number(o.saldo_pendiente || 0) - equipo;
+    if (cobradoDinero > 0) {
+      movimientos.push({
+        origen: 'venta', hora: o.created_at, tipo: 'ingreso',
+        concepto: 'Venta — ' + (o.customer_name || 'Mostrador'),
+        medio: o.medio_pago || 'Sin especificar',
+        monto: cobradoDinero
+      });
+    }
+    if (equipo > 0) {
+      movimientos.push({
+        origen: 'venta', hora: o.created_at, tipo: 'ingreso',
+        concepto: 'Equipo usado recibido — ' + (o.customer_name || 'Mostrador'),
+        medio: 'Equipo usado',
+        monto: equipo
+      });
+    }
+  });
+
+  pagos.filter(p => p.nota !== 'Pago al momento de la venta' && esDelDia(p.created_at)).forEach(p => {
+    movimientos.push({
+      origen: 'pago', hora: p.created_at, tipo: 'ingreso',
+      concepto: 'Cobro de fiado — ' + (p.customer_name || ''),
+      medio: p.medio_pago || 'Sin especificar',
+      monto: Number(p.monto || 0)
+    });
+  });
+
+  gastos.filter(g => g.fecha === fecha).forEach(g => {
+    movimientos.push({
+      origen: 'gasto', hora: g.fecha, tipo: 'egreso',
+      concepto: g.concepto,
+      medio: g.medio_pago || 'Sin especificar',
+      monto: Number(g.monto || 0)
+    });
+  });
+
+  movimientosCaja.filter(m => m.fecha === fecha).forEach(m => {
+    movimientos.push({
+      origen: 'manual', id: m.id, hora: m.created_at, tipo: m.tipo,
+      concepto: m.concepto,
+      medio: m.medio_pago || 'Sin especificar',
+      monto: Number(m.monto || 0)
+    });
+  });
+
+  movimientos.sort((a, b) => new Date(b.hora) - new Date(a.hora));
+
+  const ingresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0);
+  const egresos = movimientos.filter(m => m.tipo === 'egreso').reduce((s, m) => s + m.monto, 0);
+
+  byId('cajaIngresos').textContent = money(ingresos);
+  byId('cajaEgresos').textContent = money(egresos);
+  byId('cajaSaldo').textContent = money(ingresos - egresos);
+
+  const porMedio = {};
+  movimientos.forEach(m => {
+    const signo = m.tipo === 'ingreso' ? 1 : -1;
+    porMedio[m.medio] = (porMedio[m.medio] || 0) + signo * m.monto;
+  });
+  const medios = Object.keys(porMedio);
+  byId('cajaPorMedio').innerHTML = medios.length ? medios.map(m =>
+    '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;min-width:140px;">' +
+      '<div style="font-size:12px;color:var(--text-mute);">' + escapeHtml(m) + '</div>' +
+      '<div style="font-weight:700;color:var(--navy);">' + money(porMedio[m]) + '</div>' +
+    '</div>'
+  ).join('') : '<div style="color:var(--text-mute);font-size:13.5px;">Sin movimientos este día.</div>';
+
+  cuerpo.innerHTML = movimientos.length ? movimientos.map(m => {
+    const hora = m.hora && m.hora.length > 10
+      ? new Date(m.hora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+      : '—';
+    return '<tr>' +
+      '<td style="font-size:12.5px;white-space:nowrap;">' + hora + '</td>' +
+      '<td>' + (m.tipo === 'ingreso'
+        ? '<span style="color:#1FA088;font-weight:600;">Ingreso</span>'
+        : '<span style="color:#DC2626;font-weight:600;">Egreso</span>') + '</td>' +
+      '<td>' + escapeHtml(m.concepto) + '</td>' +
+      '<td style="font-size:12.5px;color:var(--text-mute);">' + escapeHtml(m.medio) + '</td>' +
+      '<td style="text-align:right;font-weight:600;">' + (m.tipo === 'egreso' ? '-' : '') + money(m.monto) + '</td>' +
+      '<td>' + (m.origen === 'manual'
+        ? '<button class="icon-btn danger" data-eliminar-mov-caja="' + m.id + '" title="Eliminar">🗑</button>'
+        : '') + '</td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin movimientos este día</td></tr>';
+
+  cuerpo.querySelectorAll('[data-eliminar-mov-caja]').forEach(b =>
+    b.addEventListener('click', () => eliminarMovimientoCaja(b.getAttribute('data-eliminar-mov-caja'))));
+}
+
+byId('cajaFecha').addEventListener('change', renderCaja);
+byId('cajaHoyBtn').addEventListener('click', () => {
+  byId('cajaFecha').value = new Date().toISOString().slice(0, 10);
+  renderCaja();
+});
+
+byId('nuevoMovimientoCajaBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  byId('movCajaTipo').value = 'ingreso';
+  byId('movCajaConcepto').value = '';
+  byId('movCajaMonto').value = 0;
+  byId('movCajaMedioPago').value = '';
+  byId('movCajaFecha').value = byId('cajaFecha').value || new Date().toISOString().slice(0, 10);
+  byId('movCajaNotas').value = '';
+  show(byId('movimientoCajaModal'));
+});
+byId('closeMovimientoCajaModal').addEventListener('click', () => hide(byId('movimientoCajaModal')));
+
+async function guardarMovimientoCaja() {
+  if (!puedeOperar()) return;
+
+  const concepto = byId('movCajaConcepto').value.trim();
+  const monto = Number(byId('movCajaMonto').value);
+  if (!concepto) { alert('Poné un concepto para el movimiento.'); return; }
+  if (!Number.isFinite(monto) || monto <= 0) { alert('Escribí un monto mayor que 0.'); return; }
+
+  const { error } = await sb.from('store_movimientos_caja').insert([{
+    store_slug: currentStore.slug,
+    tipo: byId('movCajaTipo').value,
+    concepto: concepto,
+    monto: monto,
+    medio_pago: byId('movCajaMedioPago').value || null,
+    fecha: byId('movCajaFecha').value || new Date().toISOString().slice(0, 10),
+    notas: byId('movCajaNotas').value.trim()
+  }]);
+
+  if (error) { alert('No se pudo guardar el movimiento:\n\n' + error.message); return; }
+
+  hide(byId('movimientoCajaModal'));
+  await refreshData();
+}
+byId('guardarMovimientoCajaBtn').addEventListener('click', guardarMovimientoCaja);
+
+async function eliminarMovimientoCaja(id) {
+  if (!puedeOperar()) return;
+  if (!confirm('¿Borrar este movimiento? No se puede deshacer.')) return;
+
+  const { error } = await sb.from('store_movimientos_caja').delete().eq('id', id);
+  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  await refreshData();
 }
 
 // Para deudas que ya existían fuera del sistema (cuaderno, memoria, etc.).
@@ -6250,8 +6509,9 @@ async function confirmBarcodeVenta() {
     : null;
 
   const vendedor = (byId('barcodeVendedor')?.value || '').trim();
+  const medioPago = byId('barcodeMedioPago')?.value || '';
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor });
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago });
   if (ok) {
     guardarNombreVendedor(vendedor);
     alert('✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty));
@@ -6259,6 +6519,7 @@ async function confirmBarcodeVenta() {
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
     byId('barcodeFiadoAbono').value = '0';
+    byId('barcodeMedioPago').value = '';
     byId('barcodeTradeIn').checked = false;
     byId('campoTradeIn').classList.add('hidden');
     byId('barcodeTradeInDesc').value = '';
@@ -6292,7 +6553,7 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '' } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '' } = opciones || {};
   const total = product.price * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
@@ -6319,6 +6580,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     trade_in_descripcion: tradeIn ? tradeIn.descripcion : null,
     trade_in_valor: tradeIn ? valorEquipo : null,
     vendedor: vendedor || null,
+    medio_pago: medioPago || null,
     created_at: new Date().toISOString()
   }]).select('id');
 
@@ -6333,6 +6595,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
       store_slug: currentStore.slug,
       customer_name: nombre,
       monto: abonaAhora,
+      medio_pago: medioPago || null,
       nota: 'Pago al momento de la venta'
     });
   }
@@ -7413,6 +7676,20 @@ byId('tabVentas').addEventListener('click', () => {
   byId('tabVentas').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('ventasView').classList.add('visible');
+});
+
+function mostrarVistaCaja() {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabCaja').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('cajaView').classList.add('visible');
+  if (!byId('cajaFecha').value) byId('cajaFecha').value = new Date().toISOString().slice(0, 10);
+  renderCaja();
+}
+
+byId('tabCaja').addEventListener('click', () => {
+  if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaCaja); return; }
+  mostrarVistaCaja();
 });
 
 byId('tabFiado').addEventListener('click', () => {
