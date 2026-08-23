@@ -598,6 +598,85 @@
     .video-seccion h2 { font-size: 27px; }
   }
 
+  /* ============ FOOTER ============ */
+  .site-footer {
+    background: #fff;
+    border-top: 1px solid #e5e7eb;
+    padding: 48px 24px 28px;
+  }
+  .footer-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .footer-marca {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 800;
+    font-size: 18px;
+    color: #15294D;
+    margin-bottom: 8px;
+  }
+  .footer-marca .logo-punto {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: linear-gradient(135deg, #15294D, #2F8FE0);
+  }
+  .footer-bajada {
+    color: #667085;
+    font-size: 14px;
+    max-width: 480px;
+    line-height: 1.6;
+    margin-bottom: 28px;
+  }
+  .footer-contacto {
+    color: #667085;
+    font-size: 13.5px;
+    margin-bottom: 28px;
+  }
+  .footer-contacto a { color: #2F8FE0; text-decoration: none; font-weight: 600; }
+  .footer-contacto a:hover { text-decoration: underline; }
+
+  .footer-politica {
+    border-top: 1px solid #eef0f3;
+    padding-top: 22px;
+  }
+  .footer-politica summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: #15294D;
+    font-size: 14.5px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .footer-politica summary::-webkit-details-marker { display: none; }
+  .footer-politica summary::before {
+    content: '▸';
+    color: #2F8FE0;
+    transition: transform .2s ease;
+    display: inline-block;
+  }
+  .footer-politica[open] summary::before { transform: rotate(90deg); }
+  .footer-politica-texto {
+    margin-top: 14px;
+    color: #4b5563;
+    font-size: 13.5px;
+    line-height: 1.75;
+    max-width: 620px;
+  }
+  .footer-politica-texto p { margin: 0 0 12px; }
+  .footer-politica-texto p:last-child { margin-bottom: 0; }
+  .footer-politica-texto strong { color: #15294D; }
+
+  .footer-legal {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid #eef0f3;
+    color: #9aa1ac;
+    font-size: 12.5px;
+  }
+
   /* ============ AVISO: la IA atiende tus pedidos ============ */
   .ia-banda {
     background: linear-gradient(135deg, #0F1E3C 0%, #15294D 45%, #2F8FE0 100%);
@@ -1048,10 +1127,56 @@
   </div>
 </section>
 
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-marca"><span class="logo-punto"></span> BRUWAL</div>
+    <p class="footer-bajada">
+      Nosotros ponemos la tienda. Vos ponés el nombre que la gente va a recordar.
+    </p>
+    <p class="footer-contacto">
+      ¿Consultas? Escribinos a <a href="mailto:administracion@bruwaltech.com">administracion@bruwaltech.com</a>
+    </p>
+
+    <details class="footer-politica">
+      <summary>Cancelación y suscripciones</summary>
+      <div class="footer-politica-texto">
+        <p>
+          Podés cancelar tu plan (Basic o Pro) cuando quieras, directamente desde tu
+          cuenta de Mercado Pago, sin tener que avisarnos ni pedirnos nada.
+        </p>
+        <p>
+          <strong>Cómo funciona el cobro al cancelar:</strong> Mercado Pago cobra el mes
+          por adelantado. Si cancelás, dejamos de cobrarte a partir del próximo
+          vencimiento, pero el período que ya pagaste queda cubierto hasta el final.
+          No hacemos devoluciones ni reintegros parciales por el tiempo que no llegaste
+          a usar dentro de un período ya cobrado.
+        </p>
+        <p>
+          <strong>Qué pasa con tu cuenta:</strong> mientras dure el período ya pagado, tu
+          panel sigue funcionando normal. Una vez que vence, tu cuenta pasa a modo de
+          solo lectura: podés seguir viendo tus datos (productos, ventas, clientes),
+          pero no podés cargar productos nuevos ni registrar ventas hasta reactivar un
+          plan. Tu tienda pública sigue online y visible para tus clientes en todo
+          momento, incluso en modo de solo lectura.
+        </p>
+        <p>
+          Para reactivar en cualquier momento, alcanza con suscribirte de nuevo desde
+          tu panel.
+        </p>
+      </div>
+    </details>
+
+    <div class="footer-legal">© <span id="footerAnio"></span> BRUWAL Technologies</div>
+  </div>
+</footer>
+
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const footerAnio = document.getElementById('footerAnio');
+if (footerAnio) footerAnio.textContent = new Date().getFullYear();
 
 let stores = [];
 let filteredStores = [];
