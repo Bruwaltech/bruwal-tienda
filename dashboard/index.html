@@ -1706,6 +1706,24 @@ tr:last-child td { border-bottom: none; }
       <form id="productForm">
         <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
         <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
+
+        <div class="field">
+          <label>¿Este stock es para...?</label>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
+              <input type="radio" name="pDestinoStock" id="pDestinoTienda" checked style="margin:0;cursor:pointer;width:auto;">
+              🛒 Vender en tu tienda — aparece en el menú público
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
+              <input type="radio" name="pDestinoStock" id="pDestinoInterno" style="margin:0;cursor:pointer;width:auto;">
+              🔒 Uso interno / repuesto — no se vende en tu tienda online
+            </label>
+          </div>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+            Para repuestos y demás cosas que usás vos (por ejemplo, en Reparaciones) pero que un cliente no debería poder comprar.
+          </small>
+        </div>
+
         <div class="field">
           <label>Precio</label>
           <div style="display:flex;gap:6px;">
@@ -1732,16 +1750,6 @@ tr:last-child td { border-bottom: none; }
           <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
             Corte de pelo, arreglo, consulta. Se puede vender sin límite y no
             aparece como agotado.
-          </small>
-        </div>
-        <div class="field">
-          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pSoloInterno" style="margin:0;width:auto;cursor:pointer;">
-            🔒 Uso interno (no se vende en tu tienda online)
-          </label>
-          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
-            Para repuestos y demás cosas que usás vos (por ejemplo, en
-            Reparaciones) pero que un cliente no debería poder comprar.
           </small>
         </div>
         <div class="field campo-electronica hidden">
@@ -3670,7 +3678,7 @@ byId('pTieneVariantes').addEventListener('change', (e) => {
 // batería...) que se separa por modelo de equipo. En vez de obligar a
 // tildar dos checkboxes para llegar a los botones de modelo, tildar
 // "Uso interno" ya abre directo la sección de variantes.
-byId('pSoloInterno').addEventListener('change', (e) => {
+byId('pDestinoInterno').addEventListener('change', (e) => {
   if (e.target.checked && rubroEsElectronica() && !byId('pTieneVariantes').checked) {
     byId('pTieneVariantes').checked = true;
     byId('pTieneVariantes').dispatchEvent(new Event('change'));
@@ -7744,7 +7752,7 @@ if (byId('newProductBtn')) {
     if (byId('pCategory')) byId('pCategory').value = '';
     if (byId('productForm')) byId('productForm').dataset.id = '';
     byId('pEsServicio').checked = false;
-    byId('pSoloInterno').checked = false;
+    byId('pDestinoTienda').checked = true;
     byId('pPendienteRestauracion').checked = false;
     byId('campoStock').classList.remove('hidden');
     cargarVariantesEnFormulario(null);   // arranca limpio, sin heredar del anterior
@@ -8044,7 +8052,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     opciones: opcionesEnEdicion,
     specs: specsEnEdicion,
     tipo: byId('pEsServicio').checked ? 'servicio' : 'producto',
-    solo_interno: byId('pSoloInterno').checked,
+    solo_interno: byId('pDestinoInterno').checked,
     pendiente_restauracion: byId('pPendienteRestauracion').checked,
     tiene_variantes: tieneVariantes,
     variante_campos: tieneVariantes ? variAtributosEnEdicion.filter(a => a.nombre && a.valores.length) : [],
@@ -8128,7 +8136,8 @@ async function editProduct(id) {
 
   const servicio = !esProductoFisico(p);
   byId('pEsServicio').checked = servicio;
-  byId('pSoloInterno').checked = !!p.solo_interno;
+  byId('pDestinoInterno').checked = !!p.solo_interno;
+  byId('pDestinoTienda').checked = !p.solo_interno;
   byId('pPendienteRestauracion').checked = !!p.pendiente_restauracion;
   cargarVariantesEnFormulario(p);   // decide por sí mismo si el stock queda oculto
 
