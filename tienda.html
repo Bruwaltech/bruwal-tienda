@@ -552,6 +552,10 @@ function aplicarTema(tema){
   const textoEsloganHeader = textoHeader === '#ffffff' ? '#fff' : 'rgba(21,41,77,.75)';
   const rgbBanner = hexARgb(banner);
   const opacidad = (tema.opacidadPortada != null ? tema.opacidadPortada : 80) / 100;
+  // 'top' | 'center' | 'bottom' — el header no tiene alto fijo (crece según
+  // el texto), así que "centro" a veces corta la parte de la foto que
+  // importa. Elegible desde el panel, guardado en tema.posicionPortada.
+  const posicionPortada = tema.posicionPortada || 'center';
 
   const hoja = document.createElement('style');
   hoja.textContent =
@@ -559,6 +563,7 @@ function aplicarTema(tema){
     'header:not(.con-portada){background:linear-gradient(135deg, ' + banner + ' 0%, ' + aclararColor(banner, 25) + ' 100%) !important;}' +
     'header{color:' + textoHeader + ' !important;}' +
     '.store-desc,.store-eslogan{color:' + textoEsloganHeader + ' !important;}' +
+    'header.con-portada{background-position:center ' + posicionPortada + ' !important;}' +
     // Banner CON foto de portada: el velo usa el mismo color, con la
     // opacidad que haya elegido (más baja = se ve más la foto).
     'header.con-portada::after{background:linear-gradient(135deg, rgba(' + rgbBanner + ',' + opacidad + ') 0%, rgba(' + rgbBanner + ',' + (opacidad * 0.75).toFixed(2) + ') 100%) !important;}' +
@@ -1240,6 +1245,29 @@ let configTurnos = null;
 
 const NOMBRE_DIAS = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
+// Con horarios por día, cada día tiene sus propias franjas (una si trabaja
+// corrido, dos o más si corta al mediodía); sin horarios por día, todos los
+// días activos comparten una sola franja — mismo cálculo que usa el panel
+// del dueño para que nunca se desalineen.
+function franjasDelDia(diaSemana) {
+  if (!configTurnos) return [];
+  if (configTurnos.porDia && configTurnos.horarios) {
+    const d = configTurnos.horarios[diaSemana];
+    return (d && d.activo && Array.isArray(d.franjas)) ? d.franjas : [];
+  }
+  const dias = Array.isArray(configTurnos.dias) && configTurnos.dias.length
+    ? configTurnos.dias : [1,2,3,4,5];
+  return dias.includes(diaSemana) ? [{ desde: configTurnos.desde || '09:00', hasta: configTurnos.hasta || '18:00' }] : [];
+}
+
+function diasConAtencion() {
+  if (configTurnos.porDia && configTurnos.horarios) {
+    return Object.keys(configTurnos.horarios).map(Number)
+      .filter(i => configTurnos.horarios[i] && configTurnos.horarios[i].activo);
+  }
+  return Array.isArray(configTurnos.dias) && configTurnos.dias.length ? configTurnos.dias : [1,2,3,4,5];
+}
+
 function armarTurnos(store) {
   configTurnos = (store && store.turnos && store.turnos.activo) ? store.turnos : null;
   if (!configTurnos) return;
@@ -1248,12 +1276,11 @@ function armarTurnos(store) {
   hide(byId('campoEntrega'));          // un turno no se envia a domicilio
   byId('campoDireccion').classList.add('hidden');
 
-  const dias = Array.isArray(configTurnos.dias) && configTurnos.dias.length
-    ? configTurnos.dias : [1,2,3,4,5];
+  const dias = diasConAtencion();
 
-  byId('turnoAviso').textContent =
-    'Atendemos ' + dias.map(d => NOMBRE_DIAS[d]).join(', ') +
-    ' de ' + configTurnos.desde + ' a ' + configTurnos.hasta + '.';
+  byId('turnoAviso').textContent = configTurnos.porDia
+    ? 'Atendemos ' + dias.map(d => NOMBRE_DIAS[d]).join(', ') + '. Elegí el día para ver los horarios disponibles.'
+    : 'Atendemos ' + dias.map(d => NOMBRE_DIAS[d]).join(', ') + ' de ' + configTurnos.desde + ' a ' + configTurnos.hasta + '.';
 
   const hoy = new Date();
   const fecha = byId('turnoFecha');
@@ -1261,10 +1288,10 @@ function armarTurnos(store) {
   const tope = new Date(hoy.getTime() + 60 * 86400000);   // hasta 60 dias
   fecha.max = tope.toISOString().slice(0, 10);
 
-  fecha.addEventListener('change', () => cargarHorariosDisponibles(dias));
+  fecha.addEventListener('change', () => cargarHorariosDisponibles());
 }
 
-async function cargarHorariosDisponibles(dias) {
+async function cargarHorariosDisponibles() {
   const sel = byId('turnoHora');
   const valor = byId('turnoFecha').value;
   if (!valor) { sel.innerHTML = '<option value="">Horario</option>'; return; }
@@ -1274,7 +1301,7 @@ async function cargarHorariosDisponibles(dias) {
   const [a, m, d] = valor.split('-').map(Number);
   const diaSemana = new Date(a, m - 1, d).getDay();
 
-  if (!dias.includes(diaSemana)) {
+  if (!franjasDelDia(diaSemana).length) {
     sel.innerHTML = '<option value="">Ese día no atendemos</option>';
     return;
   }
@@ -1294,7 +1321,7 @@ async function cargarHorariosDisponibles(dias) {
   const ahora = new Date();
   const esHoy = (new Date(a, m - 1, d)).toDateString() === ahora.toDateString();
 
-  const libres = horariosDelDia().filter(h => {
+  const libres = horariosDelDia(diaSemana).filter(h => {
     if (ocupados.includes(h)) return false;
     // No ofrecer horarios que ya pasaron si el turno es para hoy
     if (esHoy) {
@@ -1310,16 +1337,18 @@ async function cargarHorariosDisponibles(dias) {
     : '<option value="">No quedan horarios ese día</option>';
 }
 
-function horariosDelDia() {
+function horariosDelDia(diaSemana) {
   const aMin = (s) => { const [h, m] = String(s).split(':').map(Number); return h * 60 + m; };
-  const inicio = aMin(configTurnos.desde || '09:00');
-  const fin = aMin(configTurnos.hasta || '18:00');
   const paso = Number(configTurnos.intervalo) || 30;
 
   const salida = [];
-  for (let t = inicio; t + paso <= fin; t += paso) {
-    salida.push(String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'));
-  }
+  franjasDelDia(diaSemana).forEach(f => {
+    const inicio = aMin(f.desde || '09:00');
+    const fin = aMin(f.hasta || '18:00');
+    for (let t = inicio; t + paso <= fin; t += paso) {
+      salida.push(String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'));
+    }
+  });
   return salida;
 }
 
@@ -1541,8 +1570,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
           : 'No pudimos reservar el turno. Probá de nuevo en un momento.';
         errEl.classList.remove('hidden');
         byId('confirmOrderBtn').disabled = false;
-        if (ocupado) await cargarHorariosDisponibles(
-          (configTurnos.dias && configTurnos.dias.length) ? configTurnos.dias : [1,2,3,4,5]);
+        if (ocupado) await cargarHorariosDisponibles();
         return;
       }
     }

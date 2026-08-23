@@ -1450,6 +1450,18 @@ tr:last-child td { border-bottom: none; }
                 <label style="font-size:13px;color:var(--text-mute);">¿En cuánto lo tasás? (se descuenta del total)</label>
                 <input type="number" id="barcodeTradeInValor" value="0" min="0" step="1"
                        style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
+
+                <label style="font-size:13px;color:var(--text-mute);display:block;margin-top:10px;">¿Cómo lo cargamos al stock?</label>
+                <div style="display:flex;gap:14px;margin-top:4px;">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                    <input type="radio" name="barcodeTradeInEstado" id="barcodeTradeInPendiente" value="pendiente" checked style="margin:0;cursor:pointer;">
+                    🔧 Pendiente de restauración
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                    <input type="radio" name="barcodeTradeInEstado" id="barcodeTradeInListo" value="listo" style="margin:0;cursor:pointer;">
+                    ✅ Listo para vender
+                  </label>
+                </div>
               </div>
 
               <div style="border-top:1px solid var(--line);padding-top:12px;">
@@ -1683,6 +1695,15 @@ tr:last-child td { border-bottom: none; }
           <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
             Para repuestos y demás cosas que usás vos (por ejemplo, en
             Reparaciones) pero que un cliente no debería poder comprar.
+          </small>
+        </div>
+        <div class="field campo-electronica hidden">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="pPendienteRestauracion" style="margin:0;width:auto;cursor:pointer;">
+            🔧 Pendiente de restauración
+          </label>
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
+            Se marca sola en los equipos tomados en parte de pago. Destildala cuando ya lo revisaste y quedó listo para vender.
           </small>
         </div>
         <div class="field campo-electronica hidden">
@@ -2225,6 +2246,12 @@ tr:last-child td { border-bottom: none; }
           <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-mute);">
             <span>Se ve más la foto</span><span>Bien oscuro</span>
           </div>
+
+          <label style="font-size:11.5px;color:var(--text-mute);display:block;margin-top:14px;">Qué parte de la foto de portada se ve</label>
+          <div id="posicionPortadaChips" style="display:flex;gap:6px;margin-top:6px;"></div>
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;">
+            Útil si la foto es más alta que ancha y el encabezado le corta la parte que importa.
+          </small>
         </div>
 
         <div class="field"><label>Teléfono WhatsApp</label><input type="tel" id="configPhone" required></div>
@@ -2282,18 +2309,35 @@ tr:last-child td { border-bottom: none; }
           </small>
 
           <div id="turnosConfig" class="hidden" style="margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
-            <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:9px;">Días que atendés</div>
-            <div id="turnosDias" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:14px;">
+              <input type="checkbox" id="turnosPorDia" style="margin:0;cursor:pointer;width:auto;">
+              Horarios distintos según el día
+            </label>
+            <small style="display:block;margin:-10px 0 14px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+              Activalo si algún día trabajás corrido y otro con corte al mediodía, o si cambia el horario según el día.
+            </small>
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-              <div>
-                <label style="font-size:12.5px;">Desde</label>
-                <input type="time" id="turnosDesde" value="09:00">
+            <!-- MODO SIMPLE: mismo horario todos los días que atendés -->
+            <div id="turnosModoSimple">
+              <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:9px;">Días que atendés</div>
+              <div id="turnosDias" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+                <div>
+                  <label style="font-size:12.5px;">Desde</label>
+                  <input type="time" id="turnosDesde" value="09:00">
+                </div>
+                <div>
+                  <label style="font-size:12.5px;">Hasta</label>
+                  <input type="time" id="turnosHasta" value="18:00">
+                </div>
               </div>
-              <div>
-                <label style="font-size:12.5px;">Hasta</label>
-                <input type="time" id="turnosHasta" value="18:00">
-              </div>
+            </div>
+
+            <!-- MODO POR DÍA: cada día su propio horario, con más de una franja si hace falta -->
+            <div id="turnosModoPorDia" class="hidden" style="margin-bottom:14px;">
+              <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:9px;">Horario de cada día</div>
+              <div id="turnosPorDiaLista" style="display:flex;flex-direction:column;gap:10px;"></div>
             </div>
 
             <label style="font-size:12.5px;">Duración de cada turno</label>
@@ -4190,19 +4234,34 @@ function aplicarVisibilidadPorTurnos() {
 
 // Mismo cálculo que usa tienda.html para ofrecerle horarios al comprador —
 // si se desalinean, el dueño vería una grilla distinta de la que el
-// cliente usó para reservar.
-function horariosDelDiaAgenda() {
+// cliente usó para reservar. Con horarios por día, cada día tiene sus
+// propias franjas (una si trabaja corrido, dos o más si corta al mediodía);
+// sin horarios por día, todos los días activos comparten una sola franja.
+function franjasDelDiaAgenda(diaSemana) {
+  const t = currentStore && currentStore.turnos;
+  if (!t) return [];
+  if (t.porDia && t.horarios) {
+    const d = t.horarios[diaSemana];
+    return (d && d.activo && Array.isArray(d.franjas)) ? d.franjas : [];
+  }
+  const dias = Array.isArray(t.dias) && t.dias.length ? t.dias : [1, 2, 3, 4, 5];
+  return dias.includes(diaSemana) ? [{ desde: t.desde || '09:00', hasta: t.hasta || '18:00' }] : [];
+}
+
+function horariosDelDiaAgenda(diaSemana) {
   const t = currentStore && currentStore.turnos;
   if (!t) return [];
   const aMin = (s) => { const [h, m] = String(s).split(':').map(Number); return h * 60 + m; };
-  const inicio = aMin(t.desde || '09:00');
-  const fin = aMin(t.hasta || '18:00');
   const paso = Number(t.intervalo) || 30;
 
   const salida = [];
-  for (let m = inicio; m + paso <= fin; m += paso) {
-    salida.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'));
-  }
+  franjasDelDiaAgenda(diaSemana).forEach(f => {
+    const inicio = aMin(f.desde || '09:00');
+    const fin = aMin(f.hasta || '18:00');
+    for (let m = inicio; m + paso <= fin; m += paso) {
+      salida.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'));
+    }
+  });
   return salida;
 }
 
@@ -4236,9 +4295,8 @@ async function renderAgendaDia() {
   }
 
   const turnos = data || [];
-  const dias = Array.isArray(currentStore.turnos.dias) && currentStore.turnos.dias.length
-    ? currentStore.turnos.dias : [1, 2, 3, 4, 5];
-  const atiende = dias.includes(diaSemana);
+  const horarios = horariosDelDiaAgenda(diaSemana);
+  const atiende = horarios.length > 0;
 
   const avisoFuera = byId('agendaFueraDeHorario');
   if (!atiende) {
@@ -4248,7 +4306,6 @@ async function renderAgendaDia() {
     hide(avisoFuera);
   }
 
-  const horarios = atiende ? horariosDelDiaAgenda() : [];
   const porHora = {};
   turnos.forEach(t => { porHora[t.hora] = t; });
 
@@ -4835,6 +4892,7 @@ function renderProducts() {
       '<td>' + imgHtml + '</td>' +
       '<td><strong>' + escapeHtml(p.name) + '</strong>' +
         (p.solo_interno ? ' <span class="badge" style="background:#F1F3F6;color:var(--text-mute);" title="No se vende en tu tienda online">🔒 Interno</span>' : '') +
+        (p.pendiente_restauracion ? ' <span class="badge" style="background:#FEF3E2;color:#8A5200;" title="Tomado en parte de pago, todavía no está listo para vender">🔧 Restauración</span>' : '') +
       '</td>' +
       '<td>' + money(p.price) + precioSecundarioProducto(p) + '</td>' +
       '<td>' + (
@@ -6795,7 +6853,11 @@ async function confirmBarcodeVenta() {
     return;
   }
   const tradeIn = tomaEquipo
-    ? { descripcion: byId('barcodeTradeInDesc').value.trim(), valor: Number(byId('barcodeTradeInValor').value) || 0 }
+    ? {
+        descripcion: byId('barcodeTradeInDesc').value.trim(),
+        valor: Number(byId('barcodeTradeInValor').value) || 0,
+        listoParaVender: byId('barcodeTradeInListo').checked
+      }
     : null;
 
   const vendedor = (byId('barcodeVendedor')?.value || '').trim();
@@ -6807,10 +6869,13 @@ async function confirmBarcodeVenta() {
     let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty);
     if (ok.tradeIn) {
       mensaje += ok.equipoTomadoOk
-        ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos (sin publicar — ponele precio real y subí el stock cuando quieras venderlo).'
+        ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos.'
         : '\n\n⚠️ La venta quedó registrada, pero no se pudo cargar el equipo tomado como stock. Cargalo a mano en Productos.';
     }
     alert(mensaje);
+
+    const idEquipoParaFoto = (ok.tradeIn && ok.equipoTomadoOk) ? ok.equipoTomadoId : null;
+
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
@@ -6820,9 +6885,17 @@ async function confirmBarcodeVenta() {
     byId('campoTradeIn').classList.add('hidden');
     byId('barcodeTradeInDesc').value = '';
     byId('barcodeTradeInValor').value = '0';
+    byId('barcodeTradeInPendiente').checked = true;
     varianteSeleccionadaVenta = {};
     byId('barcodeVarianteBloque').classList.add('hidden');
     clearBarcodeResult();
+
+    // Se ofrece después de limpiar el formulario de venta: si el vendedor
+    // dice que sí, el modal de producto se abre sobre una pantalla ya
+    // lista para la próxima venta, no a mitad de una.
+    if (idEquipoParaFoto && confirm('¿Le sacás una foto al equipo que tomaste en parte de pago ahora?')) {
+      editProduct(idEquipoParaFoto);
+    }
   }
 }
 
@@ -6905,28 +6978,34 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
 
   // El equipo que se toma en parte de pago quedaba solo como texto suelto
   // en la orden (trade_in_descripcion): la venta cerraba bien pero el
-  // equipo nunca aparecía como stock disponible para revenderlo. Se crea
-  // como producto con stock 0 a propósito — no se publica solo, aparece
-  // "Agotado" en la tienda hasta que el dueño le pone precio real y fotos
-  // y sube el stock a mano. El precio inicial es lo que se le acreditó al
-  // cliente, así que sin editarlo la reventa saldría sin margen.
+  // equipo nunca aparecía como stock disponible para revenderlo. El
+  // vendedor elige en el momento si ya está listo para vender (stock 1,
+  // publicado) o pendiente de restauración (stock 0, no se publica solo:
+  // aparece "Agotado" hasta que el dueño lo revisa). El precio inicial es
+  // lo que se le acreditó al cliente, así que sin editarlo la reventa
+  // saldría sin margen — se lo advertimos en la descripción.
   let equipoTomadoOk = null;
+  let equipoTomadoId = null;
   if (tradeIn && tradeIn.descripcion) {
-    const { error: errEquipo } = await sb.from('store_products').insert([{
+    const listo = !!tradeIn.listoParaVender;
+    const { data: dataEquipo, error: errEquipo } = await sb.from('store_products').insert([{
       store_slug: currentStore.slug,
       name: tradeIn.descripcion,
       description: 'Tomado en parte de pago el ' + new Date().toLocaleDateString('es-AR') +
-        ' (venta a ' + nombre + '). Revisá precio, estado y fotos antes de publicarlo.',
+        ' (venta a ' + nombre + ').' +
+        (listo ? ' Revisá que el precio te deje margen.' : ' Pendiente de restauración antes de publicarlo.'),
       price: valorEquipo,
-      stock: 0,
+      stock: listo ? 1 : 0,
+      pendiente_restauracion: !listo,
       category: 'Usados / Parte de pago'
-    }]);
+    }]).select('id');
     equipoTomadoOk = !errEquipo;
+    equipoTomadoId = dataEquipo?.[0]?.id || null;
     if (errEquipo) console.error('No se pudo cargar el equipo tomado como stock:', errEquipo.message);
   }
 
   await refreshData();
-  return { ok: true, tradeIn: !!tradeIn, equipoTomadoOk };
+  return { ok: true, tradeIn: !!tradeIn, equipoTomadoOk, equipoTomadoId };
 }
 
 // Permitir escanear con Enter en el input
@@ -7253,6 +7332,7 @@ if (byId('newProductBtn')) {
     if (byId('productForm')) byId('productForm').dataset.id = '';
     byId('pEsServicio').checked = false;
     byId('pSoloInterno').checked = false;
+    byId('pPendienteRestauracion').checked = false;
     byId('campoStock').classList.remove('hidden');
     cargarVariantesEnFormulario(null);   // arranca limpio, sin heredar del anterior
     opcionesEnEdicion = [];
@@ -7551,6 +7631,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     specs: specsEnEdicion,
     tipo: byId('pEsServicio').checked ? 'servicio' : 'producto',
     solo_interno: byId('pSoloInterno').checked,
+    pendiente_restauracion: byId('pPendienteRestauracion').checked,
     tiene_variantes: tieneVariantes,
     variante_campos: tieneVariantes ? variAtributosEnEdicion.filter(a => a.nombre && a.valores.length) : [],
     variantes: tieneVariantes ? variantesEnEdicion : []
@@ -7628,6 +7709,7 @@ async function editProduct(id) {
   const servicio = !esProductoFisico(p);
   byId('pEsServicio').checked = servicio;
   byId('pSoloInterno').checked = !!p.solo_interno;
+  byId('pPendienteRestauracion').checked = !!p.pendiente_restauracion;
   cargarVariantesEnFormulario(p);   // decide por sí mismo si el stock queda oculto
 
   opcionesEnEdicion = Array.isArray(p.opciones) ? p.opciones.map(o => ({ ...o })) : [];
@@ -8158,14 +8240,100 @@ function diasDeAtencionElegidos() {
   return [...byId('turnosDias').querySelectorAll('input:checked')].map(i => Number(i.value));
 }
 
+// ---- Horarios distintos según el día ----
+// Un día "corrido" es una sola franja (09:00 a 18:00). Un día con corte al
+// mediodía son dos franjas (09:00-13:00 y 15:00-19:00). Domingo=0 ... Sábado=6,
+// mismo criterio que Date.getDay() en todo el resto del código.
+let turnosPorDiaEnEdicion = {};
+
+function turnosPorDiaVacio() {
+  const o = {};
+  for (let i = 0; i < 7; i++) o[i] = { activo: i >= 1 && i <= 5, franjas: [{ desde: '09:00', hasta: '18:00' }] };
+  return o;
+}
+
+function cargarTurnosPorDia(horarios) {
+  const base = turnosPorDiaVacio();
+  turnosPorDiaEnEdicion = {};
+  for (let i = 0; i < 7; i++) {
+    const h = horarios && horarios[i];
+    turnosPorDiaEnEdicion[i] = (h && Array.isArray(h.franjas))
+      ? { activo: !!h.activo, franjas: h.franjas.length ? h.franjas.map(f => ({ ...f })) : [{ desde: '09:00', hasta: '18:00' }] }
+      : base[i];
+  }
+  renderTurnosPorDia();
+}
+
+function renderTurnosPorDia() {
+  const cont = byId('turnosPorDiaLista');
+  if (!cont) return;
+
+  cont.innerHTML = DIAS_SEMANA_LARGO.map((nombre, i) => {
+    const d = turnosPorDiaEnEdicion[i];
+    const titulo = nombre.charAt(0).toUpperCase() + nombre.slice(1);
+    return '<div style="padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:8px;">' +
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:13px;">' +
+        '<input type="checkbox" data-dia-activo="' + i + '" ' + (d.activo ? 'checked' : '') + ' style="margin:0;cursor:pointer;width:auto;"> ' + titulo +
+      '</label>' +
+      (d.activo ? '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">' +
+        d.franjas.map((f, idx) =>
+          '<div style="display:flex;gap:8px;align-items:center;">' +
+            '<input type="time" data-franja="' + i + ':' + idx + ':desde" value="' + (f.desde || '09:00') + '" style="flex:1;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">' +
+            '<span style="font-size:12px;color:var(--text-mute);">a</span>' +
+            '<input type="time" data-franja="' + i + ':' + idx + ':hasta" value="' + (f.hasta || '18:00') + '" style="flex:1;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">' +
+            (d.franjas.length > 1 ? '<button type="button" data-franja-quitar="' + i + ':' + idx + '" class="icon-btn danger" title="Quitar este horario" style="padding:4px 8px;">✕</button>' : '<span style="width:28px;"></span>') +
+          '</div>'
+        ).join('') +
+        '<button type="button" data-dia-agregar-franja="' + i + '" style="align-self:flex-start;background:none;border:none;color:var(--celeste);font-size:12.5px;cursor:pointer;padding:2px 0;">+ Agregar otro horario ese día</button>' +
+      '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  cont.querySelectorAll('[data-dia-activo]').forEach(el => el.addEventListener('change', (e) => {
+    turnosPorDiaEnEdicion[Number(e.target.dataset.diaActivo)].activo = e.target.checked;
+    renderTurnosPorDia();
+  }));
+  cont.querySelectorAll('[data-franja]').forEach(el => el.addEventListener('change', (e) => {
+    const [i, idx, campo] = e.target.dataset.franja.split(':');
+    turnosPorDiaEnEdicion[Number(i)].franjas[Number(idx)][campo] = e.target.value;
+  }));
+  cont.querySelectorAll('[data-dia-agregar-franja]').forEach(el => el.addEventListener('click', (e) => {
+    turnosPorDiaEnEdicion[Number(e.target.dataset.diaAgregarFranja)].franjas.push({ desde: '09:00', hasta: '18:00' });
+    renderTurnosPorDia();
+  }));
+  cont.querySelectorAll('[data-franja-quitar]').forEach(el => el.addEventListener('click', (e) => {
+    const [i, idx] = e.target.dataset.franjaQuitar.split(':');
+    turnosPorDiaEnEdicion[Number(i)].franjas.splice(Number(idx), 1);
+    renderTurnosPorDia();
+  }));
+}
+
+byId('turnosPorDia').addEventListener('change', (e) => {
+  byId('turnosModoSimple').classList.toggle('hidden', e.target.checked);
+  byId('turnosModoPorDia').classList.toggle('hidden', !e.target.checked);
+});
+
 function configuracionDeTurnos() {
-  return {
+  const porDia = byId('turnosPorDia').checked;
+  const base = {
     activo: byId('turnosActivo').checked,
-    dias: diasDeAtencionElegidos(),
-    desde: byId('turnosDesde').value || '09:00',
-    hasta: byId('turnosHasta').value || '18:00',
+    porDia: porDia,
     intervalo: Number(byId('turnosIntervalo').value) || 30
   };
+
+  if (porDia) {
+    base.horarios = turnosPorDiaEnEdicion;
+    // dias/desde/hasta quedan como resumen aproximado (por si algo viejo
+    // los llega a leer) — no son la fuente de verdad cuando porDia está
+    // activo, eso es 'horarios'.
+    base.dias = Object.keys(turnosPorDiaEnEdicion).map(Number).filter(i => turnosPorDiaEnEdicion[i].activo);
+  } else {
+    base.dias = diasDeAtencionElegidos();
+    base.desde = byId('turnosDesde').value || '09:00';
+    base.hasta = byId('turnosHasta').value || '18:00';
+  }
+
+  return base;
 }
 
 byId('turnosActivo').addEventListener('change', (e) => {
@@ -8255,12 +8423,43 @@ function aplicarPaletaPreset(p) {
   byId('temaOpacidadPortada').value = p.opacidad;
 }
 
+// Posición de la foto de portada dentro del encabezado — el header no tiene
+// alto fijo (crece según el texto), así que "centro" a veces corta la parte
+// de la foto que importa. Mismo valor que después se usa como
+// background-position en tienda.html.
+const POSICIONES_PORTADA = [
+  { valor: 'top', label: 'Arriba' },
+  { valor: 'center', label: 'Centro' },
+  { valor: 'bottom', label: 'Abajo' }
+];
+let posicionPortadaElegida = 'center';
+
+function renderPosicionPortada() {
+  const cont = byId('posicionPortadaChips');
+  if (!cont) return;
+  cont.innerHTML = POSICIONES_PORTADA.map(p =>
+    '<button type="button" data-posicion-portada="' + p.valor + '" style="flex:1;padding:8px;border-radius:7px;border:1.5px solid ' +
+    (posicionPortadaElegida === p.valor ? 'var(--celeste)' : 'var(--line)') + ';background:' +
+    (posicionPortadaElegida === p.valor ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
+    p.label + '</button>'
+  ).join('');
+
+  cont.querySelectorAll('[data-posicion-portada]').forEach(b => {
+    b.addEventListener('click', () => {
+      posicionPortadaElegida = b.dataset.posicionPortada;
+      renderPosicionPortada();
+      byId('configPortadaPreview').style.backgroundPosition = 'center ' + posicionPortadaElegida;
+    });
+  });
+}
+
 function temaElegido() {
   return {
     tarjetas: byId('temaTarjetas').value,
     texto: byId('temaTexto').value,
     banner: byId('temaBanner').value,
-    opacidadPortada: Number(byId('temaOpacidadPortada').value)
+    opacidadPortada: Number(byId('temaOpacidadPortada').value),
+    posicionPortada: posicionPortadaElegida
   };
 }
 
@@ -8297,16 +8496,23 @@ async function cargarConfiguracion() {
     byId('temaTexto').value = tema.texto || '#15294D';
     byId('temaBanner').value = tema.banner || '#2F8FE0';
     byId('temaOpacidadPortada').value = tema.opacidadPortada != null ? tema.opacidadPortada : 80;
+    posicionPortadaElegida = tema.posicionPortada || 'center';
+    renderPosicionPortada();
+    byId('configPortadaPreview').style.backgroundPosition = 'center ' + posicionPortadaElegida;
 
     renderMediosDePago(store.medios_pago);
 
     const t = store.turnos || {};
     byId('turnosActivo').checked = !!t.activo;
     byId('turnosConfig').classList.toggle('hidden', !t.activo);
+    byId('turnosPorDia').checked = !!t.porDia;
+    byId('turnosModoSimple').classList.toggle('hidden', !!t.porDia);
+    byId('turnosModoPorDia').classList.toggle('hidden', !t.porDia);
     renderDiasDeAtencion(t.dias);
     byId('turnosDesde').value = t.desde || '09:00';
     byId('turnosHasta').value = t.hasta || '18:00';
     byId('turnosIntervalo').value = String(t.intervalo || 30);
+    cargarTurnosPorDia(t.horarios);
 
     if (store.image_url) {
       byId('configLogoPreview').style.backgroundImage = `url(${store.image_url})`;
