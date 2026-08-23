@@ -1216,8 +1216,8 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab hidden" id="tabAgenda"><i class="fa-solid fa-calendar-days"></i> Agenda</button>
       <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
-      <button class="app-tab" id="tabCaja"><i class="fa-solid fa-sack-dollar"></i> Caja</button>
-      <button class="app-tab" id="tabEstadisticas"><i class="fa-solid fa-chart-line"></i> Estadísticas</button>
+      <button class="app-tab" id="tabCaja"><i class="fa-solid fa-sack-dollar"></i> Caja <span class="lock-pro hidden" id="lockCaja">🔒</span></button>
+      <button class="app-tab" id="tabEstadisticas"><i class="fa-solid fa-chart-line"></i> Estadísticas <span class="lock-pro hidden" id="lockEstadisticas">🔒</span></button>
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
       <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
@@ -1316,7 +1316,7 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="importarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-excel"></i> Importar Excel</button>
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
-        <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI</button>
+        <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI <span class="lock-pro hidden" id="lockImei">🔒</span></button>
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código...">
       </div>
       <div id="scannerStatus" class="scanner-status hidden"></div>
@@ -2578,7 +2578,7 @@ const PLANES = {
     beneficios: [
       'Control de stock en tiempo real',
       'Registro de ventas con lector de código',
-      'Estadísticas y reportes de tu negocio',
+      'Historial de ventas y pedidos',
       'Productos ilimitados',
       'Tienda pública con carrito y pedidos por WhatsApp'
     ]
@@ -2590,6 +2590,9 @@ const PLANES = {
     periodo: 'lo armamos con vos',
     beneficios: [
       'Todo lo de Stock y Pedidos',
+      'Caja diaria por medio de pago',
+      'Estadísticas de productos y clientes',
+      'Historial completo por IMEI',
       'Bot con IA que toma los pedidos solo',
       'Responde a tus clientes las 24 horas',
       'Configurado según tu rubro y tu carta',
@@ -2597,6 +2600,32 @@ const PLANES = {
     ]
   }
 };
+
+// Caja, Estadísticas e Historial IMEI quedaron adentro del plan Pro — son
+// justo el diferencial que separa a StockCel de un control de stock
+// básico, así que tiene sentido que empujen la venta del escalón de
+// arriba en vez de venir gratis con el plan de entrada.
+function tienePlanPro() {
+  return !!(currentStore && (currentStore.plan === 'pro' || currentStore.plan === 'cortesia'));
+}
+
+const WHATSAPP_UPGRADE_PRO = '5493413005232';
+
+function ofrecerUpgradePro(nombreFuncion) {
+  const negocio = (currentStore && (currentStore.business_name || currentStore.slug)) || '';
+  const msg = 'Hola! Quiero sumar ' + nombreFuncion + ' (plan Pro) a mi tienda' + (negocio ? ' ' + negocio : '') + '.';
+  if (confirm('🔒 ' + nombreFuncion + ' es parte del plan Pro.\n\n¿Querés escribirnos por WhatsApp para sumarlo?')) {
+    window.open('https://wa.me/' + WHATSAPP_UPGRADE_PRO + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+}
+
+function aplicarVisibilidadPorPlan() {
+  const pro = tienePlanPro();
+  ['lockCaja', 'lockEstadisticas', 'lockImei'].forEach(id => {
+    const el = byId(id);
+    if (el) el.classList.toggle('hidden', pro);
+  });
+}
 
 // Solo los planes de autoservicio necesitan link de pago cargado
 const planesConfigurados = () =>
@@ -4264,6 +4293,7 @@ async function refreshData() {
   renderCaja();
   aplicarVisibilidadPorRubro();
   aplicarVisibilidadPorTurnos();
+  aplicarVisibilidadPorPlan();
   refrescarListaDeCategorias();
   await renderAgendaDia();
 }
@@ -6542,6 +6572,7 @@ async function buscarHistorialImei(imei) {
 }
 
 byId('buscarImeiBtn').addEventListener('click', () => {
+  if (!tienePlanPro()) { ofrecerUpgradePro('Historial IMEI'); return; }
   byId('buscarImeiInput').value = '';
   byId('imeiHistorialTitulo').textContent = '';
   byId('imeiHistorialLista').innerHTML = '';
@@ -6556,6 +6587,7 @@ byId('buscarImeiInput').addEventListener('keypress', (e) => {
 byId('closeImeiHistorialModal').addEventListener('click', () => hide(byId('imeiHistorialModal')));
 
 byId('pVerHistorialImeiBtn').addEventListener('click', () => {
+  if (!tienePlanPro()) { ofrecerUpgradePro('Historial IMEI'); return; }
   const imei = byId('pImei').value.trim();
   if (!imei) return;
   hide(byId('buscarImeiModal'));
@@ -6730,6 +6762,7 @@ function mostrarVistaEstadisticas() {
 }
 
 byId('tabEstadisticas').addEventListener('click', () => {
+  if (!tienePlanPro()) { ofrecerUpgradePro('Estadísticas'); return; }
   if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaEstadisticas); return; }
   mostrarVistaEstadisticas();
 });
@@ -8477,6 +8510,7 @@ function mostrarVistaCaja() {
 }
 
 byId('tabCaja').addEventListener('click', () => {
+  if (!tienePlanPro()) { ofrecerUpgradePro('Caja'); return; }
   if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaCaja); return; }
   mostrarVistaCaja();
 });
