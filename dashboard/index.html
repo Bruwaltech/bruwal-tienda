@@ -2686,7 +2686,18 @@ const nombrePlan = (plan) =>
 // Devuelve: 'activo' (pago o cortesia), 'prueba', 'vencido'
 function estadoSuscripcion() {
   if (!currentStore) return 'prueba';
-  if (PLANES_ACTIVOS.includes(currentStore.plan)) return 'activo';
+
+  if (currentStore.plan === 'cortesia') return 'activo';
+
+  if (PLANES_ACTIVOS.includes(currentStore.plan)) {
+    // plan_vence lo carga el webhook de Mercado Pago cuando alguien
+    // cancela o se le pausa el cobro: ya pagó ese período, así que sigue
+    // activo hasta esa fecha — recién después pasa a modo solo-lectura,
+    // mismo criterio que la prueba gratis vencida.
+    const vence = currentStore.plan_vence ? new Date(currentStore.plan_vence) : null;
+    if (!vence || isNaN(vence)) return 'activo';
+    return Date.now() < vence.getTime() ? 'activo' : 'vencido';
+  }
 
   const fin = currentStore.trial_ends_at ? new Date(currentStore.trial_ends_at) : null;
   if (!fin || isNaN(fin)) return 'prueba';   // sin fecha cargada no bloqueamos a nadie
@@ -2723,7 +2734,14 @@ function renderTrialBar() {
     byId('verPlanesBtn').textContent = 'Ver mi plan';
   } else if (estado === 'vencido') {
     bar.classList.add('vencido');
-    texto.textContent = '🔒 Tu prueba gratis terminó. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás activar un plan. Tu tienda pública sigue online.';
+    // Puede llegar acá por dos caminos distintos: nunca activó un plan (la
+    // prueba se le venció) o lo tenía activo y se le venció el período ya
+    // pagado tras cancelar — el cartel tiene que decir cuál de las dos es,
+    // si no "tu prueba terminó" le suena raro a alguien que ya pagaba.
+    const veniaDePlanPago = PLANES_ACTIVOS.includes(currentStore.plan) && currentStore.plan !== 'cortesia';
+    texto.textContent = veniaDePlanPago
+      ? '🔒 Tu suscripción se canceló y ya venció el período pago. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás reactivar tu plan. Tu tienda pública sigue online.'
+      : '🔒 Tu prueba gratis terminó. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás activar un plan. Tu tienda pública sigue online.';
     byId('verPlanesBtn').textContent = 'Activar mi plan';
   } else {
     const dias = diasRestantesDePrueba();

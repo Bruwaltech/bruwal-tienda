@@ -1,11 +1,16 @@
-// Webhook de Mercado Pago — activa el plan solo con que la suscripción
-// se autorice, sin entrar a Supabase a mano cada vez que alguien paga.
+// Webhook de Mercado Pago — activa el plan cuando se autoriza una
+// suscripción, y programa la baja cuando se cancela o se pausa, sin
+// entrar a Supabase a mano en ninguno de los dos casos.
 //
-// Cubre nada más el evento que importa para esto: subscription_preapproval
-// con status 'authorized'. Bajar el plan cuando alguien cancela NO es
-// automático a propósito — es una decisión que se sigue tomando a mano,
-// mismo criterio que ya usa el resto de la app (la tienda pública sigue
-// online al vencer la prueba, no se castiga de más "por las dudas").
+// La cancelación NO corta el acceso de inmediato: Mercado Pago cobra el
+// mes por adelantado, así que quien cancela ya pagó ese período. Guardamos
+// la fecha hasta la que sigue cubierto en store_profiles.plan_vence, y es
+// el dashboard (estadoSuscripcion() en dashboard/index.html) el que decide
+// pasar a modo solo-lectura recién cuando esa fecha se cumple — mismo
+// mecanismo que ya usa la prueba gratis vencida, nada nuevo del lado del
+// front. Si no llega una fecha confiable de Mercado Pago, no tocamos nada
+// y queda para revisar a mano: preferimos eso a cortarle el acceso a
+// alguien que todavía tiene días pagos.
 
 const crypto = require('crypto');
 
@@ -52,7 +57,7 @@ function firmaValida(dataId, requestId, cabeceraSignature) {
   return igualdadSegura(esperada, partes.v1);
 }
 
-async function actualizarPlan(slug, plan) {
+async function actualizarStore(slug, campos) {
   const clave = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const r = await fetch(SUPABASE_URL + '/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug), {
     method: 'PATCH',
@@ -62,7 +67,7 @@ async function actualizarPlan(slug, plan) {
       'Content-Type': 'application/json',
       Prefer: 'return=minimal'
     },
-    body: JSON.stringify({ plan })
+    body: JSON.stringify(campos)
   });
   if (!r.ok) throw new Error('Supabase ' + r.status + ': ' + (await r.text()));
 }
@@ -119,26 +124,45 @@ module.exports = async (req, res) => {
 
   try {
     const preapproval = await consultarPreapproval(dataId);
-
-    if (preapproval.status !== 'authorized') {
-      res.statusCode = 200;
-      return res.end('sin cambios: ' + preapproval.status);
-    }
-
     const slug = preapproval.external_reference;
     const plan = PLAN_POR_PREAPPROVAL_ID[preapproval.preapproval_plan_id];
 
     if (!slug || !plan) {
-      console.warn('Preapproval autorizada sin slug o plan reconocido:', dataId, slug, preapproval.preapproval_plan_id);
+      console.warn('Preapproval sin slug o plan reconocido:', dataId, slug, preapproval.preapproval_plan_id);
       res.statusCode = 200;
       return res.end('sin slug o plan reconocido');
     }
 
-    await actualizarPlan(slug, plan);
+    if (preapproval.status === 'authorized') {
+      // plan_vence en null: si venía de una cancelación anterior y se
+      // volvió a suscribir, esto le saca cualquier fecha de baja pendiente.
+      await actualizarStore(slug, { plan, plan_vence: null });
+      console.log('Plan activado por Mercado Pago:', slug, '->', plan);
+      res.statusCode = 200;
+      return res.end('ok');
+    }
 
-    console.log('Plan activado por Mercado Pago:', slug, '->', plan);
+    if (preapproval.status === 'cancelled' || preapproval.status === 'paused') {
+      // El acceso sigue hasta la fecha en que hubiera tocado el próximo
+      // cobro (eso es lo que ya está pagado). No cambiamos 'plan' acá: el
+      // dashboard sigue tratando a la tienda como activa hasta esa fecha.
+      const fechaVence = preapproval.next_payment_date ||
+        (preapproval.auto_recurring && preapproval.auto_recurring.next_payment_date) || null;
+
+      if (!fechaVence) {
+        console.warn('Cancelación sin fecha de próximo cobro — no se tocó nada, revisar a mano:', slug, dataId);
+        res.statusCode = 200;
+        return res.end('sin fecha, revisar a mano');
+      }
+
+      await actualizarStore(slug, { plan_vence: String(fechaVence).slice(0, 10) });
+      console.log('Cancelación registrada:', slug, '-> vence', fechaVence);
+      res.statusCode = 200;
+      return res.end('ok');
+    }
+
     res.statusCode = 200;
-    return res.end('ok');
+    return res.end('sin cambios: ' + preapproval.status);
   } catch (err) {
     console.error('Error procesando el webhook de Mercado Pago:', err);
     // 200 igual: con un error Mercado Pago reintenta el mismo webhook una y
