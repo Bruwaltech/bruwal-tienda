@@ -2345,6 +2345,21 @@ tr:last-child td { border-bottom: none; }
             una búsqueda por tu nombre y ubicación.
           </small>
         </div>
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label>Rubro</label>
+          <select id="configRubroManual" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+            <option value="">Automático (según nombre y descripción)</option>
+            <option value="indumentaria">Indumentaria / calzado</option>
+            <option value="electronica">Celulares / electrónica</option>
+            <option value="comida">Comida</option>
+            <option value="bebidas">Bebidas / cafetería</option>
+            <option value="otro">Otro (sin categoría especial)</option>
+          </select>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Normalmente lo detectamos solo con el nombre y la descripción de tu tienda. Elegilo a mano acá si no acertamos, o para probar cómo se ve cada rubro.
+          </small>
+        </div>
+
         <div class="field hidden" id="campoConfigHaceReparaciones" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="configHaceReparaciones" style="margin:0;cursor:pointer;width:auto;">
@@ -3420,9 +3435,15 @@ function textoSugiereIndumentaria(texto) {
 function actualizarVisibilidadReparacionesConfig() {
   const campo = byId('campoConfigHaceReparaciones');
   if (!campo) return;
-  const esIndumentaria = textoSugiereIndumentaria(
-    (byId('configNombre')?.value || '') + ' ' + (byId('configDesc')?.value || '')
-  );
+
+  // El rubro elegido a mano manda por completo: si alguien fuerza
+  // "Indumentaria" para probarlo, no tiene sentido seguir mirando palabras
+  // clave del nombre real de la tienda.
+  const manual = byId('configRubroManual')?.value;
+  const esIndumentaria = manual
+    ? manual === 'indumentaria'
+    : textoSugiereIndumentaria((byId('configNombre')?.value || '') + ' ' + (byId('configDesc')?.value || ''));
+
   campo.classList.toggle('hidden', esIndumentaria);
   if (esIndumentaria) byId('configHaceReparaciones').checked = false;
 }
@@ -3721,6 +3742,14 @@ const OPCIONES_SUGERIDAS = {
 // mutuamente excluyentes: indumentaria/calzado nunca ve agregados de
 // comida, y comida/bebidas nunca ve el selector de talle.
 function categoriaDeRubro() {
+  // Override a mano desde Configuración: pisa la detección automática por
+  // completo. Sirve para el caso real (una tienda cuyo nombre no dice nada
+  // de lo que vende, como pasó con Wabi Import) y para probar cómo se ve
+  // cada rubro sin tener que reescribir el nombre real de la tienda.
+  const manual = currentStore?.rubro_manual;
+  if (manual === 'otro') return null;   // fuerza "sin rubro especial", ignora las palabras clave
+  if (manual) return manual;            // 'indumentaria' | 'electronica' | 'comida' | 'bebidas'
+
   // normalizarTexto saca acentos y pasa a minúscula: sin esto, una
   // descripción que dice "Electrónica" (con tilde) no matcheaba contra la
   // palabra clave 'electronic' — Wabi Import se quedó sin Reparaciones por
@@ -7774,6 +7803,7 @@ byId('closeContactModal').addEventListener('click', () => hide(byId('contactModa
 byId('closeConfigModal').addEventListener('click', () => hide(byId('configModal')));
 byId('configNombre').addEventListener('input', actualizarVisibilidadReparacionesConfig);
 byId('configDesc').addEventListener('input', actualizarVisibilidadReparacionesConfig);
+byId('configRubroManual').addEventListener('change', actualizarVisibilidadReparacionesConfig);
 
 // ---- Guía en video ----
 const VIDEO_GUIA = 'v0WjogCQ4WE';
@@ -8912,6 +8942,7 @@ async function cargarConfiguracion() {
     byId('configIg').value = store.instagram || '';
     byId('configGoogle').value = store.google_url || '';
     byId('configEslogan').value = store.eslogan || '';
+    byId('configRubroManual').value = store.rubro_manual || '';
     byId('configHaceReparaciones').checked = !!store.hace_reparaciones;
     actualizarVisibilidadReparacionesConfig();
 
@@ -9103,6 +9134,7 @@ async function guardarConfiguracion() {
     medios_pago: mediosDePagoElegidos(),
     turnos: configuracionDeTurnos(),
     tema: temaElegido(),
+    rubro_manual: byId('configRubroManual').value || null,
     hace_reparaciones: byId('configHaceReparaciones').checked
   };
 
