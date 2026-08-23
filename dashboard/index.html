@@ -2608,13 +2608,14 @@ const PLANES = {
   },
   pro: {
     nombre: 'Pro',
-    // 'consulta' hasta que exista el plan de Mercado Pago con precio fijo
-    // ($70.000/mes acordado 2026-08-23) — cuando lo den de alta, pasar a
-    // tipo:'pago' y sumar el link, igual que Basic. El Bot de pedidos NO
-    // va acá: queda como consulta aparte, no es parte de este plan.
-    tipo: 'consulta',
+    tipo: 'pago',                // se activa solo, con Mercado Pago
     precio: '$70.000',
     periodo: 'por mes',
+    // Plan de Mercado Pago — $70.000, débito mensual. URL larga a
+    // propósito, igual que Basic: el acortador (mpago.la) descarta el
+    // external_reference con el slug de la tienda al redirigir, y sin eso
+    // no hay forma de saber qué tienda pagó.
+    link: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=7f3874b7347b43698e4b9daf92a5405b',
     beneficios: [
       'Todo lo de Stock y Pedidos',
       'Caja diaria por medio de pago',
