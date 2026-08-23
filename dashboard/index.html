@@ -1217,6 +1217,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
       <button class="app-tab" id="tabCaja"><i class="fa-solid fa-sack-dollar"></i> Caja</button>
+      <button class="app-tab" id="tabEstadisticas"><i class="fa-solid fa-chart-line"></i> Estadísticas</button>
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
       <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
@@ -1573,6 +1574,39 @@ tr:last-child td { border-bottom: none; }
       </div>
     </div>
 
+    <!-- ESTADÍSTICAS -->
+    <div id="estadisticasView" class="hidden">
+      <div class="panel" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:13px;color:var(--text-mute);">Período:</span>
+        <div id="statsPeriodoChips" style="display:flex;gap:6px;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">🏆 Ranking de productos</div>
+        <div class="table-wrap" style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Producto</th><th>Unidades</th><th style="text-align:right;">Ingresos</th><th style="text-align:right;">Margen</th><th>Stock actual</th></tr></thead>
+            <tbody id="statsProductosBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="panelStatsSinVentas">
+        <div class="panel-head">🐌 Con stock, sin ventas en el período</div>
+        <div id="statsSinVentasLista" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">👥 Clientes</div>
+        <div class="table-wrap" style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Cliente</th><th>Compras</th><th style="text-align:right;">Total gastado</th><th style="text-align:right;">Ticket promedio</th><th>Última compra</th><th>Segmento</th></tr></thead>
+            <tbody id="statsClientesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- FIADO -->
     <div id="fiadoView" class="hidden">
       <div class="stats-row" style="grid-template-columns:1fr 1fr;">
@@ -1676,6 +1710,14 @@ tr:last-child td { border-bottom: none; }
             </select>
           </div>
           <small id="pPriceHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
+        </div>
+        <div class="field">
+          <label>🔒 Costo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <button type="button" id="pCostoVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar costo</button>
+          <input type="number" id="pCosto" min="0" step="0.01" class="hidden" placeholder="0">
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+            Para calcular el margen en Estadísticas. Protegido con el mismo PIN que Costos, si lo configuraste.
+          </small>
         </div>
         <div class="field">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
@@ -3002,6 +3044,24 @@ function valoresProveedorParaGuardar() {
     telefono: byId('pProveedorTelefono').value.trim() || null,
     email: byId('pProveedorEmail').value.trim() || null
   };
+}
+
+// ---- Costo de un producto (para el margen en Estadísticas) — mismo PIN ----
+let costoEnEdicion = 0;
+
+function renderCampoCosto() {
+  const bloqueado = requiereDesbloqueoCostos();
+  byId('pCostoVerBtn').classList.toggle('hidden', !bloqueado);
+  byId('pCosto').classList.toggle('hidden', bloqueado);
+  if (!bloqueado) byId('pCosto').value = costoEnEdicion || '';
+}
+
+// Mismo criterio que valoresProveedorParaGuardar: si el campo sigue tapado
+// (nunca se desbloqueó en esta carga), se manda lo que el producto ya
+// tenía — leer el input oculto mandaría 0 y borraría el costo sin querer.
+function valorCostoParaGuardar() {
+  if (byId('pCosto').classList.contains('hidden')) return costoEnEdicion || null;
+  return Number(byId('pCosto').value) || null;
 }
 // ============================================================================
 
@@ -6366,6 +6426,178 @@ async function eliminarMovimientoCaja(id) {
   await refreshData();
 }
 
+// ===================== ESTADÍSTICAS DE PRODUCTOS Y CLIENTES =====================
+// El diferencial que StockCel vende como núcleo: ranking, margen y rotación
+// por producto; ticket promedio, frecuencia y segmento por cliente. No hay
+// tabla nueva — todo sale de 'orders' (ya filtrado a ventas reales por
+// cuentaComoVenta) y 'products', igual que Top productos del Dashboard,
+// pero con margen, rotación y clientes agregados.
+const STATS_PERIODOS = [
+  { dias: 7, label: '7 días' },
+  { dias: 30, label: '30 días' },
+  { dias: 90, label: '90 días' },
+  { dias: null, label: 'Todo' }
+];
+let statsPeriodoDias = 30;
+
+function statsProductosYClientes(periodoDias) {
+  const corte = periodoDias ? new Date(Date.now() - periodoDias * 86400000) : null;
+  const enPeriodo = orders.filter(o => !corte || new Date(o.created_at) >= corte);
+
+  const porProducto = {};
+  enPeriodo.forEach(o => {
+    (Array.isArray(o.items) ? o.items : []).forEach(item => {
+      const p = products.find(x => String(x.id) === String(item.product_id));
+      const precioUnitario = Number(item.price ?? p?.price ?? 0);
+      const qty = item.qty || 1;
+      const key = item.product_id || item.name;
+      if (!porProducto[key]) {
+        porProducto[key] = { name: item.name, qty: 0, ingresos: 0, costoTotal: 0, tieneCosto: !!(p && p.costo), product: p || null };
+      }
+      porProducto[key].qty += qty;
+      porProducto[key].ingresos += precioUnitario * qty;
+      porProducto[key].costoTotal += Number((p && p.costo) || 0) * qty;
+    });
+  });
+
+  const productos = Object.values(porProducto)
+    .map(x => ({
+      name: x.name,
+      qty: x.qty,
+      ingresos: x.ingresos,
+      margen: x.tieneCosto ? x.ingresos - x.costoTotal : null,
+      stockActual: x.product ? x.product.stock : null
+    }))
+    .sort((a, b) => b.ingresos - a.ingresos);
+
+  // Con stock pero sin ninguna venta en el período — StockCel lo vende como
+  // "qué conviene dejar de comprar". Solo productos físicos: un servicio no
+  // "rota".
+  const idsConVenta = new Set(Object.values(porProducto).map(x => x.product && x.product.id).filter(Boolean));
+  const sinVentas = products.filter(p => esProductoFisico(p) && Number(p.stock) > 0 && !idsConVenta.has(p.id));
+
+  const porCliente = {};
+  enPeriodo.forEach(o => {
+    const nombre = o.customer_name || 'Sin nombre';
+    if (!porCliente[nombre]) porCliente[nombre] = { qty: 0, total: 0, ultimaCompra: o.created_at };
+    porCliente[nombre].qty += 1;
+    porCliente[nombre].total += Number(o.total || 0);
+    if (new Date(o.created_at) > new Date(porCliente[nombre].ultimaCompra)) porCliente[nombre].ultimaCompra = o.created_at;
+  });
+
+  const ahora = Date.now();
+  const clientes = Object.entries(porCliente).map(([nombre, d]) => ({
+    nombre,
+    compras: d.qty,
+    total: d.total,
+    ticketPromedio: d.total / d.qty,
+    ultimaCompra: d.ultimaCompra,
+    diasDesdeUltima: Math.floor((ahora - new Date(d.ultimaCompra).getTime()) / 86400000)
+  }));
+
+  // Segmentación simple, explicable — no un modelo estadístico: el umbral
+  // "alto gasto" es el percentil 80 de ESTE período, así que se recalcula
+  // solo al cambiar de período en vez de quedar pegado a un número fijo.
+  const totalesOrdenados = clientes.map(c => c.total).sort((a, b) => a - b);
+  const umbralAlto = totalesOrdenados.length ? totalesOrdenados[Math.floor(totalesOrdenados.length * 0.8)] : 0;
+
+  clientes.forEach(c => {
+    if (c.compras === 1 && c.diasDesdeUltima <= 30) c.segmento = 'Nuevo';
+    else if (c.diasDesdeUltima > 90) c.segmento = 'Inactivo';
+    else if (umbralAlto > 0 && c.total >= umbralAlto && c.diasDesdeUltima > 45) c.segmento = 'En riesgo';
+    else if (umbralAlto > 0 && c.total >= umbralAlto) c.segmento = 'VIP';
+    else if (c.compras >= 3) c.segmento = 'Frecuente';
+    else c.segmento = 'Ocasional';
+  });
+
+  clientes.sort((a, b) => b.total - a.total);
+
+  return { productos, sinVentas, clientes };
+}
+
+const SEGMENTO_COLOR = {
+  VIP: { bg: '#DCFCE7', color: '#1FA088' },
+  Frecuente: { bg: '#EAF4FD', color: 'var(--celeste)' },
+  'En riesgo': { bg: '#FEF3E2', color: '#8A5200' },
+  Nuevo: { bg: '#F1F3F6', color: 'var(--text-mute)' },
+  Inactivo: { bg: '#FDECEC', color: 'var(--danger)' },
+  Ocasional: { bg: '#F1F3F6', color: 'var(--text-mute)' }
+};
+
+function renderStatsPeriodoChips() {
+  byId('statsPeriodoChips').innerHTML = STATS_PERIODOS.map(p =>
+    '<button type="button" data-stats-periodo="' + p.dias + '" style="padding:7px 14px;border-radius:7px;border:1.5px solid ' +
+    (statsPeriodoDias === p.dias ? 'var(--celeste)' : 'var(--line)') + ';background:' +
+    (statsPeriodoDias === p.dias ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
+    p.label + '</button>'
+  ).join('');
+
+  byId('statsPeriodoChips').querySelectorAll('[data-stats-periodo]').forEach(b => {
+    b.addEventListener('click', () => {
+      const v = b.dataset.statsPeriodo;
+      statsPeriodoDias = v === 'null' ? null : Number(v);
+      renderStatsPeriodoChips();
+      renderEstadisticas();
+    });
+  });
+}
+
+function renderEstadisticas() {
+  const cuerpoProd = byId('statsProductosBody');
+  if (!cuerpoProd || !currentStore) return;
+
+  const { productos, sinVentas, clientes } = statsProductosYClientes(statsPeriodoDias);
+
+  cuerpoProd.innerHTML = productos.length ? productos.map(p =>
+    '<tr>' +
+      '<td>' + escapeHtml(p.name) + '</td>' +
+      '<td>' + p.qty + '</td>' +
+      '<td style="text-align:right;">' + money(p.ingresos) + '</td>' +
+      '<td style="text-align:right;">' + (p.margen != null ? money(p.margen) : '<span style="color:var(--text-mute);font-size:12px;" title="Cargale el costo al producto para ver el margen">— sin costo</span>') + '</td>' +
+      '<td>' + (p.stockActual != null ? p.stockActual : '—') + '</td>' +
+    '</tr>'
+  ).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin ventas en este período</td></tr>';
+
+  const panelSV = byId('panelStatsSinVentas');
+  if (sinVentas.length) {
+    show(panelSV);
+    byId('statsSinVentasLista').innerHTML = sinVentas.map(p =>
+      '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--bg);border-radius:7px;font-size:13.5px;">' +
+        '<span>' + escapeHtml(p.name) + '</span>' +
+        '<span style="color:var(--text-mute);">' + p.stock + ' en stock</span>' +
+      '</div>'
+    ).join('');
+  } else {
+    hide(panelSV);
+  }
+
+  byId('statsClientesBody').innerHTML = clientes.length ? clientes.map(c => {
+    const seg = SEGMENTO_COLOR[c.segmento] || SEGMENTO_COLOR.Ocasional;
+    return '<tr>' +
+      '<td><strong>' + escapeHtml(c.nombre) + '</strong></td>' +
+      '<td>' + c.compras + '</td>' +
+      '<td style="text-align:right;">' + money(c.total) + '</td>' +
+      '<td style="text-align:right;">' + money(c.ticketPromedio) + '</td>' +
+      '<td>' + new Date(c.ultimaCompra).toLocaleDateString('es-AR') + '</td>' +
+      '<td><span class="badge" style="background:' + seg.bg + ';color:' + seg.color + ';">' + c.segmento + '</span></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin clientes en este período</td></tr>';
+}
+
+function mostrarVistaEstadisticas() {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabEstadisticas').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('estadisticasView').classList.add('visible');
+  renderStatsPeriodoChips();
+  renderEstadisticas();
+}
+
+byId('tabEstadisticas').addEventListener('click', () => {
+  if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaEstadisticas); return; }
+  mostrarVistaEstadisticas();
+});
+
 // Para deudas que ya existían fuera del sistema (cuaderno, memoria, etc.).
 // A diferencia de una venta de mostrador, NO toca stock: esa venta ya pasó
 // antes de usar la app, así que no hay mercadería que descontar ahora.
@@ -7324,6 +7556,8 @@ if (byId('newProductBtn')) {
     if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
     proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
     renderCampoProveedor();
+    costoEnEdicion = 0;
+    renderCampoCosto();
     if (byId('pImageFile')) byId('pImageFile').value = '';
     fotosEnEdicion = [];
     renderFotosEnEdicion();
@@ -7619,6 +7853,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     moneda: precioConv.moneda,
     precio_original: precioConv.monto_original,
     cotizacion: precioConv.cotizacion,
+    costo: valorCostoParaGuardar(),
     stock: stockGeneral,
     category: byId('pCategory').value,
     ean: byId('pEan').value || null,
@@ -7696,6 +7931,8 @@ async function editProduct(id) {
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = p.estado_equipo || '';
   proveedorEnEdicion = { nombre: p.proveedor_nombre || '', telefono: p.proveedor_telefono || '', email: p.proveedor_email || '' };
   renderCampoProveedor();
+  costoEnEdicion = Number(p.costo || 0);
+  renderCampoCosto();
   if (byId('pImageFile')) byId('pImageFile').value = '';
 
   // Las fotos ya guardadas entran como tipo:'url', no como archivos: no
@@ -8023,6 +8260,8 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
   proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
   renderCampoProveedor();
+  costoEnEdicion = 0;
+  renderCampoCosto();
   cargarVariantesEnFormulario(null);
   opcionesEnEdicion = [];
   renderOpciones();
@@ -8160,6 +8399,9 @@ byId('registrarHuellaBtn').addEventListener('click', async () => {
 });
 byId('pProveedorVerBtn').addEventListener('click', () => {
   abrirPinCostosModal(renderCampoProveedor);
+});
+byId('pCostoVerBtn').addEventListener('click', () => {
+  abrirPinCostosModal(renderCampoCosto);
 });
 byId('confirmarEtiquetaVarianteBtn').addEventListener('click', confirmarEtiquetaVariante);
 byId('guardarReparacionBtn').addEventListener('click', guardarReparacion);
