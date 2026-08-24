@@ -2628,12 +2628,18 @@ const PLANES = {
   basic: {
     nombre: 'Stock y Pedidos',
     tipo: 'pago',               // se activa solo, con Mercado Pago
-    precio: '$25.000',
+    // OJO: sigue apuntando al plan de Mercado Pago que cobra $25.000 de
+    // verdad (mismo preapproval_plan_id de siempre). precioAnterior/precio
+    // son solo lo que se MUESTRA -- si van a cobrar $25.900 en serio, hay
+    // que crear/editar el plan en Mercado Pago y actualizar el link acá,
+    // si no la web promete un precio distinto al que factura.
+    precioAnterior: '$35.000',
+    precio: '$25.900',
     periodo: 'por mes',
-    // Plan "Bruwalstock Basic" en Mercado Pago — $25.000, débito mensual.
-    // Usamos la URL larga a proposito: el link corto (mpago.la/28KDgwc)
-    // descarta los parametros al redirigir y perderiamos el external_reference,
-    // que es lo que le dice al webhook QUE tienda pago.
+    // Plan "Bruwalstock Basic" en Mercado Pago. Usamos la URL larga a
+    // proposito: el link corto (mpago.la/28KDgwc) descarta los parametros
+    // al redirigir y perderiamos el external_reference, que es lo que le
+    // dice al webhook QUE tienda pago.
     link: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=558bf71f6d62460797b95829fc767e0d',
     beneficios: [
       'Control de stock en tiempo real',
@@ -2646,15 +2652,16 @@ const PLANES = {
   pro: {
     nombre: 'Pro',
     tipo: 'pago',                // se activa solo, con Mercado Pago
+    precioAnterior: '$87.500',
     precio: '$70.000',
     periodo: 'por mes',
-    // Plan de Mercado Pago — $70.000, débito mensual. URL larga a
-    // propósito, igual que Basic: el acortador (mpago.la) descarta el
-    // external_reference con el slug de la tienda al redirigir, y sin eso
-    // no hay forma de saber qué tienda pagó.
+    // Plan de Mercado Pago — cobra $70.000 de verdad, coincide con lo que
+    // se muestra. URL larga a propósito, igual que Basic: el acortador
+    // (mpago.la) descarta el external_reference del slug de la tienda al
+    // redirigir, y sin eso no hay forma de saber qué tienda pagó.
     link: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=7f3874b7347b43698e4b9daf92a5405b',
     beneficios: [
-      'Todo lo de Stock y Pedidos',
+      'Todo lo del plan Basic',
       'Caja diaria por medio de pago',
       'Estadísticas de productos y clientes',
       'Historial completo por IMEI',
@@ -2871,7 +2878,7 @@ function abrirPlanes() {
     return `
     <div class="plan-card">
       <div class="nombre">${escapeHtml(p.nombre)}</div>
-      <div class="precio">${escapeHtml(p.precio)}</div>
+      <div class="precio">${p.precioAnterior ? `<span style="text-decoration:line-through;color:var(--text-mute);font-weight:500;font-size:16px;margin-right:7px;">${escapeHtml(p.precioAnterior)}</span>` : ''}${escapeHtml(p.precio)}</div>
       <div class="periodo">${escapeHtml(p.periodo)}</div>
       <ul>${p.beneficios.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
       ${accion}
