@@ -2319,7 +2319,7 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field">
           <label>Foto de portada</label>
-          <div id="configPortadaPreview" style="width:100%;height:110px;border:2px dashed var(--line);border-radius:10px;background:var(--bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:var(--text-mute);font-size:13px;margin-bottom:8px;">
+          <div id="configPortadaPreview" style="width:100%;height:110px;border:2px dashed var(--line);border-radius:10px;background:var(--bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:var(--text-mute);font-size:13px;margin-bottom:8px;touch-action:none;user-select:none;">
             Sin portada
           </div>
           <input type="file" id="configPortadaInput" accept="image/*" style="display:none;">
@@ -2363,9 +2363,9 @@ tr:last-child td { border-bottom: none; }
           </div>
 
           <label style="font-size:11.5px;color:var(--text-mute);display:block;margin-top:14px;">Qué parte de la foto de portada se ve</label>
-          <div id="posicionPortadaChips" style="display:flex;gap:6px;margin-top:6px;"></div>
-          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;">
-            Útil si la foto es más alta que ancha y el encabezado le corta la parte que importa.
+          <div id="posicionPortadaChips" style="display:flex;gap:6px;margin-top:6px;margin-bottom:8px;"></div>
+          <small style="display:block;color:var(--text-mute);font-size:11.5px;">
+            O arrastrá directo sobre la foto de arriba con el mouse o el dedo para elegir el punto exacto.
           </small>
         </div>
 
@@ -9109,33 +9109,90 @@ function aplicarPaletaPreset(p) {
 
 // Posición de la foto de portada dentro del encabezado — el header no tiene
 // alto fijo (crece según el texto), así que "centro" a veces corta la parte
-// de la foto que importa. Mismo valor que después se usa como
-// background-position en tienda.html.
-const POSICIONES_PORTADA = [
-  { valor: 'top', label: 'Arriba' },
-  { valor: 'center', label: 'Centro' },
-  { valor: 'bottom', label: 'Abajo' }
-];
-let posicionPortadaElegida = 'center';
+// de la foto que importa. Se guarda como "X% Y%" (mismo formato que
+// background-position), no como una palabra clave: así se puede elegir el
+// punto exacto arrastrando, no solo arriba/centro/abajo. Los 3 botones
+// siguen estando como atajos rápidos para el caso común.
+let posicionPortadaX = 50;
+let posicionPortadaY = 50;
+
+// Tiendas que ya tenían guardada la versión vieja (una palabra: 'top',
+// 'center', 'bottom') siguen funcionando — se traduce una sola vez al
+// cargar. Lo nuevo siempre se guarda como par de porcentajes.
+const POSICION_PORTADA_VIEJA = { top: '50% 0%', center: '50% 50%', bottom: '50% 100%' };
+
+function cargarPosicionPortada(valorGuardado) {
+  const texto = POSICION_PORTADA_VIEJA[valorGuardado] || valorGuardado || '50% 50%';
+  const partes = String(texto).split(' ').map(s => parseFloat(s));
+  posicionPortadaX = Number.isFinite(partes[0]) ? partes[0] : 50;
+  posicionPortadaY = Number.isFinite(partes[1]) ? partes[1] : 50;
+}
+
+function aplicarPosicionPortadaPreview() {
+  const caja = byId('configPortadaPreview');
+  if (caja) caja.style.backgroundPosition = posicionPortadaX + '% ' + posicionPortadaY + '%';
+}
 
 function renderPosicionPortada() {
   const cont = byId('posicionPortadaChips');
   if (!cont) return;
-  cont.innerHTML = POSICIONES_PORTADA.map(p =>
-    '<button type="button" data-posicion-portada="' + p.valor + '" style="flex:1;padding:8px;border-radius:7px;border:1.5px solid ' +
-    (posicionPortadaElegida === p.valor ? 'var(--celeste)' : 'var(--line)') + ';background:' +
-    (posicionPortadaElegida === p.valor ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
-    p.label + '</button>'
-  ).join('');
+  const PRESETS = [
+    { y: 0, label: 'Arriba' },
+    { y: 50, label: 'Centro' },
+    { y: 100, label: 'Abajo' }
+  ];
+  cont.innerHTML = PRESETS.map(p => {
+    const activo = posicionPortadaX === 50 && posicionPortadaY === p.y;
+    return '<button type="button" data-posicion-y="' + p.y + '" style="flex:1;padding:8px;border-radius:7px;border:1.5px solid ' +
+      (activo ? 'var(--celeste)' : 'var(--line)') + ';background:' + (activo ? '#EAF4FD' : '#fff') +
+      ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' + p.label + '</button>';
+  }).join('');
 
-  cont.querySelectorAll('[data-posicion-portada]').forEach(b => {
+  cont.querySelectorAll('[data-posicion-y]').forEach(b => {
     b.addEventListener('click', () => {
-      posicionPortadaElegida = b.dataset.posicionPortada;
+      posicionPortadaX = 50;
+      posicionPortadaY = Number(b.dataset.posicionY);
+      aplicarPosicionPortadaPreview();
       renderPosicionPortada();
-      byId('configPortadaPreview').style.backgroundPosition = 'center ' + posicionPortadaElegida;
     });
   });
 }
+
+// Arrastrar directo sobre la vista previa: el punto donde está el mouse/dedo
+// (como % del ancho/alto del recuadro) pasa directo a ser el background-
+// position — así el punto que tocás queda anclado a ese lugar del recuadro,
+// funciona igual con mouse que con el dedo en el celular.
+(function () {
+  const caja = byId('configPortadaPreview');
+  if (!caja) return;
+  let arrastrando = false;
+
+  function moverA(clientX, clientY) {
+    const r = caja.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    posicionPortadaX = Math.round(Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100)));
+    posicionPortadaY = Math.round(Math.max(0, Math.min(100, ((clientY - r.top) / r.height) * 100)));
+    aplicarPosicionPortadaPreview();
+  }
+
+  caja.style.cursor = 'move';
+  caja.addEventListener('mousedown', (e) => { arrastrando = true; moverA(e.clientX, e.clientY); e.preventDefault(); });
+  window.addEventListener('mousemove', (e) => { if (arrastrando) moverA(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', () => {
+    if (!arrastrando) return;
+    arrastrando = false;
+    renderPosicionPortada();   // por si quedó justo sobre un preset, que se marque activo
+  });
+
+  caja.addEventListener('touchstart', (e) => {
+    arrastrando = true;
+    moverA(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  caja.addEventListener('touchmove', (e) => {
+    if (arrastrando) moverA(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  caja.addEventListener('touchend', () => { arrastrando = false; renderPosicionPortada(); }, { passive: true });
+})();
 
 function temaElegido() {
   return {
@@ -9143,7 +9200,7 @@ function temaElegido() {
     texto: byId('temaTexto').value,
     banner: byId('temaBanner').value,
     opacidadPortada: Number(byId('temaOpacidadPortada').value),
-    posicionPortada: posicionPortadaElegida
+    posicionPortada: posicionPortadaX + '% ' + posicionPortadaY + '%'
   };
 }
 
@@ -9181,9 +9238,9 @@ async function cargarConfiguracion() {
     byId('temaTexto').value = tema.texto || '#15294D';
     byId('temaBanner').value = tema.banner || '#2F8FE0';
     byId('temaOpacidadPortada').value = tema.opacidadPortada != null ? tema.opacidadPortada : 80;
-    posicionPortadaElegida = tema.posicionPortada || 'center';
+    cargarPosicionPortada(tema.posicionPortada);
     renderPosicionPortada();
-    byId('configPortadaPreview').style.backgroundPosition = 'center ' + posicionPortadaElegida;
+    aplicarPosicionPortadaPreview();
 
     renderMediosDePago(store.medios_pago);
 

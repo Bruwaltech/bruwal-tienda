@@ -552,10 +552,14 @@ function aplicarTema(tema){
   const textoEsloganHeader = textoHeader === '#ffffff' ? '#fff' : 'rgba(21,41,77,.75)';
   const rgbBanner = hexARgb(banner);
   const opacidad = (tema.opacidadPortada != null ? tema.opacidadPortada : 80) / 100;
-  // 'top' | 'center' | 'bottom' — el header no tiene alto fijo (crece según
-  // el texto), así que "centro" a veces corta la parte de la foto que
-  // importa. Elegible desde el panel, guardado en tema.posicionPortada.
-  const posicionPortada = tema.posicionPortada || 'center';
+  // El header no tiene alto fijo (crece según el texto), así que "centro"
+  // a veces corta la parte de la foto que importa. Se guarda como "X% Y%"
+  // (formato de background-position). Las tiendas que lo eligieron antes de
+  // que hubiera arrastre libre tienen guardada una palabra vieja
+  // ('top'/'center'/'bottom'), así que se traduce acá para no perder esa
+  // elección.
+  const POSICION_PORTADA_VIEJA = { top: '50% 0%', center: '50% 50%', bottom: '50% 100%' };
+  const posicionPortada = POSICION_PORTADA_VIEJA[tema.posicionPortada] || tema.posicionPortada || '50% 50%';
 
   const hoja = document.createElement('style');
   hoja.textContent =
@@ -563,7 +567,7 @@ function aplicarTema(tema){
     'header:not(.con-portada){background:linear-gradient(135deg, ' + banner + ' 0%, ' + aclararColor(banner, 25) + ' 100%) !important;}' +
     'header{color:' + textoHeader + ' !important;}' +
     '.store-desc,.store-eslogan{color:' + textoEsloganHeader + ' !important;}' +
-    'header.con-portada{background-position:center ' + posicionPortada + ' !important;}' +
+    'header.con-portada{background-position:' + posicionPortada + ' !important;}' +
     // Banner CON foto de portada: el velo usa el mismo color, con la
     // opacidad que haya elegido (más baja = se ve más la foto).
     'header.con-portada::after{background:linear-gradient(135deg, rgba(' + rgbBanner + ',' + opacidad + ') 0%, rgba(' + rgbBanner + ',' + (opacidad * 0.75).toFixed(2) + ') 100%) !important;}' +
