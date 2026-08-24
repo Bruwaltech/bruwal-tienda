@@ -2004,10 +2004,17 @@ tr:last-child td { border-bottom: none; }
     <div class="field hidden" id="campoReponerImeis">
       <label>IMEI de cada unidad que entra</label>
       <div id="reponerImeisLista" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;"></div>
-      <div style="display:flex;gap:6px;">
-        <input type="text" id="reponerNuevoImei" placeholder="IMEI de esta unidad" style="flex:1;">
-        <button type="button" id="reponerAgregarImeiBtn" class="btn" style="width:auto;padding:9px 14px;font-size:13px;">+ Agregar</button>
+      <input type="text" id="reponerNuevoImei" placeholder="IMEI de esta unidad" style="width:100%;">
+      <div id="reponerTacHint" style="font-size:11.5px;color:var(--celeste);margin-top:3px;min-height:14px;"></div>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+        <input type="text" id="reponerNuevoGb" placeholder="GB (opc.)" style="width:75px;">
+        <input type="text" id="reponerNuevoBateria" placeholder="Batería (opc.)" style="width:90px;">
+        <input type="text" id="reponerNuevoEstado" placeholder="Estado / nota (opc.)" style="flex:1;min-width:110px;">
       </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text-mute);">
+        <input type="checkbox" id="reponerNuevoListo" checked style="width:auto;"> Listo para vender (destildá si necesita reparación antes)
+      </label>
+      <button type="button" id="reponerAgregarImeiBtn" class="btn" style="width:100%;margin-top:6px;">+ Agregar</button>
       <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:11.5px;">Cada equipo tiene su propio IMEI — se marca *#06# en el equipo.</small>
     </div>
 
@@ -3623,6 +3630,44 @@ function claveDeCombinacion(atributos) {
   return Object.keys(atributos).sort().map(k => k + ':' + atributos[k]).join('|');
 }
 
+// Las tiendas que ya cargaban IMEI antes de esta funcionalidad los tienen
+// guardados como texto suelto ("358...") en vez de objeto con los datos
+// extra. Se normalizan al leer para no tener que migrar nada en la base.
+function normalizarUnidadImei(u) {
+  if (typeof u === 'string') return { imei: u, gb: '', bateria: '', estado: '', listo: true };
+  return { imei: u.imei, gb: u.gb || '', bateria: u.bateria || '', estado: u.estado || '', listo: u.listo !== false };
+}
+
+// Los primeros 8 dígitos del IMEI (TAC) identifican marca y modelo exactos
+// — nunca color ni capacidad, eso no está codificado ahí. Es solo un hint
+// para confirmar más rápido, el vendedor siempre puede ignorarlo.
+// tac-modelos.json sale de la base de datos Osmocom TAC (CC-BY-SA v3.0,
+// (c) Harald Welte 2016) — http://tacdb.osmocom.org/
+let tacModelosCache = null;
+async function cargarTacModelos() {
+  if (tacModelosCache) return tacModelosCache;
+  try {
+    const r = await fetch('/tac-modelos.json');
+    tacModelosCache = await r.json();
+  } catch (e) {
+    tacModelosCache = {};
+  }
+  return tacModelosCache;
+}
+async function detectarModeloPorImei(valor) {
+  const tac = String(valor || '').replace(/\D/g, '').slice(0, 8);
+  if (tac.length < 8) return null;
+  const db = await cargarTacModelos();
+  return db[tac] || null;
+}
+async function mostrarHintTac(hintEl, valor) {
+  if (!hintEl) return;
+  const digits = String(valor || '').replace(/\D/g, '');
+  if (digits.length < 8) { hintEl.textContent = ''; return; }
+  const modelo = await detectarModeloPorImei(valor);
+  hintEl.textContent = modelo ? ('📱 Detectado: ' + modelo[0] + ' ' + modelo[1] + ' — ¿es este equipo?') : '';
+}
+
 // Producto cartesiano de los valores de cada atributo
 function combinacionesDe(atributos) {
   if (!atributos.length) return [];
@@ -3801,7 +3846,7 @@ function renderGrillaVariantes() {
     const clave = claveDeCombinacion(c);
     const anterior = previo[clave];
     if (esElec) {
-      const imeis = Array.isArray(anterior?.imeis) ? anterior.imeis : [];
+      const imeis = Array.isArray(anterior?.imeis) ? anterior.imeis.map(normalizarUnidadImei) : [];
       return { atributos: c, stock: imeis.length, imeis };
     }
     return { atributos: c, stock: Number(anterior?.stock ?? 0) };
@@ -3834,9 +3879,18 @@ function renderGrillaVariantes() {
           <span data-contador-imei="${escapeHtml(clave)}" style="font-size:12px;color:var(--text-mute);">${v.imeis.length} en stock</span>
         </div>
         <div data-imeis-de="${escapeHtml(clave)}" style="display:flex;flex-direction:column;gap:4px;margin-top:8px;"></div>
-        <div style="display:flex;gap:6px;margin-top:8px;">
-          <input type="text" data-nuevo-imei="${escapeHtml(clave)}" placeholder="IMEI de esta unidad" style="flex:1;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
-          <button type="button" data-agregar-imei="${escapeHtml(clave)}" class="btn" style="width:auto;padding:7px 12px;font-size:12.5px;">+ Agregar</button>
+        <div style="margin-top:8px;">
+          <input type="text" data-nuevo-imei="${escapeHtml(clave)}" placeholder="IMEI de esta unidad" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
+          <div data-tac-hint="${escapeHtml(clave)}" style="font-size:11.5px;color:var(--celeste);margin-top:3px;min-height:14px;"></div>
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+            <input type="text" data-nuevo-gb="${escapeHtml(clave)}" placeholder="GB (opc.)" style="width:75px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <input type="text" data-nuevo-bateria="${escapeHtml(clave)}" placeholder="Batería (opc.)" style="width:90px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <input type="text" data-nuevo-estado="${escapeHtml(clave)}" placeholder="Estado / nota (opc.)" style="flex:1;min-width:110px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text-mute);">
+            <input type="checkbox" data-nuevo-listo="${escapeHtml(clave)}" checked style="width:auto;"> Listo para vender (destildá si necesita reparación antes)
+          </label>
+          <button type="button" data-agregar-imei="${escapeHtml(clave)}" class="btn" style="width:100%;margin-top:6px;padding:7px;font-size:12.5px;">+ Agregar equipo</button>
         </div>
       </div>`;
   }).join('');
@@ -3850,6 +3904,10 @@ function renderGrillaVariantes() {
     inp.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); agregarImeiAVariante(inp.dataset.nuevoImei); }
     });
+    inp.addEventListener('input', () => {
+      const hint = document.querySelector('[data-tac-hint="' + CSS.escape(inp.dataset.nuevoImei) + '"]');
+      mostrarHintTac(hint, inp.value);
+    });
   });
 }
 
@@ -3859,12 +3917,16 @@ function renderImeisDeVariante(clave) {
   const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === clave);
   if (!v) return;
 
-  cont.innerHTML = (v.imeis || []).length ? v.imeis.map(imei =>
-    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);padding:5px 9px;border-radius:6px;font-size:12.5px;">' +
-      '<span>' + escapeHtml(imei) + '</span>' +
-      '<button type="button" data-quitar-imei="' + escapeHtml(clave) + '" data-imei="' + escapeHtml(imei) + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;">✕</button>' +
-    '</div>'
-  ).join('') : '<div style="color:var(--text-mute);font-size:12px;">Sin IMEI cargados todavía.</div>';
+  cont.innerHTML = (v.imeis || []).length ? v.imeis.map(u => {
+    const meta = [u.gb, u.bateria ? 'Bat. ' + u.bateria : '', u.estado].filter(Boolean).join(' · ');
+    return '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);padding:5px 9px;border-radius:6px;font-size:12.5px;">' +
+      '<span>' + (u.listo === false ? '🔧 ' : '') + escapeHtml(u.imei) +
+        (meta ? ' <span style="color:var(--text-mute);">— ' + escapeHtml(meta) + '</span>' : '') +
+        (u.listo === false ? ' <span style="color:var(--danger);font-size:11px;">(pendiente restauración)</span>' : '') +
+      '</span>' +
+      '<button type="button" data-quitar-imei="' + escapeHtml(clave) + '" data-imei="' + escapeHtml(u.imei) + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;">✕</button>' +
+    '</div>';
+  }).join('') : '<div style="color:var(--text-mute);font-size:12px;">Sin IMEI cargados todavía.</div>';
 
   cont.querySelectorAll('[data-quitar-imei]').forEach(b => {
     b.addEventListener('click', () => quitarImeiDeVariante(b.dataset.quitarImei, b.dataset.imei));
@@ -3880,24 +3942,42 @@ function agregarImeiAVariante(clave) {
   if (!v) return;
   if (!v.imeis) v.imeis = [];
 
-  if (v.imeis.includes(imei)) { alert('Ese IMEI ya está cargado en esta misma variante.'); return; }
-  if (variantesEnEdicion.some(x => x !== v && (x.imeis || []).includes(imei))) {
+  if (v.imeis.some(u => u.imei === imei)) { alert('Ese IMEI ya está cargado en esta misma variante.'); return; }
+  if (variantesEnEdicion.some(x => x !== v && (x.imeis || []).some(u => u.imei === imei))) {
     alert('Ese IMEI ya está cargado en otra variante de este producto.');
     return;
   }
 
-  v.imeis.push(imei);
+  const gbInput = document.querySelector('[data-nuevo-gb="' + CSS.escape(clave) + '"]');
+  const bateriaInput = document.querySelector('[data-nuevo-bateria="' + CSS.escape(clave) + '"]');
+  const estadoInput = document.querySelector('[data-nuevo-estado="' + CSS.escape(clave) + '"]');
+  const listoInput = document.querySelector('[data-nuevo-listo="' + CSS.escape(clave) + '"]');
+
+  v.imeis.push({
+    imei,
+    gb: (gbInput?.value || '').trim(),
+    bateria: (bateriaInput?.value || '').trim(),
+    estado: (estadoInput?.value || '').trim(),
+    listo: listoInput ? !!listoInput.checked : true
+  });
   v.stock = v.imeis.length;
   input.value = '';
+  if (gbInput) gbInput.value = '';
+  if (bateriaInput) bateriaInput.value = '';
+  if (estadoInput) estadoInput.value = '';
+  if (listoInput) listoInput.checked = true;
+  const hint = document.querySelector('[data-tac-hint="' + CSS.escape(clave) + '"]');
+  if (hint) hint.textContent = '';
   renderImeisDeVariante(clave);
   const contador = document.querySelector('[data-contador-imei="' + CSS.escape(clave) + '"]');
   if (contador) contador.textContent = v.stock + ' en stock';
+  input.focus();
 }
 
 function quitarImeiDeVariante(clave, imei) {
   const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === clave);
   if (!v || !v.imeis) return;
-  v.imeis = v.imeis.filter(i => i !== imei);
+  v.imeis = v.imeis.filter(u => u.imei !== imei);
   v.stock = v.imeis.length;
   renderImeisDeVariante(clave);
   const contador = document.querySelector('[data-contador-imei="' + CSS.escape(clave) + '"]');
@@ -5466,7 +5546,7 @@ async function aplicarStockDeItem(item, signo) {
   if (item.variante && p.tiene_variantes && Array.isArray(p.variantes)) {
     const clave = (obj) => Object.keys(obj).sort().map(k => k + ':' + obj[k]).join('~');
     const claveItem = clave(item.variante);
-    const variantes = p.variantes.map(v => ({ ...v, imeis: Array.isArray(v.imeis) ? [...v.imeis] : v.imeis }));
+    const variantes = p.variantes.map(v => ({ ...v, imeis: Array.isArray(v.imeis) ? v.imeis.map(normalizarUnidadImei) : v.imeis }));
     const v = variantes.find(x => clave(x.atributos) === claveItem);
 
     let imeiAfectado = null;
@@ -5477,10 +5557,13 @@ async function aplicarStockDeItem(item, signo) {
         // nuevo en el momento, y en la práctica no importa cuál de los
         // idénticos sale primero — lo que importa es que el IMEI que sale
         // de la lista sea el que se registra en la venta.
-        imeiAfectado = v.imeis.shift();
+        imeiAfectado = v.imeis.shift().imei;
       } else if (signo > 0 && item.imei) {
         // Devolver/anular: vuelve exactamente el mismo IMEI que se vendió.
-        v.imeis.push(item.imei);
+        // Los datos extra (GB, batería, estado) que tenía cargados se
+        // pierden en esta vuelta — es un caso raro y se pueden recargar
+        // a mano si hace falta.
+        v.imeis.push({ imei: item.imei, gb: '', bateria: '', estado: '', listo: true });
       }
       v.stock = v.imeis.length;
     } else if (v) {
@@ -6883,7 +6966,7 @@ async function buscarHistorialImei(imei) {
   if (!productoActual) {
     for (const p of products) {
       if (!Array.isArray(p.variantes)) continue;
-      const v = p.variantes.find(x => Array.isArray(x.imeis) && x.imeis.includes(limpio));
+      const v = p.variantes.find(x => Array.isArray(x.imeis) && x.imeis.map(normalizarUnidadImei).some(u => u.imei === limpio));
       if (v) { productoPorVariante = p; variantePorImei = v; break; }
     }
   }
@@ -6904,10 +6987,14 @@ async function buscarHistorialImei(imei) {
       (productoActual.stock > 0 ? '' : ' <span style="color:var(--danger);">(sin stock)</span>') +
     '</div>';
   } else if (productoPorVariante) {
+    const unidad = normalizarUnidadImei(variantePorImei.imeis.map(normalizarUnidadImei).find(u => u.imei === limpio));
+    const metaUnidad = [unidad.gb, unidad.bateria ? 'batería ' + unidad.bateria : '', unidad.estado].filter(Boolean).join(' · ');
     encabezado += '<div style="padding:10px 12px;background:#EAF4FD;border-radius:8px;margin-bottom:8px;font-size:13.5px;">' +
       '📦 En stock ahora: <strong>' + escapeHtml(productoPorVariante.name) + '</strong>' +
       ' (' + escapeHtml(Object.values(variantePorImei.atributos).join(' / ')) + ')' +
       ' — ' + money(productoPorVariante.price) +
+      (unidad.listo === false ? ' <span style="color:var(--danger);">🔧 pendiente de restauración</span>' : '') +
+      (metaUnidad ? '<br><span style="color:var(--text-mute);font-size:12px;">' + escapeHtml(metaUnidad) + '</span>' : '') +
     '</div>';
   }
   if (reparacionActiva) {
@@ -8581,6 +8668,11 @@ function abrirReponerVariante(id) {
   byId('reponerVarianteTitulo').textContent = 'Reponer stock — ' + p.name;
   byId('reponerVarianteCantidad').value = '1';
   byId('reponerNuevoImei').value = '';
+  byId('reponerNuevoGb').value = '';
+  byId('reponerNuevoBateria').value = '';
+  byId('reponerNuevoEstado').value = '';
+  byId('reponerNuevoListo').checked = true;
+  byId('reponerTacHint').textContent = '';
 
   // En electrónica cada unidad entra con su propio IMEI, no como un
   // número suelto: si no, el stock (que sale de cuántos IMEI hay
@@ -8597,12 +8689,15 @@ function abrirReponerVariante(id) {
 function renderReponerImeisLista() {
   const cont = byId('reponerImeisLista');
   if (!cont) return;
-  cont.innerHTML = reponerImeisNuevos.length ? reponerImeisNuevos.map((imei, i) =>
-    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);padding:6px 10px;border-radius:6px;font-size:13px;">' +
-      '<span>' + escapeHtml(imei) + '</span>' +
+  cont.innerHTML = reponerImeisNuevos.length ? reponerImeisNuevos.map((u, i) => {
+    const meta = [u.gb, u.bateria ? 'Bat. ' + u.bateria : '', u.estado].filter(Boolean).join(' · ');
+    return '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);padding:6px 10px;border-radius:6px;font-size:13px;">' +
+      '<span>' + (u.listo === false ? '🔧 ' : '') + escapeHtml(u.imei) +
+        (meta ? ' <span style="color:var(--text-mute);">— ' + escapeHtml(meta) + '</span>' : '') +
+      '</span>' +
       '<button type="button" data-quitar-reponer-imei="' + i + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;">✕</button>' +
-    '</div>'
-  ).join('') : '<div style="color:var(--text-mute);font-size:12.5px;">Todavía no agregaste ningún IMEI.</div>';
+    '</div>';
+  }).join('') : '<div style="color:var(--text-mute);font-size:12.5px;">Todavía no agregaste ningún IMEI.</div>';
 
   cont.querySelectorAll('[data-quitar-reponer-imei]').forEach(b => {
     b.addEventListener('click', () => {
@@ -8616,18 +8711,34 @@ byId('reponerAgregarImeiBtn').addEventListener('click', () => {
   const input = byId('reponerNuevoImei');
   const imei = input.value.trim();
   if (!imei) return;
-  if (reponerImeisNuevos.includes(imei)) { alert('Ya agregaste ese IMEI en esta reposición.'); return; }
+  if (reponerImeisNuevos.some(u => u.imei === imei)) { alert('Ya agregaste ese IMEI en esta reposición.'); return; }
 
   const p = products.find(x => String(x.id) === String(reponerVarianteProductoId));
-  const yaExiste = p && Array.isArray(p.variantes) && p.variantes.some(v => Array.isArray(v.imeis) && v.imeis.includes(imei));
+  const yaExiste = p && Array.isArray(p.variantes) && p.variantes.some(v =>
+    Array.isArray(v.imeis) && v.imeis.map(normalizarUnidadImei).some(u => u.imei === imei));
   if (yaExiste) { alert('Ese IMEI ya está cargado en otra variante de este producto.'); return; }
 
-  reponerImeisNuevos.push(imei);
+  reponerImeisNuevos.push({
+    imei,
+    gb: byId('reponerNuevoGb').value.trim(),
+    bateria: byId('reponerNuevoBateria').value.trim(),
+    estado: byId('reponerNuevoEstado').value.trim(),
+    listo: byId('reponerNuevoListo').checked
+  });
   input.value = '';
+  byId('reponerNuevoGb').value = '';
+  byId('reponerNuevoBateria').value = '';
+  byId('reponerNuevoEstado').value = '';
+  byId('reponerNuevoListo').checked = true;
+  byId('reponerTacHint').textContent = '';
   renderReponerImeisLista();
+  input.focus();
 });
 byId('reponerNuevoImei').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); byId('reponerAgregarImeiBtn').click(); }
+});
+byId('reponerNuevoImei').addEventListener('input', (e) => {
+  mostrarHintTac(byId('reponerTacHint'), e.target.value);
 });
 
 function renderCamposReponerVariante() {
@@ -8703,7 +8814,7 @@ async function confirmarReponerVariante() {
   if (idx >= 0) {
     const actual = variantes[idx];
     if (esElec) {
-      const imeis = [...(actual.imeis || []), ...reponerImeisNuevos];
+      const imeis = [...(actual.imeis || []).map(normalizarUnidadImei), ...reponerImeisNuevos];
       variantes[idx] = { ...actual, imeis, stock: imeis.length };
     } else {
       variantes[idx] = { ...actual, stock: Number(actual.stock || 0) + cantidad };
@@ -8728,8 +8839,10 @@ async function confirmarReponerVariante() {
   // Cada equipo que entra arranca su propio historial, igual que cargarlo
   // desde el formulario de producto — así queda buscable desde el día uno.
   if (esElec) {
-    for (const imei of reponerImeisNuevos) {
-      await registrarEventoImei(imei, 'ingreso', p.name + ' — ' + Object.values(reponerVarianteSeleccion).join(' / '));
+    for (const u of reponerImeisNuevos) {
+      const extra = [u.gb, u.bateria ? 'batería ' + u.bateria : '', u.estado, u.listo === false ? 'pendiente de restauración' : '']
+        .filter(Boolean).join(', ');
+      await registrarEventoImei(u.imei, 'ingreso', p.name + ' — ' + Object.values(reponerVarianteSeleccion).join(' / ') + (extra ? ' (' + extra + ')' : ''));
     }
   }
 
