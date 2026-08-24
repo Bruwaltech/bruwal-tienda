@@ -5561,11 +5561,23 @@ async function cambiarEstadoPedido(id, nuevo) {
   // El stock se toca DESPUES de que el cambio de estado en la base fue
   // exitoso: si el update de arriba hubiera fallado, no queremos haber
   // descontado o devuelto stock de un pedido que en los hechos no cambió.
-  const items = Array.isArray(pedido.items) ? pedido.items : [];
+  const items = Array.isArray(pedido.items) ? pedido.items.map(it => ({ ...it })) : [];
+  let seTocaronImeis = false;
+
   if (anterior === 'pendiente' && nuevo === 'confirmado') {
-    for (const it of items) await aplicarStockDeItem(it, -1);
+    for (const it of items) {
+      const imeiAfectado = await aplicarStockDeItem(it, -1);
+      // Si el item venía de una variante con IMEI, queda anotado en el
+      // pedido — sin esto, anular más tarde no sabría cuál de los equipos
+      // devolver a la lista.
+      if (imeiAfectado) { it.imei = imeiAfectado; seTocaronImeis = true; }
+    }
   } else if (anterior === 'confirmado' && nuevo === 'cancelado') {
     for (const it of items) await aplicarStockDeItem(it, +1);
+  }
+
+  if (seTocaronImeis) {
+    await sb.from('orders').update({ items }).eq('id', id);
   }
 
   await refreshData();
