@@ -1708,20 +1708,38 @@ tr:last-child td { border-bottom: none; }
         <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
 
         <div class="field">
-          <label>¿Este stock es para...?</label>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
-              <input type="radio" name="pDestinoStock" id="pDestinoTienda" checked style="margin:0;cursor:pointer;width:auto;">
-              🛒 Vender en tu tienda — aparece en el menú público
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
-              <input type="radio" name="pDestinoStock" id="pDestinoInterno" style="margin:0;cursor:pointer;width:auto;">
-              🔒 Uso interno / repuesto — no se vende en tu tienda online
-            </label>
+          <label>¿Qué estás cargando?</label>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;" id="tipoTabs">
+            <button type="button" class="tipo-tab" data-tipo-tab="producto" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border:1.5px solid var(--celeste);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#EAF4FD;color:var(--text-dark);font-family:inherit;">
+              <span style="font-size:18px;">📦</span> Producto
+            </button>
+            <button type="button" class="tipo-tab" data-tipo-tab="servicio" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
+              <span style="font-size:18px;">🛠️</span> Servicio
+            </button>
+            <button type="button" class="tipo-tab" data-tipo-tab="interno" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
+              <span style="font-size:18px;">🔒</span> Repuesto interno
+            </button>
           </div>
-          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
-            Para repuestos y demás cosas que usás vos (por ejemplo, en Reparaciones) pero que un cliente no debería poder comprar.
+          <small id="tipoTabAyuda" style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+            Aparece en el menú público de tu tienda, con stock.
           </small>
+        </div>
+
+        <div class="field hidden" id="campoServicioInterno">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="pServicioInterno" style="margin:0;width:auto;cursor:pointer;">
+            🔒 Este servicio también es de uso interno (no se ofrece directo al cliente)
+          </label>
+        </div>
+
+        <!-- Fuente de verdad real (tipo producto/servicio, destino tienda/interno). Los
+             botones de arriba son la interfaz; esto es lo que lee el resto del código,
+             igual que antes de agregar los botones grandes. -->
+        <div class="hidden">
+          <input type="radio" name="pTipo" id="pTipoProducto" checked>
+          <input type="radio" name="pTipo" id="pTipoServicio">
+          <input type="radio" name="pDestinoStock" id="pDestinoTienda" checked>
+          <input type="radio" name="pDestinoStock" id="pDestinoInterno">
         </div>
 
         <div class="field">
@@ -1742,14 +1760,19 @@ tr:last-child td { border-bottom: none; }
             Para calcular el margen en Estadísticas. Protegido con el mismo PIN que Costos, si lo configuraste.
           </small>
         </div>
-        <div class="field">
-          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pEsServicio" style="margin:0;width:auto;cursor:pointer;">
-            Es un servicio (no maneja stock)
-          </label>
-          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
-            Corte de pelo, arreglo, consulta. Se puede vender sin límite y no
-            aparece como agotado.
+        <div class="field hidden" id="campoDuracionServicio">
+          <label>Duración de este servicio</label>
+          <select id="pDuracion" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+            <option value="">Usar la duración general de turnos de la tienda</option>
+            <option value="15">15 minutos</option>
+            <option value="30">30 minutos</option>
+            <option value="45">45 minutos</option>
+            <option value="60">1 hora</option>
+            <option value="90">1 hora y media</option>
+            <option value="120">2 horas</option>
+          </select>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+            Se guarda junto al servicio para más adelante. Todavía no bloquea varios turnos seguidos en la Agenda — eso es un paso aparte.
           </small>
         </div>
         <div class="field campo-electronica hidden">
@@ -3435,10 +3458,62 @@ function detalleDelItem(it) {
   return partes.length ? ' (' + partes.join(') (') + ')' : '';
 }
 
-byId('pEsServicio').addEventListener('change', (e) => {
+function alCambiarTipoProducto() {
+  const esServicio = byId('pTipoServicio').checked;
   // El campo de stock se oculta si es servicio O si tiene variantes: los dos
   // reemplazan al stock simple por otra cosa.
-  byId('campoStock').classList.toggle('hidden', e.target.checked || byId('pTieneVariantes')?.checked);
+  byId('campoStock').classList.toggle('hidden', esServicio || byId('pTieneVariantes')?.checked);
+  byId('campoDuracionServicio').classList.toggle('hidden', !esServicio);
+}
+byId('pTipoProducto').addEventListener('change', alCambiarTipoProducto);
+byId('pTipoServicio').addEventListener('change', alCambiarTipoProducto);
+
+// ============ BOTONES GRANDES: Producto / Servicio / Repuesto interno ============
+// La decisión real sigue siendo "tipo" (producto/servicio) + "destino" (tienda/
+// interno) — dos ejes independientes, sin tocar el modelo de datos. Estos tres
+// botones son una capa de arriba que combina esos dos ejes en una sola elección,
+// porque en la práctica "repuesto interno" siempre es tipo=producto+interno, y un
+// servicio interno es la excepción rara (por eso queda como tilde aparte, no como
+// cuarto botón).
+const TIPO_TAB_AYUDA = {
+  producto: 'Aparece en el menú público de tu tienda, con stock.',
+  servicio: 'No maneja stock — corte de pelo, arreglo, consulta. Se puede vender sin límite.',
+  interno: 'Repuestos y demás cosas que usás vos (por ejemplo, en Reparaciones) — un cliente no lo puede comprar.'
+};
+
+function seleccionarTipoTab(tab) {
+  document.querySelectorAll('.tipo-tab').forEach(b => {
+    const activo = b.dataset.tipoTab === tab;
+    b.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
+    b.style.background = activo ? '#EAF4FD' : '#fff';
+  });
+  byId('tipoTabAyuda').textContent = TIPO_TAB_AYUDA[tab];
+
+  if (tab === 'servicio') {
+    byId('pTipoServicio').checked = true;
+    show(byId('campoServicioInterno'));
+    // El tilde de "también interno" decide el destino en este caso — si no
+    // está tildado, un servicio nuevo arranca visible en la tienda.
+    byId('pDestinoTienda').checked = !byId('pServicioInterno').checked;
+    byId('pDestinoInterno').checked = byId('pServicioInterno').checked;
+  } else {
+    byId('pTipoProducto').checked = true;
+    byId('pServicioInterno').checked = false;
+    hide(byId('campoServicioInterno'));
+    byId('pDestinoInterno').checked = (tab === 'interno');
+    byId('pDestinoTienda').checked = (tab !== 'interno');
+  }
+
+  byId('pTipoProducto').dispatchEvent(new Event('change'));
+}
+
+document.querySelectorAll('.tipo-tab').forEach(b => {
+  b.addEventListener('click', () => seleccionarTipoTab(b.dataset.tipoTab));
+});
+
+byId('pServicioInterno').addEventListener('change', (e) => {
+  byId('pDestinoInterno').checked = e.target.checked;
+  byId('pDestinoTienda').checked = !e.target.checked;
 });
 
 // ============ OPCIONES / AGREGADOS DEL PRODUCTO ============
@@ -3723,7 +3798,7 @@ function cargarVariantesEnFormulario(p) {
   const tiene = !!p?.tiene_variantes;
   byId('pTieneVariantes').checked = tiene;
   byId('campoVariantes').classList.toggle('hidden', !tiene);
-  byId('campoStock').classList.toggle('hidden', tiene || byId('pEsServicio')?.checked);
+  byId('campoStock').classList.toggle('hidden', tiene || byId('pTipoServicio')?.checked);
 
   variAtributosEnEdicion = Array.isArray(p?.variante_campos)
     ? p.variante_campos.map(a => ({ nombre: a.nombre, valores: [...(a.valores || [])] }))
@@ -3742,7 +3817,7 @@ function cargarVariantesEnFormulario(p) {
 byId('pTieneVariantes').addEventListener('change', (e) => {
   const tiene = e.target.checked;
   byId('campoVariantes').classList.toggle('hidden', !tiene);
-  byId('campoStock').classList.toggle('hidden', tiene || byId('pEsServicio')?.checked);
+  byId('campoStock').classList.toggle('hidden', tiene || byId('pTipoServicio')?.checked);
 
   if (tiene && !variAtributosEnEdicion.length) {
     // Arranca con un atributo vacío para no mostrar la grilla en blanco sin guía
@@ -5109,7 +5184,8 @@ function renderProducts() {
       '<td>' + money(p.price) + precioSecundarioProducto(p) + '</td>' +
       '<td>' + (
         !esProductoFisico(p)
-          ? '<span class="badge" style="background:#EAF4FD;color:var(--navy);">SERVICIO</span>'
+          ? '<span class="badge" style="background:#EAF4FD;color:var(--navy);">SERVICIO</span>' +
+            (p.duracion_minutos ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">' + p.duracion_minutos + ' min</div>' : '')
           : (p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length
               ? p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
                 '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;" title="' +
@@ -7837,8 +7913,8 @@ if (byId('newProductBtn')) {
     if (byId('pStock')) byId('pStock').value = '0';
     if (byId('pCategory')) byId('pCategory').value = '';
     if (byId('productForm')) byId('productForm').dataset.id = '';
-    byId('pEsServicio').checked = false;
-    byId('pDestinoTienda').checked = true;
+    seleccionarTipoTab('producto');
+    byId('pDuracion').value = '';
     byId('pPendienteRestauracion').checked = false;
     byId('campoStock').classList.remove('hidden');
     cargarVariantesEnFormulario(null);   // arranca limpio, sin heredar del anterior
@@ -8138,7 +8214,8 @@ byId('productForm').addEventListener('submit', async (e) => {
     proveedor_email: proveedorAGuardar.email,
     opciones: opcionesEnEdicion,
     specs: specsEnEdicion,
-    tipo: byId('pEsServicio').checked ? 'servicio' : 'producto',
+    tipo: byId('pTipoServicio').checked ? 'servicio' : 'producto',
+    duracion_minutos: byId('pTipoServicio').checked && byId('pDuracion').value ? Number(byId('pDuracion').value) : null,
     solo_interno: byId('pDestinoInterno').checked,
     pendiente_restauracion: byId('pPendienteRestauracion').checked,
     tiene_variantes: tieneVariantes,
@@ -8222,9 +8299,9 @@ async function editProduct(id) {
   renderFotosEnEdicion();
 
   const servicio = !esProductoFisico(p);
-  byId('pEsServicio').checked = servicio;
-  byId('pDestinoInterno').checked = !!p.solo_interno;
-  byId('pDestinoTienda').checked = !p.solo_interno;
+  byId('pServicioInterno').checked = servicio && !!p.solo_interno;
+  seleccionarTipoTab(servicio ? 'servicio' : (p.solo_interno ? 'interno' : 'producto'));
+  byId('pDuracion').value = p.duracion_minutos || '';
   byId('pPendienteRestauracion').checked = !!p.pendiente_restauracion;
   cargarVariantesEnFormulario(p);   // decide por sí mismo si el stock queda oculto
 
@@ -8533,7 +8610,8 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   byId('pCategory').value = '';
   byId('pEan').value = ean;
   byId('productForm').dataset.id = '';
-  byId('pEsServicio').checked = false;
+  seleccionarTipoTab('producto');
+  byId('pDuracion').value = '';
   byId('campoStock').classList.remove('hidden');
   if (byId('pImei')) byId('pImei').value = '';
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
