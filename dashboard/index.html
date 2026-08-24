@@ -53,6 +53,10 @@ body {
   color: var(--text-dark);
   min-height: 100vh;
   overflow-x: hidden;
+  /* Sin esto, Chrome/Android dispara SU propio "tirar para recargar" (una
+     recarga dura de toda la página) al mismo tiempo que el nuestro — se
+     pisan los dos gestos. Este apaga el nativo, el nuestro queda solo. */
+  overscroll-behavior-y: contain;
 }
 
 html {
@@ -1036,6 +1040,16 @@ tr:last-child td { border-bottom: none; }
 </style>
 </head>
 <body>
+
+<!-- Tirar hacia abajo para refrescar: solo importa en la app instalada
+     (sin barra de navegador, sin botón de recargar a la vista). Igual
+     funciona en el navegador normal, no molesta. -->
+<div id="pullRefresh" style="position:fixed;top:0;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:9999;">
+  <div id="pullRefreshPill" style="margin-top:-46px;background:var(--navy);color:#fff;padding:9px 16px;border-radius:20px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);transition:margin-top .15s ease, opacity .15s ease;">
+    <span id="pullRefreshIcono" style="display:inline-block;transition:transform .1s linear;">↓</span>
+    <span id="pullRefreshTexto">Soltá para actualizar</span>
+  </div>
+</div>
 
 <!-- LOADING SCREEN -->
 <div id="loadingScreen">
@@ -8643,6 +8657,69 @@ byId('tabDashboard').addEventListener('click', () => {
 // a Productos o Clientes. En computadora sigue sirviendo: deja escanear o
 // buscar sin tener que clickear el campo primero.
 const esMobile = () => window.innerWidth <= 700;
+
+// ---- Tirar hacia abajo para refrescar ----
+// En la app instalada (sin barra de navegador ni botón de recarga a la
+// vista) es la única forma de pedir datos nuevos sin cerrar y reabrir. Solo
+// se activa parado arriba de todo de la página y con la app en calma (sin
+// un modal abierto): si no, se pisaría con el scroll normal de una tabla o
+// con el arrastre de la cámara del lector.
+(function () {
+  const UMBRAL = 70;
+  const TOPE_VISUAL = 110;
+  let startY = null;
+  let arrastrando = false;
+  let refrescando = false;
+
+  const pill = byId('pullRefreshPill');
+  const icono = byId('pullRefreshIcono');
+  const texto = byId('pullRefreshTexto');
+  if (!pill) return;
+
+  const hayModalAbierto = () => !!document.querySelector('.modal-overlay:not(.hidden)');
+
+  document.addEventListener('touchstart', (e) => {
+    if (refrescando || hayModalAbierto() || window.scrollY > 0) { startY = null; arrastrando = false; return; }
+    startY = e.touches[0].clientY;
+    arrastrando = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!arrastrando || startY === null || refrescando) return;
+    const delta = e.touches[0].clientY - startY;
+    if (delta <= 0) { pill.style.marginTop = '-46px'; return; }
+
+    pill.style.marginTop = (Math.min(delta, TOPE_VISUAL) - 46) + 'px';
+    const listo = delta >= UMBRAL;
+    icono.style.transform = listo ? 'rotate(180deg)' : 'rotate(0deg)';
+    texto.textContent = listo ? 'Soltá para actualizar' : 'Tirá para actualizar';
+  }, { passive: true });
+
+  document.addEventListener('touchend', async (e) => {
+    if (!arrastrando || startY === null) { arrastrando = false; return; }
+    const delta = (e.changedTouches[0]?.clientY ?? startY) - startY;
+    arrastrando = false;
+    startY = null;
+
+    if (delta < UMBRAL || refrescando) {
+      pill.style.marginTop = '-46px';
+      return;
+    }
+
+    refrescando = true;
+    pill.style.marginTop = '10px';
+    icono.textContent = '⏳';
+    texto.textContent = 'Actualizando...';
+    try {
+      await refreshData();
+    } finally {
+      pill.style.marginTop = '-46px';
+      icono.textContent = '↓';
+      icono.style.transform = 'rotate(0deg)';
+      refrescando = false;
+    }
+  }, { passive: true });
+})();
 
 byId('tabProductos').addEventListener('click', () => {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
