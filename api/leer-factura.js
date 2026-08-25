@@ -64,7 +64,14 @@ const HERRAMIENTA = {
             cantidad: { type: 'number' },
             precio_unitario: { type: 'number', description: 'Precio unitario tal como figura en la factura' },
             iva_porcentaje: { type: 'number', description: 'Porcentaje de IVA de esa línea (21, 10.5, 0, etc). Si no figura por línea, usar el IVA general de la factura.' },
-            iva_incluido: { type: 'boolean', description: 'true si precio_unitario ya incluye el IVA, false si es neto' }
+            iva_incluido: { type: 'boolean', description: 'true si precio_unitario ya incluye el IVA, false si es neto' },
+            talle: { type: 'string', description: 'Talle/medida de la prenda o calzado si la factura lo distingue (ej. "S", "42"). Dejar vacío si no aplica.' },
+            color: { type: 'string', description: 'Color de la prenda, calzado o equipo si la factura lo distingue por línea (ej. "Negro"). Dejar vacío si no aplica.' },
+            imeis: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Lista de números de IMEI (15 dígitos) de cada unidad de esta línea, si la factura los detalla individualmente. Dejar vacío si la factura no lista IMEI por unidad.'
+            }
           },
           required: ['descripcion', 'cantidad', 'precio_unitario']
         }
@@ -125,9 +132,17 @@ module.exports = async (req, res) => {
           bloqueArchivo,
           {
             type: 'text',
-            text: 'Esta es una factura de un proveedor. Extraé el total y cada producto/línea con su cantidad, ' +
-              'precio unitario y porcentaje de IVA. Si un dato no figura o no se puede leer con confianza, ' +
-              'dejalo vacío en vez de inventarlo. No conviertas monedas ni recalcules nada, copiá los números tal cual figuran.'
+            text: 'Esta es una factura de un proveedor, puede ser de cualquier rubro: electrónica, indumentaria, ' +
+              'calzado, comida, etc. Extraé el total y cada producto/línea con su cantidad, precio unitario y ' +
+              'porcentaje de IVA. Si la factura es de indumentaria o calzado y distingue talle y/o color por línea ' +
+              '(por ejemplo una línea por cada combinación de talle/color de un mismo modelo), extraé esos dos ' +
+              'datos por separado del nombre del producto en "talle" y "color" — no los dejes pegados dentro de ' +
+              '"descripcion". Si es una factura de electrónica (celulares, tablets) y lista los números de IMEI de ' +
+              'cada equipo — a veces en una columna aparte, a veces como una lista de números de 15 dígitos debajo ' +
+              'de la línea — extraé todos los IMEI de esa línea en el campo "imeis", uno por unidad; no inventes ' +
+              'ni completes IMEI que no estén escritos, y si no hay IMEI individuales dejá la lista vacía. Si un ' +
+              'dato no figura o no se puede leer con confianza, dejalo vacío en vez de inventarlo. No conviertas ' +
+              'monedas ni recalcules nada, copiá los números tal cual figuran.'
           }
         ]
       }]

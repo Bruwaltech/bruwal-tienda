@@ -1989,13 +1989,19 @@ tr:last-child td { border-bottom: none; }
     <button class="modal-close" id="closeFacturaIaModal">✕</button>
     <h3><i class="fa-solid fa-file-invoice" style="color:var(--stock);"></i> Cargar stock desde una factura</h3>
     <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.6;">
-      Sacale una foto a la factura del proveedor (o subí el PDF) y la IA detecta los productos, cantidades, costo e IVA.
-      Después revisás y confirmás vos — no se carga nada solo. No sirve para productos con talles/colores (esos vía el formulario de siempre).
+      Sacale una foto a la factura del proveedor (o subí el PDF) y la IA detecta los productos, cantidades, costo e IVA
+      — también talle/color en indumentaria y calzado, e IMEI en electrónica si la factura los lista.
+      Después revisás y confirmás vos — no se carga nada solo.
     </p>
 
     <div class="field" id="facturaIaCampoArchivo">
       <label>Foto o PDF de la factura</label>
-      <input type="file" id="facturaIaInput" accept="image/*,application/pdf" capture="environment">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" id="facturaIaCamaraBtn" class="btn" style="width:auto;padding:9px 16px;font-size:13px;"><i class="fa-solid fa-camera"></i> Sacar foto</button>
+        <button type="button" id="facturaIaArchivoBtn" class="btn" style="width:auto;padding:9px 16px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-paperclip"></i> Subir archivo</button>
+      </div>
+      <input type="file" id="facturaIaCamaraInput" accept="image/*" capture="environment" class="hidden">
+      <input type="file" id="facturaIaArchivoInput" accept="image/*,application/pdf" class="hidden">
     </div>
 
     <div id="facturaIaEstado" style="margin:12px 0;font-size:13.5px;line-height:1.5;"></div>
@@ -2014,6 +2020,21 @@ tr:last-child td { border-bottom: none; }
         </table>
       </div>
       <div id="facturaIaAvisoTotal" style="font-size:12.5px;color:var(--text-mute);margin-bottom:12px;"></div>
+
+      <div style="padding:10px 12px;background:var(--bg);border-radius:8px;margin-bottom:14px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:8px;">
+          <input type="checkbox" id="facturaIaRegistrarGasto" checked style="width:auto;">
+          Registrar este pago como gasto de <em>Mercadería</em> en Caja
+        </label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="number" id="facturaIaGastoMonto" min="0" step="0.01" placeholder="Monto pagado" style="flex:1;min-width:120px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
+          <select id="facturaIaGastoMedioPago" style="flex:1;min-width:140px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
+            <option value="">Medio de pago…</option>
+            <option>Efectivo</option><option>Débito</option><option>Crédito</option><option>Transferencia</option><option>Mercado Pago</option>
+          </select>
+        </div>
+      </div>
+
       <button type="button" id="confirmarFacturaIaBtn" class="btn btn-primary" style="width:100%;">Cargar productos al stock</button>
     </div>
   </div>
@@ -6019,16 +6040,25 @@ async function confirmarImportacionExcel() {
 // sesión del vendedor, igual que "Importar Excel". El vendedor siempre
 // revisa y confirma antes de que se toque el stock.
 
-let facturaIaItems = [];   // [{descripcion, cantidad, precio_unitario, iva_porcentaje, precio_venta, destino:'nuevo'|id}]
+// [{descripcion, cantidad, precio_unitario, iva_porcentaje, precio_venta,
+//   talle, color, imeis:[], destino:'nuevo'|id, combinacion, cargadoAparte}]
+let facturaIaItems = [];
+let facturaIaMeta = { proveedor: '', numero_factura: '', fecha: '' };
 
 function limpiarFacturaIa() {
   facturaIaItems = [];
-  byId('facturaIaInput').value = '';
+  facturaIaMeta = { proveedor: '', numero_factura: '', fecha: '' };
+  facturaIaFilaEnRevisionImei = null;
+  byId('facturaIaCamaraInput').value = '';
+  byId('facturaIaArchivoInput').value = '';
   byId('facturaIaEstado').textContent = '';
   byId('facturaIaResultado').classList.add('hidden');
   byId('facturaIaItemsBody').innerHTML = '';
   byId('facturaIaResumen').innerHTML = '';
   byId('facturaIaAvisoTotal').textContent = '';
+  byId('facturaIaRegistrarGasto').checked = true;
+  byId('facturaIaGastoMonto').value = '';
+  byId('facturaIaGastoMedioPago').value = '';
 }
 
 // Una foto de celular sin comprimir pesa 5-8MB, y Vercel corta el body de
@@ -6101,34 +6131,73 @@ async function procesarArchivoFactura(file) {
   }
 }
 
-// Los productos con variantes (talle/color, IMEI) quedan afuera del match:
-// no hay forma de adivinar a qué combinación suma cada línea de una
-// factura sin más info de la que trae un remito.
-function productosSimplesParaMatch() {
-  return products.filter(p => !p.tiene_variantes && esProductoFisico(p));
+// Un producto "de electrónica con IMEI" no se puede sumar con solo
+// cantidad+costo: cada unidad necesita su propio IMEI (ver la sección de
+// IMEI por variante más arriba). Esos casos se resuelven aparte, abriendo
+// el mismo modal de "+Reponer" que ya existe, precargado con lo que la
+// factura trajo — el vendedor lo revisa igual que si lo tipeara a mano.
+function productoTieneImeis(p) {
+  return Array.isArray(p.variantes) && p.variantes.some(v => Array.isArray(v.imeis));
+}
+
+function productosParaMatchFactura() {
+  return products.filter(p => esProductoFisico(p));
 }
 
 function sugerirProductoExistente(descripcion) {
   const buscado = normalizarTexto(descripcion);
   if (!buscado) return null;
-  return productosSimplesParaMatch().find(p => {
+  return productosParaMatchFactura().find(p => {
     const nombre = normalizarTexto(p.name);
     return nombre === buscado || nombre.includes(buscado) || buscado.includes(nombre);
   }) || null;
 }
 
+// Para indumentaria/calzado: si la factura trajo talle y/o color por línea,
+// intenta adivinar a qué combinación ya cargada corresponde comparando
+// contra los valores de cada variante (no contra el nombre del atributo,
+// que cada tienda lo llama distinto).
+function sugerirCombinacionVariante(producto, it) {
+  if (!producto || !Array.isArray(producto.variantes) || !producto.variantes.length) return null;
+  const objetivos = [it.talle, it.color].filter(Boolean).map(normalizarTexto);
+  if (!objetivos.length) return null;
+  let mejor = null, mejorPuntaje = 0;
+  producto.variantes.forEach(v => {
+    const valores = Object.values(v.atributos || {}).map(normalizarTexto);
+    const puntaje = objetivos.filter(o => valores.includes(o)).length;
+    if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; mejor = v; }
+  });
+  return mejorPuntaje > 0 ? mejor : null;
+}
+
 function mostrarResultadoFacturaIa(factura) {
   facturaIaItems = (factura.items || []).map(it => {
     const sugerido = sugerirProductoExistente(it.descripcion || '');
-    return {
+    const item = {
       descripcion: it.descripcion || '',
       cantidad: Number(it.cantidad) > 0 ? Number(it.cantidad) : 1,
       precio_unitario: Number(it.precio_unitario) || 0,
       iva_porcentaje: it.iva_porcentaje != null && it.iva_porcentaje !== '' ? Number(it.iva_porcentaje) : null,
       precio_venta: '',
-      destino: sugerido ? String(sugerido.id) : 'nuevo'
+      talle: it.talle || '',
+      color: it.color || '',
+      imeis: Array.isArray(it.imeis) ? [...new Set(it.imeis.filter(Boolean).map(String))] : [],
+      destino: sugerido ? String(sugerido.id) : 'nuevo',
+      combinacion: '',
+      cargadoAparte: false
     };
+    if (sugerido && sugerido.tiene_variantes && !productoTieneImeis(sugerido)) {
+      const combo = sugerirCombinacionVariante(sugerido, item);
+      if (combo) item.combinacion = claveVariante(combo.atributos);
+    }
+    return item;
   });
+
+  facturaIaMeta = {
+    proveedor: factura.proveedor || '',
+    numero_factura: factura.numero_factura || '',
+    fecha: factura.fecha || ''
+  };
 
   const partes = [];
   if (factura.proveedor) partes.push('<strong>' + escapeHtml(factura.proveedor) + '</strong>');
@@ -6137,46 +6206,112 @@ function mostrarResultadoFacturaIa(factura) {
   partes.push('Total factura: <strong>' + money(Number(factura.total) || 0) + '</strong>');
   byId('facturaIaResumen').innerHTML = partes.join(' · ') || 'Sin datos generales detectados.';
 
+  // Precarga el monto del gasto con el total que dice la factura — el
+  // vendedor lo ajusta si terminó cargando menos líneas de las que trae.
+  byId('facturaIaGastoMonto').value = Number(factura.total) > 0 ? Number(factura.total) : '';
+
   renderFacturaIaItems();
   byId('facturaIaResultado').classList.remove('hidden');
 }
 
+// Mientras el vendedor revisa el IMEI de una línea, se abre el mismo modal
+// de "+Reponer" que ya existe (precargado) en vez de duplicar esa lógica acá.
+let facturaIaFilaEnRevisionImei = null;
+
+function abrirRevisarImeisFactura(i) {
+  const it = facturaIaItems[i];
+  if (!it) return;
+  const p = products.find(x => String(x.id) === it.destino);
+  if (!p) return;
+
+  facturaIaFilaEnRevisionImei = i;
+  abrirReponerVariante(p.id);
+
+  const combo = sugerirCombinacionVariante(p, it);
+  if (combo) {
+    reponerVarianteSeleccion = { ...combo.atributos };
+    renderCamposReponerVariante();
+  }
+
+  reponerImeisNuevos = it.imeis.map(imei => ({ imei, gb: '', bateria: '', estado: '', listo: true }));
+  renderReponerImeisLista();
+}
+
 function renderFacturaIaItems() {
-  const productosDisponibles = productosSimplesParaMatch();
+  const productosDisponibles = productosParaMatchFactura();
   const estInput = 'width:100%;padding:6px;border:1px solid var(--line);border-radius:5px;font-size:12.5px;';
 
-  byId('facturaIaItemsBody').innerHTML = facturaIaItems.map((it, i) => `
-    <tr>
-      <td><input type="text" data-fi="descripcion" data-i="${i}" value="${escapeHtml(it.descripcion)}" style="${estInput}"></td>
-      <td><input type="number" min="0" step="1" data-fi="cantidad" data-i="${i}" value="${it.cantidad}" style="${estInput}"></td>
-      <td><input type="number" min="0" step="0.01" data-fi="precio_unitario" data-i="${i}" value="${it.precio_unitario}" style="${estInput}"></td>
-      <td><input type="number" min="0" step="0.1" data-fi="iva_porcentaje" data-i="${i}" value="${it.iva_porcentaje ?? ''}" style="${estInput}"></td>
-      <td><input type="number" min="0" step="0.01" data-fi="precio_venta" data-i="${i}" value="${it.precio_venta}" placeholder="$" style="${estInput}border-color:var(--celeste);"></td>
-      <td>
-        <select data-fi="destino" data-i="${i}" style="${estInput}">
-          <option value="nuevo" ${it.destino === 'nuevo' ? 'selected' : ''}>+ Crear nuevo</option>
-          ${productosDisponibles.map(p =>
-            '<option value="' + p.id + '" ' + (it.destino === String(p.id) ? 'selected' : '') + '>Sumar a: ' + escapeHtml(p.name) + '</option>'
-          ).join('')}
-        </select>
-      </td>
-    </tr>
-  `).join('');
+  byId('facturaIaItemsBody').innerHTML = facturaIaItems.map((it, i) => {
+    const p = it.destino !== 'nuevo' ? products.find(x => String(x.id) === it.destino) : null;
+    const esVarianteImei = !!(p && productoTieneImeis(p));
+    const esVarianteSimple = !!(p && p.tiene_variantes && !esVarianteImei);
+    const finalizado = it.cargadoAparte;
+    const soloCantidadCosto = finalizado || esVarianteImei;
+
+    let celdaDestino = `
+      <select data-fi="destino" data-i="${i}" style="${estInput}" ${finalizado ? 'disabled' : ''}>
+        <option value="nuevo" ${it.destino === 'nuevo' ? 'selected' : ''}>+ Crear nuevo</option>
+        ${productosDisponibles.map(op => {
+          const etiqueta = productoTieneImeis(op) ? 'Sumar a (revisar IMEI): ' : (op.tiene_variantes ? 'Sumar a (elegir talle/color): ' : 'Sumar a: ');
+          return '<option value="' + op.id + '" ' + (it.destino === String(op.id) ? 'selected' : '') + '>' + etiqueta + escapeHtml(op.name) + '</option>';
+        }).join('')}
+      </select>`;
+
+    if (esVarianteSimple) {
+      celdaDestino += `
+        <select data-fi="combinacion" data-i="${i}" style="${estInput}margin-top:4px;">
+          <option value="">Elegí combinación…</option>
+          ${p.variantes.map(v => {
+            const clave = claveVariante(v.atributos);
+            return '<option value="' + escapeHtml(clave) + '" ' + (it.combinacion === clave ? 'selected' : '') + '>' +
+              escapeHtml(Object.values(v.atributos).join(' / ')) + '</option>';
+          }).join('')}
+        </select>`;
+    } else if (esVarianteImei) {
+      const n = it.imeis.length;
+      celdaDestino += `
+        <button type="button" data-revisar-imei="${i}" class="btn" style="width:100%;margin-top:4px;padding:6px;font-size:11.5px;${finalizado ? 'background:var(--stock);color:#fff;' : ''}">
+          ${finalizado ? '✅ Cargado' : (n ? '📱 Revisar ' + n + ' IMEI' : '+ Cargar equipos (IMEI)')}
+        </button>`;
+    }
+
+    return `
+      <tr style="${finalizado ? 'opacity:0.55;' : ''}">
+        <td><input type="text" data-fi="descripcion" data-i="${i}" value="${escapeHtml(it.descripcion)}" style="${estInput}" ${finalizado ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="1" data-fi="cantidad" data-i="${i}" value="${it.cantidad}" style="${estInput}" ${soloCantidadCosto ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.01" data-fi="precio_unitario" data-i="${i}" value="${it.precio_unitario}" style="${estInput}" ${finalizado ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.1" data-fi="iva_porcentaje" data-i="${i}" value="${it.iva_porcentaje ?? ''}" style="${estInput}" ${finalizado ? 'disabled' : ''}></td>
+        <td>${it.destino === 'nuevo'
+          ? '<input type="number" min="0" step="0.01" data-fi="precio_venta" data-i="' + i + '" value="' + it.precio_venta + '" placeholder="$" style="' + estInput + 'border-color:var(--celeste);">'
+          : '<span style="font-size:11.5px;color:var(--text-mute);">— (ya tiene precio)</span>'}</td>
+        <td>${celdaDestino}</td>
+      </tr>`;
+  }).join('');
 
   byId('facturaIaItemsBody').querySelectorAll('[data-fi]').forEach(el => {
     el.addEventListener('input', (e) => {
       const campo = e.target.dataset.fi;
       const item = facturaIaItems[Number(e.target.dataset.i)];
       if (!item) return;
-      if (campo === 'descripcion' || campo === 'destino') {
-        item[campo] = e.target.value;
-      } else if (campo === 'iva_porcentaje') {
-        item[campo] = e.target.value === '' ? null : Number(e.target.value);
-      } else {
-        item[campo] = Number(e.target.value) || 0;
+      if (campo === 'destino') {
+        item.destino = e.target.value;
+        item.combinacion = '';
+        renderFacturaIaItems();
+        return;
       }
+      if (campo === 'combinacion') { item.combinacion = e.target.value; return; }
+      if (campo === 'descripcion') { item.descripcion = e.target.value; return; }
+      if (campo === 'iva_porcentaje') {
+        item.iva_porcentaje = e.target.value === '' ? null : Number(e.target.value);
+        return;
+      }
+      item[campo] = Number(e.target.value) || 0;
       actualizarAvisoTotalFactura();
     });
+  });
+
+  byId('facturaIaItemsBody').querySelectorAll('[data-revisar-imei]').forEach(btn => {
+    btn.addEventListener('click', () => abrirRevisarImeisFactura(Number(btn.dataset.revisarImei)));
   });
 
   actualizarAvisoTotalFactura();
@@ -6196,6 +6331,35 @@ async function confirmarFacturaIa() {
   if (sinPrecio.length) {
     alert('Faltó cargar el precio de venta de ' + sinPrecio.length +
       ' producto' + (sinPrecio.length === 1 ? '' : 's') + ' nuevo' + (sinPrecio.length === 1 ? '' : 's') + '.');
+    return;
+  }
+
+  // Líneas que suman a un producto ya existente y que todavía no se
+  // resolvieron del todo (falta elegir combinación, o falta revisar IMEI).
+  const pendientes = facturaIaItems
+    .filter(it => it.destino !== 'nuevo' && !it.cargadoAparte)
+    .map(it => ({ it, p: products.find(x => String(x.id) === it.destino) }))
+    .filter(({ p }) => p);
+
+  const sinCombinacion = pendientes.filter(({ it, p }) => p.tiene_variantes && !productoTieneImeis(p) && !it.combinacion);
+  if (sinCombinacion.length) {
+    alert('Faltó elegir la combinación (talle/color) de ' + sinCombinacion.length +
+      ' línea' + (sinCombinacion.length === 1 ? '' : 's') + '.');
+    return;
+  }
+
+  const sinRevisarImei = pendientes.filter(({ p }) => productoTieneImeis(p));
+  if (sinRevisarImei.length) {
+    alert('Faltó revisar los IMEI de ' + sinRevisarImei.length +
+      ' línea' + (sinRevisarImei.length === 1 ? '' : 's') + ' — tocá "Revisar IMEI" antes de confirmar.');
+    return;
+  }
+
+  const registrarGasto = byId('facturaIaRegistrarGasto').checked;
+  const gastoMonto = Number(byId('facturaIaGastoMonto').value) || 0;
+  const gastoMedioPago = byId('facturaIaGastoMedioPago').value;
+  if (registrarGasto && (gastoMonto <= 0 || !gastoMedioPago)) {
+    alert('Para registrar el gasto en Caja falta el monto y/o el medio de pago — completalos o destildá la opción.');
     return;
   }
 
@@ -6221,7 +6385,8 @@ async function confirmarFacturaIa() {
     image_url: null
   }));
 
-  const existentes = facturaIaItems.filter(it => it.destino !== 'nuevo');
+  const existentesPlanos = pendientes.filter(({ p }) => !p.tiene_variantes);
+  const existentesVariante = pendientes.filter(({ p }) => p.tiene_variantes && !productoTieneImeis(p));
 
   let errorHubo = null;
 
@@ -6230,31 +6395,86 @@ async function confirmarFacturaIa() {
     if (error) errorHubo = error;
   }
 
+  // Se suman las cantidades por producto antes de escribir: una factura
+  // puede traer más de una línea para el mismo producto (descuentos por
+  // cantidad, renglones repetidos), y escribir una por una pisaría el
+  // stock que dejó la anterior en vez de sumarse.
   if (!errorHubo) {
-    for (const it of existentes) {
-      const p = products.find(x => String(x.id) === it.destino);
-      if (!p) continue;
-      const nuevoStock = Number(p.stock || 0) + (Number(it.cantidad) || 0);
+    const acumulado = new Map();
+    for (const { it, p } of existentesPlanos) {
+      const acc = acumulado.get(p.id) || { p, cantidad: 0, costo: null };
+      acc.cantidad += Number(it.cantidad) || 0;
+      if (Number(it.precio_unitario) > 0) acc.costo = Number(it.precio_unitario);
+      acumulado.set(p.id, acc);
+    }
+    for (const { p, cantidad, costo } of acumulado.values()) {
+      const nuevoStock = Number(p.stock || 0) + cantidad;
       const { error } = await sb.from('store_products')
-        .update({ stock: nuevoStock, costo: Number(it.precio_unitario) || p.costo || null })
+        .update({ stock: nuevoStock, costo: costo || p.costo || null })
         .eq('id', p.id);
       if (error) { errorHubo = error; break; }
     }
   }
 
-  boton.disabled = false;
-  boton.textContent = 'Cargar productos al stock';
+  if (!errorHubo) {
+    const porProducto = new Map();
+    for (const { it, p } of existentesVariante) {
+      const grupo = porProducto.get(p.id) || { p, cambios: [], costo: null };
+      grupo.cambios.push({ combinacion: it.combinacion, cantidad: Number(it.cantidad) || 0 });
+      if (Number(it.precio_unitario) > 0) grupo.costo = Number(it.precio_unitario);
+      porProducto.set(p.id, grupo);
+    }
+    for (const { p, cambios, costo } of porProducto.values()) {
+      const variantes = p.variantes.map(v => ({ ...v }));
+      cambios.forEach(({ combinacion, cantidad }) => {
+        const idx = variantes.findIndex(v => claveVariante(v.atributos) === combinacion);
+        if (idx >= 0) variantes[idx] = { ...variantes[idx], stock: Number(variantes[idx].stock || 0) + cantidad };
+      });
+      const stockTotal = variantes.reduce((s, v) => s + Number(v.stock || 0), 0);
+      const { error } = await sb.from('store_products')
+        .update({ variantes, stock: stockTotal, costo: costo || p.costo || null })
+        .eq('id', p.id);
+      if (error) { errorHubo = error; break; }
+    }
+  }
 
   if (errorHubo) {
+    boton.disabled = false;
+    boton.textContent = 'Cargar productos al stock';
     alert('No se pudieron cargar todos los productos:\n\n' + errorHubo.message);
     return;
   }
+
+  // El gasto se registra recién acá, con el stock ya cargado sin errores —
+  // si algo de arriba hubiera fallado, no queremos un gasto de una compra
+  // que en los hechos no se terminó de cargar.
+  let avisoGasto = '';
+  if (registrarGasto) {
+    const { error: errorGasto } = await sb.from('store_gastos').insert([{
+      store_slug: currentStore.slug,
+      concepto: 'Factura' +
+        (facturaIaMeta.proveedor ? ' — ' + facturaIaMeta.proveedor : '') +
+        (facturaIaMeta.numero_factura ? ' Nº ' + facturaIaMeta.numero_factura : ''),
+      categoria: 'Mercadería',
+      monto: gastoMonto,
+      moneda: 'ARS',
+      monto_original: gastoMonto,
+      cotizacion: 1,
+      fecha: facturaIaMeta.fecha || new Date().toISOString().slice(0, 10),
+      medio_pago: gastoMedioPago,
+      notas: 'Cargado automáticamente desde "Cargar por factura (IA)".'
+    }]);
+    if (errorGasto) avisoGasto = '\n\n(Los productos sí se cargaron, pero no se pudo registrar el gasto en Caja: ' + errorGasto.message + ')';
+  }
+
+  boton.disabled = false;
+  boton.textContent = 'Cargar productos al stock';
 
   const cantidad = facturaIaItems.length;
   limpiarFacturaIa();
   hide(byId('facturaIaModal'));
   await refreshData();
-  alert('¡Listo! Se cargaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + ' desde la factura.');
+  alert('¡Listo! Se cargaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + ' desde la factura.' + avisoGasto);
 }
 
 function descargarPlantillaImportacion() {
@@ -9129,6 +9349,23 @@ async function confirmarReponerVariante() {
 
   hide(byId('reponerVarianteModal'));
   await refreshData();
+
+  // Si esta reposición se abrió desde "Cargar por factura (IA)" para
+  // revisar los IMEI de una línea, esa línea queda marcada como cargada, se
+  // guarda el costo que trajo la factura (para que Estadísticas calcule
+  // margen con el dato real) y la tabla de la factura se actualiza.
+  if (facturaIaFilaEnRevisionImei != null) {
+    const it = facturaIaItems[facturaIaFilaEnRevisionImei];
+    if (it) {
+      it.cargadoAparte = true;
+      if (Number(it.precio_unitario) > 0) {
+        await sb.from('store_products').update({ costo: Number(it.precio_unitario) }).eq('id', p.id);
+        await refreshData();
+      }
+    }
+    facturaIaFilaEnRevisionImei = null;
+    if (!byId('facturaIaModal').classList.contains('hidden')) renderFacturaIaItems();
+  }
 }
 
 // ---- Etiqueta térmica de producto (equipo en stock para vender, o
@@ -9559,7 +9796,12 @@ byId('facturaIaBtn').addEventListener('click', () => {
   abrir();
 });
 byId('closeFacturaIaModal').addEventListener('click', () => hide(byId('facturaIaModal')));
-byId('facturaIaInput').addEventListener('change', (e) => {
+byId('facturaIaCamaraBtn').addEventListener('click', () => byId('facturaIaCamaraInput').click());
+byId('facturaIaArchivoBtn').addEventListener('click', () => byId('facturaIaArchivoInput').click());
+byId('facturaIaCamaraInput').addEventListener('change', (e) => {
+  if (e.target.files[0]) procesarArchivoFactura(e.target.files[0]);
+});
+byId('facturaIaArchivoInput').addEventListener('change', (e) => {
   if (e.target.files[0]) procesarArchivoFactura(e.target.files[0]);
 });
 byId('confirmarFacturaIaBtn').addEventListener('click', confirmarFacturaIa);
