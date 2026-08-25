@@ -1331,6 +1331,7 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
         <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI <span class="lock-pro hidden" id="lockImei">🔒</span></button>
+        <button class="btn-action" id="facturaIaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-invoice"></i> Cargar por factura (IA) <span class="lock-pro hidden" id="lockFacturaIa">🔒</span></button>
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código...">
       </div>
       <div id="scannerStatus" class="scanner-status hidden"></div>
@@ -1979,6 +1980,42 @@ tr:last-child td { border-bottom: none; }
     <div id="importarExcelPreview" style="max-height:280px;overflow:auto;margin-bottom:14px;"></div>
 
     <button type="button" id="confirmarImportacionBtn" class="btn btn-primary hidden" style="width:100%;">Importar productos</button>
+  </div>
+</div>
+
+<!-- MODAL FACTURA POR IA -->
+<div class="modal-overlay hidden" id="facturaIaModal">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" id="closeFacturaIaModal">✕</button>
+    <h3><i class="fa-solid fa-file-invoice" style="color:var(--stock);"></i> Cargar stock desde una factura</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.6;">
+      Sacale una foto a la factura del proveedor (o subí el PDF) y la IA detecta los productos, cantidades, costo e IVA.
+      Después revisás y confirmás vos — no se carga nada solo. No sirve para productos con talles/colores (esos vía el formulario de siempre).
+    </p>
+
+    <div class="field" id="facturaIaCampoArchivo">
+      <label>Foto o PDF de la factura</label>
+      <input type="file" id="facturaIaInput" accept="image/*,application/pdf" capture="environment">
+    </div>
+
+    <div id="facturaIaEstado" style="margin:12px 0;font-size:13.5px;line-height:1.5;"></div>
+
+    <div id="facturaIaResultado" class="hidden">
+      <div id="facturaIaResumen" style="padding:10px 12px;background:var(--bg);border-radius:8px;margin-bottom:12px;font-size:13.5px;"></div>
+      <div style="max-height:360px;overflow:auto;margin-bottom:10px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th><th style="width:60px;">Cant.</th><th style="width:100px;">Costo unit.</th>
+              <th style="width:70px;">IVA %</th><th style="width:110px;">Precio de venta</th><th style="width:170px;">Cargar como</th>
+            </tr>
+          </thead>
+          <tbody id="facturaIaItemsBody"></tbody>
+        </table>
+      </div>
+      <div id="facturaIaAvisoTotal" style="font-size:12.5px;color:var(--text-mute);margin-bottom:12px;"></div>
+      <button type="button" id="confirmarFacturaIaBtn" class="btn btn-primary" style="width:100%;">Cargar productos al stock</button>
+    </div>
   </div>
 </div>
 
@@ -2725,7 +2762,7 @@ function ofrecerUpgradePro(nombreFuncion) {
 
 function aplicarVisibilidadPorPlan() {
   const pro = tienePlanPro();
-  ['lockCaja', 'lockEstadisticas', 'lockImei'].forEach(id => {
+  ['lockCaja', 'lockEstadisticas', 'lockImei', 'lockFacturaIa'].forEach(id => {
     const el = byId(id);
     if (el) el.classList.toggle('hidden', pro);
   });
@@ -5974,6 +6011,250 @@ async function confirmarImportacionExcel() {
   hide(byId('importarExcelModal'));
   await refreshData();
   alert('¡Listo! Se importaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + '.');
+}
+
+// ---------- Carga de stock desde una factura, leída con IA (Pro) ----------
+// El servidor (api/leer-factura.js) solo convierte la foto/PDF en datos
+// estructurados — la carga real a store_products se hace acá, con la
+// sesión del vendedor, igual que "Importar Excel". El vendedor siempre
+// revisa y confirma antes de que se toque el stock.
+
+let facturaIaItems = [];   // [{descripcion, cantidad, precio_unitario, iva_porcentaje, precio_venta, destino:'nuevo'|id}]
+
+function limpiarFacturaIa() {
+  facturaIaItems = [];
+  byId('facturaIaInput').value = '';
+  byId('facturaIaEstado').textContent = '';
+  byId('facturaIaResultado').classList.add('hidden');
+  byId('facturaIaItemsBody').innerHTML = '';
+  byId('facturaIaResumen').innerHTML = '';
+  byId('facturaIaAvisoTotal').textContent = '';
+}
+
+// Una foto de celular sin comprimir pesa 5-8MB, y Vercel corta el body de
+// cualquier función en ~4.5MB sin importar el plan. 1600px de lado más
+// largo alcanza de sobra para que la IA lea los renglones de una factura.
+function comprimirImagenFactura(file, maxLado = 1600, calidad = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > height && width > maxLado) { height = Math.round(height * maxLado / width); width = maxLado; }
+      else if (height > maxLado) { width = Math.round(width * maxLado / height); height = maxLado; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('No se pudo procesar la imagen')), 'image/jpeg', calidad);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+
+function blobABase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function procesarArchivoFactura(file) {
+  byId('facturaIaResultado').classList.add('hidden');
+  byId('facturaIaEstado').textContent = '⏳ Leyendo factura con IA… puede tardar unos segundos.';
+
+  try {
+    const esPdf = file.type === 'application/pdf';
+    let mimeType = file.type;
+    let base64;
+
+    if (esPdf) {
+      base64 = await blobABase64(file);
+    } else {
+      const comprimida = await comprimirImagenFactura(file);
+      mimeType = 'image/jpeg';
+      base64 = await blobABase64(comprimida);
+    }
+
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { byId('facturaIaEstado').textContent = '⚠️ Sesión vencida, volvé a entrar.'; return; }
+
+    const r = await fetch('/api/leer-factura', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ archivo_base64: base64, mime_type: mimeType })
+    });
+    const json = await r.json().catch(() => ({}));
+
+    if (!r.ok || !json.ok) {
+      byId('facturaIaEstado').textContent = '⚠️ ' + (json.error || 'No se pudo leer la factura.');
+      return;
+    }
+
+    byId('facturaIaEstado').textContent = '';
+    mostrarResultadoFacturaIa(json.factura);
+  } catch (err) {
+    byId('facturaIaEstado').textContent = '⚠️ No se pudo leer la factura: ' + err.message;
+  }
+}
+
+// Los productos con variantes (talle/color, IMEI) quedan afuera del match:
+// no hay forma de adivinar a qué combinación suma cada línea de una
+// factura sin más info de la que trae un remito.
+function productosSimplesParaMatch() {
+  return products.filter(p => !p.tiene_variantes && esProductoFisico(p));
+}
+
+function sugerirProductoExistente(descripcion) {
+  const buscado = normalizarTexto(descripcion);
+  if (!buscado) return null;
+  return productosSimplesParaMatch().find(p => {
+    const nombre = normalizarTexto(p.name);
+    return nombre === buscado || nombre.includes(buscado) || buscado.includes(nombre);
+  }) || null;
+}
+
+function mostrarResultadoFacturaIa(factura) {
+  facturaIaItems = (factura.items || []).map(it => {
+    const sugerido = sugerirProductoExistente(it.descripcion || '');
+    return {
+      descripcion: it.descripcion || '',
+      cantidad: Number(it.cantidad) > 0 ? Number(it.cantidad) : 1,
+      precio_unitario: Number(it.precio_unitario) || 0,
+      iva_porcentaje: it.iva_porcentaje != null && it.iva_porcentaje !== '' ? Number(it.iva_porcentaje) : null,
+      precio_venta: '',
+      destino: sugerido ? String(sugerido.id) : 'nuevo'
+    };
+  });
+
+  const partes = [];
+  if (factura.proveedor) partes.push('<strong>' + escapeHtml(factura.proveedor) + '</strong>');
+  if (factura.numero_factura) partes.push('Nº ' + escapeHtml(factura.numero_factura));
+  if (factura.fecha) partes.push(escapeHtml(factura.fecha));
+  partes.push('Total factura: <strong>' + money(Number(factura.total) || 0) + '</strong>');
+  byId('facturaIaResumen').innerHTML = partes.join(' · ') || 'Sin datos generales detectados.';
+
+  renderFacturaIaItems();
+  byId('facturaIaResultado').classList.remove('hidden');
+}
+
+function renderFacturaIaItems() {
+  const productosDisponibles = productosSimplesParaMatch();
+  const estInput = 'width:100%;padding:6px;border:1px solid var(--line);border-radius:5px;font-size:12.5px;';
+
+  byId('facturaIaItemsBody').innerHTML = facturaIaItems.map((it, i) => `
+    <tr>
+      <td><input type="text" data-fi="descripcion" data-i="${i}" value="${escapeHtml(it.descripcion)}" style="${estInput}"></td>
+      <td><input type="number" min="0" step="1" data-fi="cantidad" data-i="${i}" value="${it.cantidad}" style="${estInput}"></td>
+      <td><input type="number" min="0" step="0.01" data-fi="precio_unitario" data-i="${i}" value="${it.precio_unitario}" style="${estInput}"></td>
+      <td><input type="number" min="0" step="0.1" data-fi="iva_porcentaje" data-i="${i}" value="${it.iva_porcentaje ?? ''}" style="${estInput}"></td>
+      <td><input type="number" min="0" step="0.01" data-fi="precio_venta" data-i="${i}" value="${it.precio_venta}" placeholder="$" style="${estInput}border-color:var(--celeste);"></td>
+      <td>
+        <select data-fi="destino" data-i="${i}" style="${estInput}">
+          <option value="nuevo" ${it.destino === 'nuevo' ? 'selected' : ''}>+ Crear nuevo</option>
+          ${productosDisponibles.map(p =>
+            '<option value="' + p.id + '" ' + (it.destino === String(p.id) ? 'selected' : '') + '>Sumar a: ' + escapeHtml(p.name) + '</option>'
+          ).join('')}
+        </select>
+      </td>
+    </tr>
+  `).join('');
+
+  byId('facturaIaItemsBody').querySelectorAll('[data-fi]').forEach(el => {
+    el.addEventListener('input', (e) => {
+      const campo = e.target.dataset.fi;
+      const item = facturaIaItems[Number(e.target.dataset.i)];
+      if (!item) return;
+      if (campo === 'descripcion' || campo === 'destino') {
+        item[campo] = e.target.value;
+      } else if (campo === 'iva_porcentaje') {
+        item[campo] = e.target.value === '' ? null : Number(e.target.value);
+      } else {
+        item[campo] = Number(e.target.value) || 0;
+      }
+      actualizarAvisoTotalFactura();
+    });
+  });
+
+  actualizarAvisoTotalFactura();
+}
+
+function actualizarAvisoTotalFactura() {
+  const suma = facturaIaItems.reduce((s, it) => s + (Number(it.cantidad) || 0) * (Number(it.precio_unitario) || 0), 0);
+  byId('facturaIaAvisoTotal').textContent =
+    'Suma de las líneas: ' + money(suma) + ' — revisá que coincida con el total de la factura antes de confirmar.';
+}
+
+async function confirmarFacturaIa() {
+  if (!puedeOperar()) return;
+  if (!facturaIaItems.length) return;
+
+  const sinPrecio = facturaIaItems.filter(it => it.destino === 'nuevo' && (!it.precio_venta || it.precio_venta <= 0));
+  if (sinPrecio.length) {
+    alert('Faltó cargar el precio de venta de ' + sinPrecio.length +
+      ' producto' + (sinPrecio.length === 1 ? '' : 's') + ' nuevo' + (sinPrecio.length === 1 ? '' : 's') + '.');
+    return;
+  }
+
+  const boton = byId('confirmarFacturaIaBtn');
+  boton.disabled = true;
+  boton.textContent = 'Cargando...';
+
+  const nuevos = facturaIaItems.filter(it => it.destino === 'nuevo').map(it => ({
+    store_slug: currentStore.slug,
+    name: it.descripcion || 'Producto sin nombre',
+    description: it.iva_porcentaje != null ? ('IVA ' + it.iva_porcentaje + '% — cargado desde factura') : 'Cargado desde factura',
+    price: Number(it.precio_venta),
+    costo: Number(it.precio_unitario) || null,
+    stock: Number(it.cantidad) || 0,
+    category: null,
+    ean: null,
+    tipo: 'producto',
+    opciones: [],
+    tiene_variantes: false,
+    variante_campos: [],
+    variantes: [],
+    imagenes: [],
+    image_url: null
+  }));
+
+  const existentes = facturaIaItems.filter(it => it.destino !== 'nuevo');
+
+  let errorHubo = null;
+
+  if (nuevos.length) {
+    const { error } = await sb.from('store_products').insert(nuevos);
+    if (error) errorHubo = error;
+  }
+
+  if (!errorHubo) {
+    for (const it of existentes) {
+      const p = products.find(x => String(x.id) === it.destino);
+      if (!p) continue;
+      const nuevoStock = Number(p.stock || 0) + (Number(it.cantidad) || 0);
+      const { error } = await sb.from('store_products')
+        .update({ stock: nuevoStock, costo: Number(it.precio_unitario) || p.costo || null })
+        .eq('id', p.id);
+      if (error) { errorHubo = error; break; }
+    }
+  }
+
+  boton.disabled = false;
+  boton.textContent = 'Cargar productos al stock';
+
+  if (errorHubo) {
+    alert('No se pudieron cargar todos los productos:\n\n' + errorHubo.message);
+    return;
+  }
+
+  const cantidad = facturaIaItems.length;
+  limpiarFacturaIa();
+  hide(byId('facturaIaModal'));
+  await refreshData();
+  alert('¡Listo! Se cargaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + ' desde la factura.');
 }
 
 function descargarPlantillaImportacion() {
@@ -9269,6 +9550,19 @@ byId('importarExcelInput').addEventListener('change', (e) => {
   if (e.target.files[0]) procesarArchivoImportacion(e.target.files[0]);
 });
 byId('confirmarImportacionBtn').addEventListener('click', confirmarImportacionExcel);
+
+byId('facturaIaBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  if (!tienePlanPro()) { ofrecerUpgradePro('Cargar por factura (IA)'); return; }
+  const abrir = () => { limpiarFacturaIa(); show(byId('facturaIaModal')); };
+  if (requiereDesbloqueoCostos()) { abrirPinCostosModal(abrir); return; }
+  abrir();
+});
+byId('closeFacturaIaModal').addEventListener('click', () => hide(byId('facturaIaModal')));
+byId('facturaIaInput').addEventListener('change', (e) => {
+  if (e.target.files[0]) procesarArchivoFactura(e.target.files[0]);
+});
+byId('confirmarFacturaIaBtn').addEventListener('click', confirmarFacturaIa);
 
 
 byId('clientSearch').addEventListener('input', (e) => {

@@ -1,5 +1,8 @@
 {
   "rewrites": [
     { "source": "/:slug", "destination": "/api/tienda?slug=:slug" }
-  ]
+  ],
+  "functions": {
+    "api/leer-factura.js": { "maxDuration": 30 }
+  }
 }
