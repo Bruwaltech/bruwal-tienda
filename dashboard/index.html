@@ -1051,6 +1051,26 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- Asistente de ayuda: burbuja flotante + panel de chat. Visible en
+     cualquier pestaña una vez logueado, para preguntas de "cómo hago
+     para..." sin tener que escribir por WhatsApp cada vez. -->
+<button id="ayudaBotBtn" class="hidden" title="Ayuda"
+  style="position:fixed;right:18px;bottom:18px;width:52px;height:52px;border-radius:50%;background:var(--navy);color:#fff;border:none;box-shadow:0 6px 18px rgba(21,41,77,.35);font-size:22px;cursor:pointer;z-index:9500;display:flex;align-items:center;justify-content:center;">
+  <i class="fa-solid fa-comment-dots"></i>
+</button>
+
+<div id="ayudaBotPanel" class="hidden" style="position:fixed;right:18px;bottom:82px;width:min(360px, calc(100vw - 36px));height:min(500px, calc(100vh - 140px));background:#fff;border-radius:14px;box-shadow:0 12px 40px -12px rgba(21,41,77,.4);z-index:9500;display:flex;flex-direction:column;overflow:hidden;">
+  <div style="background:var(--navy);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;">
+    <div style="font-weight:700;font-size:14px;"><i class="fa-solid fa-comment-dots"></i> Ayuda de BRUWAL</div>
+    <button id="closeAyudaBotBtn" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">✕</button>
+  </div>
+  <div id="ayudaBotMensajes" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;"></div>
+  <div style="display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);">
+    <input type="text" id="ayudaBotInput" placeholder="Escribí tu pregunta…" style="flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:20px;font-size:13.5px;">
+    <button id="ayudaBotEnviarBtn" style="width:38px;height:38px;border-radius:50%;background:var(--celeste);color:#fff;border:none;cursor:pointer;flex-shrink:0;"><i class="fa-solid fa-paper-plane"></i></button>
+  </div>
+</div>
+
 <!-- LOADING SCREEN -->
 <div id="loadingScreen">
   <div class="logo-loader">B</div>
@@ -4550,6 +4570,8 @@ byId('logoutBtn').addEventListener('click', async () => {
   hide(byId('appView'));
   show(byId('authView'));
   byId('loginForm').reset();
+  hide(byId('ayudaBotBtn'));
+  hide(byId('ayudaBotPanel'));
 });
 
 // COPY STORE LINK
@@ -4674,6 +4696,8 @@ async function onLoggedIn() {
   if (byId('tabDashboard')) byId('tabDashboard').classList.add('active');
 
   await refreshData();
+
+  show(byId('ayudaBotBtn'));
 
   // Si entro desde el icono del celular, va derecho a vender
   await arranqueDirectoAVentas();
@@ -10453,6 +10477,88 @@ let promptDeInstalacion = null;
     alert('Buscá "Instalar aplicación" en el menú de tu navegador (los tres puntitos).');
   });
 })();
+
+// ---------- Asistente de ayuda (chat flotante) ----------
+// Historial en memoria nada más — es una charla de "cómo hago para...", no
+// datos del negocio, así que no hace falta guardarla en la base. Se reinicia
+// sola al recargar la página.
+let ayudaBotHistorial = [];
+let ayudaBotEnviando = false;
+
+function escaparYLinkificar(texto) {
+  return escapeHtml(texto).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">$1</a>');
+}
+
+function agregarBurbujaAyudaBot(rol, texto) {
+  const cont = byId('ayudaBotMensajes');
+  const esUsuario = rol === 'user';
+  const burbuja = document.createElement('div');
+  burbuja.style.cssText = 'max-width:85%;padding:9px 12px;border-radius:12px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;' +
+    (esUsuario
+      ? 'align-self:flex-end;background:var(--celeste);color:#fff;border-bottom-right-radius:3px;'
+      : 'align-self:flex-start;background:var(--bg);color:var(--text-dark);border-bottom-left-radius:3px;');
+  burbuja.innerHTML = escaparYLinkificar(texto);
+  cont.appendChild(burbuja);
+  cont.scrollTop = cont.scrollHeight;
+  return burbuja;
+}
+
+function abrirAyudaBot() {
+  show(byId('ayudaBotPanel'));
+  if (!ayudaBotHistorial.length) {
+    agregarBurbujaAyudaBot('assistant',
+      '¡Hola! Preguntame lo que quieras sobre cómo usar BRUWAL: cargar productos, cómo funciona el stock, ' +
+      'cómo ven tus clientes la tienda, planes, y más.\n\nSi es sobre tu cuenta o el inicio de sesión, mejor ' +
+      'escribinos directo por WhatsApp — acá no tengo acceso a tu cuenta puntual.');
+  }
+  setTimeout(() => byId('ayudaBotInput').focus(), 100);
+}
+
+async function enviarMensajeAyudaBot() {
+  if (ayudaBotEnviando) return;
+  const input = byId('ayudaBotInput');
+  const texto = input.value.trim();
+  if (!texto) return;
+
+  input.value = '';
+  agregarBurbujaAyudaBot('user', texto);
+  ayudaBotHistorial.push({ role: 'user', content: texto });
+
+  ayudaBotEnviando = true;
+  const burbujaEscribiendo = agregarBurbujaAyudaBot('assistant', 'Escribiendo…');
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      burbujaEscribiendo.textContent = 'Tu sesión venció — recargá la página y volvé a entrar.';
+      ayudaBotEnviando = false;
+      return;
+    }
+
+    const r = await fetch('/api/asistente-ayuda', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ historial: ayudaBotHistorial })
+    });
+    const json = await r.json().catch(() => ({}));
+
+    const respuesta = (r.ok && json.ok) ? json.respuesta : ('⚠️ ' + (json.error || 'No se pudo responder ahora.'));
+    burbujaEscribiendo.innerHTML = escaparYLinkificar(respuesta);
+    byId('ayudaBotMensajes').scrollTop = byId('ayudaBotMensajes').scrollHeight;
+    if (r.ok && json.ok) ayudaBotHistorial.push({ role: 'assistant', content: respuesta });
+  } catch (err) {
+    burbujaEscribiendo.textContent = '⚠️ No se pudo responder: ' + err.message;
+  } finally {
+    ayudaBotEnviando = false;
+  }
+}
+
+byId('ayudaBotBtn').addEventListener('click', abrirAyudaBot);
+byId('closeAyudaBotBtn').addEventListener('click', () => hide(byId('ayudaBotPanel')));
+byId('ayudaBotEnviarBtn').addEventListener('click', enviarMensajeAyudaBot);
+byId('ayudaBotInput').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); enviarMensajeAyudaBot(); }
+});
 
 // El service worker es lo que hace que el navegador ofrezca instalar la app.
 // Si falla, la web sigue funcionando igual: solo se pierde la instalacion.
