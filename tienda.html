@@ -202,7 +202,14 @@
   .products-grid.compacta .product-info{padding:10px;}
   .products-grid.compacta .product-name{font-size:13px;}
   .products-grid.compacta .product-price{font-size:15px;}
-  .products-grid.compacta .product-description{display:none;}
+  /* Antes se ocultaba del todo en modo compacto — pero notas como "con
+     cargador de regalo" son justo lo que el dueño quiere que el cliente
+     vea antes de entrar al producto. Se deja en una sola línea recortada
+     en vez de sacarla, para no perder tanto alto como el texto completo. */
+  .products-grid.compacta .product-description{
+    font-size:11.5px;margin-bottom:6px;display:-webkit-box;
+    -webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;
+  }
   .product-card{cursor:pointer;}
 
   /* Ficha del producto */
@@ -507,6 +514,23 @@ function precioOriginal(p){
   if (!p.moneda || p.precio_original == null) return '';
   const simbolo = p.moneda === 'USD' ? 'US$' : '€';
   return '<div class="precio-original">' + simbolo + Number(p.precio_original).toLocaleString('es-AR') + '</div>';
+}
+
+// El precio de una combinación puntual (ej. "iPhone 13 Pro Max") — si esa
+// variante no tiene precio propio cargado, usa el general del producto.
+// Modelos que se venden como "variante" del mismo producto (13, 13 Pro, 13
+// Pro Max) no valen lo mismo, a diferencia de un talle/color donde sí.
+function precioDeVariante(p, v){
+  return (v && v.precio != null) ? Number(v.precio) : Number(p.price || 0);
+}
+
+// Rango de precios entre todas las combinaciones — para la tarjeta, antes
+// de que el cliente elija cuál. Si todas valen lo mismo, min === max y se
+// muestra un precio único como siempre; si no, "Desde $X".
+function rangoPrecioVariantes(p){
+  if (!Array.isArray(p.variantes) || !p.variantes.length) return { min: Number(p.price || 0), max: Number(p.price || 0) };
+  const precios = p.variantes.map(v => precioDeVariante(p, v));
+  return { min: Math.min(...precios), max: Math.max(...precios) };
 }
 function escapeHtml(str){
   const d = document.createElement('div');
@@ -876,7 +900,12 @@ function htmlTarjetaProducto(p){
       (p.description ? '<div class="product-description">' + escapeHtml(p.description) + '</div>' : '') +
       (ocultaPrecio
         ? '<div class="product-price">Consultar precio</div>'
-        : '<div class="product-price">' + money(p.price) + '</div>' + precioOriginal(p)) +
+        : (() => {
+            const rango = tieneVariantes ? rangoPrecioVariantes(p) : { min: Number(p.price || 0), max: Number(p.price || 0) };
+            return rango.min !== rango.max
+              ? '<div class="product-price">Desde ' + money(rango.min) + '</div>'
+              : '<div class="product-price">' + money(rango.min) + '</div>' + precioOriginal(p);
+          })()) +
       '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes ? 'Elegí talle/color para ver el stock' : p.stock + ' disponibles') : 'Sin stock')) + '</div>' +
       '<div class="product-controls">' + (ocultaPrecio ? controls : ((servicio || p.stock > 0) ? controls : '')) + '</div>' +
       '</div>' +
@@ -967,12 +996,16 @@ function abrirFicha(id) {
 
   // Con qué stock cuenta la combinación elegida. null = todavía no eligió
   // todo, o esa combinación no existe.
+  const variantePorSeleccion = () => {
+    if (!campos.length || Object.keys(seleccion).length < campos.length) return null;
+    const clave = campos.map(c => c.nombre).sort().map(n => n + ':' + seleccion[n]).join('~');
+    return variantes.find(x => campos.map(c => c.nombre).sort().map(n => n + ':' + x.atributos[n]).join('~') === clave) || null;
+  };
+
   const stockDeSeleccion = () => {
     if (!campos.length) return null;
-    if (Object.keys(seleccion).length < campos.length) return null;
-    const clave = campos.map(c => c.nombre).sort().map(n => n + ':' + seleccion[n]).join('~');
-    const v = variantes.find(x => campos.map(c => c.nombre).sort().map(n => n + ':' + x.atributos[n]).join('~') === clave);
-    return v ? Number(v.stock || 0) : 0;
+    const v = variantePorSeleccion();
+    return v ? Number(v.stock || 0) : (Object.keys(seleccion).length < campos.length ? null : 0);
   };
 
   // Un valor se ve atenuado si en NINGUNA combinación con ese valor queda
@@ -995,25 +1028,23 @@ function abrirFicha(id) {
     (p.category ? '<span class="ficha-cat">' + escapeHtml(p.category) + '</span>' : '') +
     '<h3 style="margin:0;">' + escapeHtml(p.name) + '</h3>' +
     (p.mostrar_precio === false
-      ? '<div class="ficha-precio">Consultar precio</div>'
-      : '<div class="ficha-precio">' + money(p.price) + '</div>' + precioOriginal(p)) +
+      ? '<div class="ficha-precio" id="fichaPrecio">Consultar precio</div>'
+      : (() => {
+          const rango = rangoPrecioVariantes(p);
+          return rango.min !== rango.max
+            ? '<div class="ficha-precio" id="fichaPrecio">Desde ' + money(rango.min) + '</div>'
+            : '<div class="ficha-precio" id="fichaPrecio">' + money(rango.min) + '</div>' + precioOriginal(p);
+        })()) +
     '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
       (campos.length
         ? 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock'
         : (esProductoFisico(p) ? (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') : 'Servicio')) +
     '</div>' +
-    (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
 
-    // Batería, almacenamiento, RAM, estado — lo que el vendedor haya
-    // cargado. No son variantes: son datos del equipo puntual.
-    (Array.isArray(p.specs) && p.specs.length
-      ? '<div class="ficha-specs">' + p.specs.map(s =>
-          '<span class="ficha-spec-chip"><b>' + escapeHtml(s.clave) + ':</b> ' + escapeHtml(s.valor) + '</span>'
-        ).join('') + '</div>'
-      : '') +
-
-    // Talle, color, etc. Cada atributo es un grupo de selección única, igual
-    // que "Casa o departamento" en el checkout.
+    // Talle, color, modelo, etc. va PRIMERO: el cliente elige qué unidad
+    // exacta le interesa antes de leer la descripción/specs genéricas del
+    // producto — así, si el precio o los detalles cambian según lo que
+    // elija, ya lo está viendo en el lugar correcto.
     campos.map(c =>
       '<div style="margin-bottom:14px;">' +
         '<label style="display:block;font-size:13px;font-weight:600;color:var(--text-dark);margin-bottom:7px;">' + escapeHtml(c.nombre) + '</label>' +
@@ -1025,6 +1056,16 @@ function abrirFicha(id) {
         '</div>' +
       '</div>'
     ).join('') +
+
+    (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
+
+    // Batería, almacenamiento, RAM, estado — lo que el vendedor haya
+    // cargado. No son variantes: son datos del equipo puntual.
+    (Array.isArray(p.specs) && p.specs.length
+      ? '<div class="ficha-specs">' + p.specs.map(s =>
+          '<span class="ficha-spec-chip"><b>' + escapeHtml(s.clave) + ':</b> ' + escapeHtml(s.valor) + '</span>'
+        ).join('') + '</div>'
+      : '') +
 
     // Los agregados que cargó el dueño, con su precio
     (opciones.length
@@ -1052,7 +1093,7 @@ function abrirFicha(id) {
           '<button id="fichaMas">+</button>' +
         '</div>' +
         '<button class="btn-primary" id="fichaAgregar" style="width:100%;">' +
-          'Agregar al carrito · <span id="fichaTotal">' + money(p.price) + '</span></button>'
+          'Agregar al carrito · <span id="fichaTotal">' + money(rangoPrecioVariantes(p).min) + '</span></button>'
       : '<div style="text-align:center;color:var(--danger);font-weight:600;">Sin stock por ahora</div>');
 
   const ficha = byId('fichaContenido');
@@ -1076,8 +1117,18 @@ function abrirFicha(id) {
   // ANTES de agregar, sin sorpresas en el total.
   const refrescarPrecio = () => {
     const extras = elegidas().reduce((s, o) => s + Number(o.precio || 0), 0);
+    const vSel = variantePorSeleccion();
+    // Antes de elegir toda la combinación se muestra el precio "desde"; una
+    // vez que ya sabe cuál es exactamente, el precio real de esa unidad.
+    const unitario = campos.length
+      ? (vSel ? precioDeVariante(p, vSel) : rangoPrecioVariantes(p).min)
+      : Number(p.price || 0);
+
+    const precioEl = byId('fichaPrecio');
+    if (precioEl && p.mostrar_precio !== false) precioEl.textContent = money(unitario);
+
     const t = byId('fichaTotal');
-    if (t) t.textContent = money((Number(p.price) + extras) * cantidad);
+    if (t) t.textContent = money((unitario + extras) * cantidad);
     const q = byId('fichaQty');
     if (q) q.textContent = cantidad;
 
@@ -1190,7 +1241,14 @@ const productoDe = (linea) => products.find(x => String(x.id) === String(linea.p
 const precioUnitario = (linea) => {
   const p = productoDe(linea);
   const extras = (linea.opciones || []).reduce((s, o) => s + Number(o.precio || 0), 0);
-  return (p ? Number(p.price || 0) : 0) + extras;
+  if (!p) return extras;
+  let base = Number(p.price || 0);
+  if (p.tiene_variantes && linea.variante && Array.isArray(p.variantes)) {
+    const clave = claveVariante(linea.variante);
+    const v = p.variantes.find(x => claveVariante(x.atributos) === clave);
+    base = precioDeVariante(p, v);
+  }
+  return base + extras;
 };
 
 const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => s + l.qty, 0);

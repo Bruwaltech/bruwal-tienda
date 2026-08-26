@@ -2173,8 +2173,9 @@ tr:last-child td { border-bottom: none; }
       <input type="text" id="reponerNuevoImei" placeholder="IMEI de esta unidad" style="width:100%;">
       <div id="reponerTacHint" style="font-size:11.5px;color:var(--celeste);margin-top:3px;min-height:14px;"></div>
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-        <input type="text" id="reponerNuevoGb" placeholder="GB (opc.)" style="width:75px;">
-        <input type="text" id="reponerNuevoBateria" placeholder="Batería (opc.)" style="width:90px;">
+        <input type="text" id="reponerNuevoGb" placeholder="GB (opc.)" style="width:70px;">
+        <input type="text" id="reponerNuevoRam" placeholder="RAM (opc.)" style="width:75px;">
+        <input type="text" id="reponerNuevoBateria" placeholder="Batería (opc.)" style="width:85px;">
         <input type="text" id="reponerNuevoEstado" placeholder="Estado / nota (opc.)" style="flex:1;min-width:110px;">
       </div>
       <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text-mute);">
@@ -2196,6 +2197,10 @@ tr:last-child td { border-bottom: none; }
     <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;">Elegí la combinación exacta que vas a etiquetar.</p>
 
     <div id="etiquetaVarianteCampos" style="margin-bottom:12px;"></div>
+    <div id="etiquetaVarianteImeis" class="hidden" style="margin-bottom:12px;">
+      <label style="font-size:11.5px;color:var(--text-mute);display:block;margin-bottom:6px;">¿Cuál de los equipos? Cada uno puede tener datos distintos.</label>
+      <div id="etiquetaVarianteImeisLista" style="display:flex;flex-direction:column;gap:6px;"></div>
+    </div>
 
     <button type="button" id="confirmarEtiquetaVarianteBtn" class="btn btn-primary" style="width:100%;">Imprimir etiqueta</button>
   </div>
@@ -3873,8 +3878,8 @@ function claveDeCombinacion(atributos) {
 // guardados como texto suelto ("358...") en vez de objeto con los datos
 // extra. Se normalizan al leer para no tener que migrar nada en la base.
 function normalizarUnidadImei(u) {
-  if (typeof u === 'string') return { imei: u, gb: '', bateria: '', estado: '', listo: true };
-  return { imei: u.imei, gb: u.gb || '', bateria: u.bateria || '', estado: u.estado || '', listo: u.listo !== false };
+  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', listo: true };
+  return { imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '', estado: u.estado || '', listo: u.listo !== false };
 }
 
 // Los primeros 8 dígitos del IMEI (TAC) identifican marca y modelo exactos
@@ -4133,24 +4138,34 @@ function renderGrillaVariantes() {
   variantesEnEdicion = combos.map(c => {
     const clave = claveDeCombinacion(c);
     const anterior = previo[clave];
+    // precio: si queda vacío, la variante usa el precio general del
+    // producto — solo hace falta cargarlo en las combinaciones que de
+    // verdad valen distinto (ej. "128GB" vs "256GB", o un modelo vs otro).
+    const precio = anterior?.precio != null ? anterior.precio : null;
     if (esElec) {
       const imeis = Array.isArray(anterior?.imeis) ? anterior.imeis.map(normalizarUnidadImei) : [];
-      return { atributos: c, stock: imeis.length, imeis };
+      return { atributos: c, stock: imeis.length, imeis, precio };
     }
-    return { atributos: c, stock: Number(anterior?.stock ?? 0) };
+    return { atributos: c, stock: Number(anterior?.stock ?? 0), precio };
   });
 
   if (!esElec) {
-    cont.innerHTML = '<div style="display:grid;grid-template-columns:1fr 100px;gap:8px;align-items:center;">' +
+    cont.innerHTML = '<div style="display:grid;grid-template-columns:1fr 90px 110px;gap:8px;align-items:center;">' +
+      '<div></div><div style="font-size:11px;color:var(--text-mute);">Stock</div><div style="font-size:11px;color:var(--text-mute);">Precio (opc.)</div>' +
       variantesEnEdicion.map(v => {
         const clave = claveDeCombinacion(v.atributos);
         return `<div style="font-size:13.5px;">${escapeHtml(Object.values(v.atributos).join(' / '))}</div>` +
-               `<input type="number" min="0" value="${v.stock}" data-combo="${escapeHtml(clave)}" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">`;
+               `<input type="number" min="0" value="${v.stock}" data-combo="${escapeHtml(clave)}" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">` +
+               `<input type="number" min="0" step="0.01" value="${v.precio ?? ''}" placeholder="Igual" data-combo-precio="${escapeHtml(clave)}" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">`;
       }).join('') + '</div>';
 
     cont.querySelectorAll('[data-combo]').forEach(inp => inp.addEventListener('input', (e) => {
       const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === e.target.dataset.combo);
       if (v) v.stock = Math.max(0, Number(e.target.value) || 0);
+    }));
+    cont.querySelectorAll('[data-combo-precio]').forEach(inp => inp.addEventListener('input', (e) => {
+      const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === e.target.dataset.comboPrecio);
+      if (v) v.precio = e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0);
     }));
     return;
   }
@@ -4166,13 +4181,18 @@ function renderGrillaVariantes() {
           <div style="font-size:13.5px;font-weight:600;">${escapeHtml(Object.values(v.atributos).join(' / '))}</div>
           <span data-contador-imei="${escapeHtml(clave)}" style="font-size:12px;color:var(--text-mute);">${v.imeis.length} en stock</span>
         </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label style="font-size:11.5px;color:var(--text-mute);white-space:nowrap;">Precio de esta combinación</label>
+          <input type="number" min="0" step="0.01" value="${v.precio ?? ''}" placeholder="Igual que el general" data-combo-precio="${escapeHtml(clave)}" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+        </div>
         <div data-imeis-de="${escapeHtml(clave)}" style="display:flex;flex-direction:column;gap:4px;margin-top:8px;"></div>
         <div style="margin-top:8px;">
           <input type="text" data-nuevo-imei="${escapeHtml(clave)}" placeholder="IMEI de esta unidad" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
           <div data-tac-hint="${escapeHtml(clave)}" style="font-size:11.5px;color:var(--celeste);margin-top:3px;min-height:14px;"></div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-            <input type="text" data-nuevo-gb="${escapeHtml(clave)}" placeholder="GB (opc.)" style="width:75px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
-            <input type="text" data-nuevo-bateria="${escapeHtml(clave)}" placeholder="Batería (opc.)" style="width:90px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <input type="text" data-nuevo-gb="${escapeHtml(clave)}" placeholder="GB (opc.)" style="width:70px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <input type="text" data-nuevo-ram="${escapeHtml(clave)}" placeholder="RAM (opc.)" style="width:75px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <input type="text" data-nuevo-bateria="${escapeHtml(clave)}" placeholder="Batería (opc.)" style="width:85px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
             <input type="text" data-nuevo-estado="${escapeHtml(clave)}" placeholder="Estado / nota (opc.)" style="flex:1;min-width:110px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
           </div>
           <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text-mute);">
@@ -4197,6 +4217,10 @@ function renderGrillaVariantes() {
       mostrarHintTac(hint, inp.value);
     });
   });
+  cont.querySelectorAll('[data-combo-precio]').forEach(inp => inp.addEventListener('input', (e) => {
+    const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === e.target.dataset.comboPrecio);
+    if (v) v.precio = e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0);
+  }));
 }
 
 function renderImeisDeVariante(clave) {
@@ -4213,8 +4237,9 @@ function renderImeisDeVariante(clave) {
         <button type="button" data-quitar-imei="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>
       </div>
       <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-        <input type="text" data-editar-imei="gb" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:60px;${est}">
-        <input type="text" data-editar-imei="bateria" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:70px;${est}">
+        <input type="text" data-editar-imei="gb" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:56px;${est}">
+        <input type="text" data-editar-imei="ram" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">
+        <input type="text" data-editar-imei="bateria" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:65px;${est}">
         <input type="text" data-editar-imei="estado" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
       </div>
       <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:${u.listo === false ? 'var(--danger)' : 'var(--text-mute)'};">
@@ -4260,6 +4285,7 @@ function agregarImeiAVariante(clave) {
   }
 
   const gbInput = document.querySelector('[data-nuevo-gb="' + CSS.escape(clave) + '"]');
+  const ramInput = document.querySelector('[data-nuevo-ram="' + CSS.escape(clave) + '"]');
   const bateriaInput = document.querySelector('[data-nuevo-bateria="' + CSS.escape(clave) + '"]');
   const estadoInput = document.querySelector('[data-nuevo-estado="' + CSS.escape(clave) + '"]');
   const listoInput = document.querySelector('[data-nuevo-listo="' + CSS.escape(clave) + '"]');
@@ -4267,16 +4293,18 @@ function agregarImeiAVariante(clave) {
   v.imeis.push({
     imei,
     gb: (gbInput?.value || '').trim(),
+    ram: (ramInput?.value || '').trim(),
     bateria: (bateriaInput?.value || '').trim(),
     estado: (estadoInput?.value || '').trim(),
     listo: listoInput ? !!listoInput.checked : true
   });
   v.stock = v.imeis.length;
+  // Al cargar varios equipos seguidos del mismo lote, GB/RAM/batería/estado
+  // suelen repetirse — solo el IMEI cambia siempre. Por eso NO se limpian:
+  // si el vendedor ya los tipeó una vez, quedan listos para el siguiente
+  // equipo, y solo edita lo que de verdad cambió (o el IMEI, que sí se
+  // borra porque nunca se repite).
   input.value = '';
-  if (gbInput) gbInput.value = '';
-  if (bateriaInput) bateriaInput.value = '';
-  if (estadoInput) estadoInput.value = '';
-  if (listoInput) listoInput.checked = true;
   const hint = document.querySelector('[data-tac-hint="' + CSS.escape(clave) + '"]');
   if (hint) hint.textContent = '';
   renderImeisDeVariante(clave);
@@ -5972,7 +6000,7 @@ async function aplicarStockDeItem(item, signo) {
         // Los datos extra (GB, batería, estado) que tenía cargados se
         // pierden en esta vuelta — es un caso raro y se pueden recargar
         // a mano si hace falta.
-        v.imeis.push({ imei: item.imei, gb: '', bateria: '', estado: '', listo: true });
+        v.imeis.push({ imei: item.imei, gb: '', ram: '', bateria: '', estado: '', listo: true });
       }
       v.stock = v.imeis.length;
     } else if (v) {
@@ -6584,7 +6612,7 @@ function abrirRevisarImeisFactura(i) {
     renderCamposReponerVariante();
   }
 
-  reponerImeisNuevos = it.imeis.map(imei => ({ imei, gb: '', bateria: '', estado: '', listo: true }));
+  reponerImeisNuevos = it.imeis.map(imei => ({ imei, gb: '', ram: '', bateria: '', estado: '', listo: true }));
   renderReponerImeisLista();
 }
 
@@ -9547,6 +9575,7 @@ function abrirReponerVariante(id) {
   byId('reponerVarianteCantidad').value = '1';
   byId('reponerNuevoImei').value = '';
   byId('reponerNuevoGb').value = '';
+  byId('reponerNuevoRam').value = '';
   byId('reponerNuevoBateria').value = '';
   byId('reponerNuevoEstado').value = '';
   byId('reponerNuevoListo').checked = true;
@@ -9575,8 +9604,9 @@ function renderReponerImeisLista() {
         <button type="button" data-quitar-reponer-imei="${i}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;flex-shrink:0;">✕</button>
       </div>
       <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-        <input type="text" data-editar-reponer="gb" data-i="${i}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:60px;${est}">
-        <input type="text" data-editar-reponer="bateria" data-i="${i}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:70px;${est}">
+        <input type="text" data-editar-reponer="gb" data-i="${i}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:56px;${est}">
+        <input type="text" data-editar-reponer="ram" data-i="${i}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">
+        <input type="text" data-editar-reponer="bateria" data-i="${i}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:65px;${est}">
         <input type="text" data-editar-reponer="estado" data-i="${i}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
       </div>
       <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:${u.listo === false ? 'var(--danger)' : 'var(--text-mute)'};">
@@ -9618,15 +9648,15 @@ byId('reponerAgregarImeiBtn').addEventListener('click', () => {
   reponerImeisNuevos.push({
     imei,
     gb: byId('reponerNuevoGb').value.trim(),
+    ram: byId('reponerNuevoRam').value.trim(),
     bateria: byId('reponerNuevoBateria').value.trim(),
     estado: byId('reponerNuevoEstado').value.trim(),
     listo: byId('reponerNuevoListo').checked
   });
+  // GB/RAM/batería/estado NO se limpian: en un lote son casi siempre iguales
+  // entre equipos, y volver a pedirlos cada vez solo hace más lento cargar
+  // varios seguidos. Solo el IMEI se borra, porque ese sí cambia siempre.
   input.value = '';
-  byId('reponerNuevoGb').value = '';
-  byId('reponerNuevoBateria').value = '';
-  byId('reponerNuevoEstado').value = '';
-  byId('reponerNuevoListo').checked = true;
   byId('reponerTacHint').textContent = '';
   renderReponerImeisLista();
   input.focus();
