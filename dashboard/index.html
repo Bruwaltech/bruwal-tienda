@@ -971,6 +971,13 @@ tr:last-child td { border-bottom: none; }
   padding: 16px;
 }
 
+/* El PIN de costos se puede pedir DESDE adentro de otro modal ya abierto
+   (Configuración, Estadísticas, Gastos...) — todos comparten el mismo
+   z-index, así que sin esto el que aparece encima depende del orden en el
+   HTML y no de cuál se abrió después. El de PIN siempre tiene que quedar
+   arriba de cualquier otro, sea cual sea el que lo llamó. */
+#pinCostosModal { z-index: 200; }
+
 .modal {
   background: var(--surface);
   border-radius: 16px;
@@ -1234,6 +1241,7 @@ tr:last-child td { border-bottom: none; }
     <span>🛒 Tu tienda pública:</span>
     <a id="storeLinkAnchor" href="#" target="_blank" style="font-weight:600;"></a>
     <button class="btn-ghost" id="copyStoreLinkBtn" style="padding:5px 10px;font-size:12px;">Copiar link</button>
+    <button class="btn-ghost" id="shareStoreLinkBtn" style="padding:5px 10px;font-size:12px;"><i class="fa-solid fa-share-nodes"></i> Compartir</button>
     <button class="btn-ghost" id="openConfigBtn" style="padding:5px 10px;font-size:12px;">⚙️ Configurar</button>
   </div>
 
@@ -1346,7 +1354,7 @@ tr:last-child td { border-bottom: none; }
     <!-- PRODUCTOS -->
     <div id="productosView" class="hidden">
       <div class="toolbar">
-        <button class="btn-action primary" id="newProductBtn">+ Nuevo producto</button>
+        <button class="btn-action primary" id="newProductBtn">+ Carga tu stock</button>
         <button class="btn-action" id="importarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-excel"></i> Importar Excel</button>
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
@@ -1736,27 +1744,43 @@ tr:last-child td { border-bottom: none; }
 <div class="modal-overlay hidden" id="productModal">
   <div class="modal">
     <button class="modal-close" id="closeModal">✕</button>
-    <h3 id="modalTitle">Nuevo producto</h3>
+    <h3 id="modalTitle">Carga tu stock</h3>
     <div style="display:grid;grid-template-columns:1fr 200px;gap:24px;">
       <form id="productForm">
         <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
         <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
 
         <div class="field">
-          <label>¿Qué estás cargando?</label>
-          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;" id="tipoTabs">
-            <button type="button" class="tipo-tab" data-tipo-tab="producto" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border:1.5px solid var(--celeste);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#EAF4FD;color:var(--text-dark);font-family:inherit;">
-              <span style="font-size:18px;">📦</span> Producto
+          <label>¿Para dónde estás cargando este stock?</label>
+          <div style="display:flex;gap:8px;margin-top:6px;" id="destinoTabs">
+            <button type="button" class="destino-tab" data-destino-tab="tienda" style="flex:1;padding:11px 8px;border:1.5px solid var(--celeste);border-radius:8px;cursor:pointer;font-weight:700;font-size:13.5px;background:#EAF4FD;color:var(--text-dark);font-family:inherit;">
+              🏪 Para tu tienda
             </button>
-            <button type="button" class="tipo-tab" data-tipo-tab="servicio" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
-              <span style="font-size:18px;">🛠️</span> Servicio
+            <button type="button" class="destino-tab" data-destino-tab="interno" style="flex:1;padding:11px 8px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:700;font-size:13.5px;background:#fff;color:var(--text-dark);font-family:inherit;">
+              🔒 Stock interno
             </button>
-            <button type="button" class="tipo-tab" data-tipo-tab="interno" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
-              <span style="font-size:18px;">🔒</span> Repuesto interno
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;" id="subTipoTabs">
+            <button type="button" class="tipo-tab" data-tipo-tab="producto" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;border:1.5px solid var(--celeste);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#EAF4FD;color:var(--text-dark);font-family:inherit;">
+              <span style="font-size:16px;">📦</span> Producto
+            </button>
+            <button type="button" class="tipo-tab" data-tipo-tab="servicio" style="flex:1;min-width:110px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
+              <span style="font-size:16px;">🛠️</span> Servicio
             </button>
           </div>
           <small id="tipoTabAyuda" style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
             Aparece en el menú público de tu tienda, con stock.
+          </small>
+        </div>
+
+        <div class="field" id="campoMostrarPrecio">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="pMostrarPrecio" checked style="margin:0;width:auto;cursor:pointer;">
+            Mostrar el precio en la tienda pública
+          </label>
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;">
+            Si lo destildás, el cliente ve "Consultar precio" en vez del número — vos lo seguís viendo acá normal.
           </small>
         </div>
 
@@ -3598,6 +3622,11 @@ const TIPO_TAB_AYUDA = {
   interno: 'Repuestos y demás cosas que usás vos (por ejemplo, en Reparaciones) — un cliente no lo puede comprar.'
 };
 
+// Dos niveles ahora: primero "Para tu tienda" vs "Stock interno" (los
+// destino-tab), y si es para la tienda, un segundo nivel chico para elegir
+// Producto o Servicio (los tipo-tab). El "interno" no tiene sub-elección:
+// siempre es tipo=producto — sigue siendo exactamente lo mismo de antes,
+// solo cambió cómo se agrupa visualmente.
 function seleccionarTipoTab(tab) {
   document.querySelectorAll('.tipo-tab').forEach(b => {
     const activo = b.dataset.tipoTab === tab;
@@ -3605,6 +3634,15 @@ function seleccionarTipoTab(tab) {
     b.style.background = activo ? '#EAF4FD' : '#fff';
   });
   byId('tipoTabAyuda').textContent = TIPO_TAB_AYUDA[tab];
+
+  const esInterno = tab === 'interno';
+  document.querySelectorAll('.destino-tab').forEach(b => {
+    const activo = b.dataset.destinoTab === (esInterno ? 'interno' : 'tienda');
+    b.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
+    b.style.background = activo ? '#EAF4FD' : '#fff';
+  });
+  byId('subTipoTabs').classList.toggle('hidden', esInterno);
+  byId('campoMostrarPrecio').classList.toggle('hidden', esInterno);
 
   if (tab === 'servicio') {
     byId('pTipoServicio').checked = true;
@@ -3617,8 +3655,8 @@ function seleccionarTipoTab(tab) {
     byId('pTipoProducto').checked = true;
     byId('pServicioInterno').checked = false;
     hide(byId('campoServicioInterno'));
-    byId('pDestinoInterno').checked = (tab === 'interno');
-    byId('pDestinoTienda').checked = (tab !== 'interno');
+    byId('pDestinoInterno').checked = esInterno;
+    byId('pDestinoTienda').checked = !esInterno;
   }
 
   byId('pTipoProducto').dispatchEvent(new Event('change'));
@@ -3626,6 +3664,15 @@ function seleccionarTipoTab(tab) {
 
 document.querySelectorAll('.tipo-tab').forEach(b => {
   b.addEventListener('click', () => seleccionarTipoTab(b.dataset.tipoTab));
+});
+
+document.querySelectorAll('.destino-tab').forEach(b => {
+  b.addEventListener('click', () => {
+    if (b.dataset.destinoTab === 'interno') { seleccionarTipoTab('interno'); return; }
+    // Al volver a "tienda" desde "interno", si ya había un servicio elegido
+    // antes se respeta; si no, arranca en Producto por default.
+    seleccionarTipoTab(byId('pTipoServicio').checked ? 'servicio' : 'producto');
+  });
 });
 
 byId('pServicioInterno').addEventListener('change', (e) => {
@@ -4582,6 +4629,25 @@ byId('copyStoreLinkBtn').addEventListener('click', async () => {
   const original = btn.textContent;
   btn.textContent = '✓ Copiado!';
   setTimeout(() => btn.textContent = original, 1500);
+});
+
+// SHARE STORE LINK — el share nativo del celular (manda directo a WhatsApp,
+// Instagram, etc. sin pasar por copiar/pegar); si el navegador no lo tiene
+// (la mayoría de las compus), cae en copiar el link como el botón de al lado.
+byId('shareStoreLinkBtn').addEventListener('click', async () => {
+  const url = byId('storeLinkAnchor').href;
+  const titulo = (currentStore?.business_name || 'Mi tienda') + ' — BRUWAL';
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: titulo, text: 'Mirá mi tienda:', url });
+    } catch (e) { /* el usuario canceló el share, no es un error */ }
+    return;
+  }
+  await navigator.clipboard.writeText(url);
+  const btn = byId('shareStoreLinkBtn');
+  const original = btn.innerHTML;
+  btn.textContent = '✓ Link copiado!';
+  setTimeout(() => btn.innerHTML = original, 1500);
 });
 
 // Arma el link de la tienda a partir del nombre del negocio.
@@ -8713,7 +8779,8 @@ function stopRepImeiCameraScanner() {
 if (byId('newProductBtn')) {
   byId('newProductBtn').addEventListener('click', () => {
     if (!puedeOperar()) return;
-    if (byId('modalTitle')) byId('modalTitle').textContent = 'Nuevo producto';
+    if (byId('modalTitle')) byId('modalTitle').textContent = 'Carga tu stock';
+    if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = true;
     if (byId('pName')) byId('pName').value = '';
     if (byId('pDesc')) byId('pDesc').value = '';
     if (byId('pPrice')) byId('pPrice').value = '';
@@ -9036,6 +9103,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     tipo: byId('pTipoServicio').checked ? 'servicio' : 'producto',
     duracion_minutos: byId('pTipoServicio').checked && byId('pDuracion').value ? Number(byId('pDuracion').value) : null,
     solo_interno: byId('pDestinoInterno').checked,
+    mostrar_precio: byId('pMostrarPrecio').checked,
     pendiente_restauracion: byId('pPendienteRestauracion').checked,
     tiene_variantes: tieneVariantes,
     variante_campos: tieneVariantes ? variAtributosEnEdicion.filter(a => a.nombre && a.valores.length) : [],
@@ -9091,6 +9159,7 @@ async function editProduct(id) {
   if (!p) return;
 
   if (byId('modalTitle')) byId('modalTitle').textContent = 'Editar producto';
+  if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = p.mostrar_precio !== false;
   if (byId('pName')) byId('pName').value = p.name;
   if (byId('pDesc')) byId('pDesc').value = p.description || '';
   // Muestra el monto tal cual se tipeó (en su moneda original), no el
@@ -9535,7 +9604,7 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   byId('scannerStatus').textContent = '📝 Código nuevo. Abriendo formulario...';
   show(byId('scannerStatus'));
 
-  byId('modalTitle').textContent = 'Nuevo producto (escaneado)';
+  byId('modalTitle').textContent = 'Carga tu stock (escaneado)';
   byId('pName').value = byId('pDesc').value = byId('pPrice').value = '';
   if (byId('pImageFile')) byId('pImageFile').value = '';
   fotosEnEdicion = [];

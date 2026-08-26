@@ -834,7 +834,14 @@ function htmlTarjetaProducto(p){
       : '<div class="product-photo-placeholder">🛒</div>';
     // Si el producto lleva agregados, el + no alcanza: el cliente tiene que
     // elegir qué le pone. Por eso mostramos "Elegir", que abre la ficha.
-    const controls = (tieneOpciones || tieneVariantes)
+    // Si el vendedor optó por no mostrar el precio, no tiene sentido dejar
+    // agregarlo al carrito con un total automático que igual lo revela — en
+    // vez de eso, un botón manda directo a preguntar por WhatsApp.
+    const ocultaPrecio = p.mostrar_precio === false;
+    const controls = ocultaPrecio
+      ? '<a class="btn-elegir" target="_blank" rel="noopener" href="https://wa.me/' + numeroWhatsApp(store.phone) +
+          '?text=' + encodeURIComponent('Hola! Te consulto por "' + p.name + '" de tu tienda online.') + '">Consultar</a>'
+      : (tieneOpciones || tieneVariantes)
       ? '<button class="btn-elegir" data-elegir="' + p.id + '">' +
           (qty ? 'Agregar otra (' + qty + ')' : (tieneVariantes ? 'Elegir talle' : 'Elegir')) + '</button>'
       : '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
@@ -845,10 +852,11 @@ function htmlTarjetaProducto(p){
       (p.category ? '<div class="product-category">' + escapeHtml(p.category) + '</div>' : '') +
       '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
       (p.description ? '<div class="product-description">' + escapeHtml(p.description) + '</div>' : '') +
-      '<div class="product-price">' + money(p.price) + '</div>' +
-      precioOriginal(p) +
+      (ocultaPrecio
+        ? '<div class="product-price">Consultar precio</div>'
+        : '<div class="product-price">' + money(p.price) + '</div>' + precioOriginal(p)) +
       '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes ? 'Elegí talle/color para ver el stock' : p.stock + ' disponibles') : 'Sin stock')) + '</div>' +
-      '<div class="product-controls">' + ((servicio || p.stock > 0) ? controls : '') + '</div>' +
+      '<div class="product-controls">' + (ocultaPrecio ? controls : ((servicio || p.stock > 0) ? controls : '')) + '</div>' +
       '</div>' +
       '</div>';
 }
@@ -964,8 +972,9 @@ function abrirFicha(id) {
       : '') +
     (p.category ? '<span class="ficha-cat">' + escapeHtml(p.category) + '</span>' : '') +
     '<h3 style="margin:0;">' + escapeHtml(p.name) + '</h3>' +
-    '<div class="ficha-precio">' + money(p.price) + '</div>' +
-    precioOriginal(p) +
+    (p.mostrar_precio === false
+      ? '<div class="ficha-precio">Consultar precio</div>'
+      : '<div class="ficha-precio">' + money(p.price) + '</div>' + precioOriginal(p)) +
     '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
       (campos.length
         ? 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock'
@@ -1010,7 +1019,11 @@ function abrirFicha(id) {
         '</div>'
       : '') +
 
-    (disponible
+    (p.mostrar_precio === false
+      ? '<a class="btn-primary" style="width:100%;display:block;text-align:center;box-sizing:border-box;" target="_blank" rel="noopener" href="https://wa.me/' +
+          numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent('Hola! Te consulto por "' + p.name + '" de tu tienda online.') +
+          '">Consultar por WhatsApp</a>'
+      : disponible
       ? '<div class="qty-controls" style="justify-content:center;margin:16px 0 14px;">' +
           '<button id="fichaMenos">−</button>' +
           '<span class="qty-badge" id="fichaQty">1</span>' +
