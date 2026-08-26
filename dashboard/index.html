@@ -5777,6 +5777,24 @@ function renderYearlyChart() {
 // la tienda, y viceversa.
 let filtroProductosDestino = 'tienda';
 
+// Texto del tooltip de "N variantes" en la lista de Productos — con IMEI
+// (electrónica) muestra cada equipo con sus propios datos (más útil que
+// solo el conteo), sin IMEI queda igual que antes (combinación: stock).
+function tooltipVariantesProducto(p) {
+  return p.variantes.map(v => {
+    const nombreCombo = Object.values(v.atributos).join(' ');
+    if (Array.isArray(v.imeis) && v.imeis.length) {
+      const equipos = v.imeis.map(normalizarUnidadImei).map(u => {
+        const meta = [u.gb, u.ram, u.bateria ? 'Bat. ' + u.bateria : '', u.estado, u.listo === false ? 'pendiente restauración' : '']
+          .filter(Boolean).join(' · ');
+        return u.imei + (meta ? ' (' + meta + ')' : '');
+      }).join('\n    ');
+      return nombreCombo + ':\n    ' + equipos;
+    }
+    return nombreCombo + ': ' + v.stock;
+  }).join('\n');
+}
+
 function renderProducts() {
   const lista = products.filter(p => !!p.solo_interno === (filtroProductosDestino === 'interno'));
 
@@ -5819,7 +5837,7 @@ function renderProducts() {
           : (p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length
               ? p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
                 '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;" title="' +
-                  escapeHtml(p.variantes.map(v => Object.values(v.atributos).join(' ') + ': ' + v.stock).join(' · ')) +
+                  escapeHtml(tooltipVariantesProducto(p)) +
                 '">' + p.variantes.length + ' variante' + (p.variantes.length === 1 ? '' : 's') + '</div>'
               : p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
                 // Referencia de la última reposición: "tenía 10, repuse y quedé
@@ -9801,14 +9819,26 @@ async function confirmarReponerVariante() {
 let etiquetaVarianteProductoId = null;
 let etiquetaVarianteSeleccion = {};
 
+let etiquetaVarianteImeiSeleccionado = null;
+
 function abrirEtiquetaVariante(id) {
   const p = products.find(x => String(x.id) === String(id));
   if (!p || !p.tiene_variantes) return;
 
   etiquetaVarianteProductoId = id;
   etiquetaVarianteSeleccion = {};
+  etiquetaVarianteImeiSeleccionado = null;
   renderCamposEtiquetaVariante();
   show(byId('etiquetaVarianteModal'));
+}
+
+// La combinación exacta que corresponde a lo elegido hasta ahora, o null si
+// todavía falta elegir algún atributo.
+function varianteEtiquetaSeleccionada(p) {
+  const campos = Array.isArray(p.variante_campos) ? p.variante_campos : [];
+  if (Object.keys(etiquetaVarianteSeleccion).length < campos.length) return null;
+  const clave = claveDeCombinacion(etiquetaVarianteSeleccion);
+  return (p.variantes || []).find(v => claveDeCombinacion(v.atributos) === clave) || null;
 }
 
 function renderCamposEtiquetaVariante() {
@@ -9834,9 +9864,33 @@ function renderCamposEtiquetaVariante() {
   byId('etiquetaVarianteCampos').querySelectorAll('[data-etq-attr]').forEach(b => {
     b.addEventListener('click', () => {
       etiquetaVarianteSeleccion[b.dataset.etqAttr] = b.dataset.etqValor;
+      etiquetaVarianteImeiSeleccionado = null;
       renderCamposEtiquetaVariante();
     });
   });
+
+  // En electrónica, cada equipo de la misma combinación puede tener su
+  // propio IMEI/GB/batería/estado — hay que elegir cuál se está
+  // etiquetando puntualmente, no alcanza con la combinación general.
+  const v = varianteEtiquetaSeleccionada(p);
+  const conImeis = v && Array.isArray(v.imeis) && v.imeis.length;
+  byId('etiquetaVarianteImeis').classList.toggle('hidden', !conImeis);
+  if (conImeis) {
+    byId('etiquetaVarianteImeisLista').innerHTML = v.imeis.map(normalizarUnidadImei).map(u => {
+      const meta = [u.gb, u.ram, u.bateria ? 'Bat. ' + u.bateria : ''].filter(Boolean).join(' · ');
+      const activo = etiquetaVarianteImeiSeleccionado === u.imei;
+      return '<button type="button" data-etq-imei="' + escapeHtml(u.imei) + '" style="text-align:left;padding:8px 10px;border-radius:7px;border:1.5px solid ' +
+        (activo ? 'var(--celeste)' : 'var(--line)') + ';background:' + (activo ? '#EAF4FD' : '#fff') +
+        ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
+        '<b>' + escapeHtml(u.imei) + '</b>' + (meta ? ' — ' + escapeHtml(meta) : '') + '</button>';
+    }).join('');
+    byId('etiquetaVarianteImeisLista').querySelectorAll('[data-etq-imei]').forEach(b => {
+      b.addEventListener('click', () => {
+        etiquetaVarianteImeiSeleccionado = b.dataset.etqImei;
+        renderCamposEtiquetaVariante();
+      });
+    });
+  }
 }
 
 function confirmarEtiquetaVariante() {
@@ -9849,8 +9903,16 @@ function confirmarEtiquetaVariante() {
     return;
   }
 
+  const v = varianteEtiquetaSeleccionada(p);
+  const conImeis = v && Array.isArray(v.imeis) && v.imeis.length;
+  if (conImeis && !etiquetaVarianteImeiSeleccionado) {
+    alert('Elegí cuál de los equipos vas a etiquetar.');
+    return;
+  }
+  const unidad = conImeis ? v.imeis.map(normalizarUnidadImei).find(u => u.imei === etiquetaVarianteImeiSeleccionado) : null;
+
   hide(byId('etiquetaVarianteModal'));
-  imprimirEtiquetaProducto(p.id, { ...etiquetaVarianteSeleccion });
+  imprimirEtiquetaProducto(p.id, { ...etiquetaVarianteSeleccion }, unidad, v?.precio ?? null);
 }
 
 // "P-0123": mismo criterio que codigoTicket() para reparaciones — se
@@ -9863,41 +9925,53 @@ function codigoProducto(p) {
     : '—';
 }
 
-function imprimirEtiquetaProducto(id, variante) {
+function imprimirEtiquetaProducto(id, variante, unidad, precioVariante) {
   const p = products.find(x => String(x.id) === String(id));
   if (!p) return;
 
   const nombreCompleto = p.name + (variante ? ' ' + Object.values(variante).join(' ') : '');
-  // Código de barras: IMEI si el equipo tiene (identifica ESE aparato puntual),
-  // si no el EAN (identifica el producto/modelo en general) — el mismo que se
-  // usa como texto más abajo, para no mostrar dos números distintos.
-  const codigoParaBarras = p.imei || p.ean || '';
+  // Código de barras: el IMEI de ESE equipo puntual si se eligió uno, si no
+  // el IMEI/EAN del producto en general — el mismo que se usa como texto
+  // más abajo, para no mostrar dos números distintos.
+  const codigoParaBarras = unidad?.imei || p.imei || p.ean || '';
 
   const columnaCodigo =
     '<div class="codigo">' + codigoProducto(p) + '</div>' +
     (codigoParaBarras ? '<div class="codigo-barras">' + generarBarcodeSVG(codigoParaBarras) + '</div>' : '');
 
-  // Batería, almacenamiento, RAM — lo que el vendedor haya cargado en
-  // "Características técnicas" del producto (mismo campo que ya se ve en
-  // la tienda pública). Se juntan en un solo renglón separadas por "·"
+  // Batería, almacenamiento, RAM, estado: si se eligió un equipo puntual
+  // (electrónica con IMEI), sus propios datos — son más precisos que los
+  // genéricos del producto, porque cada equipo puede ser distinto aunque
+  // sea la misma combinación. Si no, "Características técnicas" del
+  // producto, como siempre. Se juntan en un solo renglón separadas por "·"
   // para no gastar una línea entera por cada una — en una etiqueta de
   // 30mm de alto no sobra alto para eso.
-  const specsTexto = Array.isArray(p.specs) && p.specs.length
-    ? p.specs.map(s => s.clave + ': ' + s.valor).join(' · ')
-    : '';
+  const specsTexto = unidad
+    ? [unidad.gb ? 'GB: ' + unidad.gb : '', unidad.ram ? 'RAM: ' + unidad.ram : '', unidad.bateria ? 'Batería: ' + unidad.bateria : '']
+        .filter(Boolean).join(' · ')
+    : (Array.isArray(p.specs) && p.specs.length ? p.specs.map(s => s.clave + ': ' + s.valor).join(' · ') : '');
+
+  const estadoTexto = unidad ? (unidad.estado || (unidad.listo === false ? 'Pendiente de restauración' : '')) : p.estado_equipo;
+
+  // El precio de la combinación puntual, si tiene uno propio cargado — si
+  // no, el precio general del producto (mismo criterio que en la tienda).
+  const precioFinal = precioVariante != null ? precioVariante : p.price;
 
   const columnaInfo =
     '<div class="fila" style="font-weight:700;">' + escapeHtml(nombreCompleto) + '</div>' +
-    (p.estado_equipo ? '<div class="fila"><b>Estado:</b>' + escapeHtml(p.estado_equipo) + '</div>' : '') +
+    (estadoTexto ? '<div class="fila"><b>Estado:</b>' + escapeHtml(estadoTexto) + '</div>' : '') +
     (specsTexto ? '<div class="fila">' + escapeHtml(specsTexto) + '</div>' : '') +
-    (p.imei ? '<div class="fila"><b>IMEI:</b>' + escapeHtml(p.imei) + '</div>' :
-      (p.ean ? '<div class="fila"><b>EAN:</b>' + escapeHtml(p.ean) + '</div>' : '')) +
+    (codigoParaBarras
+      ? '<div class="fila"><b>' + (unidad?.imei || p.imei ? 'IMEI' : 'EAN') + ':</b>' + escapeHtml(codigoParaBarras) + '</div>'
+      : '') +
     (p.category ? '<div class="fila"><b>Cat:</b>' + escapeHtml(p.category) + '</div>' : '') +
-    '<div class="precio">' + money(p.price) +
+    '<div class="precio">' + money(precioFinal) +
       // El precio final siempre sale en pesos (ya convertido); si se cargó
       // en USD/EUR, el monto original va al lado, no abajo — no hay alto
-      // de sobra para una línea aparte en una etiqueta de 30mm.
-      (p.moneda ? ' <span style="font-size:6.5px;font-weight:400;color:#5C6B82;">(' +
+      // de sobra para una línea aparte en una etiqueta de 30mm. No aplica
+      // si esta combinación tiene su propio precio: ese es siempre en
+      // pesos, no guarda su propia moneda original.
+      (p.moneda && precioVariante == null ? ' <span style="font-size:6.5px;font-weight:400;color:#5C6B82;">(' +
         (p.moneda === 'USD' ? 'US$' : '€') + Number(p.precio_original).toLocaleString('es-AR') + ')</span>' : '') +
     '</div>' +
     '<div class="fila"><b>Ingreso:</b>' + new Date(p.created_at).toLocaleDateString('es-AR') + '</div>' +
