@@ -1363,6 +1363,15 @@ tr:last-child td { border-bottom: none; }
       </div>
       <div id="scannerStatus" class="scanner-status hidden"></div>
 
+      <div style="display:flex;gap:8px;margin:14px 0 4px;" id="productosDestinoTabs">
+        <button type="button" class="productos-destino-tab" data-productos-destino="tienda" style="flex:1;max-width:220px;padding:9px 14px;border:1.5px solid var(--celeste);border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;background:#EAF4FD;color:var(--text-dark);font-family:inherit;">
+          🏪 Tienda
+        </button>
+        <button type="button" class="productos-destino-tab" data-productos-destino="interno" style="flex:1;max-width:220px;padding:9px 14px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
+          🔒 Stock interno
+        </button>
+      </div>
+
       <div id="emptyProducts" class="empty-state hidden">
         <h3>Sin productos</h3>
         <p>Crea tu primer producto para comenzar a recibir pedidos.</p>
@@ -1746,6 +1755,22 @@ tr:last-child td { border-bottom: none; }
     <h3 id="modalTitle">Carga tu stock</h3>
     <div style="display:grid;grid-template-columns:1fr 200px;gap:24px;">
       <form id="productForm">
+        <div id="wizardProgreso" class="hidden" style="font-size:12px;font-weight:700;color:var(--celeste);letter-spacing:.03em;text-transform:uppercase;margin-bottom:10px;"></div>
+
+        <div class="wizard-step" data-step="1">
+          <div class="field">
+            <label>Categoría</label>
+            <input type="text" id="pCategory" list="listaCategoriasProducto" placeholder="Elegí una o escribí la tuya" autocomplete="off">
+            <datalist id="listaCategoriasProducto"></datalist>
+            <!-- Rubros sugeridos, compartido por el alta y la configuracion de la tienda -->
+            <datalist id="listaRubros"></datalist>
+            <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+              Con esto tus clientes filtran el catálogo — arrancar por acá ayuda a que todo quede prolijo y ordenado desde el primer paso.
+            </small>
+          </div>
+        </div>
+
+        <div class="wizard-step hidden" data-step="2">
         <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
         <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
 
@@ -1799,7 +1824,9 @@ tr:last-child td { border-bottom: none; }
           <input type="radio" name="pDestinoStock" id="pDestinoTienda" checked>
           <input type="radio" name="pDestinoStock" id="pDestinoInterno">
         </div>
+        </div>
 
+        <div class="wizard-step hidden" data-step="3">
         <div class="field">
           <label>Precio</label>
           <div style="display:flex;gap:6px;">
@@ -1874,7 +1901,9 @@ tr:last-child td { border-bottom: none; }
             A quién le comprás esto — para reponer. Protegido con el mismo PIN que Costos, si lo configuraste.
           </small>
         </div>
+        </div>
 
+        <div class="wizard-step hidden" data-step="4">
         <div class="field" id="campoStock"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
 
         <div class="field hidden" id="campoVariantesToggle">
@@ -1902,13 +1931,9 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
-        <div class="field">
-          <label>Categoría</label>
-          <input type="text" id="pCategory" list="listaCategoriasProducto" placeholder="Elegí una o escribí la tuya" autocomplete="off">
-          <datalist id="listaCategoriasProducto"></datalist>
-          <!-- Rubros sugeridos, compartido por el alta y la configuracion de la tienda -->
-          <datalist id="listaRubros"></datalist>
         </div>
+
+        <div class="wizard-step hidden" data-step="5">
         <div class="field"><label>EAN / Código de barras</label><div style="display:flex;gap:8px;"><input type="text" id="pEan" placeholder="Se completa al escanear" style="flex:1;"><button type="button" onclick="toggleProductCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 16px;font-size:14px;">📷</button></div></div>
         <div id="productCameraScanner" class="hidden" style="margin-bottom:12px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
           <div id="qr-reader-product" style="width:100%;height:250px;"></div>
@@ -1947,7 +1972,13 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="field"><label>Fotos del producto (hasta 4)</label><input type="file" id="pImageFile" accept="image/*" multiple style="cursor:pointer;"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Máx 2MB cada una. La primera es la principal.</small></div>
-        <button type="submit" class="btn btn-primary">Guardar producto</button>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button type="button" id="wizardAtrasBtn" class="hidden btn" style="flex:1;background:var(--bg);color:var(--navy);border:1px solid var(--line);">← Atrás</button>
+          <button type="button" id="wizardSiguienteBtn" class="hidden btn btn-primary" style="flex:1;">Siguiente →</button>
+          <button type="submit" id="wizardGuardarBtn" class="btn btn-primary" style="flex:1;">Guardar producto</button>
+        </div>
       </form>
       <div id="imagePreview" class="hidden" style="border-radius:12px;overflow:hidden;border:2px solid var(--line);background:var(--bg);padding:8px;flex-shrink:0;">
         <img id="previewImg" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">
@@ -3672,6 +3703,50 @@ document.querySelectorAll('.destino-tab').forEach(b => {
     // antes se respeta; si no, arranca en Producto por default.
     seleccionarTipoTab(byId('pTipoServicio').checked ? 'servicio' : 'producto');
   });
+});
+
+// ============ ASISTENTE PASO A PASO PARA CARGAR STOCK ============
+// Al crear un producto nuevo, el formulario (que tiene muchísimos campos
+// entre variantes, IMEI, proveedor, etc.) se muestra de a un grupo por vez,
+// como una receta — arranca eligiendo la categoría porque eso ayuda a saber
+// qué está por cargar antes de llenar el resto. Al EDITAR un producto que
+// ya existe se muestra todo junto de una, como antes: alguien que solo
+// quiere tocar el stock no debería tener que pasar por 5 pantallas.
+const WIZARD_TOTAL_PASOS = 5;
+let wizardModoGuiado = true;
+let wizardPasoActual = 1;
+
+function mostrarPasoWizard(n) {
+  wizardPasoActual = n;
+  document.querySelectorAll('.wizard-step').forEach(el => {
+    el.classList.toggle('hidden', Number(el.dataset.step) !== n);
+  });
+  byId('wizardProgreso').textContent = 'Paso ' + n + ' de ' + WIZARD_TOTAL_PASOS;
+  byId('wizardAtrasBtn').classList.toggle('hidden', n === 1);
+  byId('wizardSiguienteBtn').classList.toggle('hidden', n === WIZARD_TOTAL_PASOS);
+  byId('wizardGuardarBtn').classList.toggle('hidden', n !== WIZARD_TOTAL_PASOS);
+  byId('productModal').scrollTop = 0;
+}
+
+function iniciarWizard(guiado) {
+  wizardModoGuiado = guiado;
+  byId('wizardProgreso').classList.toggle('hidden', !guiado);
+  if (guiado) {
+    mostrarPasoWizard(1);
+    return;
+  }
+  // Editar: todos los pasos visibles a la vez, sin botones de navegación.
+  document.querySelectorAll('.wizard-step').forEach(el => el.classList.remove('hidden'));
+  hide(byId('wizardAtrasBtn'));
+  hide(byId('wizardSiguienteBtn'));
+  show(byId('wizardGuardarBtn'));
+}
+
+byId('wizardSiguienteBtn').addEventListener('click', () => {
+  if (wizardModoGuiado && wizardPasoActual < WIZARD_TOTAL_PASOS) mostrarPasoWizard(wizardPasoActual + 1);
+});
+byId('wizardAtrasBtn').addEventListener('click', () => {
+  if (wizardModoGuiado && wizardPasoActual > 1) mostrarPasoWizard(wizardPasoActual - 1);
 });
 
 byId('pServicioInterno').addEventListener('change', (e) => {
@@ -5485,10 +5560,21 @@ function renderYearlyChart() {
   });
 }
 
+// 'tienda' = lo que ve el cliente (solo_interno falso); 'interno' = lo que
+// no se publica (repuestos y demás uso propio). Separarlo en pestañas evita
+// que una lista larga de repuestos internos tape los productos reales de
+// la tienda, y viceversa.
+let filtroProductosDestino = 'tienda';
+
 function renderProducts() {
-  if (products.length === 0) {
+  const lista = products.filter(p => !!p.solo_interno === (filtroProductosDestino === 'interno'));
+
+  if (lista.length === 0) {
     show(byId('emptyProducts'));
     hide(byId('productsPanel'));
+    byId('emptyProducts').querySelector('p').textContent = filtroProductosDestino === 'interno'
+      ? 'Todavía no cargaste stock interno (repuestos y demás uso propio).'
+      : 'Creá tu primer producto para comenzar a recibir pedidos.';
     return;
   }
 
@@ -5503,7 +5589,7 @@ function renderProducts() {
     obtenerCotizacion('USD').then(() => renderProducts());
   }
 
-  byId('productsBody').innerHTML = products.map(p => {
+  byId('productsBody').innerHTML = lista.map(p => {
     const low = p.stock <= (p.min_stock || 0);
     const imgHtml = p.image_url ?
       '<img src="' + p.image_url + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;display:block;">' :
@@ -5564,6 +5650,18 @@ function renderProducts() {
     else imprimirEtiquetaProducto(p.id, null);
   }));
 }
+
+document.querySelectorAll('.productos-destino-tab').forEach(b => {
+  b.addEventListener('click', () => {
+    filtroProductosDestino = b.dataset.productosDestino;
+    document.querySelectorAll('.productos-destino-tab').forEach(o => {
+      const activo = o === b;
+      o.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
+      o.style.background = activo ? '#EAF4FD' : '#fff';
+    });
+    renderProducts();
+  });
+});
 
 function renderOrders() {
   const cuerpo = byId('ordersBody');
@@ -8788,8 +8886,9 @@ if (byId('newProductBtn')) {
     renderOpciones();
     specsEnEdicion = [];
     renderSpecs();
+    iniciarWizard(true);
     if (byId('productModal')) show(byId('productModal'));
-    if (byId('pName')) byId('pName').focus();
+    if (byId('pCategory')) byId('pCategory').focus();
   });
 }
 
@@ -9178,6 +9277,7 @@ async function editProduct(id) {
   specsEnEdicion = Array.isArray(p.specs) ? p.specs.map(s => ({ ...s })) : [];
   renderSpecs();
   if (byId('productForm')) byId('productForm').dataset.id = id;
+  iniciarWizard(false);
   if (byId('productModal')) show(byId('productModal'));
   if (byId('pName')) byId('pName').focus();
 }
@@ -9607,8 +9707,9 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   renderOpciones();
   specsEnEdicion = [];
   renderSpecs();
+  iniciarWizard(true);
   show(byId('productModal'));
-  byId('pName').focus();
+  byId('pCategory').focus();
 
   setTimeout(() => hide(byId('scannerStatus')), 3000);
 });
