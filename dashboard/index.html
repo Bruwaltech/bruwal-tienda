@@ -3997,6 +3997,33 @@ function renderSugeridosVariante() {
   });
 }
 
+// Agrega un valor a un atributo (ej. "lila" al atributo Color) desde el
+// input de "nuevo valor" — cada valor queda como su propio chip, así no
+// depende de que el vendedor se acuerde de separar por coma. Antes era un
+// solo input de texto libre partido por coma: era fácil escribir "lila
+// negro" pensando en dos colores y que quedara cargado como uno solo.
+function agregarValorAtributo(i, valorCrudo) {
+  const limpio = (valorCrudo || '').trim();
+  if (!limpio) return;
+  const at = variAtributosEnEdicion[i];
+  if (!at) return;
+  if (!at.valores) at.valores = [];
+  if (at.valores.some(v => v.toLowerCase() === limpio.toLowerCase())) return;
+  at.valores.push(limpio);
+  renderAtributosVariante();
+  renderGrillaVariantes();
+  const nuevo = document.querySelector('[data-at-valor-nuevo="' + i + '"]');
+  if (nuevo) nuevo.focus();
+}
+
+function quitarValorAtributo(i, valorIdx) {
+  const at = variAtributosEnEdicion[i];
+  if (!at || !at.valores) return;
+  at.valores.splice(valorIdx, 1);
+  renderAtributosVariante();
+  renderGrillaVariantes();
+}
+
 function renderAtributosVariante() {
   const cont = byId('variAtributos');
   // El texto de ejemplo (placeholder, no un dato real) también tiene que
@@ -4005,24 +4032,29 @@ function renderAtributosVariante() {
   // verdad — confunde igual.
   const phNombre = rubroEsElectronica() ? 'Ej: Modelo' : 'Ej: Talle';
   const phValores = rubroEsElectronica()
-    ? 'Valores separados por coma: iPhone 13, Galaxy A54'
-    : 'Valores separados por coma: S, M, L';
+    ? 'Escribí un valor y Enter — ej: iPhone 13'
+    : 'Escribí un valor y Enter — ej: M';
   cont.innerHTML = variAtributosEnEdicion.map((at, i) => `
-    <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-start;">
-      <input type="text" placeholder="${phNombre}" value="${escapeHtml(at.nombre)}"
-             data-at-nombre="${i}" style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
-      <input type="text" placeholder="${phValores}" value="${escapeHtml((at.valores || []).join(', '))}"
-             data-at-valores="${i}" style="flex:2;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
-      <button type="button" data-at-quitar="${i}" class="icon-btn danger" style="padding:9px 12px;">✕</button>
+    <div style="border:1px solid var(--line);border-radius:8px;padding:9px;margin-bottom:8px;">
+      <div style="display:flex;gap:6px;align-items:flex-start;">
+        <input type="text" placeholder="${phNombre}" value="${escapeHtml(at.nombre)}"
+               data-at-nombre="${i}" style="flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
+        <button type="button" data-at-quitar="${i}" class="icon-btn danger" style="padding:9px 12px;">✕</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:${(at.valores || []).length ? '8px' : '0'};">
+        ${(at.valores || []).map((v, vi) =>
+          '<span style="display:inline-flex;align-items:center;gap:5px;background:#EAF4FD;color:var(--navy);padding:5px 6px 5px 10px;border-radius:14px;font-size:12px;font-weight:600;">' +
+            escapeHtml(v) +
+            '<button type="button" data-at-quitar-valor="' + i + '" data-valor-idx="' + vi + '" style="background:none;border:none;color:var(--navy);cursor:pointer;font-size:12px;line-height:1;padding:2px;">✕</button>' +
+          '</span>'
+        ).join('')}
+      </div>
+      <input type="text" placeholder="${phValores}" data-at-valor-nuevo="${i}"
+             style="width:100%;margin-top:8px;padding:8px 10px;border:1px dashed var(--line);border-radius:7px;font-size:13px;">
     </div>`).join('');
 
   cont.querySelectorAll('[data-at-nombre]').forEach(inp => inp.addEventListener('input', (e) => {
     variAtributosEnEdicion[+e.target.dataset.atNombre].nombre = e.target.value.trim();
-    renderGrillaVariantes();
-  }));
-  cont.querySelectorAll('[data-at-valores]').forEach(inp => inp.addEventListener('input', (e) => {
-    variAtributosEnEdicion[+e.target.dataset.atValores].valores =
-      e.target.value.split(',').map(v => v.trim()).filter(Boolean);
     renderGrillaVariantes();
   }));
   cont.querySelectorAll('[data-at-quitar]').forEach(b => b.addEventListener('click', () => {
@@ -4030,6 +4062,23 @@ function renderAtributosVariante() {
     renderAtributosVariante();
     renderGrillaVariantes();
   }));
+  cont.querySelectorAll('[data-at-quitar-valor]').forEach(b => b.addEventListener('click', () => {
+    quitarValorAtributo(+b.dataset.atQuitarValor, +b.dataset.valorIdx);
+  }));
+  cont.querySelectorAll('[data-at-valor-nuevo]').forEach(inp => {
+    const i = +inp.dataset.atValorNuevo;
+    // Enter o coma agregan el chip — la coma nunca llega a escribirse
+    // literal, así no hace falta acordarse de "separar por coma".
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        agregarValorAtributo(i, inp.value);
+      }
+    });
+    inp.addEventListener('blur', () => {
+      if (inp.value.trim()) agregarValorAtributo(i, inp.value);
+    });
+  });
 
   byId('variAgregarAtributo').classList.toggle('hidden', variAtributosEnEdicion.length >= MAX_ATRIBUTOS_VARIANTE);
   renderSugeridosVariante();
@@ -4125,19 +4174,42 @@ function renderImeisDeVariante(clave) {
   const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === clave);
   if (!v) return;
 
-  cont.innerHTML = (v.imeis || []).length ? v.imeis.map(u => {
-    const meta = [u.gb, u.bateria ? 'Bat. ' + u.bateria : '', u.estado].filter(Boolean).join(' · ');
-    return '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);padding:5px 9px;border-radius:6px;font-size:12.5px;">' +
-      '<span>' + (u.listo === false ? '🔧 ' : '') + escapeHtml(u.imei) +
-        (meta ? ' <span style="color:var(--text-mute);">— ' + escapeHtml(meta) + '</span>' : '') +
-        (u.listo === false ? ' <span style="color:var(--danger);font-size:11px;">(pendiente restauración)</span>' : '') +
-      '</span>' +
-      '<button type="button" data-quitar-imei="' + escapeHtml(clave) + '" data-imei="' + escapeHtml(u.imei) + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;">✕</button>' +
-    '</div>';
-  }).join('') : '<div style="color:var(--text-mute);font-size:12px;">Sin IMEI cargados todavía.</div>';
+  const est = 'padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:11.5px;';
+  cont.innerHTML = (v.imeis || []).length ? v.imeis.map(u => `
+    <div style="background:var(--bg);padding:7px 9px;border-radius:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+        <span style="font-size:12.5px;font-weight:600;">${escapeHtml(u.imei)}</span>
+        <button type="button" data-quitar-imei="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>
+      </div>
+      <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
+        <input type="text" data-editar-imei="gb" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:60px;${est}">
+        <input type="text" data-editar-imei="bateria" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:70px;${est}">
+        <input type="text" data-editar-imei="estado" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:${u.listo === false ? 'var(--danger)' : 'var(--text-mute)'};">
+        <input type="checkbox" data-editar-imei="listo" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" ${u.listo !== false ? 'checked' : ''} style="width:auto;">
+        ${u.listo === false ? '🔧 Pendiente de restauración' : 'Listo para vender'}
+      </label>
+    </div>
+  `).join('') : '<div style="color:var(--text-mute);font-size:12px;">Sin IMEI cargados todavía.</div>';
 
   cont.querySelectorAll('[data-quitar-imei]').forEach(b => {
     b.addEventListener('click', () => quitarImeiDeVariante(b.dataset.quitarImei, b.dataset.imei));
+  });
+
+  // Cada dato del equipo se edita ahí mismo, sin borrar y recargar el IMEI
+  // de nuevo. Solo el tilde "listo" rehace la lista (para actualizar el
+  // color/ícono) — los campos de texto nunca, así no se pierde el foco
+  // a mitad de tipear (mismo motivo que el arreglo de Categoría en iOS).
+  cont.querySelectorAll('[data-editar-imei]').forEach(el => {
+    el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
+      const variante = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === el.dataset.clave);
+      const unidad = variante?.imeis?.find(u => u.imei === el.dataset.imei);
+      if (!unidad) return;
+      const campo = el.dataset.editarImei;
+      unidad[campo] = campo === 'listo' ? el.checked : el.value;
+      if (campo === 'listo') renderImeisDeVariante(el.dataset.clave);
+    });
   });
 }
 
@@ -9372,20 +9444,39 @@ function abrirReponerVariante(id) {
 function renderReponerImeisLista() {
   const cont = byId('reponerImeisLista');
   if (!cont) return;
-  cont.innerHTML = reponerImeisNuevos.length ? reponerImeisNuevos.map((u, i) => {
-    const meta = [u.gb, u.bateria ? 'Bat. ' + u.bateria : '', u.estado].filter(Boolean).join(' · ');
-    return '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);padding:6px 10px;border-radius:6px;font-size:13px;">' +
-      '<span>' + (u.listo === false ? '🔧 ' : '') + escapeHtml(u.imei) +
-        (meta ? ' <span style="color:var(--text-mute);">— ' + escapeHtml(meta) + '</span>' : '') +
-      '</span>' +
-      '<button type="button" data-quitar-reponer-imei="' + i + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;">✕</button>' +
-    '</div>';
-  }).join('') : '<div style="color:var(--text-mute);font-size:12.5px;">Todavía no agregaste ningún IMEI.</div>';
+  const est = 'padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:11.5px;';
+  cont.innerHTML = reponerImeisNuevos.length ? reponerImeisNuevos.map((u, i) => `
+    <div style="background:var(--bg);padding:7px 10px;border-radius:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+        <span style="font-size:13px;font-weight:600;">${escapeHtml(u.imei)}</span>
+        <button type="button" data-quitar-reponer-imei="${i}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;flex-shrink:0;">✕</button>
+      </div>
+      <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
+        <input type="text" data-editar-reponer="gb" data-i="${i}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:60px;${est}">
+        <input type="text" data-editar-reponer="bateria" data-i="${i}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:70px;${est}">
+        <input type="text" data-editar-reponer="estado" data-i="${i}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:${u.listo === false ? 'var(--danger)' : 'var(--text-mute)'};">
+        <input type="checkbox" data-editar-reponer="listo" data-i="${i}" ${u.listo !== false ? 'checked' : ''} style="width:auto;">
+        ${u.listo === false ? '🔧 Pendiente de restauración' : 'Listo para vender'}
+      </label>
+    </div>
+  `).join('') : '<div style="color:var(--text-mute);font-size:12.5px;">Todavía no agregaste ningún IMEI.</div>';
 
   cont.querySelectorAll('[data-quitar-reponer-imei]').forEach(b => {
     b.addEventListener('click', () => {
       reponerImeisNuevos.splice(Number(b.dataset.quitarReponerImei), 1);
       renderReponerImeisLista();
+    });
+  });
+
+  cont.querySelectorAll('[data-editar-reponer]').forEach(el => {
+    el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
+      const i = Number(el.dataset.i);
+      const campo = el.dataset.editarReponer;
+      if (!reponerImeisNuevos[i]) return;
+      reponerImeisNuevos[i][campo] = campo === 'listo' ? el.checked : el.value;
+      if (campo === 'listo') renderReponerImeisLista();
     });
   });
 }
