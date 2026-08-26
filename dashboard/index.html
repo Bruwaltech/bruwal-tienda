@@ -2173,10 +2173,22 @@ tr:last-child td { border-bottom: none; }
       <input type="text" id="reponerNuevoImei" placeholder="IMEI de esta unidad" style="width:100%;">
       <div id="reponerTacHint" style="font-size:11.5px;color:var(--celeste);margin-top:3px;min-height:14px;"></div>
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-        <input type="text" id="reponerNuevoGb" placeholder="GB (opc.)" style="width:70px;">
-        <input type="text" id="reponerNuevoRam" placeholder="RAM (opc.)" style="width:75px;">
-        <input type="text" id="reponerNuevoBateria" placeholder="Batería (opc.)" style="width:85px;">
-        <input type="text" id="reponerNuevoEstado" placeholder="Estado / nota (opc.)" style="flex:1;min-width:110px;">
+        <div style="width:70px;">
+          <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">GB</label>
+          <input type="text" id="reponerNuevoGb" placeholder="Ej: 128" style="width:100%;">
+        </div>
+        <div style="width:75px;">
+          <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">RAM</label>
+          <input type="text" id="reponerNuevoRam" placeholder="Ej: 4GB" style="width:100%;">
+        </div>
+        <div style="width:85px;">
+          <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Batería</label>
+          <input type="text" id="reponerNuevoBateria" placeholder="Ej: 89%" style="width:100%;">
+        </div>
+        <div style="flex:1;min-width:110px;">
+          <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Estado / nota</label>
+          <input type="text" id="reponerNuevoEstado" placeholder="Opcional" style="width:100%;">
+        </div>
       </div>
       <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text-mute);">
         <input type="checkbox" id="reponerNuevoListo" checked style="width:auto;"> Listo para vender (destildá si necesita reparación antes)
@@ -3972,7 +3984,11 @@ const ATRIBUTOS_SUGERIDOS_ELECTRONICA = [
     'Redmi 9', 'Redmi 9A', 'Redmi 9C', 'Redmi 10', 'Redmi 10C',
     'Redmi Note 8', 'Redmi Note 9', 'Redmi Note 10', 'Redmi Note 11', 'Redmi Note 12',
     'Mi A2', 'Mi A3', 'Poco X3', 'Poco M4'
-  ] }
+  ] },
+  // Faltaba: solo había sugeridos de "Modelo", así que Color había que
+  // escribirlo a mano como segundo atributo — no aparecía ningún acceso
+  // rápido, aunque el motor de variantes ya lo soportaba perfecto.
+  { nombre: 'Color', valores: ['Negro','Blanco','Azul','Gris','Dorado','Plateado','Rojo','Verde','Rosa','Morado'] }
 ];
 
 // Indumentaria y electrónica nunca se mezclan: cada rubro ve solo sus
@@ -4190,10 +4206,22 @@ function renderGrillaVariantes() {
           <input type="text" data-nuevo-imei="${escapeHtml(clave)}" placeholder="IMEI de esta unidad" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
           <div data-tac-hint="${escapeHtml(clave)}" style="font-size:11.5px;color:var(--celeste);margin-top:3px;min-height:14px;"></div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-            <input type="text" data-nuevo-gb="${escapeHtml(clave)}" placeholder="GB (opc.)" style="width:70px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
-            <input type="text" data-nuevo-ram="${escapeHtml(clave)}" placeholder="RAM (opc.)" style="width:75px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
-            <input type="text" data-nuevo-bateria="${escapeHtml(clave)}" placeholder="Batería (opc.)" style="width:85px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
-            <input type="text" data-nuevo-estado="${escapeHtml(clave)}" placeholder="Estado / nota (opc.)" style="flex:1;min-width:110px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <div style="width:70px;">
+              <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">GB</label>
+              <input type="text" data-nuevo-gb="${escapeHtml(clave)}" placeholder="Ej: 128" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            </div>
+            <div style="width:75px;">
+              <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">RAM</label>
+              <input type="text" data-nuevo-ram="${escapeHtml(clave)}" placeholder="Ej: 4GB" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            </div>
+            <div style="width:85px;">
+              <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Batería</label>
+              <input type="text" data-nuevo-bateria="${escapeHtml(clave)}" placeholder="Ej: 89%" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            </div>
+            <div style="flex:1;min-width:110px;">
+              <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Estado / nota</label>
+              <input type="text" data-nuevo-estado="${escapeHtml(clave)}" placeholder="Opcional" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            </div>
           </div>
           <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text-mute);">
             <input type="checkbox" data-nuevo-listo="${escapeHtml(clave)}" checked style="width:auto;"> Listo para vender (destildá si necesita reparación antes)
