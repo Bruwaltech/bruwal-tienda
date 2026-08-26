@@ -2169,6 +2169,10 @@ tr:last-child td { border-bottom: none; }
 
     <div class="field hidden" id="campoReponerImeis">
       <label>IMEI de cada unidad que entra</label>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+        <input type="number" min="1" max="50" placeholder="Cant." id="reponerCantidadEspacios" style="width:64px;">
+        <button type="button" id="reponerCrearEspaciosBtn" class="btn" style="flex:1;width:auto;padding:8px 10px;font-size:12.5px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">+ Crear espacios para completar</button>
+      </div>
       <div id="reponerImeisLista" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;"></div>
       <input type="text" id="reponerNuevoImei" placeholder="IMEI de esta unidad" style="width:100%;">
       <div id="reponerTacHint" style="font-size:11.5px;color:var(--celeste);margin-top:3px;min-height:14px;"></div>
@@ -4201,6 +4205,10 @@ function renderGrillaVariantes() {
           <label style="font-size:11.5px;color:var(--text-mute);white-space:nowrap;">Precio de esta combinación</label>
           <input type="number" min="0" step="0.01" value="${v.precio ?? ''}" placeholder="Igual que el general" data-combo-precio="${escapeHtml(clave)}" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
         </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
+          <input type="number" min="1" max="50" placeholder="Cant." data-cantidad-espacios="${escapeHtml(clave)}" style="width:64px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+          <button type="button" data-crear-espacios="${escapeHtml(clave)}" class="btn" style="flex:1;width:auto;padding:6px 10px;font-size:12px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">+ Crear espacios para completar</button>
+        </div>
         <div data-imeis-de="${escapeHtml(clave)}" style="display:flex;flex-direction:column;gap:4px;margin-top:8px;"></div>
         <div style="margin-top:8px;">
           <input type="text" data-nuevo-imei="${escapeHtml(clave)}" placeholder="IMEI de esta unidad" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
@@ -4249,6 +4257,33 @@ function renderGrillaVariantes() {
     const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === e.target.dataset.comboPrecio);
     if (v) v.precio = e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0);
   }));
+  cont.querySelectorAll('[data-crear-espacios]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const clave = btn.dataset.crearEspacios;
+      const input = document.querySelector('[data-cantidad-espacios="' + CSS.escape(clave) + '"]');
+      crearEspaciosImei(clave, input?.value);
+      if (input) input.value = '';
+    });
+  });
+}
+
+// Para cargar varios equipos de una combinación de golpe (ej. "llegaron 5
+// iPhone 13 negros") sin tener que escribir el IMEI de a uno para recién
+// después completar el resto: crea N filas vacías, listas para llenar cada
+// campo tocando directo en la lista. El stock cuenta estas filas igual
+// (son equipos que ya llegaron), pero quedan marcadas mientras falte el
+// IMEI para que no se escapen sin cargar.
+function crearEspaciosImei(clave, cantidadCruda) {
+  const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === clave);
+  if (!v) return;
+  const cantidad = Math.max(0, Math.min(50, Math.floor(Number(cantidadCruda) || 0)));
+  if (!cantidad) return;
+  if (!v.imeis) v.imeis = [];
+  for (let i = 0; i < cantidad; i++) v.imeis.push({ imei: '', gb: '', ram: '', bateria: '', estado: '', listo: true });
+  v.stock = v.imeis.length;
+  renderImeisDeVariante(clave);
+  const contador = document.querySelector('[data-contador-imei="' + CSS.escape(clave) + '"]');
+  if (contador) contador.textContent = v.stock + ' en stock';
 }
 
 function renderImeisDeVariante(clave) {
@@ -4258,27 +4293,51 @@ function renderImeisDeVariante(clave) {
   if (!v) return;
 
   const est = 'padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:11.5px;';
-  cont.innerHTML = (v.imeis || []).length ? v.imeis.map(u => `
-    <div style="background:var(--bg);padding:7px 9px;border-radius:6px;">
+  cont.innerHTML = (v.imeis || []).length ? v.imeis.map((u, i) => `
+    <div style="background:var(--bg);padding:7px 9px;border-radius:6px;${!u.imei ? 'border:1.5px dashed var(--danger);' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-        <span style="font-size:12.5px;font-weight:600;">${escapeHtml(u.imei)}</span>
-        <button type="button" data-quitar-imei="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>
+        <input type="text" data-editar-imei-num="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.imei || '')}" placeholder="Falta el IMEI"
+          style="flex:1;font-size:12.5px;font-weight:600;border:none;background:none;padding:2px;font-family:inherit;${!u.imei ? 'color:var(--danger);' : 'color:var(--text-dark);'}">
+        <button type="button" data-quitar-imei="${escapeHtml(clave)}" data-idx="${i}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>
       </div>
       <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-        <input type="text" data-editar-imei="gb" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:56px;${est}">
-        <input type="text" data-editar-imei="ram" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">
-        <input type="text" data-editar-imei="bateria" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:65px;${est}">
-        <input type="text" data-editar-imei="estado" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
+        <input type="text" data-editar-imei="gb" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:56px;${est}">
+        <input type="text" data-editar-imei="ram" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">
+        <input type="text" data-editar-imei="bateria" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:65px;${est}">
+        <input type="text" data-editar-imei="estado" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
       </div>
       <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:${u.listo === false ? 'var(--danger)' : 'var(--text-mute)'};">
-        <input type="checkbox" data-editar-imei="listo" data-clave="${escapeHtml(clave)}" data-imei="${escapeHtml(u.imei)}" ${u.listo !== false ? 'checked' : ''} style="width:auto;">
+        <input type="checkbox" data-editar-imei="listo" data-clave="${escapeHtml(clave)}" data-idx="${i}" ${u.listo !== false ? 'checked' : ''} style="width:auto;">
         ${u.listo === false ? '🔧 Pendiente de restauración' : 'Listo para vender'}
       </label>
     </div>
   `).join('') : '<div style="color:var(--text-mute);font-size:12px;">Sin IMEI cargados todavía.</div>';
 
   cont.querySelectorAll('[data-quitar-imei]').forEach(b => {
-    b.addEventListener('click', () => quitarImeiDeVariante(b.dataset.quitarImei, b.dataset.imei));
+    b.addEventListener('click', () => quitarImeiDeVariante(b.dataset.quitarImei, Number(b.dataset.idx)));
+  });
+
+  // El IMEI también se edita ahí mismo (por ejemplo para completar un
+  // espacio vacío creado con "Crear espacios", o corregir un error de
+  // tipeo) — se identifica cada fila por posición, no por el IMEI en sí,
+  // porque mientras está vacío varias filas podrían "coincidir".
+  cont.querySelectorAll('[data-editar-imei-num]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const variante = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === inp.dataset.editarImeiNum);
+      const unidad = variante?.imeis?.[Number(inp.dataset.idx)];
+      if (unidad) unidad.imei = inp.value.trim();
+    });
+    inp.addEventListener('blur', () => {
+      const clave2 = inp.dataset.editarImeiNum;
+      const variante = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === clave2);
+      const idx = Number(inp.dataset.idx);
+      const unidad = variante?.imeis?.[idx];
+      if (!unidad || !unidad.imei) { renderImeisDeVariante(clave2); return; }
+      const repetidoAca = variante.imeis.some((u, j) => j !== idx && u.imei === unidad.imei);
+      const repetidoEnOtra = variantesEnEdicion.some(x => x !== variante && (x.imeis || []).some(u => u.imei === unidad.imei));
+      if (repetidoAca || repetidoEnOtra) alert('Ese IMEI ya está cargado en otra unidad — corregilo antes de guardar.');
+      renderImeisDeVariante(clave2);
+    });
   });
 
   // Cada dato del equipo se edita ahí mismo, sin borrar y recargar el IMEI
@@ -4288,7 +4347,7 @@ function renderImeisDeVariante(clave) {
   cont.querySelectorAll('[data-editar-imei]').forEach(el => {
     el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
       const variante = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === el.dataset.clave);
-      const unidad = variante?.imeis?.find(u => u.imei === el.dataset.imei);
+      const unidad = variante?.imeis?.[Number(el.dataset.idx)];
       if (!unidad) return;
       const campo = el.dataset.editarImei;
       unidad[campo] = campo === 'listo' ? el.checked : el.value;
@@ -4341,10 +4400,10 @@ function agregarImeiAVariante(clave) {
   input.focus();
 }
 
-function quitarImeiDeVariante(clave, imei) {
+function quitarImeiDeVariante(clave, idx) {
   const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === clave);
   if (!v || !v.imeis) return;
-  v.imeis = v.imeis.filter(u => u.imei !== imei);
+  v.imeis.splice(idx, 1);
   v.stock = v.imeis.length;
   renderImeisDeVariante(clave);
   const contador = document.querySelector('[data-contador-imei="' + CSS.escape(clave) + '"]');
@@ -9358,6 +9417,16 @@ byId('productForm').addEventListener('submit', async (e) => {
     return;
   }
 
+  // Los espacios creados con "Crear espacios para completar" no pueden
+  // quedar sin IMEI al guardar — un equipo sin IMEI en stock es un dato
+  // roto (no hay forma de venderlo ni de encontrarlo después).
+  const equiposSinImei = variantesEnEdicion.reduce((s, v) => s + (v.imeis || []).filter(u => !u.imei).length, 0);
+  if (equiposSinImei > 0) {
+    alert('Hay ' + equiposSinImei + ' equipo' + (equiposSinImei === 1 ? '' : 's') + ' sin IMEI cargado — completalo' +
+      (equiposSinImei === 1 ? '' : 's') + ' o quitalo' + (equiposSinImei === 1 ? '' : 's') + ' con la ✕ antes de guardar.');
+    return;
+  }
+
   // Se resuelve ANTES de subir fotos: si falla la cotización, mejor
   // frenar acá que subir imágenes para un guardado que después no va a
   // completarse.
@@ -9626,6 +9695,7 @@ function abrirReponerVariante(id) {
   byId('reponerNuevoEstado').value = '';
   byId('reponerNuevoListo').checked = true;
   byId('reponerTacHint').textContent = '';
+  byId('reponerCantidadEspacios').value = '';
 
   // En electrónica cada unidad entra con su propio IMEI, no como un
   // número suelto: si no, el stock (que sale de cuántos IMEI hay
@@ -9644,9 +9714,10 @@ function renderReponerImeisLista() {
   if (!cont) return;
   const est = 'padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:11.5px;';
   cont.innerHTML = reponerImeisNuevos.length ? reponerImeisNuevos.map((u, i) => `
-    <div style="background:var(--bg);padding:7px 10px;border-radius:6px;">
+    <div style="background:var(--bg);padding:7px 10px;border-radius:6px;${!u.imei ? 'border:1.5px dashed var(--danger);' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-        <span style="font-size:13px;font-weight:600;">${escapeHtml(u.imei)}</span>
+        <input type="text" data-editar-reponer-imei-num="${i}" value="${escapeHtml(u.imei || '')}" placeholder="Falta el IMEI"
+          style="flex:1;font-size:13px;font-weight:600;border:none;background:none;padding:2px;font-family:inherit;${!u.imei ? 'color:var(--danger);' : 'color:var(--text-dark);'}">
         <button type="button" data-quitar-reponer-imei="${i}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;flex-shrink:0;">✕</button>
       </div>
       <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
@@ -9678,8 +9749,40 @@ function renderReponerImeisLista() {
       if (campo === 'listo') renderReponerImeisLista();
     });
   });
+
+  cont.querySelectorAll('[data-editar-reponer-imei-num]').forEach(inp => {
+    const i = Number(inp.dataset.editarReponerImeiNum);
+    inp.addEventListener('input', () => {
+      if (reponerImeisNuevos[i]) reponerImeisNuevos[i].imei = inp.value.trim();
+    });
+    inp.addEventListener('blur', () => {
+      const u = reponerImeisNuevos[i];
+      if (!u || !u.imei) { renderReponerImeisLista(); return; }
+      const repetidoAca = reponerImeisNuevos.some((x, j) => j !== i && x.imei === u.imei);
+      const p = products.find(x => String(x.id) === String(reponerVarianteProductoId));
+      const repetidoEnProducto = p && Array.isArray(p.variantes) && p.variantes.some(v =>
+        Array.isArray(v.imeis) && v.imeis.map(normalizarUnidadImei).some(x => x.imei === u.imei));
+      if (repetidoAca || repetidoEnProducto) alert('Ese IMEI ya está cargado en otra unidad — corregilo antes de confirmar.');
+      renderReponerImeisLista();
+    });
+  });
 }
 
+// Mismo criterio que en el formulario de producto: para cargar varios
+// equipos de golpe (ej. "llegaron 5 iPhone 13"), crea N filas vacías listas
+// para completar en la lista, en vez de tener que escribir el IMEI de a
+// uno y tocar "+ Agregar" cada vez.
+function crearEspaciosReponer(cantidadCruda) {
+  const cantidad = Math.max(0, Math.min(50, Math.floor(Number(cantidadCruda) || 0)));
+  if (!cantidad) return;
+  for (let i = 0; i < cantidad; i++) reponerImeisNuevos.push({ imei: '', gb: '', ram: '', bateria: '', estado: '', listo: true });
+  renderReponerImeisLista();
+}
+
+byId('reponerCrearEspaciosBtn').addEventListener('click', () => {
+  crearEspaciosReponer(byId('reponerCantidadEspacios').value);
+  byId('reponerCantidadEspacios').value = '';
+});
 byId('reponerAgregarImeiBtn').addEventListener('click', () => {
   const input = byId('reponerNuevoImei');
   const imei = input.value.trim();
@@ -9774,6 +9877,10 @@ async function confirmarReponerVariante() {
 
   if (esElec) {
     if (!reponerImeisNuevos.length) { alert('Agregá al menos un IMEI.'); return; }
+    if (reponerImeisNuevos.some(u => !u.imei)) {
+      alert('Hay equipos sin IMEI cargado — completalos o quitalos con la ✕ antes de confirmar.');
+      return;
+    }
     cantidad = reponerImeisNuevos.length;
   } else if (!Number.isFinite(cantidad) || cantidad <= 0) {
     alert('Escribí un número mayor que 0.');
