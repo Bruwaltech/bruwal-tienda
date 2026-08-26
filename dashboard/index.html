@@ -1320,6 +1320,25 @@ tr:last-child td { border-bottom: none; }
         </div>
       </div>
 
+      <div class="panel" id="panelValoracionStock" style="margin-bottom:20px;">
+        <div class="panel-head">💰 Valoración de tu stock
+          <button type="button" id="verValoracionStockBtn" class="btn-ghost hidden" style="width:auto;padding:4px 10px;font-size:12px;margin-left:8px;">🔒 Ver</button>
+        </div>
+        <div class="stats-row" id="valoracionStockContenido" style="margin-top:10px;">
+          <div class="stat-card">
+            <div class="label">✅ Disponible para vender</div>
+            <div class="value" id="valoracionDisponible">$0</div>
+            <div class="trend" id="valoracionDisponibleUds">0 unidades</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">🔧 Pendiente de restauración</div>
+            <div class="value" id="valoracionPendiente">$0</div>
+            <div class="trend" id="valoracionPendienteUds">0 unidades</div>
+          </div>
+        </div>
+        <small id="valoracionStockAviso" class="hidden" style="display:block;margin-top:8px;color:var(--text-mute);font-size:11.5px;"></small>
+      </div>
+
       <div class="dashboard-grid">
         <div class="panel">
           <div class="panel-head">📈 Ventas últimos 7 días</div>
@@ -5386,8 +5405,79 @@ function renderPulsoSemanal() {
   show(caja);
 }
 
+// Cuánta plata hay parada en el stock, separada entre lo que ya se puede
+// vender y lo que todavía necesita restauración — a costo, no a precio de
+// venta (es "cuánto puse", no "cuánto podría cobrar"). Inspirado en cómo lo
+// muestra Gestu (competencia de celulares), adaptado a los datos que BRUWAL
+// ya tiene: pendiente_restauracion a nivel producto, listo a nivel IMEI.
+function calcularValoracionStock() {
+  let disponibleValor = 0, disponibleUds = 0;
+  let pendienteValor = 0, pendienteUds = 0;
+  let sinCosto = 0;
+
+  products.forEach(p => {
+    if (!esProductoFisico(p)) return;
+    const costo = Number(p.costo) || 0;
+    const tieneCosto = Number(p.costo) > 0;
+
+    if (p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length) {
+      p.variantes.forEach(v => {
+        if (Array.isArray(v.imeis) && v.imeis.length) {
+          // Electrónica: cada unidad se cuenta por separado según su
+          // propio tilde "listo para vender".
+          v.imeis.map(normalizarUnidadImei).forEach(u => {
+            if (!tieneCosto) { sinCosto++; return; }
+            if (u.listo === false) { pendienteValor += costo; pendienteUds++; }
+            else { disponibleValor += costo; disponibleUds++; }
+          });
+        } else {
+          const stock = Number(v.stock || 0);
+          if (!stock) return;
+          if (!tieneCosto) { sinCosto += stock; return; }
+          // Talle/color no tiene "listo" por combinación — se usa el
+          // estado del producto entero (pendiente_restauracion).
+          if (p.pendiente_restauracion) { pendienteValor += costo * stock; pendienteUds += stock; }
+          else { disponibleValor += costo * stock; disponibleUds += stock; }
+        }
+      });
+    } else {
+      const stock = Number(p.stock || 0);
+      if (!stock) return;
+      if (!tieneCosto) { sinCosto += stock; return; }
+      if (p.pendiente_restauracion) { pendienteValor += costo * stock; pendienteUds += stock; }
+      else { disponibleValor += costo * stock; disponibleUds += stock; }
+    }
+  });
+
+  return { disponibleValor, disponibleUds, pendienteValor, pendienteUds, sinCosto };
+}
+
+function renderValoracionStock() {
+  const bloqueado = requiereDesbloqueoCostos();
+  byId('verValoracionStockBtn').classList.toggle('hidden', !bloqueado);
+  byId('valoracionStockContenido').classList.toggle('hidden', bloqueado);
+  if (bloqueado) { hide(byId('valoracionStockAviso')); return; }
+
+  const v = calcularValoracionStock();
+  byId('valoracionDisponible').textContent = money(v.disponibleValor);
+  byId('valoracionDisponibleUds').textContent = v.disponibleUds + ' unidad' + (v.disponibleUds === 1 ? '' : 'es');
+  byId('valoracionPendiente').textContent = money(v.pendienteValor);
+  byId('valoracionPendienteUds').textContent = v.pendienteUds + ' unidad' + (v.pendienteUds === 1 ? '' : 'es');
+
+  if (v.sinCosto > 0) {
+    byId('valoracionStockAviso').textContent =
+      '⚠️ ' + v.sinCosto + ' unidad' + (v.sinCosto === 1 ? '' : 'es') + ' sin costo cargado — no se incluyen en estos totales.';
+    show(byId('valoracionStockAviso'));
+  } else {
+    hide(byId('valoracionStockAviso'));
+  }
+}
+
+byId('verValoracionStockBtn').addEventListener('click', () => abrirPinCostosModal(renderValoracionStock));
+
 function renderDashboard() {
   renderPulsoSemanal();
+  renderValoracionStock();
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
