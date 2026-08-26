@@ -1076,6 +1076,18 @@ tr:last-child td { border-bottom: none; }
   <a id="ayudaBotWhatsappBtn" target="_blank" rel="noopener" style="display:block;text-align:center;padding:11px;background:var(--bg);color:var(--navy);font-weight:700;font-size:12.5px;text-decoration:none;border-top:1px solid var(--line);flex-shrink:0;">💬 No encontré mi duda — escribir por WhatsApp</a>
 </div>
 
+<!-- Cartel de "siguiente paso" — aparece después de cargar algo nuevo, con
+     la acción más útil según lo que se acaba de crear. No es un tutorial
+     que se ve una vez: aparece cada vez que corresponde. -->
+<div id="proximoPasoCard" class="hidden" style="position:fixed;left:50%;transform:translateX(-50%);bottom:18px;max-width:480px;width:calc(100vw - 36px);background:var(--navy);color:#fff;border-radius:12px;box-shadow:0 10px 30px -8px rgba(0,0,0,.4);padding:14px 16px;z-index:9400;display:flex;align-items:center;gap:12px;">
+  <div style="flex:1;font-size:13px;line-height:1.5;">
+    <div style="font-weight:700;margin-bottom:2px;">👉 Siguiente paso</div>
+    <div id="proximoPasoTexto"></div>
+  </div>
+  <button type="button" id="proximoPasoAccionBtn" class="btn btn-primary" style="width:auto;padding:8px 14px;font-size:12.5px;flex-shrink:0;"></button>
+  <button type="button" id="proximoPasoCerrarBtn" style="background:none;border:none;color:#fff;opacity:.7;font-size:14px;cursor:pointer;flex-shrink:0;">✕</button>
+</div>
+
 <!-- LOADING SCREEN -->
 <div id="loadingScreen">
   <div class="logo-loader">B</div>
@@ -9287,9 +9299,9 @@ byId('productForm').addEventListener('submit', async (e) => {
   // El error se ignoraba: si la base rechazaba el guardado, el formulario se
   // cerraba igual y el producto no aparecía en ningún lado. Un guardado que
   // falla en silencio es peor que uno que falla con un cartel.
-  const { error: errorGuardado } = id
+  const { data: dataGuardado, error: errorGuardado } = id
     ? await sb.from('store_products').update(payload).eq('id', id)
-    : await sb.from('store_products').insert(payload);
+    : await sb.from('store_products').insert(payload).select('id');
 
   if (errorGuardado) {
     const msg = errorGuardado.message || '';
@@ -9311,6 +9323,27 @@ byId('productForm').addEventListener('submit', async (e) => {
   hide(byId('imagePreview'));
   hide(byId('productModal'));
   await refreshData();
+
+  // Cartel de siguiente paso — solo para productos nuevos (al editar, el
+  // vendedor ya sabe qué está haciendo). Un solo paso, el más útil según
+  // lo que se acaba de cargar, no una lista de tutorial.
+  if (!id) {
+    const idGuardado = dataGuardado?.[0]?.id;
+    const sinEquiposCargados = tieneVariantes && rubroEsElectronica() && stockGeneral === 0;
+    if (sinEquiposCargados && idGuardado) {
+      mostrarProximoPaso(
+        '"' + payload.name + '" está creado, pero todavía no tiene equipos cargados — el stock sale de los IMEI que agregues.',
+        '+ Reponer',
+        () => abrirReponerVariante(idGuardado)
+      );
+    } else if (!payload.solo_interno && payload.tipo === 'producto' && !tieneVariantes) {
+      mostrarProximoPaso(
+        '"' + payload.name + '" ya está publicado en tu tienda.',
+        'Ver tienda',
+        () => window.open(window.location.origin + '/' + currentStore.slug, '_blank')
+      );
+    }
+  }
 });
 
 async function editProduct(id) {
@@ -10800,6 +10833,28 @@ function abrirAyudaBot() {
 byId('ayudaBotBtn').addEventListener('click', abrirAyudaBot);
 byId('closeAyudaBotBtn').addEventListener('click', () => hide(byId('ayudaBotPanel')));
 renderAyudaBotPreguntas();
+
+// ---------- Cartel de "siguiente paso" ----------
+let proximoPasoAccionActual = null;
+
+function mostrarProximoPaso(texto, textoBoton, accion) {
+  byId('proximoPasoTexto').textContent = texto;
+  byId('proximoPasoAccionBtn').textContent = textoBoton;
+  proximoPasoAccionActual = accion;
+  show(byId('proximoPasoCard'));
+}
+
+function ocultarProximoPaso() {
+  hide(byId('proximoPasoCard'));
+  proximoPasoAccionActual = null;
+}
+
+byId('proximoPasoCerrarBtn').addEventListener('click', ocultarProximoPaso);
+byId('proximoPasoAccionBtn').addEventListener('click', () => {
+  const accion = proximoPasoAccionActual;
+  ocultarProximoPaso();
+  if (accion) accion();
+});
 
 // El service worker es lo que hace que el navegador ofrezca instalar la app.
 // Si falla, la web sigue funcionando igual: solo se pierde la instalacion.
