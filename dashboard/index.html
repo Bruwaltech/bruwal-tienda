@@ -1241,7 +1241,6 @@ tr:last-child td { border-bottom: none; }
     <span>🛒 Tu tienda pública:</span>
     <a id="storeLinkAnchor" href="#" target="_blank" style="font-weight:600;"></a>
     <button class="btn-ghost" id="copyStoreLinkBtn" style="padding:5px 10px;font-size:12px;">Copiar link</button>
-    <button class="btn-ghost" id="shareStoreLinkBtn" style="padding:5px 10px;font-size:12px;"><i class="fa-solid fa-share-nodes"></i> Compartir</button>
     <button class="btn-ghost" id="openConfigBtn" style="padding:5px 10px;font-size:12px;">⚙️ Configurar</button>
   </div>
 
@@ -4629,25 +4628,6 @@ byId('copyStoreLinkBtn').addEventListener('click', async () => {
   const original = btn.textContent;
   btn.textContent = '✓ Copiado!';
   setTimeout(() => btn.textContent = original, 1500);
-});
-
-// SHARE STORE LINK — el share nativo del celular (manda directo a WhatsApp,
-// Instagram, etc. sin pasar por copiar/pegar); si el navegador no lo tiene
-// (la mayoría de las compus), cae en copiar el link como el botón de al lado.
-byId('shareStoreLinkBtn').addEventListener('click', async () => {
-  const url = byId('storeLinkAnchor').href;
-  const titulo = (currentStore?.business_name || 'Mi tienda') + ' — BRUWAL';
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: titulo, text: 'Mirá mi tienda:', url });
-    } catch (e) { /* el usuario canceló el share, no es un error */ }
-    return;
-  }
-  await navigator.clipboard.writeText(url);
-  const btn = byId('shareStoreLinkBtn');
-  const original = btn.innerHTML;
-  btn.textContent = '✓ Link copiado!';
-  setTimeout(() => btn.innerHTML = original, 1500);
 });
 
 // Arma el link de la tienda a partir del nombre del negocio.

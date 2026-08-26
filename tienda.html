@@ -334,7 +334,10 @@
             <div class="store-eslogan hidden" id="storeEslogan"></div>
           </div>
         </div>
-        <a class="store-contact" id="storePhone" href="#" target="_blank">💬 WhatsApp</a>
+        <div style="display:flex;gap:8px;align-items:start;">
+          <button class="store-contact" id="shareStoreBtn" type="button" style="cursor:pointer;border:none;font:inherit;font-weight:700;"><i class="fa-solid fa-share-nodes"></i> Compartir</button>
+          <a class="store-contact" id="storePhone" href="#" target="_blank">💬 WhatsApp</a>
+        </div>
       </div>
     </div>
   </header>
@@ -639,6 +642,25 @@ async function init(){
   } else {
     hide(byId('storePhone'));
   }
+
+  // Compartir la tienda: el share nativo del celular manda directo por
+  // WhatsApp/Instagram/lo que elija el cliente, sin copiar y pegar. En
+  // compus (sin navigator.share) cae en copiar el link.
+  byId('shareStoreBtn').addEventListener('click', async () => {
+    const url = window.location.href;
+    const titulo = store.business_name || 'Tienda online';
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: titulo, text: 'Mirá esta tienda:', url });
+      } catch (e) { /* el cliente canceló el share, no es un error */ }
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    const btn = byId('shareStoreBtn');
+    const original = btn.innerHTML;
+    btn.textContent = '✓ Link copiado!';
+    setTimeout(() => btn.innerHTML = original, 1500);
+  });
 
   if (store.website){
     show(byId('menuWeb'));
