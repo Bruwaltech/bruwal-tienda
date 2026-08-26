@@ -1072,10 +1072,8 @@ tr:last-child td { border-bottom: none; }
     <button id="closeAyudaBotBtn" style="background:none;border:none;color:#fff;font-size:16px;cursor:pointer;">✕</button>
   </div>
   <div id="ayudaBotMensajes" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;"></div>
-  <div style="display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);">
-    <input type="text" id="ayudaBotInput" placeholder="Escribí tu pregunta…" style="flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:20px;font-size:13.5px;">
-    <button id="ayudaBotEnviarBtn" style="width:38px;height:38px;border-radius:50%;background:var(--celeste);color:#fff;border:none;cursor:pointer;flex-shrink:0;"><i class="fa-solid fa-paper-plane"></i></button>
-  </div>
+  <div id="ayudaBotPreguntas" style="padding:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;flex-shrink:0;"></div>
+  <a id="ayudaBotWhatsappBtn" target="_blank" rel="noopener" style="display:block;text-align:center;padding:11px;background:var(--bg);color:var(--navy);font-weight:700;font-size:12.5px;text-decoration:none;border-top:1px solid var(--line);flex-shrink:0;">💬 No encontré mi duda — escribir por WhatsApp</a>
 </div>
 
 <!-- LOADING SCREEN -->
@@ -10629,11 +10627,30 @@ let promptDeInstalacion = null;
 })();
 
 // ---------- Asistente de ayuda (chat flotante) ----------
-// Historial en memoria nada más — es una charla de "cómo hago para...", no
-// datos del negocio, así que no hace falta guardarla en la base. Se reinicia
-// sola al recargar la página.
-let ayudaBotHistorial = [];
-let ayudaBotEnviando = false;
+// FAQ estático, sin IA: cero costo por uso y no depende de ninguna cuenta
+// externa. A cambio, solo contesta exactamente estas preguntas — para
+// cualquier otra cosa (y siempre para lo de la cuenta/inicio de sesión) el
+// botón de WhatsApp de abajo queda fijo y visible todo el tiempo.
+const AYUDA_FAQ = [
+  { q: '¿Cómo cargo un producto nuevo?',
+    a: 'Productos → "+ Carga tu stock". Te va guiando paso a paso: primero la categoría, después qué es y para dónde (tu tienda o stock interno), precio y costo, stock, y por último fotos y extras.' },
+  { q: '¿Cómo cargo talles y colores?',
+    a: 'En el paso de Stock, activá "Este producto tiene variantes" y cargá los atributos (ej. Talle: S/M/L, Color: Negro/Blanco). Cada combinación lleva su propio stock, se agotan por separado.' },
+  { q: '¿Cómo cargo celulares con IMEI?',
+    a: 'En electrónica, cada variante (ej. "128GB Azul") se carga con una lista de IMEI en vez de un número de stock — el stock sale solo de cuántos equipos hay cargados. Al escribir el IMEI te sugiere marca y modelo automático.' },
+  { q: '¿Cómo ve mi tienda un cliente?',
+    a: 'En bruwaltech.com.ar/tu-nombre-de-tienda — el link está arriba del panel ("Tu tienda pública"). Ahí el cliente arma su pedido y lo termina mandando por WhatsApp, no hay cobro online.' },
+  { q: '¿Cómo separo lo que se vende de mi stock interno?',
+    a: 'En Productos hay dos pestañas: "🏪 Tienda" (lo que ve el cliente) y "🔒 Stock interno" (repuestos y uso propio, nunca se publica). Se elige al cargar cada producto.' },
+  { q: '¿Puedo ocultar el precio de un producto?',
+    a: 'Sí — al cargarlo, destildá "Mostrar el precio en la tienda pública". El cliente va a ver "Consultar precio" y un botón directo a WhatsApp en vez del precio.' },
+  { q: '¿Qué incluye cada plan?',
+    a: 'Básico tiene lo esencial para vender. Pro suma Caja, Estadísticas, Historial IMEI y Cargar stock por factura (IA). Para precios exactos o upgradear, escribinos por WhatsApp — cambian de vez en cuando y no quiero darte un número viejo.' },
+  { q: '¿Cómo uso Caja y Gastos?',
+    a: 'Caja (Pro) te muestra el resumen del día separado por medio de pago. Gastos es para cargar lo que gastás (impuestos, mercadería, publicidad) con su categoría — ahí también podés ver cuánto es "Mercadería" específicamente.' },
+  { q: 'No me llega el mail de confirmación / no puedo entrar',
+    a: 'Esto es de tu cuenta puntual — no lo puedo resolver desde acá. Escribinos por WhatsApp y te ayudamos directo.' }
+];
 
 function escaparYLinkificar(texto) {
   return escapeHtml(texto).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">$1</a>');
@@ -10653,62 +10670,34 @@ function agregarBurbujaAyudaBot(rol, texto) {
   return burbuja;
 }
 
-function abrirAyudaBot() {
-  show(byId('ayudaBotPanel'));
-  if (!ayudaBotHistorial.length) {
-    agregarBurbujaAyudaBot('assistant',
-      '¡Hola! Preguntame lo que quieras sobre cómo usar BRUWAL: cargar productos, cómo funciona el stock, ' +
-      'cómo ven tus clientes la tienda, planes, y más.\n\nSi es sobre tu cuenta o el inicio de sesión, mejor ' +
-      'escribinos directo por WhatsApp — acá no tengo acceso a tu cuenta puntual.');
-  }
-  setTimeout(() => byId('ayudaBotInput').focus(), 100);
+function renderAyudaBotPreguntas() {
+  byId('ayudaBotPreguntas').innerHTML = AYUDA_FAQ.map((item, i) =>
+    '<button type="button" data-faq="' + i + '" style="text-align:left;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12.5px;cursor:pointer;font-family:inherit;color:var(--text-dark);">' +
+      escapeHtml(item.q) +
+    '</button>'
+  ).join('');
+
+  byId('ayudaBotPreguntas').querySelectorAll('[data-faq]').forEach(b => {
+    b.addEventListener('click', () => {
+      const item = AYUDA_FAQ[Number(b.dataset.faq)];
+      agregarBurbujaAyudaBot('user', item.q);
+      agregarBurbujaAyudaBot('assistant', item.a);
+    });
+  });
 }
 
-async function enviarMensajeAyudaBot() {
-  if (ayudaBotEnviando) return;
-  const input = byId('ayudaBotInput');
-  const texto = input.value.trim();
-  if (!texto) return;
-
-  input.value = '';
-  agregarBurbujaAyudaBot('user', texto);
-  ayudaBotHistorial.push({ role: 'user', content: texto });
-
-  ayudaBotEnviando = true;
-  const burbujaEscribiendo = agregarBurbujaAyudaBot('assistant', 'Escribiendo…');
-
-  try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) {
-      burbujaEscribiendo.textContent = 'Tu sesión venció — recargá la página y volvé a entrar.';
-      ayudaBotEnviando = false;
-      return;
-    }
-
-    const r = await fetch('/api/asistente-ayuda', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
-      body: JSON.stringify({ historial: ayudaBotHistorial })
-    });
-    const json = await r.json().catch(() => ({}));
-
-    const respuesta = (r.ok && json.ok) ? json.respuesta : ('⚠️ ' + (json.error || 'No se pudo responder ahora.'));
-    burbujaEscribiendo.innerHTML = escaparYLinkificar(respuesta);
-    byId('ayudaBotMensajes').scrollTop = byId('ayudaBotMensajes').scrollHeight;
-    if (r.ok && json.ok) ayudaBotHistorial.push({ role: 'assistant', content: respuesta });
-  } catch (err) {
-    burbujaEscribiendo.textContent = '⚠️ No se pudo responder: ' + err.message;
-  } finally {
-    ayudaBotEnviando = false;
+function abrirAyudaBot() {
+  show(byId('ayudaBotPanel'));
+  if (!byId('ayudaBotMensajes').children.length) {
+    agregarBurbujaAyudaBot('assistant', '¡Hola! Elegí abajo la pregunta que más se parezca a tu duda.');
   }
+  const msg = 'Hola! Tengo una duda sobre BRUWAL que no encontré en la ayuda rápida.';
+  byId('ayudaBotWhatsappBtn').href = 'https://wa.me/' + WHATSAPP_UPGRADE_PRO + '?text=' + encodeURIComponent(msg);
 }
 
 byId('ayudaBotBtn').addEventListener('click', abrirAyudaBot);
 byId('closeAyudaBotBtn').addEventListener('click', () => hide(byId('ayudaBotPanel')));
-byId('ayudaBotEnviarBtn').addEventListener('click', enviarMensajeAyudaBot);
-byId('ayudaBotInput').addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); enviarMensajeAyudaBot(); }
-});
+renderAyudaBotPreguntas();
 
 // El service worker es lo que hace que el navegador ofrezca instalar la app.
 // Si falla, la web sigue funcionando igual: solo se pierde la instalacion.
