@@ -1758,8 +1758,13 @@ tr:last-child td { border-bottom: none; }
         <div class="wizard-step" data-step="1">
           <div class="field">
             <label>Categoría</label>
-            <input type="text" id="pCategory" list="listaCategoriasProducto" placeholder="Elegí una o escribí la tuya" autocomplete="off">
-            <datalist id="listaCategoriasProducto"></datalist>
+            <input type="text" id="pCategory" placeholder="Elegí una abajo o escribí la tuya" autocomplete="off">
+            <!-- Sugerencias con chips en vez de <datalist>: en iPhone, un input
+                 con "list" pierde el foco apenas se escribe el primer
+                 carácter (bug conocido de Safari/iOS) y hay que tocarlo de
+                 nuevo para seguir escribiendo. Con chips no depende del
+                 datalist nativo del navegador. -->
+            <div id="pCategorySugeridas" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
             <!-- Rubros sugeridos, compartido por el alta y la configuracion de la tienda -->
             <datalist id="listaRubros"></datalist>
             <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
@@ -3554,12 +3559,18 @@ function renderCategorias() {
   });
 }
 
-// Llena el desplegable del alta de producto con las categorias de la tienda
+// Llena las categorías sugeridas del alta de producto — chips clickeables,
+// no <datalist> nativo (ver el comentario en el HTML sobre el bug de iOS).
 function refrescarListaDeCategorias() {
-  const dl = byId('listaCategoriasProducto');
-  if (!dl) return;
-  dl.innerHTML = categoriasDeLaTienda()
-    .map(c => '<option value="' + escapeHtml(c) + '">').join('');
+  const cont = byId('pCategorySugeridas');
+  if (!cont) return;
+  const categorias = categoriasDeLaTienda();
+  cont.innerHTML = categorias.map(c =>
+    '<button type="button" class="chip-sug" data-cat-sug="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>'
+  ).join('');
+  cont.querySelectorAll('[data-cat-sug]').forEach(b => {
+    b.addEventListener('click', () => { byId('pCategory').value = b.dataset.catSug; });
+  });
 }
 
 function agregarCategoria(nombre) {
