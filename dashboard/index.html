@@ -10208,7 +10208,15 @@ const esMobile = () => window.innerWidth <= 700;
   const texto = byId('pullRefreshTexto');
   if (!pill) return;
 
-  const hayModalAbierto = () => !!document.querySelector('.modal-overlay:not(.hidden)');
+  // No solo los modales de verdad (.modal-overlay): el chat de ayuda y el
+  // cartel de "siguiente paso" son paneles flotantes aparte, sin esa clase.
+  // Si no se los excluye acá, deslizar DENTRO de esos paneles (para ver la
+  // lista de preguntas, por ejemplo) puede confundirse con el gesto de
+  // tirar para refrescar toda la página.
+  const hayModalAbierto = () =>
+    !!document.querySelector('.modal-overlay:not(.hidden)') ||
+    !byId('ayudaBotPanel').classList.contains('hidden') ||
+    !byId('proximoPasoCard').classList.contains('hidden');
 
   document.addEventListener('touchstart', (e) => {
     if (refrescando || hayModalAbierto() || window.scrollY > 0) { startY = null; arrastrando = false; return; }
