@@ -23,8 +23,12 @@
 alter table public.store_products
   alter column stock type numeric;
 
-alter table public.store_products
-  alter column min_stock type numeric;
+-- OJO: acá había también un ALTER de min_stock. Se sacó porque esa columna
+-- NO existe en la base real (está en setup_supabase.sql pero esa parte nunca
+-- se aplicó), y el editor de Supabase corre todo el script en una sola
+-- transacción: el error de min_stock revertía también la conversión de stock,
+-- que sí importa. El panel ya lee min_stock con respaldo (`p.min_stock || 0`),
+-- así que no hace falta para nada. Si algún día se agrega, va como numeric.
 
 -- 2) En qué unidad se mide ese stock.
 --    null = se vende por unidad, que es como funcionó siempre:

@@ -6717,6 +6717,9 @@ function renderFiado() {
       '<td><div class="row-actions">' +
         '<button class="icon-btn" data-ver-pagos="' + o.id + '" title="Ver pagos anteriores">Historial</button>' +
         '<button class="icon-btn" data-registrar-pago="' + o.id + '" style="color:var(--stock);" title="Anotar un pago">+ Pago</button>' +
+        '<button class="icon-btn" data-portal-cliente="' + escapeHtml(o.customer_name || '') + '" ' +
+          'data-portal-tel="' + escapeHtml(o.customer_phone || '') + '" ' +
+          'title="Mandarle su estado de cuenta por WhatsApp">📄 Estado</button>' +
       '</div></td>' +
     '</tr>';
   }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Nadie te debe nada 🎉</td></tr>';
@@ -6725,6 +6728,77 @@ function renderFiado() {
     b.addEventListener('click', () => registrarPago(b.dataset.registrarPago)));
   cuerpo.querySelectorAll('[data-ver-pagos]').forEach(b =>
     b.addEventListener('click', () => verHistorialPagos(b.dataset.verPagos)));
+  cuerpo.querySelectorAll('[data-portal-cliente]').forEach(b =>
+    b.addEventListener('click', () => enviarEstadoDeCuenta(b.dataset.portalCliente, b.dataset.portalTel)));
+}
+
+// ---- Portal del cliente ----
+// Le genera (o recupera) el link único de ese cliente y abre WhatsApp con el
+// mensaje listo. El cliente entra sin registrarse ni contraseña: en BRUWAL el
+// cliente no es una cuenta, es el texto de customer_name, así que un login
+// tradicional no tendría de dónde sacar credenciales.
+//
+// El token lo genera la base (default de la columna), no el navegador: así
+// no depende de que el dispositivo tenga un generador aleatorio seguro.
+async function enviarEstadoDeCuenta(nombreCliente, telefono) {
+  if (!puedeOperar()) return;
+  const cliente = (nombreCliente || '').trim();
+  if (!cliente) {
+    alert('Esta deuda no tiene nombre de cliente cargado, así que no se le puede armar un link propio.');
+    return;
+  }
+
+  // Si ya tiene link, se reusa: el que ya se mandó por WhatsApp tiene que
+  // seguir funcionando siempre.
+  let token = null;
+  const { data: existente, error: errBuscar } = await sb.from('store_clientes_token')
+    .select('token')
+    .eq('store_slug', currentStore.slug)
+    .eq('cliente_nombre', cliente)
+    .maybeSingle();
+
+  if (errBuscar) {
+    alert('No se pudo generar el link:\n\n' + errBuscar.message +
+      '\n\n(Si dice que falta la tabla, correr schema/33-portal-clientes.sql en Supabase.)');
+    return;
+  }
+
+  token = existente?.token || null;
+
+  if (!token) {
+    const { data: creado, error: errCrear } = await sb.from('store_clientes_token')
+      .insert({ store_slug: currentStore.slug, cliente_nombre: cliente })
+      .select('token')
+      .maybeSingle();
+    if (errCrear) {
+      alert('No se pudo generar el link:\n\n' + errCrear.message);
+      return;
+    }
+    token = creado?.token;
+  }
+
+  if (!token) { alert('No se pudo generar el link. Probá de nuevo.'); return; }
+
+  const link = location.origin + '/cuenta.html?t=' + token;
+  const mensaje = 'Hola ' + cliente + '! Te dejo el link para ver tu cuenta con ' +
+    (currentStore.business_name || 'nosotros') + ' cuando quieras:\n\n' + link;
+
+  const tel = String(telefono || '').replace(/\D/g, '');
+  const esTelefonoReal = tel && tel !== '0' && telefono !== 'scanner';
+
+  if (esTelefonoReal) {
+    window.open('https://wa.me/' + numeroWhatsApp(telefono) + '?text=' + encodeURIComponent(mensaje), '_blank');
+    return;
+  }
+
+  // Sin teléfono cargado (típico de una venta de mostrador) no hay a quién
+  // abrirle el chat: se copia el link para que lo mande por donde quiera.
+  try {
+    await navigator.clipboard.writeText(link);
+    alert('Este cliente no tiene teléfono cargado.\n\nEl link se copió — pegáselo por donde le escribas:\n\n' + link);
+  } catch (e) {
+    prompt('Copiá el link y mandáselo al cliente:', link);
+  }
 }
 
 // ===================== IMPORTAR PRODUCTOS DESDE EXCEL =====================

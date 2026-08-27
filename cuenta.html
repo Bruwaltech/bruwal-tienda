@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Un estado de cuenta no se indexa ni se comparte en redes. -->
+<meta name="robots" content="noindex, nofollow">
+<title>Mi cuenta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #15294D;
+    --celeste: #2F8FE0;
+    --bg: #F4F7FB;
+    --line: #E3E9F2;
+    --text-dark: #15294D;
+    --text-mute: #6B7A99;
+    --danger: #DC2626;
+    --ok: #16A34A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text-dark);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  .encabezado {
+    display: flex; align-items: center; gap: 13px;
+    margin-bottom: 18px;
+  }
+  .encabezado img {
+    width: 52px; height: 52px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
+  }
+  .encabezado h1 { font-size: 19px; margin: 0 0 2px; }
+  .encabezado .sub { font-size: 13px; color: var(--text-mute); }
+
+  .tarjeta {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px; margin-bottom: 14px;
+  }
+
+  .saldo { text-align: center; padding: 24px 18px; }
+  .saldo .etiqueta { font-size: 13px; color: var(--text-mute); margin-bottom: 6px; }
+  .saldo .monto { font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+  .saldo.debe .monto { color: var(--danger); }
+  .saldo.aldia .monto { color: var(--ok); font-size: 26px; }
+
+  .titulo-seccion {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-mute); margin: 22px 0 9px;
+  }
+
+  .fila {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 11px 0; border-bottom: 1px solid var(--line);
+  }
+  .fila:last-child { border-bottom: none; }
+  .fila .detalle { font-size: 13.5px; line-height: 1.5; }
+  .fila .fecha { font-size: 12px; color: var(--text-mute); margin-top: 2px; }
+  .fila .monto { font-weight: 700; white-space: nowrap; }
+  .fila .monto.debe { color: var(--danger); }
+  .fila .monto.pago { color: var(--ok); }
+
+  .chip {
+    display: inline-block; padding: 3px 9px; border-radius: 20px;
+    font-size: 11.5px; font-weight: 700;
+  }
+  .chip.recibido { background: #EAF4FD; color: var(--navy); }
+  .chip.en_reparacion { background: #FEF3E2; color: #8A5200; }
+  .chip.listo { background: #E7F7EE; color: #12703A; }
+
+  .btn {
+    display: block; width: 100%; padding: 14px; border-radius: 10px;
+    border: none; background: var(--navy); color: #fff;
+    font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+    text-align: center; text-decoration: none; margin-top: 8px;
+  }
+  .btn.secundario {
+    background: #fff; color: var(--navy); border: 1px solid var(--line);
+  }
+
+  .aviso { text-align: center; padding: 50px 20px; color: var(--text-mute); }
+  .aviso h2 { color: var(--text-dark); font-size: 18px; margin: 0 0 8px; }
+
+  .pie {
+    text-align: center; font-size: 11.5px; color: var(--text-mute);
+    margin-top: 26px; line-height: 1.6;
+  }
+
+  /* Al imprimir (o "Guardar como PDF" desde el celular) se saca todo lo que
+     no es el estado de cuenta: botones, fondo de color, sombras. */
+  @media print {
+    body { background: #fff; }
+    .wrap { max-width: none; padding: 0; }
+    .no-imprimir { display: none !important; }
+    .tarjeta { border: 1px solid #ccc; break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div id="contenido">
+    <div class="aviso"><h2>Buscando tu cuenta...</h2></div>
+  </div>
+</div>
+
+<script>
+const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+const fecha = (f) => new Date(f).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+function escapar(t) {
+  return String(t == null ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const ETIQUETA_ESTADO = {
+  recibido: 'Recibido',
+  en_reparacion: 'En reparación',
+  listo: '✅ Listo para retirar'
+};
+
+// El detalle de cada compra sale de orders.items, que guarda el nombre ya
+// armado con talle/color o los metros. Si un pedido viejo no lo tiene, se
+// muestra igual con el monto: mejor una línea sin detalle que una fila vacía.
+function detalleDePedido(items) {
+  if (!Array.isArray(items) || !items.length) return 'Compra';
+  return items
+    .map((it) => {
+      const nombre = it.name || it.label || 'Producto';
+      // Con coma decimal: una compra fraccionada es "12,5x", no "12.5x".
+      const cant = Number(it.qty != null ? it.qty : 1)
+        .toLocaleString('es-AR', { maximumFractionDigits: 3 });
+      return cant + 'x ' + nombre;
+    })
+    .join(', ');
+}
+
+function render(d) {
+  const negocio = d.negocio || {};
+  const debe = Number(d.total_adeudado || 0);
+  const pagosPorPedido = {};
+  (d.pagos || []).forEach((p) => {
+    (pagosPorPedido[p.order_id] = pagosPorPedido[p.order_id] || []).push(p);
+  });
+
+  let html = '';
+
+  html += '<div class="encabezado">' +
+    (negocio.image_url ? '<img src="' + escapar(negocio.image_url) + '" alt="">' : '') +
+    '<div><h1>' + escapar(negocio.business_name || 'Tu cuenta') + '</h1>' +
+    '<div class="sub">Estado de cuenta de ' + escapar(d.cliente) + '</div></div></div>';
+
+  html += '<div class="tarjeta saldo ' + (debe > 0 ? 'debe' : 'aldia') + '">' +
+    '<div class="etiqueta">' + (debe > 0 ? 'Saldo pendiente' : 'Tu cuenta') + '</div>' +
+    '<div class="monto">' + (debe > 0 ? money(debe) : '¡Estás al día! 🎉') + '</div>' +
+    '</div>';
+
+  if ((d.pedidos || []).length) {
+    html += '<div class="titulo-seccion">Compras con saldo</div><div class="tarjeta">';
+    d.pedidos.forEach((p) => {
+      html += '<div class="fila"><div>' +
+        '<div class="detalle">' + escapar(detalleDePedido(p.items)) + '</div>' +
+        '<div class="fecha">' + fecha(p.created_at) + ' · Total ' + money(p.total) + '</div>' +
+        '</div><div class="monto debe">' + money(p.saldo_pendiente) + '</div></div>';
+
+      (pagosPorPedido[p.id] || []).forEach((pago) => {
+        html += '<div class="fila" style="padding-left:14px;">' +
+          '<div><div class="detalle" style="color:var(--text-mute);">Pago recibido</div>' +
+          '<div class="fecha">' + fecha(pago.created_at) + '</div></div>' +
+          '<div class="monto pago">− ' + money(pago.monto) + '</div></div>';
+      });
+    });
+    html += '</div>';
+  }
+
+  if ((d.reparaciones || []).length) {
+    html += '<div class="titulo-seccion">Tus reparaciones</div><div class="tarjeta">';
+    d.reparaciones.forEach((r) => {
+      html += '<div class="fila"><div>' +
+        '<div class="detalle"><strong>' + escapar(r.equipo) + '</strong>' +
+        (r.numero ? ' <span style="color:var(--text-mute);">#' + escapar(r.numero) + '</span>' : '') + '</div>' +
+        (r.problema ? '<div class="fecha">' + escapar(r.problema) + '</div>' : '') +
+        '<div style="margin-top:6px;"><span class="chip ' + escapar(r.estado) + '">' +
+          escapar(ETIQUETA_ESTADO[r.estado] || r.estado) + '</span></div>' +
+        '</div><div class="monto">' + (Number(r.precio) > 0 ? money(r.precio) : '') + '</div></div>';
+    });
+    html += '</div>';
+  }
+
+  html += '<div class="no-imprimir">' +
+    '<button class="btn" onclick="window.print()">📄 Descargar / imprimir</button>' +
+    (negocio.phone
+      ? '<a class="btn secundario" target="_blank" rel="noopener" href="https://wa.me/' +
+        escapar(String(negocio.phone).replace(/\D/g, '')) + '">💬 Escribirle al negocio</a>'
+      : '') +
+    '</div>';
+
+  html += '<div class="pie">Estado de cuenta al ' + fecha(d.generado) + '.<br>' +
+    'Si ves algo que no coincide, escribile al negocio.</div>';
+
+  document.getElementById('contenido').innerHTML = html;
+  document.title = 'Cuenta · ' + (negocio.business_name || 'BRUWAL');
+}
+
+function mostrarError(mensaje) {
+  document.getElementById('contenido').innerHTML =
+    '<div class="aviso"><h2>No pudimos abrir tu cuenta</h2><p>' + escapar(mensaje) + '</p></div>';
+}
+
+(async () => {
+  const token = new URLSearchParams(location.search).get('t');
+  if (!token) return mostrarError('El link está incompleto. Pedile uno nuevo al negocio.');
+
+  try {
+    const r = await fetch('/api/estado-cuenta?t=' + encodeURIComponent(token));
+    const d = await r.json();
+    if (!r.ok) return mostrarError(d.error || 'Probá de nuevo en un momento.');
+    render(d);
+  } catch (e) {
+    mostrarError('Revisá tu conexión y volvé a intentar.');
+  }
+})();
+</script>
+
+</body>
+</html>
