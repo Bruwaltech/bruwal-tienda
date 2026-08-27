@@ -1924,33 +1924,35 @@ tr:last-child td { border-bottom: none; }
             Se guarda junto al servicio para más adelante. Todavía no bloquea varios turnos seguidos en la Agenda — eso es un paso aparte.
           </small>
         </div>
-        <div class="field campo-electronica hidden">
-          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pPendienteRestauracion" style="margin:0;width:auto;cursor:pointer;">
-            🔧 Pendiente de restauración
-          </label>
-          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
-            Se marca sola en los equipos tomados en parte de pago. Destildala cuando ya lo revisaste y quedó listo para vender.
-          </small>
-        </div>
-        <div class="field campo-electronica hidden">
-          <label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
-          <div style="display:flex;gap:8px;">
-            <input type="text" id="pImei" placeholder="Se marca *#06# en el equipo, o escaneá el código de la caja" style="flex:1;">
-            <button type="button" onclick="toggleProductImeiCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 16px;font-size:14px;">📷</button>
+        <div id="camposEquipoUnico">
+          <div class="field campo-electronica hidden">
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+              <input type="checkbox" id="pPendienteRestauracion" style="margin:0;width:auto;cursor:pointer;">
+              🔧 Pendiente de restauración
+            </label>
+            <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
+              Se marca sola en los equipos tomados en parte de pago. Destildala cuando ya lo revisaste y quedó listo para vender.
+            </small>
           </div>
-          <div id="productImeiCameraScanner" class="hidden" style="margin-top:8px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
-            <div id="qr-reader-product-imei" style="width:100%;height:250px;"></div>
-            <button type="button" onclick="stopProductImeiCameraScanner()" class="btn-ghost" style="width:100%;padding:10px;background:#f0f0f0;border:none;cursor:pointer;font-weight:600;font-size:14px;">Cerrar cámara</button>
+          <div class="field campo-electronica hidden">
+            <label>IMEI <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="pImei" placeholder="Se marca *#06# en el equipo, o escaneá el código de la caja" style="flex:1;">
+              <button type="button" onclick="toggleProductImeiCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 16px;font-size:14px;">📷</button>
+            </div>
+            <div id="productImeiCameraScanner" class="hidden" style="margin-top:8px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
+              <div id="qr-reader-product-imei" style="width:100%;height:250px;"></div>
+              <button type="button" onclick="stopProductImeiCameraScanner()" class="btn-ghost" style="width:100%;padding:10px;background:#f0f0f0;border:none;cursor:pointer;font-weight:600;font-size:14px;">Cerrar cámara</button>
+            </div>
+            <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
+              Escanear este número en Ventas encuentra el equipo y arranca la venta, igual que un EAN.
+            </small>
+            <button type="button" id="pVerHistorialImeiBtn" class="btn-ghost" style="width:auto;padding:7px 12px;font-size:12.5px;margin-top:8px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">🕓 Ver historial de este IMEI</button>
           </div>
-          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
-            Escanear este número en Ventas encuentra el equipo y arranca la venta, igual que un EAN.
-          </small>
-          <button type="button" id="pVerHistorialImeiBtn" class="btn-ghost" style="width:auto;padding:7px 12px;font-size:12.5px;margin-top:8px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">🕓 Ver historial de este IMEI</button>
-        </div>
-        <div class="field campo-electronica hidden">
-          <label>Estado del equipo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
-          <input type="text" id="pEstadoEquipo" placeholder="Ej: usado como nuevo, excelente estado">
+          <div class="field campo-electronica hidden">
+            <label>Estado del equipo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+            <input type="text" id="pEstadoEquipo" placeholder="Ej: usado como nuevo, excelente estado">
+          </div>
         </div>
 
         <div class="field">
@@ -4236,22 +4238,50 @@ function renderGrillaVariantes() {
 
   const esElec = rubroEsElectronica();
 
-  // Lo que ya tenía cargado cada combinación no se pierde al tocar otro atributo
-  const previo = {};
-  variantesEnEdicion.forEach(v => previo[claveDeCombinacion(v.atributos)] = v);
+  // Lo que ya tenía cargado cada combinación no se pierde al tocar otro
+  // atributo — pero cuando cambia la CANTIDAD de atributos (se agrega o
+  // saca uno), la clave de cada combinación cambia entera (ej. "13" pasa a
+  // ser "13 / Negro") y un cruce exacto ya no encuentra nada: cargar el
+  // stock de "Modelo" primero y agregar "Color" después borraba TODOS los
+  // IMEI ya cargados, porque ninguna clave vieja coincidía con las nuevas.
+  const anteriores = variantesEnEdicion;
+  const numAtributosNuevo = Object.keys(combos[0]).length;
+  const numAtributosViejo = anteriores.length ? Object.keys(anteriores[0].atributos).length : numAtributosNuevo;
+  const esSubconjunto = (chico, grande) => Object.keys(chico).every(k => grande[k] === chico[k]);
+
+  const previoExacto = {};
+  anteriores.forEach(v => previoExacto[claveDeCombinacion(v.atributos)] = v);
 
   variantesEnEdicion = combos.map(c => {
     const clave = claveDeCombinacion(c);
-    const anterior = previo[clave];
+    let heredados = previoExacto[clave] ? [previoExacto[clave]] : [];
+
+    if (!heredados.length && numAtributosNuevo > numAtributosViejo) {
+      // Se agregó un atributo: cada combinación vieja se estira a la única
+      // combinación nueva que la contiene. Si una vieja podría estirarse a
+      // más de una nueva (ej. ya había dos colores cargados de golpe), es
+      // ambiguo a cuál le tocan esos equipos — mejor arrancar vacía que
+      // adivinar mal o duplicar el mismo IMEI en dos combinaciones.
+      heredados = anteriores.filter(v =>
+        esSubconjunto(v.atributos, c) &&
+        combos.filter(c2 => esSubconjunto(v.atributos, c2)).length === 1
+      );
+    } else if (numAtributosNuevo < numAtributosViejo) {
+      // Se sacó un atributo: todas las combinaciones viejas que colapsan en
+      // esta se juntan (ej. "13/Negro" y "13/Blanco" pasan a ser un solo
+      // "13" si se saca Color) — sus equipos se suman, no se pierden.
+      heredados = anteriores.filter(v => esSubconjunto(c, v.atributos));
+    }
+
     // precio: si queda vacío, la variante usa el precio general del
     // producto — solo hace falta cargarlo en las combinaciones que de
     // verdad valen distinto (ej. "128GB" vs "256GB", o un modelo vs otro).
-    const precio = anterior?.precio != null ? anterior.precio : null;
+    const precio = heredados.find(v => v.precio != null)?.precio ?? null;
     if (esElec) {
-      const imeis = Array.isArray(anterior?.imeis) ? anterior.imeis.map(normalizarUnidadImei) : [];
+      const imeis = heredados.flatMap(v => Array.isArray(v.imeis) ? v.imeis.map(normalizarUnidadImei) : []);
       return { atributos: c, stock: imeis.length, imeis, precio };
     }
-    return { atributos: c, stock: Number(anterior?.stock ?? 0), precio };
+    return { atributos: c, stock: heredados.reduce((s, v) => s + Number(v.stock || 0), 0), precio };
   });
 
   if (!esElec) {
@@ -4515,6 +4545,11 @@ function cargarVariantesEnFormulario(p) {
   byId('pTieneVariantes').checked = tiene;
   byId('campoVariantes').classList.toggle('hidden', !tiene);
   byId('campoStock').classList.toggle('hidden', tiene || byId('pTipoServicio')?.checked);
+  // Con variantes, el IMEI/estado se cargan por unidad adentro de cada
+  // combinación — este campo suelto (pensado para un equipo único sin
+  // variantes) queda redundante y confundía: parecía que solo se podía
+  // cargar UN IMEI para todo el producto.
+  if (byId('camposEquipoUnico')) byId('camposEquipoUnico').classList.toggle('hidden', tiene);
 
   variAtributosEnEdicion = Array.isArray(p?.variante_campos)
     ? p.variante_campos.map(a => ({ nombre: a.nombre, valores: [...(a.valores || [])] }))
@@ -4534,6 +4569,7 @@ byId('pTieneVariantes').addEventListener('change', (e) => {
   const tiene = e.target.checked;
   byId('campoVariantes').classList.toggle('hidden', !tiene);
   byId('campoStock').classList.toggle('hidden', tiene || byId('pTipoServicio')?.checked);
+  if (byId('camposEquipoUnico')) byId('camposEquipoUnico').classList.toggle('hidden', tiene);
 
   if (tiene && !variAtributosEnEdicion.length) {
     // Arranca con un atributo vacío para no mostrar la grilla en blanco sin guía
