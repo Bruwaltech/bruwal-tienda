@@ -1014,6 +1014,8 @@ function abrirFicha(id) {
   const disponible = !esProductoFisico(p) || p.stock > 0;
   let cantidad = 1;   // cuántas de ESTA combinación se agregan
   const seleccion = {};   // {Talle:'M', Color:'Azul'} — se completa a medida que elige
+  let unidadElegida = null;   // valor puntual (ej. "Negro") cuando la combinación tiene varios equipos que difieren
+  const campoUnidad = productoEsIphone(p.name) ? 'color' : 'ram';   // mismo criterio que el panel (ver productoEsIphone)
 
   // Con qué stock cuenta la combinación elegida. null = todavía no eligió
   // todo, o esa combinación no existe.
@@ -1023,10 +1025,25 @@ function abrirFicha(id) {
     return variantes.find(x => campos.map(c => c.nombre).sort().map(n => n + ':' + x.atributos[n]).join('~') === clave) || null;
   };
 
+  // Valores distintos (ej. "Negro"/"Blanco") entre los equipos disponibles
+  // de la combinación elegida — si hay más de uno, el cliente tiene que
+  // elegir cuál de esos puntualmente, no alcanza con el modelo.
+  const opcionesDeUnidad = (v) => {
+    if (!v || !Array.isArray(v.imeis) || !v.imeis.length) return [];
+    const unidades = v.imeis.map(normalizarUnidadImeiFicha).filter(u => u.listo !== false);
+    return [...new Set(unidades.map(u => u[campoUnidad]).filter(Boolean))];
+  };
+
   const stockDeSeleccion = () => {
     if (!campos.length) return null;
     const v = variantePorSeleccion();
-    return v ? Number(v.stock || 0) : (Object.keys(seleccion).length < campos.length ? null : 0);
+    if (!v) return Object.keys(seleccion).length < campos.length ? null : 0;
+    const opciones = opcionesDeUnidad(v);
+    if (opciones.length > 1) {
+      if (!unidadElegida) return null;
+      return v.imeis.map(normalizarUnidadImeiFicha).filter(u => u.listo !== false && u[campoUnidad] === unidadElegida).length;
+    }
+    return Number(v.stock || 0);
   };
 
   // Un valor se ve atenuado si en NINGUNA combinación con ese valor queda
@@ -1078,8 +1095,12 @@ function abrirFicha(id) {
       '</div>'
     ).join('') +
 
-    // Se completa recién al elegir toda la combinación (refrescarPrecio la
-    // arma) — antes de eso no hay un equipo puntual del que mostrar datos.
+    // Si la combinación elegida tiene varios equipos que difieren en color
+    // (o RAM, según la marca), hay que elegir CUÁL de esos puntualmente —
+    // no alcanza con "iPhone 13", hay uno negro y uno blanco. Se completa
+    // recién al elegir la combinación (refrescarPrecio arma las dos cosas)
+    // — antes de eso no hay equipos entre los que elegir todavía.
+    '<div id="fichaUnidadPicker"></div>' +
     '<div id="fichaSpecsVariante"></div>' +
 
     (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
@@ -1157,15 +1178,42 @@ function abrirFicha(id) {
     const q = byId('fichaQty');
     if (q) q.textContent = cantidad;
 
+    // Si la combinación tiene varios equipos que difieren en color/RAM
+    // (ej. dos iPhone 13, uno negro y uno blanco), hay que elegir cuál
+    // puntualmente — no alcanza con el modelo.
+    const opcionesUnidad = opcionesDeUnidad(vSel);
+    const unidadPickerEl = byId('fichaUnidadPicker');
+    if (unidadPickerEl) {
+      unidadPickerEl.innerHTML = opcionesUnidad.length > 1
+        ? '<div style="margin-bottom:14px;">' +
+            '<label style="display:block;font-size:13px;font-weight:600;color:var(--text-dark);margin-bottom:7px;">' +
+              (campoUnidad === 'color' ? 'Color' : 'RAM') + '</label>' +
+            '<div class="opciones">' + opcionesUnidad.map(v =>
+              '<button type="button" class="opcion' + (v === unidadElegida ? ' activa' : '') + '" data-var-unidad="' + escapeHtml(v) + '">' + escapeHtml(v) + '</button>'
+            ).join('') + '</div>' +
+          '</div>'
+        : '';
+      unidadPickerEl.querySelectorAll('[data-var-unidad]').forEach(b => {
+        b.addEventListener('click', () => {
+          unidadElegida = b.dataset.varUnidad;
+          refrescarPrecio();
+        });
+      });
+    }
+
     // Al elegir la combinación completa (ej. "iPhone 13"), electrónica
     // guarda almacenamiento/RAM/batería/estado por EQUIPO, no por
-    // combinación — se muestra el del que en la práctica le va a tocar (el
-    // más viejo cargado, mismo criterio que usa la venta en el panel), así
-    // lo que ve acá es lo que de verdad le va a llegar.
+    // combinación — se muestra el del equipo elegido (o, si no hace falta
+    // elegir entre varios, el más viejo cargado — mismo criterio FIFO que
+    // usa la venta en el panel), así lo que ve acá es lo que de verdad le
+    // va a llegar.
     const specsVarEl = byId('fichaSpecsVariante');
     if (specsVarEl) {
       const unidades = (vSel && Array.isArray(vSel.imeis)) ? vSel.imeis.map(normalizarUnidadImeiFicha) : [];
-      const unidad = unidades.find(u => u.listo !== false) || unidades[0];
+      const disponibles = unidades.filter(u => u.listo !== false);
+      const unidad = opcionesUnidad.length > 1
+        ? (unidadElegida ? disponibles.find(u => u[campoUnidad] === unidadElegida) : null)
+        : (disponibles[0] || unidades[0]);
       const esIphoneFicha = productoEsIphone(p.name);
       const datos = unidad ? [
         unidad.gb && ['Almacenamiento', unidad.gb],
@@ -1184,7 +1232,11 @@ function abrirFicha(id) {
 
     const stock = stockDeSeleccion();
     const aviso = byId('fichaDisponibilidad');
-    if (stock === null) {
+    if (vSel && opcionesUnidad.length > 1 && !unidadElegida) {
+      aviso.textContent = 'Elegí ' + (campoUnidad === 'color' ? 'color' : 'RAM') + ' para ver el stock';
+      aviso.style.color = 'var(--text-mute)';
+      btnAgregar.disabled = true;
+    } else if (stock === null) {
       aviso.textContent = 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock';
       aviso.style.color = 'var(--text-mute)';
       btnAgregar.disabled = true;
@@ -1208,6 +1260,7 @@ function abrirFicha(id) {
       b.addEventListener('click', () => {
         elegirOpcion(grupo, b);
         seleccion[b.dataset.varAttr] = b.dataset.varValor;
+        unidadElegida = null;   // cambió el modelo: el color/RAM elegido para el anterior ya no aplica
         refrescarPrecio();
       });
     });
@@ -1237,7 +1290,14 @@ function abrirFicha(id) {
 
   btnAgregar?.addEventListener('click', () => {
     if (campos.length && (Object.keys(seleccion).length < campos.length || stockDeSeleccion() <= 0)) return;
-    const pudoSumarTodo = sumarAlCarrito(p.id, elegidas(), cantidad, campos.length ? { ...seleccion } : null);
+    // El color/RAM puntual elegido (cuando la combinación tenía más de
+    // uno) va aparte, con claves reservadas: así una línea de "iPhone 13
+    // negro" y otra de "iPhone 13 blanco" no se pisan en el carrito, sin
+    // tocar cómo se busca el stock/precio de la combinación real.
+    const varianteParaCarrito = campos.length
+      ? (unidadElegida ? { ...seleccion, _campoUnidad: campoUnidad, _valorUnidad: unidadElegida } : { ...seleccion })
+      : null;
+    const pudoSumarTodo = sumarAlCarrito(p.id, elegidas(), cantidad, varianteParaCarrito);
     if (!pudoSumarTodo) mostrarAviso('Por ahora contamos con este stock — no podés agregar más.');
     renderProducts();
     renderCartBar();
@@ -1281,6 +1341,17 @@ function filterByCategory(category){
 const claveVariante = (variante) =>
   variante ? Object.keys(variante).sort().map(k => k + ':' + variante[k]).join('~') : '';
 
+// `variante` puede traer, además de los atributos reales (Talle/Modelo...),
+// el color/RAM puntual elegido dentro de la combinación (claves `_campoUnidad`/
+// `_valorUnidad`, ver abrirFicha) — eso NO es un atributo de `p.variantes`,
+// así que hay que sacarlo antes de buscar la combinación real.
+const atributosRealesDe = (variante) => {
+  if (!variante) return null;
+  const limpio = {};
+  Object.keys(variante).forEach(k => { if (!k.startsWith('_')) limpio[k] = variante[k]; });
+  return limpio;
+};
+
 const claveLinea = (productoId, opciones, variante) =>
   productoId + '|' + (opciones || []).map(o => o.nombre).sort().join('~') + '|' + claveVariante(variante);
 
@@ -1292,7 +1363,7 @@ const precioUnitario = (linea) => {
   if (!p) return extras;
   let base = Number(p.price || 0);
   if (p.tiene_variantes && linea.variante && Array.isArray(p.variantes)) {
-    const clave = claveVariante(linea.variante);
+    const clave = claveVariante(atributosRealesDe(linea.variante));
     const v = p.variantes.find(x => claveVariante(x.atributos) === clave);
     base = precioDeVariante(p, v);
   }
@@ -1316,9 +1387,17 @@ function stockDisponibleParaLinea(productoId, variante){
   if (!esProductoFisico(p)) return Infinity;
 
   if (p.tiene_variantes && variante && Array.isArray(p.variantes)) {
-    const clave = claveVariante(variante);
+    const clave = claveVariante(atributosRealesDe(variante));
     const v = p.variantes.find(x => claveVariante(x.atributos) === clave);
-    return v ? Number(v.stock || 0) : 0;
+    if (!v) return 0;
+    // Si la línea es de un color/RAM puntual (combinación con varios
+    // equipos distintos), el tope es cuántos de ESE puntual quedan, no el
+    // total de la combinación.
+    if (variante._valorUnidad && Array.isArray(v.imeis)) {
+      return v.imeis.map(normalizarUnidadImeiFicha)
+        .filter(u => u.listo !== false && u[variante._campoUnidad] === variante._valorUnidad).length;
+    }
+    return Number(v.stock || 0);
   }
   return Number(p.stock || 0);
 }
@@ -1635,9 +1714,16 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       total += subtotal;
 
       // El talle/color va pegado al nombre: "Remera (Talle: M, Color: Azul)"
-      const variante = l.variante
-        ? ' (' + Object.entries(l.variante).map(([k,v]) => k + ': ' + v).join(', ') + ')'
-        : '';
+      // — el color/RAM puntual (claves _campoUnidad/_valorUnidad, ver
+      // abrirFicha) no es un atributo real, se muestra aparte con su
+      // nombre limpio ("Color: Negro") en vez de la clave interna.
+      const partesVariante = l.variante
+        ? [
+            ...Object.entries(atributosRealesDe(l.variante) || {}).map(([k,v]) => k + ': ' + v),
+            l.variante._valorUnidad ? (l.variante._campoUnidad === 'color' ? 'Color' : 'RAM') + ': ' + l.variante._valorUnidad : null
+          ].filter(Boolean)
+        : [];
+      const variante = partesVariante.length ? ' (' + partesVariante.join(', ') + ')' : '';
       listaProductos += '• ' + p.name + variante + ' x' + l.qty + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
 
       // Los agregados van indentados debajo del producto, para que el
