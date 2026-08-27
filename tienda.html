@@ -894,9 +894,13 @@ function htmlTarjetaProducto(p){
     const controls = ocultaPrecio
       ? '<a class="btn-elegir" target="_blank" rel="noopener" href="https://wa.me/' + numeroWhatsApp(store.phone) +
           '?text=' + encodeURIComponent('Hola! Te consulto por "' + p.name + '" de tu tienda online.') + '">Consultar</a>'
-      : (tieneOpciones || tieneVariantes)
+      // Lo fraccionado también manda a la ficha: sumar manguera de a un
+      // metro con el + no tiene sentido, el cliente quiere escribir "12,5".
+      : (tieneOpciones || tieneVariantes || seVendePorMedida(p))
       ? '<button class="btn-elegir" data-elegir="' + p.id + '">' +
-          (qty ? 'Agregar otra (' + qty + ')' : (tieneVariantes ? 'Elegir ' + nombresVariante : 'Elegir')) + '</button>'
+          (qty ? 'Agregar otra (' + qty + ')'
+               : (tieneVariantes ? 'Elegir ' + nombresVariante
+                                 : (seVendePorMedida(p) ? 'Elegir cantidad' : 'Elegir'))) + '</button>'
       : '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
 
     return '<div class="product-card" data-id="' + p.id + '">' +
@@ -910,10 +914,10 @@ function htmlTarjetaProducto(p){
         : (() => {
             const rango = tieneVariantes ? rangoPrecioVariantes(p) : { min: Number(p.price || 0), max: Number(p.price || 0) };
             return rango.min !== rango.max
-              ? '<div class="product-price">Desde ' + money(rango.min) + '</div>'
-              : '<div class="product-price">' + money(rango.min) + '</div>' + precioOriginal(p);
+              ? '<div class="product-price">Desde ' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>'
+              : '<div class="product-price">' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>' + precioOriginal(p);
           })()) +
-      '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes ? 'Elegí ' + nombresVariante + ' para ver el stock' : p.stock + ' disponibles') : 'Sin stock')) + '</div>' +
+      '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes ? 'Elegí ' + nombresVariante + ' para ver el stock' : formatearCantidad(p.stock, p) + ' disponibles') : 'Sin stock')) + '</div>' +
       '<div class="product-controls">' + (ocultaPrecio ? controls : ((servicio || p.stock > 0) ? controls : '')) + '</div>' +
       '</div>' +
       '</div>';
@@ -981,6 +985,35 @@ function numeroWhatsApp(tel) {
 // Los productos cargados antes de esta distincion no tienen 'tipo':
 // se consideran fisicos, que es lo que eran.
 const esProductoFisico = (p) => (p?.tipo || 'producto') !== 'servicio';
+
+// ---- Venta fraccionada (por metro / por kilo) ----
+// Espejo de lo que define el panel (ver dashboard/index.html): un producto
+// con `unidad_medida` se vende por medida y no por unidad — el cliente se
+// lleva 12,5 metros de manguera, no "12 unidades". null = por unidad, que
+// es como funciona todo el resto del catálogo.
+const UNIDADES_MEDIDA = {
+  metro: { singular: 'metro', plural: 'metros', corto: 'm',  paso: 0.5 },
+  kilo:  { singular: 'kilo',  plural: 'kilos',  corto: 'kg', paso: 0.25 }
+};
+
+const seVendePorMedida = (p) => !!(p && p.unidad_medida && UNIDADES_MEDIDA[p.unidad_medida]);
+const unidadDe = (p) => UNIDADES_MEDIDA[p?.unidad_medida] || null;
+const redondearMedida = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+
+function formatearCantidad(valor, producto) {
+  const n = redondearMedida(valor);
+  const u = unidadDe(producto);
+  const texto = n.toLocaleString('es-AR', { maximumFractionDigits: 3 });
+  if (u) return texto + ' ' + u.corto;
+  return texto + ' ' + (n === 1 ? 'unidad' : 'unidades');
+}
+
+// "$1.200 / m" — el precio de un fraccionado siempre se lee por unidad de
+// medida, si no el cliente cree que ese es el precio del rollo entero.
+function sufijoPrecioPorMedida(p) {
+  const u = unidadDe(p);
+  return u ? ' <span style="font-size:.78em;font-weight:600;opacity:.75;">/ ' + u.corto + '</span>' : '';
+}
 
 // ---- Ficha del producto ----
 function fotosDe(p) {
@@ -1076,7 +1109,7 @@ function abrirFicha(id) {
     '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
       (campos.length
         ? 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock'
-        : (esProductoFisico(p) ? (p.stock > 0 ? p.stock + ' disponibles' : 'Sin stock') : 'Servicio')) +
+        : (esProductoFisico(p) ? (p.stock > 0 ? formatearCantidad(p.stock, p) + ' disponibles' : 'Sin stock') : 'Servicio')) +
     '</div>' +
 
     // Talle, color, modelo, etc. va PRIMERO: el cliente elige qué unidad
@@ -1133,11 +1166,30 @@ function abrirFicha(id) {
           numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent('Hola! Te consulto por "' + p.name + '" de tu tienda online.') +
           '">Consultar por WhatsApp</a>'
       : disponible
-      ? '<div class="qty-controls" style="justify-content:center;margin:16px 0 14px;">' +
-          '<button id="fichaMenos">−</button>' +
-          '<span class="qty-badge" id="fichaQty">1</span>' +
-          '<button id="fichaMas">+</button>' +
-        '</div>' +
+      ? (seVendePorMedida(p)
+          // Por medida se escribe la cantidad: con el +/− habría que tocar 25
+          // veces para llevarse 12,5 metros. Los botones quedan al lado como
+          // ajuste fino, de a medio metro / cuarto de kilo.
+          ? '<div style="margin:16px 0 14px;">' +
+              '<label style="display:block;font-size:13px;font-weight:600;color:var(--text-dark);margin-bottom:7px;">' +
+                '¿Cuántos ' + unidadDe(p).plural + ' querés?</label>' +
+              '<div style="display:flex;gap:8px;align-items:center;">' +
+                '<button type="button" id="fichaMenos" class="opcion" style="width:44px;flex-shrink:0;">−</button>' +
+                '<div style="flex:1;position:relative;">' +
+                  '<input type="number" id="fichaCantidadInput" min="0" step="any" value="1" ' +
+                    'style="width:100%;padding:12px 42px 12px 12px;border:1px solid var(--line);border-radius:8px;' +
+                    'font-family:inherit;font-size:16px;font-weight:600;box-sizing:border-box;">' +
+                  '<span style="position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--text-mute);font-size:14px;font-weight:600;">' +
+                    unidadDe(p).corto + '</span>' +
+                '</div>' +
+                '<button type="button" id="fichaMas" class="opcion" style="width:44px;flex-shrink:0;">+</button>' +
+              '</div>' +
+            '</div>'
+          : '<div class="qty-controls" style="justify-content:center;margin:16px 0 14px;">' +
+              '<button id="fichaMenos">−</button>' +
+              '<span class="qty-badge" id="fichaQty">1</span>' +
+              '<button id="fichaMas">+</button>' +
+            '</div>') +
         '<button class="btn-primary" id="fichaAgregar" style="width:100%;">' +
           'Agregar al carrito · <span id="fichaTotal">' + money(rangoPrecioVariantes(p).min) + '</span></button>'
       : '<div style="text-align:center;color:var(--danger);font-weight:600;">Sin stock por ahora</div>');
@@ -1171,7 +1223,10 @@ function abrirFicha(id) {
       : Number(p.price || 0);
 
     const precioEl = byId('fichaPrecio');
-    if (precioEl && p.mostrar_precio !== false) precioEl.textContent = money(unitario);
+    if (precioEl && p.mostrar_precio !== false) {
+      // innerHTML y no textContent: el "/ m" va en un <span> más chico.
+      precioEl.innerHTML = money(unitario) + sufijoPrecioPorMedida(p);
+    }
 
     const t = byId('fichaTotal');
     if (t) t.textContent = money((unitario + extras) * cantidad);
@@ -1231,6 +1286,27 @@ function abrirFicha(id) {
         : '';
     }
 
+    // Sin variantes pero por medida: el tope es el stock del producto y hay
+    // que bloquear el botón si escribió 0 o más de lo que hay. (Con
+    // variantes, eso lo resuelve el bloque de abajo.)
+    if (!campos.length && btnAgregar && seVendePorMedida(p)) {
+      const disponible = Number(p.stock || 0);
+      const avisoSimple = byId('fichaDisponibilidad');
+      if (cantidad <= 0) {
+        avisoSimple.textContent = 'Escribí cuántos ' + unidadDe(p).plural + ' querés';
+        avisoSimple.style.color = 'var(--text-mute)';
+        btnAgregar.disabled = true;
+      } else if (cantidad > disponible) {
+        avisoSimple.textContent = 'Solo quedan ' + formatearCantidad(disponible, p);
+        avisoSimple.style.color = 'var(--danger)';
+        btnAgregar.disabled = true;
+      } else {
+        avisoSimple.textContent = formatearCantidad(disponible, p) + ' disponibles';
+        avisoSimple.style.color = 'var(--text-mute)';
+        btnAgregar.disabled = false;
+      }
+    }
+
     if (!campos.length || !btnAgregar) return;
 
     const stock = stockDeSeleccion();
@@ -1279,15 +1355,46 @@ function abrirFicha(id) {
     return esProductoFisico(p) ? Number(p.stock || 0) : Infinity;
   };
 
+  // Por medida el +/− avanza de a medio metro / cuarto de kilo, y el mínimo
+  // no es 1 sino ese mismo paso (medio metro de cable es una compra real).
+  const pasoFicha = seVendePorMedida(p) ? unidadDe(p).paso : 1;
+  const inputCantidad = ficha.querySelector('#fichaCantidadInput');
+
+  const sincronizarInput = () => {
+    if (inputCantidad) inputCantidad.value = redondearMedida(cantidad);
+  };
+
   ficha.querySelector('#fichaMas')?.addEventListener('click', () => {
     if (cantidad >= stockMaximoDeFicha()) {
       mostrarAviso('Por ahora contamos con este stock — no podés agregar más.');
       return;
     }
-    cantidad++; refrescarPrecio();
+    cantidad = redondearMedida(cantidad + pasoFicha);
+    sincronizarInput();
+    refrescarPrecio();
   });
   ficha.querySelector('#fichaMenos')?.addEventListener('click', () => {
-    if (cantidad > 1) cantidad--;
+    if (cantidad > pasoFicha) cantidad = redondearMedida(cantidad - pasoFicha);
+    sincronizarInput();
+    refrescarPrecio();
+  });
+
+  // Escribir la cantidad a mano. El tope se avisa pero no se corrige al
+  // vuelo: pisarle el número mientras tipea es peor que dejarlo terminar y
+  // avisarle (el botón de agregar queda igual bloqueado por el tope).
+  inputCantidad?.addEventListener('input', () => {
+    const escrito = Number(String(inputCantidad.value).replace(',', '.'));
+    cantidad = Number.isFinite(escrito) && escrito > 0 ? redondearMedida(escrito) : 0;
+    refrescarPrecio();
+  });
+  inputCantidad?.addEventListener('blur', () => {
+    const tope = stockMaximoDeFicha();
+    if (cantidad > tope) {
+      cantidad = redondearMedida(tope);
+      mostrarAviso('Por ahora contamos con este stock — no podés agregar más.');
+    }
+    if (cantidad <= 0) cantidad = pasoFicha;
+    sincronizarInput();
     refrescarPrecio();
   });
 
@@ -1373,7 +1480,12 @@ const precioUnitario = (linea) => {
   return base + extras;
 };
 
-const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => s + l.qty, 0);
+// El contador de la barra cuenta COSAS, no medidas: 12,5 metros de manguera
+// es un ítem en el carrito, no "12,5 productos".
+const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => {
+  const p = productoDe(l);
+  return s + (seVendePorMedida(p) ? 1 : l.qty);
+}, 0);
 const totalDelCarrito   = () => Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0);
 
 // Si hay al menos un producto físico en el carrito, hace falta preguntar
@@ -1421,11 +1533,13 @@ function sumarAlCarrito(productoId, opciones, cantidad, variante){
   if (!cart[k]) cart[k] = { productId: productoId, qty: 0, opciones: opciones || [], variante: variante || null };
 
   const pedida = cantidad === undefined ? 1 : cantidad;
-  const nuevaQty = cart[k].qty + pedida;
+  // redondearMedida: sumar 12,5 + 0,5 en punto flotante puede dar
+  // 13.000000000000002 y ese número terminaría en el pedido.
+  const nuevaQty = redondearMedida(cart[k].qty + pedida);
   const tope = stockDisponibleParaLinea(productoId, variante);
   const alcanzoElTope = pedida > 0 && nuevaQty > tope;
 
-  cart[k].qty = alcanzoElTope ? Math.max(0, tope) : nuevaQty;
+  cart[k].qty = alcanzoElTope ? Math.max(0, redondearMedida(tope)) : nuevaQty;
   if (cart[k].qty <= 0) delete cart[k];
   return !alcanzoElTope;
 }
@@ -1744,7 +1858,12 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
           ].filter(Boolean)
         : [];
       const variante = partesVariante.length ? ' (' + partesVariante.join(', ') + ')' : '';
-      listaProductos += '• ' + p.name + variante + ' x' + l.qty + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
+      // "x 12,5 m" en vez de "x12": el vendedor tiene que saber que son
+      // metros y no unidades para preparar el pedido.
+      const cantidadTexto = seVendePorMedida(p)
+        ? ' x ' + formatearCantidad(l.qty, p)
+        : ' x' + l.qty;
+      listaProductos += '• ' + p.name + variante + cantidadTexto + ' = $' + subtotal.toLocaleString('es-AR') + '\n';
 
       // Los agregados van indentados debajo del producto, para que el
       // cocinero lea de un vistazo qué lleva cada uno.

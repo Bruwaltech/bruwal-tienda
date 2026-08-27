@@ -1502,8 +1502,8 @@ tr:last-child td { border-bottom: none; }
               <div style="font-weight:700;color:var(--navy);margin-bottom:4px;" id="barcodeProductName"></div>
               <div style="font-size:14px;color:var(--text-mute);margin-bottom:12px;">Precio unitario: <span id="barcodeProductPrice" style="font-weight:700;color:var(--celeste);"></span></div>
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-                <label style="font-size:14px;color:var(--text-mute);">Cantidad:</label>
-                <input type="number" id="barcodeQty" value="1" min="1" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;" oninput="calculateTotal()">
+                <label style="font-size:14px;color:var(--text-mute);" id="barcodeQtyLabel">Cantidad:</label>
+                <input type="number" id="barcodeQty" value="1" min="0" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;" oninput="calculateTotal()">
                 <label style="font-size:14px;color:var(--text-mute);margin-left:10px;">Cliente:</label>
                 <input type="text" id="barcodeCliente" list="listaClientes" placeholder="opcional"
                        autocomplete="off"
@@ -1971,7 +1971,45 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="wizard-step hidden" data-step="4">
-        <div class="field" id="campoStock"><label>Stock</label><input type="number" id="pStock" min="0" value="0"></div>
+
+        <div class="field hidden" id="campoVentaPorMedidaToggle">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="pVentaPorMedida" style="margin:0;width:auto;cursor:pointer;">
+            📏 Se vende por medida, no por unidad
+          </label>
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Para manguera, cable, cadena, tela, balanceado, fiambre... El cliente se lleva 12,5 metros, no "12 unidades".
+          </small>
+          <div id="campoUnidadMedida" class="hidden" style="margin-top:10px;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;" id="pUnidadMedidaChips"></div>
+          </div>
+        </div>
+
+        <div class="field" id="campoStock">
+          <label id="pStockLabel">Stock</label>
+
+          <!-- Calculadora de entrada: el negocio no compra "50 metros", compra
+               "un rollo de 50 metros". Con dos rollos son 100, y esa cuenta la
+               hace acá en vez de a mano. Es solo un atajo para llenar el campo
+               de abajo: lo que se guarda siempre es el total. -->
+          <div id="calculadoraMedida" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-bottom:9px;">
+            <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;">
+              <div style="width:78px;">
+                <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;">Bultos</label>
+                <input type="number" id="pMedidaBultos" min="1" step="1" value="1" style="width:100%;padding:7px;font-size:13px;">
+              </div>
+              <div style="font-size:15px;color:var(--text-mute);padding-bottom:9px;">×</div>
+              <div style="flex:1;min-width:96px;">
+                <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;" id="pMedidaPorBultoLabel">Medida c/u</label>
+                <input type="number" id="pMedidaPorBulto" min="0" step="0.001" placeholder="Ej: 50" style="width:100%;padding:7px;font-size:13px;">
+              </div>
+              <button type="button" id="pMedidaCalcularBtn" class="btn" style="width:auto;padding:8px 12px;font-size:12.5px;">= Total</button>
+            </div>
+          </div>
+
+          <input type="number" id="pStock" min="0" value="0">
+          <small id="pStockAyuda" class="hidden" style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;"></small>
+        </div>
 
         <div class="field hidden" id="campoVariantesToggle">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
@@ -3730,6 +3768,54 @@ byId('guardarCategoriasBtn').addEventListener('click', async () => {
 // consideran físicos, que es lo que eran.
 const esProductoFisico = (p) => (p?.tipo || 'producto') !== 'servicio';
 
+// ---- Venta fraccionada (por metro / por kilo) ----
+// Para ferretería (manguera, cable, cadena), forrajería (balanceado a
+// granel), fiambrería y telas: el stock no son unidades enteras sino una
+// medida continua. `unidad_medida` null = se vende por unidad, que es como
+// funcionó siempre y sigue siendo el default de todo producto.
+//
+// `paso` es de cuánto avanza el +/- en la tienda: nadie compra manguera de
+// a 1 cm, pero medio metro sí es una compra normal.
+const UNIDADES_MEDIDA = {
+  metro: { singular: 'metro', plural: 'metros', corto: 'm',  paso: 0.5,  ejemplo: 'Ej: 50' },
+  kilo:  { singular: 'kilo',  plural: 'kilos',  corto: 'kg', paso: 0.25, ejemplo: 'Ej: 25' }
+};
+
+const seVendePorMedida = (p) => !!(p && p.unidad_medida && UNIDADES_MEDIDA[p.unidad_medida]);
+const unidadDe = (p) => UNIDADES_MEDIDA[p?.unidad_medida] || null;
+
+// Los decimales se guardan redondeados a 3: restar 12,3 de 50 repetidas
+// veces en punto flotante deja restos tipo 37.699999999999996, y ese número
+// terminaría escrito en la base y mostrado en pantalla.
+const redondearMedida = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+
+// Cómo se escribe una cantidad en pantalla: "12,5 m" para lo fraccionado,
+// "3 unidades" para todo lo demás (que es el 99% del catálogo).
+function formatearCantidad(valor, producto) {
+  const n = redondearMedida(valor);
+  const u = unidadDe(producto);
+  const texto = n.toLocaleString('es-AR', { maximumFractionDigits: 3 });
+  if (u) return texto + ' ' + u.corto;
+  return texto + ' ' + (n === 1 ? 'unidad' : 'unidades');
+}
+
+// El precio de un producto fraccionado se carga y se muestra POR unidad de
+// medida ("$1.200 el metro"), que es como lo cotiza el negocio.
+function sufijoPrecioPorMedida(p) {
+  const u = unidadDe(p);
+  return u ? ' / ' + u.corto : '';
+}
+
+// Dónde tiene sentido ofrecer la venta por medida. Un teléfono no se vende
+// por metro y una remera tampoco, así que en esos rubros el campo solo sería
+// ruido en un formulario que ya es largo. En el resto (ferretería,
+// forrajería, fiambrería, dietética, o una tienda sin rubro definido) se
+// ofrece siempre, porque casi cualquiera puede sumar un producto a granel.
+function rubroPuedeVenderPorMedida() {
+  const cat = categoriaDeRubro();
+  return cat !== 'electronica' && cat !== 'indumentaria';
+}
+
 // El nombre del producto en un ítem de pedido. La tienda pública guardaba
 // esto como 'label'; el panel siempre leyó 'name'. Un pedido hecho desde
 // la tienda aparecía como "undefined". Con este respaldo, los pedidos ya
@@ -3750,6 +3836,8 @@ function alCambiarTipoProducto() {
   // reemplazan al stock simple por otra cosa.
   byId('campoStock').classList.toggle('hidden', esServicio || byId('pTieneVariantes')?.checked);
   byId('campoDuracionServicio').classList.toggle('hidden', !esServicio);
+  // Un servicio no se mide en metros ni en kilos.
+  if (typeof aplicarVentaPorMedidaVisibilidad === 'function') aplicarVentaPorMedidaVisibilidad();
 }
 byId('pTipoProducto').addEventListener('change', alCambiarTipoProducto);
 byId('pTipoServicio').addEventListener('change', alCambiarTipoProducto);
@@ -5262,9 +5350,97 @@ async function refreshData() {
 
 // Reparaciones y "toma equipo usado" solo sirven para tiendas de
 // electrónica/celulares — para el resto son ruido que no van a usar nunca.
+// ---- Venta por medida: estado del formulario de producto ----
+// Qué unidad quedó elegida mientras se carga/edita. null = por unidad.
+let unidadMedidaEnEdicion = null;
+
+function renderUnidadMedidaChips() {
+  const cont = byId('pUnidadMedidaChips');
+  if (!cont) return;
+  cont.innerHTML = Object.entries(UNIDADES_MEDIDA).map(([clave, u]) =>
+    '<button type="button" class="chip-sug" data-unidad="' + clave + '" style="' +
+      (unidadMedidaEnEdicion === clave ? 'background:#EAF4FD;border-color:var(--celeste);font-weight:700;' : '') +
+    '">' + (clave === 'metro' ? '📏' : '⚖️') + ' Por ' + u.singular + '</button>'
+  ).join('');
+
+  cont.querySelectorAll('[data-unidad]').forEach(b => {
+    b.addEventListener('click', () => {
+      unidadMedidaEnEdicion = b.dataset.unidad;
+      renderUnidadMedidaChips();
+      aplicarVentaPorMedida();
+    });
+  });
+}
+
+// Adapta el paso 4 del formulario a lo que se eligió: etiquetas con la
+// unidad ("Stock en metros"), decimales habilitados en el campo de stock, y
+// la calculadora de bultos visible. Sin unidad elegida queda todo como
+// siempre, con stock entero.
+function aplicarVentaPorMedida() {
+  const activo = byId('pVentaPorMedida')?.checked;
+  const u = activo ? UNIDADES_MEDIDA[unidadMedidaEnEdicion] : null;
+
+  if (byId('campoUnidadMedida')) byId('campoUnidadMedida').classList.toggle('hidden', !activo);
+  if (byId('calculadoraMedida')) byId('calculadoraMedida').classList.toggle('hidden', !u);
+
+  const stockInput = byId('pStock');
+  if (stockInput) {
+    // step="any" es lo que habilita los decimales en el input nativo: con el
+    // step entero por defecto, el navegador rechaza 12,5 al validar el form.
+    stockInput.step = u ? 'any' : '1';
+    stockInput.placeholder = u ? u.ejemplo : '';
+  }
+
+  const label = byId('pStockLabel');
+  if (label) label.textContent = u ? 'Stock en ' + u.plural : 'Stock';
+
+  const porBulto = byId('pMedidaPorBultoLabel');
+  if (porBulto && u) porBulto.textContent = u.plural + ' por bulto';
+
+  // El precio pasa a leerse "por metro" — es el cambio que más confunde si
+  // no se dice en pantalla, porque el campo Precio no se mueve de lugar.
+  const ayuda = byId('pStockAyuda');
+  if (ayuda) {
+    ayuda.classList.toggle('hidden', !u);
+    if (u) ayuda.textContent = 'Ojo: el Precio que cargaste arriba se cobra por ' + u.singular + '.';
+  }
+}
+
+function aplicarVentaPorMedidaVisibilidad(productoEnEdicion) {
+  const cont = byId('campoVentaPorMedidaToggle');
+  if (!cont) return;
+  // Mismo criterio que el bloque de variantes: se muestra si el rubro lo
+  // amerita O si el producto ya venía cargado por medida — nunca escondemos
+  // un dato que el vendedor ya cargó, aunque después cambie de rubro.
+  const esServicio = byId('pTipoServicio')?.checked;
+  const mostrar = !esServicio && (rubroPuedeVenderPorMedida() || seVendePorMedida(productoEnEdicion));
+  cont.classList.toggle('hidden', !mostrar);
+}
+
+if (byId('pVentaPorMedida')) {
+  byId('pVentaPorMedida').addEventListener('change', (e) => {
+    // Al prender el tilde arranca en metros, que es el caso más común
+    // (manguera, cable, tela). Al apagarlo vuelve a ser por unidad.
+    if (e.target.checked && !unidadMedidaEnEdicion) unidadMedidaEnEdicion = 'metro';
+    if (!e.target.checked) unidadMedidaEnEdicion = null;
+    renderUnidadMedidaChips();
+    aplicarVentaPorMedida();
+  });
+}
+
+if (byId('pMedidaCalcularBtn')) {
+  byId('pMedidaCalcularBtn').addEventListener('click', () => {
+    const bultos = Number(byId('pMedidaBultos').value) || 0;
+    const porBulto = Number(byId('pMedidaPorBulto').value) || 0;
+    if (bultos <= 0 || porBulto <= 0) return;
+    byId('pStock').value = redondearMedida(bultos * porBulto);
+  });
+}
+
 function aplicarVisibilidadPorRubro() {
   const esElectronica = rubroEsElectronica();
   actualizarTextoVariantes();
+  aplicarVentaPorMedidaVisibilidad();
 
   // Nombre/Descripción se reemplazan por Marca/Modelo en electrónica.
   if (byId('campoNombreDescripcion')) byId('campoNombreDescripcion').classList.toggle('hidden', esElectronica);
@@ -6093,7 +6269,7 @@ function renderProducts() {
         (p.solo_interno ? ' <span class="badge" style="background:#F1F3F6;color:var(--text-mute);" title="No se vende en tu tienda online">🔒 Interno</span>' : '') +
         (p.pendiente_restauracion ? ' <span class="badge" style="background:#FEF3E2;color:#8A5200;" title="Tomado en parte de pago, todavía no está listo para vender">🔧 Restauración</span>' : '') +
       '</td>' +
-      '<td>' + money(p.price) + precioSecundarioProducto(p) + '</td>' +
+      '<td>' + money(p.price) + sufijoPrecioPorMedida(p) + precioSecundarioProducto(p) + '</td>' +
       '<td>' + (
         !esProductoFisico(p)
           ? '<span class="badge" style="background:#EAF4FD;color:var(--navy);">SERVICIO</span>' +
@@ -6103,14 +6279,14 @@ function renderProducts() {
                 '<div style="font-size:11px;color:var(--celeste);margin-top:2px;text-decoration:underline;cursor:pointer;" onclick="mostrarDetalleVariantes(\'' + p.id + '\')">' +
                   p.variantes.length + ' variante' + (p.variantes.length === 1 ? '' : 's') + ' — ver' +
                 '</div>'
-              : p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
+              : formatearCantidad(p.stock, p) + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
                 // Referencia de la última reposición: "tenía 10, repuse y quedé
                 // en 30" — un dato aparte del stock actual, que baja con cada
                 // venta. Sin esto, saber cuánto se vendió desde que llegó el
                 // último pedido al proveedor exige hacer la cuenta a mano.
                 (p.stock_ultima_carga != null
                   ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">Última carga: ' +
-                    p.stock_ultima_carga +
+                    formatearCantidad(p.stock_ultima_carga, p) +
                     (p.fecha_ultima_carga ? ' (' + new Date(p.fecha_ultima_carga).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) + ')' : '') +
                     '</div>'
                   : ''))
@@ -6295,7 +6471,10 @@ async function aplicarStockDeItem(item, signo) {
     return imeiAfectado;
   }
 
-  const nuevoStock = Math.max(0, Number(p.stock || 0) + signo * qty);
+  // redondearMedida evita el arrastre del punto flotante al restar decimales
+  // repetidas veces (50 - 12,3 - 12,3 ... termina en 37.699999999999996 y ese
+  // número se escribiría tal cual en la base).
+  const nuevoStock = Math.max(0, redondearMedida(Number(p.stock || 0) + signo * qty));
   await sb.from('store_products').update({ stock: nuevoStock }).eq('id', p.id);
   return null;
 }
@@ -8703,7 +8882,14 @@ function seleccionarProductoVenta(id) {
   imeiSeleccionadoVenta = null;
   hide(byId('barcodeMatches'));
   byId('barcodeProductName').textContent = product.name;
-  byId('barcodeProductPrice').textContent = money(product.price);
+  byId('barcodeProductPrice').textContent = money(product.price) + sufijoPrecioPorMedida(product);
+
+  // Con venta por medida el campo cantidad acepta decimales y dice en qué
+  // unidad se está vendiendo, así no hay dudas de si "12" son unidades o
+  // metros.
+  const uVenta = unidadDe(product);
+  byId('barcodeQty').step = uVenta ? 'any' : '1';
+  byId('barcodeQtyLabel').textContent = uVenta ? 'Cantidad (' + uVenta.plural + '):' : 'Cantidad:';
   byId('barcodeQty').value = '1';
   byId('barcodeAbono').value = '0';
   renderListaVendedores();
@@ -8843,9 +9029,18 @@ function actualizarStockVarianteVenta() {
   }
 }
 
+// La cantidad vendida: entera para lo que se vende por unidad, con
+// decimales para lo que se vende por metro o por kilo (12,5 m de manguera,
+// 0,25 kg de fiambre).
+function cantidadVendida() {
+  const bruto = Number(byId('barcodeQty').value);
+  if (!Number.isFinite(bruto) || bruto <= 0) return seVendePorMedida(currentBarcodeProduct) ? 0 : 1;
+  return seVendePorMedida(currentBarcodeProduct) ? redondearMedida(bruto) : Math.floor(bruto) || 1;
+}
+
 function calculateTotal() {
   if (!currentBarcodeProduct) return;
-  const qty = parseInt(byId('barcodeQty').value) || 1;
+  const qty = cantidadVendida();
   const total = currentBarcodeProduct.price * qty;
   byId('barcodeTotal').textContent = money(total);
   calculateChange();
@@ -8878,7 +9073,7 @@ function clearBarcodeResult() {
 async function confirmBarcodeVenta() {
   if (!puedeOperar()) return;
 
-  const qty = parseInt(byId('barcodeQty').value) || 1;
+  const qty = cantidadVendida();
 
   // Antes esto volvia a buscar el producto por el EAN escrito en el input.
   // Si la venta se habia buscado por nombre, ese texto no era el EAN de nada:
@@ -8888,6 +9083,26 @@ async function confirmBarcodeVenta() {
   if (!product) {
     alert('Elegí un producto antes de registrar la venta.');
     return;
+  }
+
+  // Con venta por medida el campo acepta decimales, así que también acepta
+  // vacío o 0 — que en una venta no significa nada.
+  if (qty <= 0) {
+    const u = unidadDe(product);
+    alert('Escribí cuántos ' + (u ? u.plural : 'unidades') + ' estás vendiendo.');
+    byId('barcodeQty').focus();
+    return;
+  }
+
+  // Un producto fraccionado sin variantes no pasaba por ningún control de
+  // stock: vender 80 metros de un rollo de 50 dejaba el stock en negativo
+  // sin avisar. (Los que tienen variantes ya se validan más abajo.)
+  if (seVendePorMedida(product) && !productoDeVentaTieneVariantes()) {
+    const disponible = Number(product.stock || 0);
+    if (qty > disponible) {
+      alert('No hay stock suficiente: quedan ' + formatearCantidad(disponible, product) + '.');
+      return;
+    }
   }
 
   // El nombre del cliente es opcional... salvo si es fiado: un deudor sin
@@ -9435,6 +9650,13 @@ if (byId('newProductBtn')) {
     if (byId('pStock')) byId('pStock').value = '0';
     if (byId('pCategory')) byId('pCategory').value = '';
     if (byId('productForm')) byId('productForm').dataset.id = '';
+    unidadMedidaEnEdicion = null;
+    if (byId('pVentaPorMedida')) byId('pVentaPorMedida').checked = false;
+    if (byId('pMedidaBultos')) byId('pMedidaBultos').value = '1';
+    if (byId('pMedidaPorBulto')) byId('pMedidaPorBulto').value = '';
+    renderUnidadMedidaChips();
+    aplicarVentaPorMedida();
+    aplicarVentaPorMedidaVisibilidad();
     seleccionarTipoTab('producto');
     byId('pDuracion').value = '';
     byId('pPendienteRestauracion').checked = false;
@@ -9726,9 +9948,15 @@ byId('productForm').addEventListener('submit', async (e) => {
   // estadísticas del panel y el badge de "agotado" cuando no hay una
   // combinación elegida. Tener dos números de stock que se contradicen
   // sería peor que este atajo.
-  const stockGeneral = tieneVariantes
+  const stockGeneral = redondearMedida(tieneVariantes
     ? variantesEnEdicion.reduce((s, v) => s + Number(v.stock || 0), 0)
-    : Number(byId('pStock').value);
+    : Number(byId('pStock').value));
+
+  // Se guarda solo si el tilde quedó puesto: destildarlo devuelve el
+  // producto a venderse por unidad, sin dejar la unidad vieja colgada.
+  const unidadAGuardar = (byId('pVentaPorMedida')?.checked && unidadMedidaEnEdicion)
+    ? unidadMedidaEnEdicion
+    : null;
 
   const id = byId('productForm').dataset.id;
   // Si nunca se desbloqueó el proveedor en esta carga, se manda lo que ya
@@ -9746,6 +9974,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     cotizacion: precioConv.cotizacion,
     costo: valorCostoParaGuardar(),
     stock: stockGeneral,
+    unidad_medida: unidadAGuardar,
     category: byId('pCategory').value,
     ean: byId('pEan').value || null,
     imei: byId('pImei') ? (byId('pImei').value.trim() || null) : null,
@@ -9851,6 +10080,13 @@ async function editProduct(id) {
   if (byId('pPrice')) byId('pPrice').value = p.moneda ? p.precio_original : p.price;
   actualizarHintMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
   if (byId('pStock')) byId('pStock').value = p.stock;
+  unidadMedidaEnEdicion = seVendePorMedida(p) ? p.unidad_medida : null;
+  if (byId('pVentaPorMedida')) byId('pVentaPorMedida').checked = !!unidadMedidaEnEdicion;
+  if (byId('pMedidaBultos')) byId('pMedidaBultos').value = '1';
+  if (byId('pMedidaPorBulto')) byId('pMedidaPorBulto').value = '';
+  renderUnidadMedidaChips();
+  aplicarVentaPorMedida();
+  aplicarVentaPorMedidaVisibilidad(p);
   if (byId('pCategory')) byId('pCategory').value = p.category || '';
   if (byId('pEan')) byId('pEan').value = p.ean || '';
   if (byId('pImei')) byId('pImei').value = p.imei || '';
@@ -9900,16 +10136,20 @@ async function reponerStock(id) {
   const p = products.find(x => String(x.id) === String(id));
   if (!p) return;
 
-  const texto = prompt('¿Cuántas unidades de "' + p.name + '" sumás al stock?\n\nStock actual: ' + p.stock);
+  const u = unidadDe(p);
+  const texto = prompt('¿Cuántos ' + (u ? u.plural : 'unidades') + ' de "' + p.name + '" sumás al stock?' +
+    (u ? '\n(Si llegó un rollo de 50 ' + u.plural + ', escribí 50.)' : '') +
+    '\n\nStock actual: ' + formatearCantidad(p.stock, p));
   if (texto === null) return;
 
-  const cantidad = Number(texto);
+  // Coma o punto: en Argentina se escribe "12,5" y Number() lo rechaza.
+  const cantidad = Number(String(texto).replace(',', '.'));
   if (!Number.isFinite(cantidad) || cantidad <= 0) {
     alert('Escribí un número mayor que 0.');
     return;
   }
 
-  const nuevoStock = Number(p.stock || 0) + cantidad;
+  const nuevoStock = redondearMedida(Number(p.stock || 0) + cantidad);
   const { error } = await sb.from('store_products').update({
     stock: nuevoStock,
     stock_ultima_carga: nuevoStock,
