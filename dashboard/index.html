@@ -192,30 +192,31 @@ h1, h2, h3 {
 
   /* Las tablas no entran a lo ancho en un celular. El sitio tiene el scroll
      horizontal bloqueado (overflow-x:hidden en body), asi que el arrastre
-     tiene que pasar DENTRO del panel: sin esto las ultimas columnas
+     tiene que pasar DENTRO de la tabla: sin esto las ultimas columnas
      quedaban inalcanzables.
 
-     El !important es necesario: mas abajo en este mismo archivo hay OTRA
-     regla ".panel" (la de siempre, para las esquinas redondeadas) que pone
-     "overflow: hidden" — como esa aparece despues en el CSS, sin forzarlo
-     aca terminaba ganando ELLA y el scroll quedaba bloqueado igual, aunque
-     esta regla dijera "auto". Por eso el cartel de "desliza para ver mas"
-     no hacia nada: el deslizamiento estaba frenado del todo. */
-  .panel {
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch;
-    /* Sin decirle explícitamente al navegador qué gestos son válidos,
-       Safari en iOS queda ambiguo entre arrastre y seleccionar texto — y
-       termina pidiendo una pulsación larga o un toque previo antes de
-       dejar correr la vista. "pan-x" solo (como estaba antes) resolvía
-       eso pero de paso le decía al navegador que ADENTRO del panel nada
-       más que el arrastre horizontal es válido — así que subir/bajar la
-       pantalla tocando la tabla dejaba de andar. pan-x junto con pan-y
-       deja los dos gestos habilitados. */
-    touch-action: pan-x pan-y;
-  }
+     IMPORTANTE — por qué esto NO va en ".panel" (como estaba antes): la
+     regla CSS de overflow no permite mezclar ejes — si overflow-x no es
+     "visible", el navegador FUERZA a que overflow-y también deje de ser
+     "visible" y pase a "auto" (aunque se escriba explícitamente
+     "overflow-y: visible", el navegador lo ignora — se probó y se
+     confirma). Poniéndolo en ".panel" completo, cada panel se convertía
+     sin querer en su propio contenedor de scroll vertical, separado de la
+     página. La mayoría de las veces adentro no había nada para scrollear
+     (el panel no es más alto que su contenido), así que el dedo quedaba
+     "atrapado" tocando un contenedor que técnicamente podía scrollear pero
+     no tenía a dónde — y el gesto nunca llegaba a mover la página real.
+     Ese fue el bug real de "no puedo subir/bajar en el celular" (visto en
+     video: la lista de Productos no se movía ni un pixel). Por eso ahora
+     el overflow-x va DIRECTO en la tabla (que sí puede ser su propio
+     contenedor de scroll horizontal sin arriesgar nada) y ".panel" queda
+     sin overflow propio — nunca puede volver a atrapar el scroll vertical
+     de la página, pase lo que pase adentro. */
   .panel table {
     min-width: 560px;          /* obliga a desbordar en vez de aplastarse */
+    display: block;            /* para que overflow-x tenga efecto en un <table> */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     -webkit-user-select: none; /* si no, el primer arrastre en iOS a veces selecciona texto en vez de deslizar */
     user-select: none;
   }
@@ -10197,20 +10198,11 @@ const esMobile = () => window.innerWidth <= 700;
 // un modal abierto): si no, se pisaría con el scroll normal de una tabla o
 // con el arrastre de la cámara del lector.
 (function () {
-  // DESACTIVADO 2026-08-27 como prueba de diagnóstico: reporte de que en el
-  // navegador del celular (no la app instalada) el scroll normal de
-  // Dashboard/Productos queda errático — se mueve un poco y rebota, o
-  // directamente no se mueve. Este es el único código del sitio que
-  // escucha gestos táctiles en toda la pantalla, así que es sospechoso
-  // #1. Si el usuario confirma que el scroll vuelve a andar bien con esto
-  // apagado, la causa era esto y hay que rehacerlo (probablemente
-  // restringido a display-mode:standalone, ya que el comentario original
-  // dice que es para la app instalada, no para el navegador). Si sigue
-  // pasando igual, no era esto — reactivar (pull_to_refresh_activado =
-  // true) y seguir buscando en otro lado.
-  const pull_to_refresh_activado = false;
-  if (!pull_to_refresh_activado) return;
-
+  // Se probó desactivar esto el 2026-08-27 sospechando que era la causa de
+  // "no puedo subir/bajar en el celular" — un video del problema mostró que
+  // en realidad era un bug de CSS en .panel (overflow-y quedaba "auto" sin
+  // querer). Con el CSS arreglado, este gesto no tenía nada que ver:
+  // reactivado.
   const UMBRAL = 70;
   const TOPE_VISUAL = 110;
   let startY = null;
