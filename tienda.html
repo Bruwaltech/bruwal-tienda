@@ -1211,8 +1211,11 @@ function abrirFicha(id) {
     if (specsVarEl) {
       const unidades = (vSel && Array.isArray(vSel.imeis)) ? vSel.imeis.map(normalizarUnidadImeiFicha) : [];
       const disponibles = unidades.filter(u => u.listo !== false);
-      const unidad = opcionesUnidad.length > 1
-        ? (unidadElegida ? disponibles.find(u => u[campoUnidad] === unidadElegida) : null)
+      // Aunque falte elegir color/RAM, se muestra de entrada lo del primer
+      // equipo (mismo criterio FIFO de siempre) — así las características
+      // no desaparecen mientras decide, y se actualizan solas apenas elige.
+      const unidad = (opcionesUnidad.length > 1 && unidadElegida)
+        ? disponibles.find(u => u[campoUnidad] === unidadElegida)
         : (disponibles[0] || unidades[0]);
       const esIphoneFicha = productoEsIphone(p.name);
       const datos = unidad ? [
