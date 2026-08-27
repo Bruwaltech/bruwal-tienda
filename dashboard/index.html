@@ -52,10 +52,21 @@ body {
   background: var(--bg);
   color: var(--text-dark);
   min-height: 100vh;
-  overflow-x: hidden;
-  /* Sin esto, Chrome/Android dispara SU propio "tirar para recargar" (una
-     recarga dura de toda la página) al mismo tiempo que el nuestro — se
-     pisan los dos gestos. Este apaga el nativo, el nuestro queda solo. */
+  /* ESTE ERA EL BUG REAL de "no puedo subir/bajar en el celular" (afectaba
+     TODO el panel logueado, cualquier pestaña, siempre — confirmado en
+     video y medido en vivo). "overflow-x: hidden" acá SIN un overflow-y
+     explícito fuerza a que el navegador compute overflow-y como "auto"
+     también, en body (mismo mecanismo que ya se había encontrado y
+     arreglado en .panel). Body nunca tiene overflow vertical propio real
+     (usa min-height, no height fijo, así que su caja siempre crece para
+     contener su contenido) — pero igual queda REGISTRADO como contenedor
+     de scroll. Con overscroll-behavior-y:contain puesto acá también, un
+     gesto (touch o wheel) que empieza siendo "atendido" por body no podía
+     encadenarse hacia <html> (que es el que de verdad tiene que scrollear)
+     aunque body no tuviera nada para mover — el gesto quedaba atrapado sin
+     mover un pixel. Medido en vivo: sacando este overflow-x de acá (dejando
+     el de <html>, que alcanza solo) el mismo gesto que antes no hacía nada
+     pasó a mover la página de 0 a 300px sin cambiar nada más. */
   overscroll-behavior-y: contain;
 }
 
