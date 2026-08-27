@@ -1817,8 +1817,26 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="wizard-step hidden" data-step="2">
-        <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
-        <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
+        <div id="campoNombreDescripcion">
+          <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
+          <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
+        </div>
+
+        <div id="campoMarcaModelo" class="hidden">
+          <div class="field">
+            <label>Marca</label>
+            <input type="text" id="pMarca" placeholder="Ej: Apple" autocomplete="off">
+            <div id="pMarcaSugeridas" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
+          </div>
+          <div class="field">
+            <label>Modelo</label>
+            <input type="text" id="pModelo" placeholder="Ej: iPhone 13" autocomplete="off">
+            <div id="pModeloSugeridas" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:130px;overflow-y:auto;"></div>
+          </div>
+        </div>
+        <!-- pName sigue siendo el dato real que se guarda — con Marca y
+             Modelo se arma solo combinándolos, para no tocar el resto del
+             código que ya lee byId('pName').value en todos lados. -->
 
         <div class="field">
           <label>¿Para dónde estás cargando este stock?</label>
@@ -4007,6 +4025,61 @@ const ATRIBUTOS_SUGERIDOS_ELECTRONICA = [
   { nombre: 'Color', valores: ['Negro','Blanco','Azul','Gris','Dorado','Plateado','Rojo','Verde','Rosa','Morado'] }
 ];
 
+// Para el campo Marca/Modelo del producto en sí (no las variantes): reusa
+// las mismas listas de modelos de arriba, solo con el nombre de marca real
+// en vez de la etiqueta del botón ("Modelo (iPhone)" → marca "Apple").
+const MARCAS_MODELOS_ELECTRONICA = [
+  { marca: 'Apple',    modelos: ATRIBUTOS_SUGERIDOS_ELECTRONICA[0].valores },
+  { marca: 'Samsung',  modelos: ATRIBUTOS_SUGERIDOS_ELECTRONICA[1].valores },
+  { marca: 'Motorola', modelos: ATRIBUTOS_SUGERIDOS_ELECTRONICA[2].valores },
+  { marca: 'Xiaomi',   modelos: ATRIBUTOS_SUGERIDOS_ELECTRONICA[3].valores }
+];
+
+// En electrónica, "Nombre" y "Descripción" se reemplazan por Marca y
+// Modelo — más natural para cargar un celular, y evita nombres sueltos
+// tipo "iPhone" sin más datos. pName sigue siendo el campo real que se
+// guarda: acá se arma solo combinando los dos ("Apple" + "iPhone 13" =
+// "Apple iPhone 13"), sin tocar el resto del código que ya lo usa.
+function actualizarNombreDesdeMarcaModelo() {
+  const marca = byId('pMarca').value.trim();
+  const modelo = byId('pModelo').value.trim();
+  byId('pName').value = [marca, modelo].filter(Boolean).join(' ');
+}
+
+function renderMarcaSugeridas() {
+  const cont = byId('pMarcaSugeridas');
+  if (!cont) return;
+  cont.innerHTML = MARCAS_MODELOS_ELECTRONICA.map(m =>
+    '<button type="button" class="chip-sug" data-marca-sug="' + escapeHtml(m.marca) + '">' + escapeHtml(m.marca) + '</button>'
+  ).join('');
+  cont.querySelectorAll('[data-marca-sug]').forEach(b => {
+    b.addEventListener('click', () => {
+      byId('pMarca').value = b.dataset.marcaSug;
+      actualizarNombreDesdeMarcaModelo();
+      renderModeloSugeridas();
+    });
+  });
+}
+
+function renderModeloSugeridas() {
+  const cont = byId('pModeloSugeridas');
+  if (!cont) return;
+  const marcaActual = byId('pMarca').value.trim().toLowerCase();
+  const grupo = MARCAS_MODELOS_ELECTRONICA.find(m => m.marca.toLowerCase() === marcaActual);
+  cont.innerHTML = grupo ? grupo.modelos.map(mo =>
+    '<button type="button" class="chip-sug" data-modelo-sug="' + escapeHtml(mo) + '">' + escapeHtml(mo) + '</button>'
+  ).join('') : '';
+  cont.querySelectorAll('[data-modelo-sug]').forEach(b => {
+    b.addEventListener('click', () => {
+      byId('pModelo').value = b.dataset.modeloSug;
+      actualizarNombreDesdeMarcaModelo();
+    });
+  });
+}
+
+byId('pMarca').addEventListener('input', () => { actualizarNombreDesdeMarcaModelo(); renderModeloSugeridas(); });
+byId('pModelo').addEventListener('input', actualizarNombreDesdeMarcaModelo);
+
 // Indumentaria y electrónica nunca se mezclan: cada rubro ve solo sus
 // propias sugerencias (talles/colores por un lado, modelos de teléfono
 // por otro), aunque las dos tiendas usen el mismo motor de variantes. Un
@@ -5119,6 +5192,11 @@ async function refreshData() {
 function aplicarVisibilidadPorRubro() {
   const esElectronica = rubroEsElectronica();
   actualizarTextoVariantes();
+
+  // Nombre/Descripción se reemplazan por Marca/Modelo en electrónica.
+  if (byId('campoNombreDescripcion')) byId('campoNombreDescripcion').classList.toggle('hidden', esElectronica);
+  if (byId('campoMarcaModelo')) byId('campoMarcaModelo').classList.toggle('hidden', !esElectronica);
+  if (esElectronica) renderMarcaSugeridas();
 
   const tabRep = byId('tabReparaciones');
   if (tabRep) tabRep.classList.toggle('hidden', !esElectronica);
@@ -9189,6 +9267,9 @@ if (byId('newProductBtn')) {
     if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = true;
     if (byId('pName')) byId('pName').value = '';
     if (byId('pDesc')) byId('pDesc').value = '';
+    if (byId('pMarca')) byId('pMarca').value = '';
+    if (byId('pModelo')) byId('pModelo').value = '';
+    if (byId('pModeloSugeridas')) byId('pModeloSugeridas').innerHTML = '';
     if (byId('pPrice')) byId('pPrice').value = '';
     if (byId('pPriceMoneda')) byId('pPriceMoneda').value = 'ARS';
     if (byId('pPriceHint')) hide(byId('pPriceHint'));
@@ -9439,6 +9520,14 @@ byId('productForm').addEventListener('submit', async (e) => {
     return;
   }
 
+  // pName queda oculto en electrónica (lo arma Marca+Modelo), así que el
+  // navegador no lo valida solo por estar "required" — hay que chequearlo
+  // a mano acá.
+  if (rubroEsElectronica() && !byId('pName').value.trim()) {
+    alert('Completá al menos la Marca o el Modelo.');
+    return;
+  }
+
   // Se resuelve ANTES de subir fotos: si falla la cotización, mejor
   // frenar acá que subir imágenes para un guardado que después no va a
   // completarse.
@@ -9600,6 +9689,13 @@ async function editProduct(id) {
   if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = p.mostrar_precio !== false;
   if (byId('pName')) byId('pName').value = p.name;
   if (byId('pDesc')) byId('pDesc').value = p.description || '';
+  // No hay forma de separar "Apple iPhone 13" de vuelta en Marca/Modelo con
+  // certeza (podría ser cualquier combinación de palabras) — se deja Marca
+  // vacía y Modelo con el nombre completo, así no se pierde nada al editar:
+  // si no tocan Marca, al guardar el nombre queda exactamente igual.
+  if (byId('pMarca')) byId('pMarca').value = '';
+  if (byId('pModelo')) byId('pModelo').value = p.name || '';
+  if (byId('pModeloSugeridas')) byId('pModeloSugeridas').innerHTML = '';
   // Muestra el monto tal cual se tipeó (en su moneda original), no el
   // número ya convertido a pesos — si no, editar "borraría" la moneda.
   if (byId('pPriceMoneda')) byId('pPriceMoneda').value = p.moneda || 'ARS';
@@ -10160,6 +10256,9 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
 
   byId('modalTitle').textContent = 'Carga tu stock (escaneado)';
   byId('pName').value = byId('pDesc').value = byId('pPrice').value = '';
+  if (byId('pMarca')) byId('pMarca').value = '';
+  if (byId('pModelo')) byId('pModelo').value = '';
+  if (byId('pModeloSugeridas')) byId('pModeloSugeridas').innerHTML = '';
   if (byId('pImageFile')) byId('pImageFile').value = '';
   fotosEnEdicion = [];
   renderFotosEnEdicion();
