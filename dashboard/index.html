@@ -10197,6 +10197,20 @@ const esMobile = () => window.innerWidth <= 700;
 // un modal abierto): si no, se pisaría con el scroll normal de una tabla o
 // con el arrastre de la cámara del lector.
 (function () {
+  // DESACTIVADO 2026-08-27 como prueba de diagnóstico: reporte de que en el
+  // navegador del celular (no la app instalada) el scroll normal de
+  // Dashboard/Productos queda errático — se mueve un poco y rebota, o
+  // directamente no se mueve. Este es el único código del sitio que
+  // escucha gestos táctiles en toda la pantalla, así que es sospechoso
+  // #1. Si el usuario confirma que el scroll vuelve a andar bien con esto
+  // apagado, la causa era esto y hay que rehacerlo (probablemente
+  // restringido a display-mode:standalone, ya que el comentario original
+  // dice que es para la app instalada, no para el navegador). Si sigue
+  // pasando igual, no era esto — reactivar (pull_to_refresh_activado =
+  // true) y seguir buscando en otro lado.
+  const pull_to_refresh_activado = false;
+  if (!pull_to_refresh_activado) return;
+
   const UMBRAL = 70;
   const TOPE_VISUAL = 110;
   let startY = null;
