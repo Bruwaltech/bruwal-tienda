@@ -1376,6 +1376,14 @@ const precioUnitario = (linea) => {
 const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => s + l.qty, 0);
 const totalDelCarrito   = () => Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0);
 
+// Si hay al menos un producto físico en el carrito, hace falta preguntar
+// cómo lo recibe (retiro/envío) — un carrito de solo servicios (ej. un
+// corte de pelo) no se retira ni se envía a ningún lado.
+const carritoTieneFisico = () => Object.values(cart).some(l => {
+  const p = productoDe(l);
+  return p && esProductoFisico(p);
+});
+
 // Cuántas unidades de un producto hay, sumando todas sus combinaciones
 const cantidadDelProducto = (productoId) =>
   Object.values(cart)
@@ -1617,6 +1625,15 @@ function armarOpcionesDeCheckout(store) {
 
 byId('openCheckoutBtn').addEventListener('click', () => {
   byId('checkoutError').classList.add('hidden');
+  // armarTurnos ya oculta "¿Cómo lo recibís?" cuando la tienda tiene Turnos
+  // activado. Esto cubre el otro caso: una tienda con productos tipo
+  // "servicio" (ej. una peluquería) que no llegó a prender el calendario de
+  // Turnos — un corte de pelo tampoco se retira ni se envía a domicilio.
+  if (!configTurnos) {
+    const fisico = carritoTieneFisico();
+    byId('campoEntrega').classList.toggle('hidden', !fisico);
+    if (!fisico) byId('campoDireccion').classList.add('hidden');
+  }
   show(byId('checkoutModal'));
 });
 byId('closeCheckoutModal').addEventListener('click', () => hide(byId('checkoutModal')));
@@ -1658,7 +1675,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
                  String(d).padStart(2,'0') + '/' + String(m).padStart(2,'0') + ' a las ' + h;
   }
 
-  const entrega = configTurnos ? null : valorElegido('opcionesEntrega');
+  const entrega = (configTurnos || !carritoTieneFisico()) ? null : valorElegido('opcionesEntrega');
   const medioDePago = valorElegido('opcionesPago');
 
   const calle = byId('custCalle').value.trim();
@@ -1741,7 +1758,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   byId('confirmOrderBtn').disabled = true;
 
   const slug = getSlugFromUrl();
-  const { data: store } = await sb.from('store_profiles').select('phone,business_name,mensaje_envio')
+  const { data: store } = await sb.from('store_profiles').select('phone,business_name,mensaje_envio,costo_envio')
     .eq('slug', slug).maybeSingle();
 
   if (store && store.phone){
@@ -1753,11 +1770,18 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     detalles += '👤 *Cliente:* ' + name + '\n';
     detalles += '📱 *Teléfono:* ' + phone + '\n\n';
     detalles += '*Productos:*\n' + listaProductos;
-    detalles += '\n💰 *Total:* $' + total.toLocaleString('es-AR');
+
+    // El costo de envío es un valor fijo por tienda (Configuración) — se
+    // suma recién acá, así el total que se guarda en la orden y el que ve
+    // el negocio ya vienen completos, sin tener que sumarlo a mano.
+    const costoEnvio = (entrega === 'Envío a domicilio') ? Number(store.costo_envio || 0) : 0;
+    if (costoEnvio > 0) total += costoEnvio;
+    detalles += '\n💰 *Total:* $' + total.toLocaleString('es-AR') +
+      (costoEnvio > 0 ? ' (incluye $' + costoEnvio.toLocaleString('es-AR') + ' de envío)' : '');
 
     if (turnoTexto) {
       detalles += '\n\n📅 *Turno solicitado:* ' + turnoTexto;
-    } else {
+    } else if (entrega) {
       detalles += '\n\n' + (entrega === 'Envío a domicilio' ? '🚚' : '🏪') + ' *Entrega:* ' + entrega;
 
       if (entrega === 'Envío a domicilio') {

@@ -1394,7 +1394,7 @@ tr:last-child td { border-bottom: none; }
     <!-- PRODUCTOS -->
     <div id="productosView" class="hidden">
       <div class="toolbar">
-        <button class="btn-action primary" id="newProductBtn">+ Carga tu stock</button>
+        <button class="btn-action primary" id="newProductBtn">+ Nuevo producto o servicio</button>
         <button class="btn-action" id="importarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-excel"></i> Importar Excel</button>
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
@@ -1794,7 +1794,7 @@ tr:last-child td { border-bottom: none; }
 <div class="modal-overlay hidden" id="productModal">
   <div class="modal">
     <button class="modal-close" id="closeModal">✕</button>
-    <h3 id="modalTitle">Carga tu stock</h3>
+    <h3 id="modalTitle">Nuevo producto o servicio</h3>
     <div style="display:grid;grid-template-columns:1fr 200px;gap:24px;">
       <form id="productForm">
         <div id="wizardProgreso" class="hidden" style="font-size:12px;font-weight:700;color:var(--celeste);letter-spacing:.03em;text-transform:uppercase;margin-bottom:10px;"></div>
@@ -2729,6 +2729,14 @@ tr:last-child td { border-bottom: none; }
               <option value="60">1 hora</option>
             </select>
           </div>
+        </div>
+
+        <div class="field">
+          <label>Costo de envío <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <input type="number" id="configCostoEnvio" min="0" step="0.01" placeholder="Ej: 2000">
+          <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Se suma solo cuando el cliente elige "Envío a domicilio" en el checkout. Dejalo vacío si no cobrás envío.
+          </small>
         </div>
 
         <div class="field">
@@ -9404,7 +9412,7 @@ function stopRepImeiCameraScanner() {
 if (byId('newProductBtn')) {
   byId('newProductBtn').addEventListener('click', () => {
     if (!puedeOperar()) return;
-    if (byId('modalTitle')) byId('modalTitle').textContent = 'Carga tu stock';
+    if (byId('modalTitle')) byId('modalTitle').textContent = 'Nuevo producto o servicio';
     if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = true;
     if (byId('pName')) byId('pName').value = '';
     if (byId('pDesc')) byId('pDesc').value = '';
@@ -11065,6 +11073,7 @@ async function cargarConfiguracion() {
     renderPosicionPortada();
     aplicarPosicionPortadaPreview();
 
+    if (byId('configCostoEnvio')) byId('configCostoEnvio').value = store.costo_envio != null ? store.costo_envio : '';
     renderMediosDePago(store.medios_pago);
 
     const t = store.turnos || {};
@@ -11231,6 +11240,7 @@ async function guardarConfiguracion() {
     instagram: byId('configIg').value,
     google_url: byId('configGoogle').value.trim() || null,
     medios_pago: mediosDePagoElegidos(),
+    costo_envio: byId('configCostoEnvio').value === '' ? null : Math.max(0, Number(byId('configCostoEnvio').value) || 0),
     turnos: configuracionDeTurnos(),
     tema: temaElegido(),
     rubro_manual: byId('configRubroManual').value || null,
@@ -11377,7 +11387,7 @@ let promptDeInstalacion = null;
 // botón de WhatsApp de abajo queda fijo y visible todo el tiempo.
 const AYUDA_FAQ = [
   { q: '¿Cómo cargo un producto nuevo?',
-    a: 'Productos → "+ Carga tu stock". Te va guiando paso a paso: primero la categoría, después qué es y para dónde (tu tienda o stock interno), precio y costo, stock, y por último fotos y extras.' },
+    a: 'Productos → "+ Nuevo producto o servicio". Te va guiando paso a paso: primero la categoría, después qué es y para dónde (tu tienda o stock interno), precio y costo, stock, y por último fotos y extras.' },
   { q: '¿Cómo cargo talles y colores?',
     a: 'En el paso de Stock, activá "Este producto tiene variantes" y cargá los atributos (ej. Talle: S/M/L, Color: Negro/Blanco). Cada combinación lleva su propio stock, se agotan por separado.' },
   { q: '¿Cómo cargo celulares con IMEI?',
