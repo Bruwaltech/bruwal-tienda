@@ -1521,6 +1521,7 @@ tr:last-child td { border-bottom: none; }
               <div class="hidden" id="barcodeVarianteBloque" style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:8px;">
                 <div id="barcodeVarianteCampos"></div>
                 <div id="barcodeVarianteStock" style="font-size:12.5px;color:var(--text-mute);margin-top:2px;"></div>
+                <div id="barcodeVarianteUnidades" style="margin-top:8px;display:flex;flex-direction:column;gap:5px;"></div>
               </div>
 
               <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
@@ -2177,6 +2178,15 @@ tr:last-child td { border-bottom: none; }
 
       <button type="button" id="confirmarFacturaIaBtn" class="btn btn-primary" style="width:100%;">Cargar productos al stock</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL DETALLE DE VARIANTES/UNIDADES -->
+<div class="modal-overlay hidden" id="detalleVariantesModal">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" id="closeDetalleVariantesModal">✕</button>
+    <h3 id="detalleVariantesTitulo" style="font-size:17px;">Variantes</h3>
+    <div id="detalleVariantesContenido" style="margin-top:10px;max-height:60vh;overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -6009,24 +6019,37 @@ function renderYearlyChart() {
 // la tienda, y viceversa.
 let filtroProductosDestino = 'tienda';
 
-// Texto del tooltip de "N variantes" en la lista de Productos — con IMEI
-// (electrónica) muestra cada equipo con sus propios datos (más útil que
-// solo el conteo), sin IMEI queda igual que antes (combinación: stock).
-function tooltipVariantesProducto(p) {
+// Mismo contenido que el tooltip de arriba, pero en un modal que se abre
+// con un click — el `title` nativo no sirve en el celular (no hay hover
+// al tocar), así que en mobile era imposible ver el detalle de variantes.
+function mostrarDetalleVariantes(id) {
+  const p = products.find(x => String(x.id) === String(id));
+  if (!p || !Array.isArray(p.variantes)) return;
   const esIphone = productoEsIphone(p.name);
-  return p.variantes.map(v => {
-    const nombreCombo = Object.values(v.atributos).join(' ');
-    if (Array.isArray(v.imeis) && v.imeis.length) {
-      const equipos = v.imeis.map(normalizarUnidadImei).map(u => {
-        const meta = [u.gb, esIphone ? u.color : u.ram, u.bateria ? 'Bat. ' + u.bateria : '', u.estado, u.listo === false ? 'pendiente restauración' : '']
-          .filter(Boolean).join(' · ');
-        return u.imei + (meta ? ' (' + meta + ')' : '');
-      }).join('\n    ');
-      return nombreCombo + ':\n    ' + equipos;
-    }
-    return nombreCombo + ': ' + v.stock;
-  }).join('\n');
+
+  byId('detalleVariantesTitulo').textContent = 'Variantes — ' + p.name;
+  byId('detalleVariantesContenido').innerHTML = p.variantes.map(v => {
+    const nombreCombo = Object.values(v.atributos).join(' / ');
+    const unidades = Array.isArray(v.imeis) ? v.imeis.map(normalizarUnidadImei) : [];
+    const filas = unidades.length
+      ? unidades.map(u => {
+          const meta = [u.gb, esIphone ? u.color : u.ram, u.bateria ? 'Bat. ' + u.bateria : '', u.estado]
+            .filter(Boolean).join(' · ');
+          return '<div style="background:var(--bg);padding:7px 10px;border-radius:6px;margin-top:5px;font-size:12.5px;' +
+            (u.listo === false ? 'border:1px solid var(--danger);' : '') + '">' +
+            '<b>' + escapeHtml(u.imei || 'Sin IMEI') + '</b>' + (meta ? ' — ' + escapeHtml(meta) : '') +
+            (u.listo === false ? ' · 🔧 pendiente de restauración' : '') +
+            '</div>';
+        }).join('')
+      : '<div style="color:var(--text-mute);font-size:12.5px;margin-top:5px;">Stock: ' + Number(v.stock || 0) + '</div>';
+    return '<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line);">' +
+      '<div style="font-weight:700;font-size:13.5px;color:var(--navy);">' + escapeHtml(nombreCombo) + '</div>' +
+      filas +
+      '</div>';
+  }).join('');
+  show(byId('detalleVariantesModal'));
 }
+byId('closeDetalleVariantesModal')?.addEventListener('click', () => hide(byId('detalleVariantesModal')));
 
 function renderProducts() {
   const lista = products.filter(p => !!p.solo_interno === (filtroProductosDestino === 'interno'));
@@ -6069,9 +6092,9 @@ function renderProducts() {
             (p.duracion_minutos ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">' + p.duracion_minutos + ' min</div>' : '')
           : (p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length
               ? p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
-                '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;" title="' +
-                  escapeHtml(tooltipVariantesProducto(p)) +
-                '">' + p.variantes.length + ' variante' + (p.variantes.length === 1 ? '' : 's') + '</div>'
+                '<div style="font-size:11px;color:var(--celeste);margin-top:2px;text-decoration:underline;cursor:pointer;" onclick="mostrarDetalleVariantes(\'' + p.id + '\')">' +
+                  p.variantes.length + ' variante' + (p.variantes.length === 1 ? '' : 's') + ' — ver' +
+                '</div>'
               : p.stock + ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span>' +
                 // Referencia de la última reposición: "tenía 10, repuse y quedé
                 // en 30" — un dato aparte del stock actual, que baja con cada
@@ -6240,12 +6263,13 @@ async function aplicarStockDeItem(item, signo) {
     let imeiAfectado = null;
     if (v && Array.isArray(v.imeis)) {
       if (signo < 0 && v.imeis.length) {
-        // Vender: sale el equipo más viejo cargado (el primero que entró).
-        // No hay forma de que el vendedor "elija" cuál sin escanearlo de
-        // nuevo en el momento, y en la práctica no importa cuál de los
-        // idénticos sale primero — lo que importa es que el IMEI que sale
-        // de la lista sea el que se registra en la venta.
-        imeiAfectado = v.imeis.shift().imei;
+        // Vender: si el vendedor eligió cuál puntualmente (2+ equipos en la
+        // misma combinación, ej. uno negro y uno blanco — ver
+        // unidadesDisponiblesVenta), se descuenta ESE. Si no lo dio (venta
+        // por pedido online, o combinación con un solo equipo), sale el más
+        // viejo cargado (FIFO) como siempre.
+        const idx = item.imei ? v.imeis.findIndex(u => u.imei === item.imei) : -1;
+        imeiAfectado = v.imeis.splice(idx >= 0 ? idx : 0, 1)[0].imei;
       } else if (signo > 0 && item.imei) {
         // Devolver/anular: vuelve exactamente el mismo IMEI que se vendió.
         // Los datos extra (GB, batería, estado) que tenía cargados se
@@ -8668,6 +8692,7 @@ function seleccionarProductoVenta(id) {
 
   currentBarcodeProduct = product;
   varianteSeleccionadaVenta = {};
+  imeiSeleccionadoVenta = null;
   hide(byId('barcodeMatches'));
   byId('barcodeProductName').textContent = product.name;
   byId('barcodeProductPrice').textContent = money(product.price);
@@ -8691,10 +8716,28 @@ function seleccionarProductoVenta(id) {
 // combinación real que se llevó el cliente. El stock por talle quedaba
 // mal desde el primer día.
 let varianteSeleccionadaVenta = {};
+// Cuál de los equipos de la combinación se está vendiendo puntualmente
+// (electrónica con 2+ IMEI en la misma combinación, ej. un negro y un
+// blanco) — sin esto, el descuento de stock elegía solo (el más viejo
+// cargado) y el vendedor no podía confirmar que era el mismo que tenía en
+// la mano.
+let imeiSeleccionadoVenta = null;
 
 function productoDeVentaTieneVariantes() {
   const p = currentBarcodeProduct;
   return !!(p && p.tiene_variantes && Array.isArray(p.variante_campos) && p.variante_campos.length);
+}
+
+// Los equipos disponibles (listo!==false) de la combinación ya elegida —
+// [] si todavía falta elegir algún atributo, o si el rubro no es
+// electrónica (ahí no hay IMEI por unidad, solo un número de stock).
+function unidadesDisponiblesVenta() {
+  const p = currentBarcodeProduct;
+  if (!p || !rubroEsElectronica() || !productoDeVentaTieneVariantes()) return [];
+  if (Object.keys(varianteSeleccionadaVenta).length < p.variante_campos.length) return [];
+  const claveElegida = claveVariante(varianteSeleccionadaVenta);
+  const v = (p.variantes || []).find(x => claveVariante(x.atributos) === claveElegida);
+  return (v && Array.isArray(v.imeis)) ? v.imeis.map(normalizarUnidadImei).filter(u => u.listo !== false) : [];
 }
 
 function renderVarianteVenta() {
@@ -8724,11 +8767,45 @@ function renderVarianteVenta() {
   byId('barcodeVarianteCampos').querySelectorAll('[data-venta-attr]').forEach(b => {
     b.addEventListener('click', () => {
       varianteSeleccionadaVenta[b.dataset.ventaAttr] = b.dataset.ventaValor;
+      imeiSeleccionadoVenta = null;   // cambió la combinación: el equipo elegido para la anterior ya no aplica
       renderVarianteVenta();
     });
   });
 
   actualizarStockVarianteVenta();
+  renderUnidadesVenta();
+}
+
+// Cuando la combinación tiene más de un equipo, hay que elegir cuál se
+// está vendiendo — con uno solo no hace falta preguntar, se usa ese directo.
+function renderUnidadesVenta() {
+  const cont = byId('barcodeVarianteUnidades');
+  if (!cont) return;
+  const unidades = unidadesDisponiblesVenta();
+
+  if (unidades.length <= 1) {
+    imeiSeleccionadoVenta = unidades[0]?.imei || null;
+    cont.innerHTML = '';
+    return;
+  }
+
+  const esIphone = productoEsIphone(currentBarcodeProduct.name);
+  cont.innerHTML = '<label style="font-size:11.5px;color:var(--text-mute);display:block;">¿Cuál de los ' + unidades.length + ' equipos estás vendiendo?</label>' +
+    unidades.map(u => {
+      const meta = [u.gb, esIphone ? u.color : u.ram, u.bateria ? 'Bat. ' + u.bateria : '', u.estado].filter(Boolean).join(' · ');
+      const activo = imeiSeleccionadoVenta === u.imei;
+      return '<button type="button" data-venta-imei="' + escapeHtml(u.imei) + '" style="text-align:left;padding:7px 10px;border-radius:7px;border:1.5px solid ' +
+        (activo ? 'var(--celeste)' : 'var(--line)') + ';background:' + (activo ? '#EAF4FD' : '#fff') +
+        ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
+        '<b>' + escapeHtml(u.imei) + '</b>' + (meta ? ' — ' + escapeHtml(meta) : '') + '</button>';
+    }).join('');
+
+  cont.querySelectorAll('[data-venta-imei]').forEach(b => {
+    b.addEventListener('click', () => {
+      imeiSeleccionadoVenta = b.dataset.ventaImei;
+      renderUnidadesVenta();
+    });
+  });
 }
 
 function stockDeVarianteVenta() {
@@ -8830,6 +8907,13 @@ async function confirmBarcodeVenta() {
             (stockDisponible === 1 ? ' unidad' : ' unidades') + '.');
       return;
     }
+    // Con más de un equipo en la misma combinación (ej. un iPhone 13 negro
+    // y uno blanco), hay que confirmar cuál se está vendiendo — si no, el
+    // descuento de stock elegía cualquiera sin que el vendedor lo supiera.
+    if (unidadesDisponiblesVenta().length > 1 && !imeiSeleccionadoVenta) {
+      alert('Elegí cuál de los equipos estás vendiendo antes de registrar la venta.');
+      return;
+    }
     variante = { ...varianteSeleccionadaVenta };
   }
 
@@ -8851,7 +8935,7 @@ async function confirmBarcodeVenta() {
   const vendedor = (byId('barcodeVendedor')?.value || '').trim();
   const medioPago = byId('barcodeMedioPago')?.value || '';
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago });
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, imei: imeiSeleccionadoVenta });
   if (ok) {
     guardarNombreVendedor(vendedor);
     let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty);
@@ -8876,6 +8960,7 @@ async function confirmBarcodeVenta() {
     byId('barcodeTradeInImei').value = '';
     byId('barcodeTradeInPendiente').checked = true;
     varianteSeleccionadaVenta = {};
+    imeiSeleccionadoVenta = null;
     byId('barcodeVarianteBloque').classList.add('hidden');
     clearBarcodeResult();
 
@@ -8911,7 +8996,7 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '' } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', imei: imeiElegido = null } = opciones || {};
   const total = product.price * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
@@ -8963,7 +9048,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   // un pedido hecho desde la tienda, así el talle correcto es el que baja.
   let imeiVendido = null;
   if (esProductoFisico(product)) {
-    imeiVendido = await aplicarStockDeItem({ product_id: product.id, qty, variante }, -1);
+    imeiVendido = await aplicarStockDeItem({ product_id: product.id, qty, variante, imei: imeiElegido }, -1);
   }
 
   if (product.imei) {
