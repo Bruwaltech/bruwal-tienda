@@ -2213,9 +2213,13 @@ tr:last-child td { border-bottom: none; }
           <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">GB</label>
           <input type="text" id="reponerNuevoGb" placeholder="Ej: 128" style="width:100%;">
         </div>
-        <div style="width:75px;">
+        <div style="width:75px;" id="campoReponerNuevoRam">
           <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">RAM</label>
           <input type="text" id="reponerNuevoRam" placeholder="Ej: 4GB" style="width:100%;">
+        </div>
+        <div style="width:75px;" id="campoReponerNuevoColor" class="hidden">
+          <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Color</label>
+          <input type="text" id="reponerNuevoColor" placeholder="Ej: Negro" style="width:100%;">
         </div>
         <div style="width:85px;">
           <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Batería</label>
@@ -3926,9 +3930,16 @@ function claveDeCombinacion(atributos) {
 // guardados como texto suelto ("358...") en vez de objeto con los datos
 // extra. Se normalizan al leer para no tener que migrar nada en la base.
 function normalizarUnidadImei(u) {
-  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', listo: true };
-  return { imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '', estado: u.estado || '', listo: u.listo !== false };
+  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', color: '', listo: true };
+  return { imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '', estado: u.estado || '', color: u.color || '', listo: u.listo !== false };
 }
+
+// Apple no publica "RAM" como dato del equipo (a diferencia de Android) —
+// para iPhone se carga Color en su lugar. Se detecta por el nombre del
+// producto (no por el campo Marca, que es transitorio y se vacía al
+// reeditar) para que el criterio sea el mismo siempre: al cargar, al
+// reponer, en la etiqueta impresa y en la tienda pública.
+const productoEsIphone = (nombre) => normalizarTexto(nombre || '').includes('iphone');
 
 // Los primeros 8 dígitos del IMEI (TAC) identifican marca y modelo exactos
 // — nunca color ni capacidad, eso no está codificado ahí. Es solo un hint
@@ -4237,6 +4248,7 @@ function renderGrillaVariantes() {
   }
 
   const esElec = rubroEsElectronica();
+  const esIphone = productoEsIphone(byId('pName') ? byId('pName').value : '');
 
   // Lo que ya tenía cargado cada combinación no se pierde al tocar otro
   // atributo — pero cuando cambia la CANTIDAD de atributos (se agrega o
@@ -4334,8 +4346,10 @@ function renderGrillaVariantes() {
               <input type="text" data-nuevo-gb="${escapeHtml(clave)}" placeholder="Ej: 128" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
             </div>
             <div style="width:75px;">
-              <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">RAM</label>
-              <input type="text" data-nuevo-ram="${escapeHtml(clave)}" placeholder="Ej: 4GB" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+              <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">${esIphone ? 'Color' : 'RAM'}</label>
+              ${esIphone
+                ? `<input type="text" data-nuevo-color="${escapeHtml(clave)}" placeholder="Ej: Negro" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">`
+                : `<input type="text" data-nuevo-ram="${escapeHtml(clave)}" placeholder="Ej: 4GB" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">`}
             </div>
             <div style="width:85px;">
               <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Batería</label>
@@ -4394,7 +4408,7 @@ function crearEspaciosImei(clave, cantidadCruda) {
   const cantidad = Math.max(0, Math.min(50, Math.floor(Number(cantidadCruda) || 0)));
   if (!cantidad) return;
   if (!v.imeis) v.imeis = [];
-  for (let i = 0; i < cantidad; i++) v.imeis.push({ imei: '', gb: '', ram: '', bateria: '', estado: '', listo: true });
+  for (let i = 0; i < cantidad; i++) v.imeis.push({ imei: '', gb: '', ram: '', bateria: '', estado: '', color: '', listo: true });
   v.stock = v.imeis.length;
   renderImeisDeVariante(clave);
   const contador = document.querySelector('[data-contador-imei="' + CSS.escape(clave) + '"]');
@@ -4408,6 +4422,7 @@ function renderImeisDeVariante(clave) {
   if (!v) return;
 
   const est = 'padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:11.5px;';
+  const esIphone = productoEsIphone(byId('pName') ? byId('pName').value : '');
   cont.innerHTML = (v.imeis || []).length ? v.imeis.map((u, i) => `
     <div style="background:var(--bg);padding:7px 9px;border-radius:6px;${!u.imei ? 'border:1.5px dashed var(--danger);' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
@@ -4417,7 +4432,9 @@ function renderImeisDeVariante(clave) {
       </div>
       <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
         <input type="text" data-editar-imei="gb" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:56px;${est}">
-        <input type="text" data-editar-imei="ram" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">
+        ${esIphone
+          ? `<input type="text" data-editar-imei="color" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.color || '')}" placeholder="Color" style="width:70px;${est}">`
+          : `<input type="text" data-editar-imei="ram" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">`}
         <input type="text" data-editar-imei="bateria" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:65px;${est}">
         <input type="text" data-editar-imei="estado" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
       </div>
@@ -4488,6 +4505,7 @@ function agregarImeiAVariante(clave) {
 
   const gbInput = document.querySelector('[data-nuevo-gb="' + CSS.escape(clave) + '"]');
   const ramInput = document.querySelector('[data-nuevo-ram="' + CSS.escape(clave) + '"]');
+  const colorInput = document.querySelector('[data-nuevo-color="' + CSS.escape(clave) + '"]');
   const bateriaInput = document.querySelector('[data-nuevo-bateria="' + CSS.escape(clave) + '"]');
   const estadoInput = document.querySelector('[data-nuevo-estado="' + CSS.escape(clave) + '"]');
   const listoInput = document.querySelector('[data-nuevo-listo="' + CSS.escape(clave) + '"]');
@@ -4496,6 +4514,7 @@ function agregarImeiAVariante(clave) {
     imei,
     gb: (gbInput?.value || '').trim(),
     ram: (ramInput?.value || '').trim(),
+    color: (colorInput?.value || '').trim(),
     bateria: (bateriaInput?.value || '').trim(),
     estado: (estadoInput?.value || '').trim(),
     listo: listoInput ? !!listoInput.checked : true
@@ -5994,11 +6013,12 @@ let filtroProductosDestino = 'tienda';
 // (electrónica) muestra cada equipo con sus propios datos (más útil que
 // solo el conteo), sin IMEI queda igual que antes (combinación: stock).
 function tooltipVariantesProducto(p) {
+  const esIphone = productoEsIphone(p.name);
   return p.variantes.map(v => {
     const nombreCombo = Object.values(v.atributos).join(' ');
     if (Array.isArray(v.imeis) && v.imeis.length) {
       const equipos = v.imeis.map(normalizarUnidadImei).map(u => {
-        const meta = [u.gb, u.ram, u.bateria ? 'Bat. ' + u.bateria : '', u.estado, u.listo === false ? 'pendiente restauración' : '']
+        const meta = [u.gb, esIphone ? u.color : u.ram, u.bateria ? 'Bat. ' + u.bateria : '', u.estado, u.listo === false ? 'pendiente restauración' : '']
           .filter(Boolean).join(' · ');
         return u.imei + (meta ? ' (' + meta + ')' : '');
       }).join('\n    ');
@@ -9835,6 +9855,7 @@ function abrirReponerVariante(id) {
   byId('reponerNuevoImei').value = '';
   byId('reponerNuevoGb').value = '';
   byId('reponerNuevoRam').value = '';
+  byId('reponerNuevoColor').value = '';
   byId('reponerNuevoBateria').value = '';
   byId('reponerNuevoEstado').value = '';
   byId('reponerNuevoListo').checked = true;
@@ -9847,6 +9868,13 @@ function abrirReponerVariante(id) {
   const esElec = rubroEsElectronica();
   byId('campoReponerCantidad').classList.toggle('hidden', esElec);
   byId('campoReponerImeis').classList.toggle('hidden', !esElec);
+
+  // Apple no publica RAM como dato del equipo — para iPhone se carga Color
+  // en su lugar (ver productoEsIphone).
+  const esIphone = productoEsIphone(p.name);
+  byId('campoReponerNuevoRam').classList.toggle('hidden', esIphone);
+  byId('campoReponerNuevoColor').classList.toggle('hidden', !esIphone);
+
   renderReponerImeisLista();
 
   renderCamposReponerVariante();
@@ -9857,6 +9885,8 @@ function renderReponerImeisLista() {
   const cont = byId('reponerImeisLista');
   if (!cont) return;
   const est = 'padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:11.5px;';
+  const pReponer = products.find(x => String(x.id) === String(reponerVarianteProductoId));
+  const esIphone = productoEsIphone(pReponer?.name);
   cont.innerHTML = reponerImeisNuevos.length ? reponerImeisNuevos.map((u, i) => `
     <div style="background:var(--bg);padding:7px 10px;border-radius:6px;${!u.imei ? 'border:1.5px dashed var(--danger);' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
@@ -9866,7 +9896,9 @@ function renderReponerImeisLista() {
       </div>
       <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
         <input type="text" data-editar-reponer="gb" data-i="${i}" value="${escapeHtml(u.gb || '')}" placeholder="GB" style="width:56px;${est}">
-        <input type="text" data-editar-reponer="ram" data-i="${i}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">
+        ${esIphone
+          ? `<input type="text" data-editar-reponer="color" data-i="${i}" value="${escapeHtml(u.color || '')}" placeholder="Color" style="width:70px;${est}">`
+          : `<input type="text" data-editar-reponer="ram" data-i="${i}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">`}
         <input type="text" data-editar-reponer="bateria" data-i="${i}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:65px;${est}">
         <input type="text" data-editar-reponer="estado" data-i="${i}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
       </div>
@@ -9919,7 +9951,7 @@ function renderReponerImeisLista() {
 function crearEspaciosReponer(cantidadCruda) {
   const cantidad = Math.max(0, Math.min(50, Math.floor(Number(cantidadCruda) || 0)));
   if (!cantidad) return;
-  for (let i = 0; i < cantidad; i++) reponerImeisNuevos.push({ imei: '', gb: '', ram: '', bateria: '', estado: '', listo: true });
+  for (let i = 0; i < cantidad; i++) reponerImeisNuevos.push({ imei: '', gb: '', ram: '', bateria: '', estado: '', color: '', listo: true });
   renderReponerImeisLista();
 }
 
@@ -9942,6 +9974,7 @@ byId('reponerAgregarImeiBtn').addEventListener('click', () => {
     imei,
     gb: byId('reponerNuevoGb').value.trim(),
     ram: byId('reponerNuevoRam').value.trim(),
+    color: byId('reponerNuevoColor').value.trim(),
     bateria: byId('reponerNuevoBateria').value.trim(),
     estado: byId('reponerNuevoEstado').value.trim(),
     listo: byId('reponerNuevoListo').checked
@@ -10155,8 +10188,9 @@ function renderCamposEtiquetaVariante() {
   const conImeis = v && Array.isArray(v.imeis) && v.imeis.length;
   byId('etiquetaVarianteImeis').classList.toggle('hidden', !conImeis);
   if (conImeis) {
+    const esIphoneEtq = productoEsIphone(p.name);
     byId('etiquetaVarianteImeisLista').innerHTML = v.imeis.map(normalizarUnidadImei).map(u => {
-      const meta = [u.gb, u.ram, u.bateria ? 'Bat. ' + u.bateria : ''].filter(Boolean).join(' · ');
+      const meta = [u.gb, esIphoneEtq ? u.color : u.ram, u.bateria ? 'Bat. ' + u.bateria : ''].filter(Boolean).join(' · ');
       const activo = etiquetaVarianteImeiSeleccionado === u.imei;
       return '<button type="button" data-etq-imei="' + escapeHtml(u.imei) + '" style="text-align:left;padding:8px 10px;border-radius:7px;border:1.5px solid ' +
         (activo ? 'var(--celeste)' : 'var(--line)') + ';background:' + (activo ? '#EAF4FD' : '#fff') +
@@ -10225,8 +10259,9 @@ function imprimirEtiquetaProducto(id, variante, unidad, precioVariante) {
   // producto, como siempre. Se juntan en un solo renglón separadas por "·"
   // para no gastar una línea entera por cada una — en una etiqueta de
   // 30mm de alto no sobra alto para eso.
+  const esIphoneEtiqueta = productoEsIphone(p.name);
   const specsTexto = unidad
-    ? [unidad.gb ? 'GB: ' + unidad.gb : '', unidad.ram ? 'RAM: ' + unidad.ram : '', unidad.bateria ? 'Batería: ' + unidad.bateria : '']
+    ? [unidad.gb ? 'GB: ' + unidad.gb : '', esIphoneEtiqueta ? (unidad.color ? 'Color: ' + unidad.color : '') : (unidad.ram ? 'RAM: ' + unidad.ram : ''), unidad.bateria ? 'Batería: ' + unidad.bateria : '']
         .filter(Boolean).join(' · ')
     : (Array.isArray(p.specs) && p.specs.length ? p.specs.map(s => s.clave + ': ' + s.valor).join(' · ') : '');
 

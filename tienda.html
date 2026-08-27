@@ -993,8 +993,14 @@ function fotosDe(p) {
 // guardan como texto suelto ("358...") en vez de objeto — se normalizan al
 // leer, igual que en el panel.
 function normalizarUnidadImeiFicha(u) {
-  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', listo: true };
-  return { imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '', estado: u.estado || '', listo: u.listo !== false };
+  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', color: '', listo: true };
+  return { imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '', estado: u.estado || '', color: u.color || '', listo: u.listo !== false };
+}
+
+// Apple no publica "RAM" como dato del equipo — para iPhone el panel carga
+// Color en su lugar (ver dashboard/index.html), mismo criterio acá.
+function productoEsIphone(nombre) {
+  return String(nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes('iphone');
 }
 
 function abrirFicha(id) {
@@ -1160,9 +1166,10 @@ function abrirFicha(id) {
     if (specsVarEl) {
       const unidades = (vSel && Array.isArray(vSel.imeis)) ? vSel.imeis.map(normalizarUnidadImeiFicha) : [];
       const unidad = unidades.find(u => u.listo !== false) || unidades[0];
+      const esIphoneFicha = productoEsIphone(p.name);
       const datos = unidad ? [
         unidad.gb && ['Almacenamiento', unidad.gb],
-        unidad.ram && ['RAM', unidad.ram],
+        esIphoneFicha ? (unidad.color && ['Color', unidad.color]) : (unidad.ram && ['RAM', unidad.ram]),
         unidad.bateria && ['Batería', unidad.bateria],
         unidad.estado && ['Estado', unidad.estado]
       ].filter(Boolean) : [];
