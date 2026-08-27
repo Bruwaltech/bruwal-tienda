@@ -982,6 +982,14 @@ function fotosDe(p) {
     : (p.image_url ? [p.image_url] : []);
 }
 
+// Las tiendas que cargaban IMEI antes de tener estos datos extra los
+// guardan como texto suelto ("358...") en vez de objeto — se normalizan al
+// leer, igual que en el panel.
+function normalizarUnidadImeiFicha(u) {
+  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', listo: true };
+  return { imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '', estado: u.estado || '', listo: u.listo !== false };
+}
+
 function abrirFicha(id) {
   const p = products.find(x => String(x.id) === String(id));
   if (!p) return;
@@ -1057,6 +1065,10 @@ function abrirFicha(id) {
       '</div>'
     ).join('') +
 
+    // Se completa recién al elegir toda la combinación (refrescarPrecio la
+    // arma) — antes de eso no hay un equipo puntual del que mostrar datos.
+    '<div id="fichaSpecsVariante"></div>' +
+
     (p.description ? '<p style="color:var(--text-mute);font-size:14px;line-height:1.65;margin-bottom:16px;">' + escapeHtml(p.description) + '</p>' : '') +
 
     // Batería, almacenamiento, RAM, estado — lo que el vendedor haya
@@ -1131,6 +1143,28 @@ function abrirFicha(id) {
     if (t) t.textContent = money((unitario + extras) * cantidad);
     const q = byId('fichaQty');
     if (q) q.textContent = cantidad;
+
+    // Al elegir la combinación completa (ej. "iPhone 13"), electrónica
+    // guarda almacenamiento/RAM/batería/estado por EQUIPO, no por
+    // combinación — se muestra el del que en la práctica le va a tocar (el
+    // más viejo cargado, mismo criterio que usa la venta en el panel), así
+    // lo que ve acá es lo que de verdad le va a llegar.
+    const specsVarEl = byId('fichaSpecsVariante');
+    if (specsVarEl) {
+      const unidades = (vSel && Array.isArray(vSel.imeis)) ? vSel.imeis.map(normalizarUnidadImeiFicha) : [];
+      const unidad = unidades.find(u => u.listo !== false) || unidades[0];
+      const datos = unidad ? [
+        unidad.gb && ['Almacenamiento', unidad.gb],
+        unidad.ram && ['RAM', unidad.ram],
+        unidad.bateria && ['Batería', unidad.bateria],
+        unidad.estado && ['Estado', unidad.estado]
+      ].filter(Boolean) : [];
+      specsVarEl.innerHTML = datos.length
+        ? '<div class="ficha-specs" style="margin-bottom:14px;">' + datos.map(([clave, valor]) =>
+            '<span class="ficha-spec-chip"><b>' + escapeHtml(clave) + ':</b> ' + escapeHtml(valor) + '</span>'
+          ).join('') + '</div>'
+        : '';
+    }
 
     if (!campos.length || !btnAgregar) return;
 
