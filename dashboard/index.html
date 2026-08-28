@@ -1932,6 +1932,24 @@ tr:last-child td { border-bottom: none; }
             Es lo que tapa la agenda: si el corte dura una hora y alguien saca turno a las 8:45, nadie más puede reservar hasta las 9:45.
           </small>
         </div>
+
+        <!-- Insumos: qué se gasta cada vez que se hace este servicio. Se
+             muestra junto con la duración, o sea solo cuando es un servicio. -->
+        <div class="field hidden" id="campoInsumos">
+          <label>¿Qué gasta del stock? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <div id="insumosLista" style="display:flex;flex-direction:column;gap:7px;margin-bottom:9px;"></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <select id="insumoProducto" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;"></select>
+            <input type="number" id="insumoCantidad" min="0" step="0.01" value="1" style="width:78px;padding:9px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+            <button type="button" id="agregarInsumoBtn" class="btn" style="width:auto;padding:9px 13px;font-size:12.5px;">+ Sumar</button>
+          </div>
+          <small style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Cada vez que vendas este servicio se descuenta solo. Ej: un corte con barba gasta <strong>1</strong> hoja de afeitar
+            y <strong>1</strong> tira de cuello. Si una hoja te rinde dos cortes, poné <strong>0,5</strong>.
+            Cargá los insumos como productos de <strong>uso interno</strong> (el rollo de 100 tiras entra como stock 100).
+          </small>
+        </div>
+
         <div id="camposEquipoUnico">
           <div class="field campo-electronica hidden">
             <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
@@ -3878,6 +3896,10 @@ function alCambiarTipoProducto() {
   // reemplazan al stock simple por otra cosa.
   byId('campoStock').classList.toggle('hidden', esServicio || byId('pTieneVariantes')?.checked);
   byId('campoDuracionServicio').classList.toggle('hidden', !esServicio);
+  // Los insumos son lo que gasta un servicio al prestarse: mismo criterio
+  // de visibilidad que la duración.
+  if (byId('campoInsumos')) byId('campoInsumos').classList.toggle('hidden', !esServicio);
+  if (esServicio) renderInsumos();
   // Un servicio no se mide en metros ni en kilos.
   if (typeof aplicarVentaPorMedidaVisibilidad === 'function') aplicarVentaPorMedidaVisibilidad();
 }
@@ -4901,6 +4923,66 @@ byId('opcAgregar').addEventListener('click', () => {
 // del equipo puntual, no una combinación con stock propio como el talle.
 let specsEnEdicion = [];
 const SPECS_SUGERIDOS = ['Batería', 'Almacenamiento', 'RAM', 'Estado', 'Color'];
+
+// ---- Insumos que gasta un servicio ----
+// [{ producto_id, cantidad }] — se descuentan del stock al vender (ver
+// aplicarInsumosDeItem).
+let insumosEnEdicion = [];
+
+function renderInsumos() {
+  const lista = byId('insumosLista');
+  const selector = byId('insumoProducto');
+  if (!lista || !selector) return;
+
+  const idEditando = byId('productForm')?.dataset.id;
+
+  // Candidatos: cualquier producto físico menos el que se está editando (un
+  // servicio no puede gastarse a sí mismo).
+  const candidatos = (products || []).filter(p =>
+    esProductoFisico(p) && String(p.id) !== String(idEditando));
+
+  selector.innerHTML = candidatos.length
+    ? '<option value="">Elegí el insumo...</option>' + candidatos.map(p =>
+        '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(p.name) +
+        ' (' + formatearCantidad(p.stock, p) + ')</option>').join('')
+    : '<option value="">Todavía no cargaste productos para descontar</option>';
+
+  lista.innerHTML = insumosEnEdicion.length ? insumosEnEdicion.map((ins, i) => {
+    const p = (products || []).find(x => String(x.id) === String(ins.producto_id));
+    const nombre = p ? p.name : 'Producto borrado';
+    const unidad = p && unidadDe(p) ? ' ' + unidadDe(p).corto : '';
+    return '<div style="display:flex;align-items:center;gap:8px;background:var(--bg);padding:8px 11px;border-radius:7px;">' +
+      '<span style="flex:1;font-size:13px;">' + escapeHtml(nombre) + '</span>' +
+      '<span style="font-weight:700;font-size:13px;color:var(--navy);">' +
+        Number(ins.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 3 }) + unidad + '</span>' +
+      '<button type="button" data-quitar-insumo="' + i + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;">✕</button>' +
+    '</div>';
+  }).join('') : '<div style="color:var(--text-mute);font-size:12.5px;">No descuenta nada del stock.</div>';
+
+  lista.querySelectorAll('[data-quitar-insumo]').forEach(b => {
+    b.addEventListener('click', () => {
+      insumosEnEdicion.splice(Number(b.dataset.quitarInsumo), 1);
+      renderInsumos();
+    });
+  });
+}
+
+if (byId('agregarInsumoBtn')) {
+  byId('agregarInsumoBtn').addEventListener('click', () => {
+    const id = byId('insumoProducto').value;
+    const cantidad = Number(String(byId('insumoCantidad').value).replace(',', '.'));
+    if (!id) { alert('Elegí qué producto se gasta.'); return; }
+    if (!Number.isFinite(cantidad) || cantidad <= 0) { alert('La cantidad tiene que ser mayor que 0.'); return; }
+
+    // Si ya estaba, se suma en vez de duplicar la fila.
+    const existente = insumosEnEdicion.find(x => String(x.producto_id) === String(id));
+    if (existente) existente.cantidad = redondearMedida(Number(existente.cantidad) + cantidad);
+    else insumosEnEdicion.push({ producto_id: id, cantidad: redondearMedida(cantidad) });
+
+    byId('insumoCantidad').value = '1';
+    renderInsumos();
+  });
+}
 
 function renderSpecs() {
   const campo = byId('campoSpecs');
@@ -6573,9 +6655,44 @@ function renderOrders() {
 // Devuelve el IMEI afectado cuando la variante tiene equipos con IMEI
 // cargado (para poder anotarlo en la orden y en el historial), o null si
 // la variante usa el stock simple de siempre.
+// Lo que gasta un servicio (o un producto armado) cada vez que se vende:
+// un corte con barba se lleva puesta una hoja de afeitar y una tira de las
+// del cuello. Se descuenta del stock de esos insumos, que son productos
+// como cualquier otro — normalmente marcados "uso interno".
+//
+// Vive acá adentro y no en registrarVenta a propósito: así lo aplican
+// TODOS los caminos que mueven stock (venta de mostrador, confirmar un
+// pedido de la tienda online, y la vuelta al anular) sin duplicar lógica.
+async function aplicarInsumosDeItem(item, signo) {
+  const p = products.find(x => String(x.id) === String(item.product_id));
+  const insumos = Array.isArray(p?.insumos) ? p.insumos : [];
+  if (!insumos.length) return;
+
+  const qty = Number(item.qty || 1);
+
+  for (const ins of insumos) {
+    const insumo = products.find(x => String(x.id) === String(ins.producto_id));
+    // Si borraron el insumo, la venta no se frena por eso: se saltea.
+    if (!insumo || !esProductoFisico(insumo)) continue;
+
+    const consumo = (Number(ins.cantidad) || 0) * qty;
+    if (!consumo) continue;
+
+    // signo -1 (venta) descuenta; +1 (anulación) devuelve. redondearMedida
+    // evita el arrastre de decimales al gastar de a 0,5.
+    const nuevo = Math.max(0, redondearMedida(Number(insumo.stock || 0) + signo * consumo));
+    await sb.from('store_products').update({ stock: nuevo }).eq('id', insumo.id);
+  }
+}
+
 async function aplicarStockDeItem(item, signo) {
   const p = products.find(x => String(x.id) === String(item.product_id));
-  if (!p || !esProductoFisico(p)) return null;   // producto borrado o servicio: nada que ajustar
+
+  // Los insumos se descuentan aunque el ítem sea un servicio (que no tiene
+  // stock propio) — de hecho ese es el caso principal.
+  await aplicarInsumosDeItem(item, signo);
+
+  if (!p || !esProductoFisico(p)) return null;   // producto borrado o servicio: nada más que ajustar
 
   const qty = Number(item.qty || 1);
 
@@ -9771,13 +9888,12 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     });
   }
 
-  // Los servicios no llevan stock, así que no se tocan. El resto se
-  // descuenta por variante si corresponde — misma lógica que al confirmar
-  // un pedido hecho desde la tienda, así el talle correcto es el que baja.
-  let imeiVendido = null;
-  if (esProductoFisico(product)) {
-    imeiVendido = await aplicarStockDeItem({ product_id: product.id, qty, variante, imei: imeiElegido }, -1);
-  }
+  // Se llama SIEMPRE, también para servicios: un servicio no tiene stock
+  // propio, pero puede gastar insumos (una hoja de afeitar, una tira de
+  // cuello) y eso sí hay que descontarlo. aplicarStockDeItem se encarga de
+  // no tocar stock donde no corresponde.
+  const imeiVendido = await aplicarStockDeItem(
+    { product_id: product.id, qty, variante, imei: imeiElegido }, -1);
 
   if (product.imei) {
     await registrarEventoImei(product.imei, 'venta', 'Vendido a ' + nombre, total);
@@ -10166,6 +10282,8 @@ function abrirFormularioNuevo(tipo) {
     renderUnidadMedidaChips();
     aplicarVentaPorMedida();
     aplicarVentaPorMedidaVisibilidad();
+    insumosEnEdicion = [];
+    renderInsumos();
     seleccionarTipoTab(esServicio ? 'servicio' : 'producto');
     byId('pDuracion').value = '';
     byId('pPendienteRestauracion').checked = false;
@@ -10513,6 +10631,9 @@ byId('productForm').addEventListener('submit', async (e) => {
     proveedor_email: proveedorAGuardar.email,
     opciones: opcionesEnEdicion,
     specs: specsEnEdicion,
+    // Solo se guardan en un servicio: si lo pasó a producto, se limpian en
+    // vez de quedar colgados descontando stock sin que se vea el campo.
+    insumos: byId('pTipoServicio').checked ? insumosEnEdicion : [],
     tipo: byId('pTipoServicio').checked ? 'servicio' : 'producto',
     duracion_minutos: byId('pTipoServicio').checked && byId('pDuracion').value ? Number(byId('pDuracion').value) : null,
     solo_interno: byId('pDestinoInterno').checked,
@@ -10646,6 +10767,10 @@ async function editProduct(id) {
   specsEnEdicion = Array.isArray(p.specs) ? p.specs.map(s => ({ ...s })) : [];
   renderSpecs();
   if (byId('productForm')) byId('productForm').dataset.id = id;
+  // Después de fijar dataset.id: renderInsumos lo usa para no ofrecer el
+  // propio servicio como insumo de sí mismo.
+  insumosEnEdicion = Array.isArray(p.insumos) ? p.insumos.map(i => ({ ...i })) : [];
+  renderInsumos();
   iniciarWizard(false);
   if (byId('productModal')) show(byId('productModal'));
   if (byId('pName')) byId('pName').focus();
