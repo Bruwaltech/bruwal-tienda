@@ -1926,7 +1926,7 @@ tr:last-child td { border-bottom: none; }
             <option value="120">2 horas</option>
           </select>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
-            Se guarda junto al servicio para más adelante. Todavía no bloquea varios turnos seguidos en la Agenda — eso es un paso aparte.
+            Es lo que tapa la agenda: si el corte dura una hora y alguien saca turno a las 8:45, nadie más puede reservar hasta las 9:45.
           </small>
         </div>
         <div id="camposEquipoUnico">
@@ -2516,7 +2516,7 @@ tr:last-child td { border-bottom: none; }
     <div class="field">
       <label>¿Cuánto dura?</label>
       <select id="turnoDuracion" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
-        <option value="">Lo que dure un turno normal</option>
+        <option value="">Un lugar de la grilla (lo mínimo)</option>
         <option value="15">15 minutos</option>
         <option value="30">30 minutos</option>
         <option value="45">45 minutos</option>
@@ -2784,13 +2784,22 @@ tr:last-child td { border-bottom: none; }
               <div id="turnosPorDiaLista" style="display:flex;flex-direction:column;gap:10px;"></div>
             </div>
 
-            <label style="font-size:12.5px;">Duración de cada turno</label>
+            <!-- Este campo NO es cuánto dura un turno: eso ahora sale de la
+                 duración de cada servicio (ver duracion_minutos en el form de
+                 producto). Lo que define acá es cada cuánto puede ARRANCAR
+                 uno, o sea la grilla de horarios que ve el cliente. -->
+            <label style="font-size:12.5px;">¿Cada cuánto puede arrancar un turno?</label>
             <select id="turnosIntervalo" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
-              <option value="15">15 minutos</option>
-              <option value="30" selected>30 minutos</option>
-              <option value="45">45 minutos</option>
-              <option value="60">1 hora</option>
+              <option value="15">Cada 15 minutos (8:00, 8:15, 8:30...)</option>
+              <option value="30" selected>Cada 30 minutos (8:00, 8:30, 9:00...)</option>
+              <option value="45">Cada 45 minutos</option>
+              <option value="60">Cada 1 hora (8:00, 9:00, 10:00...)</option>
             </select>
+            <small style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+              Esto es solo en qué horarios se puede empezar. <strong>Cuánto dura</strong> lo define cada servicio:
+              cargale la duración al corte, al color, etc. en Productos, y el sistema tapa solo los horarios que ese
+              servicio ocupa. Un servicio sin duración cargada ocupa un lugar de la grilla.
+            </small>
           </div>
         </div>
 
