@@ -17,8 +17,12 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-<!-- SheetJS: lee y escribe Excel/CSV en el navegador, para importar catalogos y descargar la plantilla -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- SheetJS: lee y escribe Excel/CSV en el navegador, para importar catalogos y descargar la plantilla.
+     Se usa el fork xlsx-js-style en vez del SheetJS original: es la MISMA API y version
+     base (0.18.5), pero el original NO escribe estilos de celda (probado: negrita y fondo
+     se pierden al guardar), asi que el catalogo exportado salia sin encabezados
+     formateados. De paso pesa la mitad (415 KB contra 861 KB del xlsx.full.min.js). -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <!-- ZXing: lee codigos de barras de producto (EAN-13, UPC, Code128) y ademas QR.
      Reemplaza a jsQR y qr-scanner, que solo leian QR y no servian para productos. -->
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -7395,31 +7399,168 @@ async function confirmarFacturaIa() {
 function descargarPlantillaImportacion() {
   const datos = [
     ['Nombre', 'Descripción', 'Precio', 'Stock', 'Categoría', 'Código de barras'],
-    ['Remera básica blanca', 'Remera de algodón manga corta', 8500, 20, 'Remeras', '7791234567890']
+    ['Remera básica blanca', 'Remera de algodón manga corta', 8500, 20, 'Remeras', '7791234567890'],
+    ['Buzo con capucha', 'Frisa liviana', 21000, 8, 'Buzos', '']
   ];
-  const hoja = XLSX.utils.aoa_to_sheet(datos);
   const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
+  // Mismo formato que el catálogo exportado: si las dos planillas se ven
+  // igual, se entiende sola que una es la ida y la otra la vuelta.
+  XLSX.utils.book_append_sheet(libro, armarHojaExcel(datos, [2]), 'Productos');
   XLSX.writeFile(libro, 'plantilla-productos-bruwal.xlsx');
 }
 
+// ---- Armado de hojas de Excel prolijas ----
+// Sin esto las columnas salen todas del mismo ancho: un nombre largo se
+// desborda sobre la celda de al lado y el archivo se lee mal. El ancho se
+// calcula del contenido real de cada columna, con un piso (que no quede
+// más angosta que su título) y un techo (que una descripción larga no se
+// coma la pantalla).
+const ANCHO_MINIMO_COLUMNA = 9;
+const ANCHO_MAXIMO_COLUMNA = 46;
+
+function anchosDeColumna(filas) {
+  if (!filas.length) return [];
+  return filas[0].map((_, col) => {
+    const masLargo = filas.reduce((max, fila) => {
+      const celda = fila[col];
+      const largo = String(celda == null ? '' : celda).length;
+      return largo > max ? largo : max;
+    }, 0);
+    // +2 de aire para que el texto no toque el borde de la celda.
+    return { wch: Math.min(ANCHO_MAXIMO_COLUMNA, Math.max(ANCHO_MINIMO_COLUMNA, masLargo + 2)) };
+  });
+}
+
+const ESTILO_ENCABEZADO = {
+  font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+  fill: { fgColor: { rgb: '15294D' } },
+  alignment: { vertical: 'center', horizontal: 'left' },
+  border: { bottom: { style: 'thin', color: { rgb: '0B1A33' } } }
+};
+
+// Construye una hoja lista para leer: encabezado destacado, anchos por
+// contenido, fila de títulos congelada (queda a la vista al bajar), filtros
+// en cada columna y formato de moneda donde corresponde.
+//
+// `columnasMoneda` son índices (0 = primera columna).
+function armarHojaExcel(filas, columnasMoneda) {
+  const hoja = XLSX.utils.aoa_to_sheet(filas);
+  const totalCols = filas[0].length;
+  const totalFilas = filas.length;
+
+  hoja['!cols'] = anchosDeColumna(filas);
+  hoja['!rows'] = [{ hpt: 22 }];   // encabezado un poco más alto
+
+  filas[0].forEach((_, col) => {
+    const ref = XLSX.utils.encode_cell({ r: 0, c: col });
+    if (hoja[ref]) hoja[ref].s = ESTILO_ENCABEZADO;
+  });
+
+  (columnasMoneda || []).forEach(col => {
+    for (let fila = 1; fila < totalFilas; fila++) {
+      const ref = XLSX.utils.encode_cell({ r: fila, c: col });
+      // Solo a las celdas numéricas: si la fila trae vacío o un texto, un
+      // formato de moneda lo mostraría como "$0".
+      if (hoja[ref] && hoja[ref].t === 'n') hoja[ref].z = '"$"#,##0.00';
+    }
+  });
+
+  // Congelar la fila 1 y filtrar por cualquier columna: con un catálogo
+  // largo es la diferencia entre poder trabajar el archivo o no.
+  hoja['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+  hoja['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: totalFilas - 1, c: totalCols - 1 } }) };
+
+  return hoja;
+}
+
 // Todo el catálogo a un Excel, para tenerlo de respaldo o pasarlo a otro
-// lado. Mismas columnas que la plantilla de importación, así el archivo
-// que exportás de acá lo podés volver a importar sin tocarle nada.
-// Alcance v1, igual que la importación: solo los campos simples — no
-// incluye el desglose de talles/colores de los productos con variantes.
+// lado. Las primeras columnas son las mismas que la plantilla de
+// importación (y en ese orden), así el archivo que exportás de acá lo podés
+// volver a importar sin tocarle nada: el importador mapea por nombre de
+// encabezado, así que las columnas extra de la derecha las ignora.
+//
+// Los productos con variantes van desglosados en una segunda hoja, uno por
+// combinación — en la primera solo aparece el total, que es lo que se puede
+// reimportar.
 function exportarCatalogoExcel() {
   if (!products.length) {
     alert('Todavía no cargaste ningún producto.');
     return;
   }
 
-  const datos = [['Nombre', 'Descripción', 'Precio', 'Stock', 'Categoría', 'Código de barras']]
-    .concat(products.map(p => [p.name || '', p.description || '', Number(p.price || 0), Number(p.stock || 0), p.category || '', p.ean || '']));
+  // Costo y proveedor están protegidos por PIN en el panel: si no se
+  // desbloqueó en esta sesión, tampoco pueden salir en el Excel — si no,
+  // exportar sería la forma fácil de saltear el PIN.
+  const incluirCostos = !requiereDesbloqueoCostos();
 
-  const hoja = XLSX.utils.aoa_to_sheet(datos);
+  const encabezado = ['Nombre', 'Descripción', 'Precio', 'Stock', 'Categoría', 'Código de barras',
+                      'Unidad', 'Tipo', 'Dónde se vende', 'Variantes', 'Estado'];
+  if (incluirCostos) encabezado.push('Costo', 'Margen %', 'Proveedor');
+
+  const filas = [encabezado].concat(products.map(p => {
+    const variantes = (p.tiene_variantes && Array.isArray(p.variantes)) ? p.variantes.length : 0;
+    const costo = Number(p.costo || 0);
+    const precio = Number(p.price || 0);
+
+    const fila = [
+      p.name || '',
+      p.description || '',
+      precio,
+      Number(p.stock || 0),
+      p.category || '',
+      p.ean || '',
+      unidadDe(p) ? unidadDe(p).plural : 'unidades',
+      esProductoFisico(p) ? 'Producto' : 'Servicio',
+      p.solo_interno ? 'Uso interno' : 'Tienda',
+      variantes ? variantes + ' combinaciones' : '',
+      p.pendiente_restauracion ? 'Pendiente de restauración' : ''
+    ];
+
+    if (incluirCostos) {
+      fila.push(
+        costo > 0 ? costo : '',
+        // Margen sobre el precio de venta. Sin costo cargado no se puede
+        // calcular, y poner 0 haría creer que se vende sin ganancia.
+        (costo > 0 && precio > 0) ? Math.round(((precio - costo) / precio) * 100) : '',
+        p.proveedor_nombre || ''
+      );
+    }
+    return fila;
+  }));
+
   const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
+  const colsMoneda = incluirCostos ? [2, 11] : [2];
+  XLSX.utils.book_append_sheet(libro, armarHojaExcel(filas, colsMoneda), 'Catálogo');
+
+  // Segunda hoja: el desglose que la primera no puede mostrar sin repetir
+  // el producto en varias filas (y romper la reimportación).
+  const conVariantes = products.filter(p => p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length);
+  if (conVariantes.length) {
+    const filasVar = [['Producto', 'Combinación', 'Stock', 'Precio', 'IMEI / Serie', 'Detalle del equipo']];
+
+    conVariantes.forEach(p => {
+      const esIphone = productoEsIphone(p.name);
+      p.variantes.forEach(v => {
+        const combo = Object.values(v.atributos || {}).join(' / ');
+        const precioVar = v.precio != null ? Number(v.precio) : Number(p.price || 0);
+        const unidades = Array.isArray(v.imeis) ? v.imeis.map(normalizarUnidadImei) : [];
+
+        if (unidades.length) {
+          // Un renglón por equipo: es el punto de tener IMEI por unidad.
+          unidades.forEach(u => {
+            const detalle = [u.gb, esIphone ? u.color : u.ram, u.bateria ? 'Bat. ' + u.bateria : '',
+                             u.estado, u.listo === false ? 'pendiente de restauración' : '']
+              .filter(Boolean).join(' · ');
+            filasVar.push([p.name || '', combo, 1, precioVar, u.imei || '(sin IMEI)', detalle]);
+          });
+        } else {
+          filasVar.push([p.name || '', combo, Number(v.stock || 0), precioVar, '', '']);
+        }
+      });
+    });
+
+    XLSX.utils.book_append_sheet(libro, armarHojaExcel(filasVar, [3]), 'Variantes');
+  }
 
   const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(libro, 'catalogo-' + (currentStore?.slug || 'bruwal') + '-' + fecha + '.xlsx');
