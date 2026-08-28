@@ -2558,15 +2558,19 @@ tr:last-child td { border-bottom: none; }
 <div class="modal-overlay hidden" id="fiadoManualModal">
   <div class="modal" style="max-width:480px;">
     <button class="modal-close" id="closeFiadoManualModal">✕</button>
-    <h3><i class="fa-solid fa-book" style="color:var(--celeste);"></i> Cargar fiado anterior</h3>
-    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;line-height:1.6;">
+    <h3 id="fmTitulo"><i class="fa-solid fa-book" style="color:var(--celeste);"></i> Cargar fiado anterior</h3>
+    <p id="fmAyuda" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;line-height:1.6;">
       Para anotar una deuda que ya tenías anotada aparte (cuaderno, etc.), de antes
       de usar el sistema. No descuenta stock: esa venta ya pasó.
     </p>
     <div class="field"><label>Nombre del cliente</label><input type="text" id="fmNombre" placeholder="Ej: Juan Pérez"></div>
     <div class="field"><label>Teléfono (opcional)</label><input type="text" id="fmTelefono" placeholder="Ej: 11 2345 6789"></div>
     <div class="field"><label>Monto que adeuda</label><input type="number" id="fmMonto" min="0" step="1" placeholder="0"></div>
-    <div class="field"><label>Detalle (qué se llevó)</label><input type="text" id="fmDetalle" placeholder="Ej: 2 remeras talle M y un pantalón"></div>
+    <div class="field" id="fmCampoDetalle"><label>Detalle (qué se llevó)</label><input type="text" id="fmDetalle" placeholder="Ej: 2 remeras talle M y un pantalón"></div>
+    <div id="fmAvisoVenta" class="hidden" style="background:#FEF3E2;color:#8A5200;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.55;margin-bottom:12px;">
+      Esta deuda salió de una venta registrada, así que el detalle no se puede reescribir — es el
+      comprobante de lo que se vendió. Sí podés corregir el nombre, el teléfono y el saldo.
+    </div>
     <button type="button" id="guardarFiadoManualBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar deuda</button>
   </div>
 </div>
@@ -6721,6 +6725,7 @@ function renderFiado() {
       '<td><div class="row-actions">' +
         '<button class="icon-btn" data-ver-pagos="' + o.id + '" title="Ver pagos anteriores">Historial</button>' +
         '<button class="icon-btn" data-registrar-pago="' + o.id + '" style="color:var(--stock);" title="Anotar un pago">+ Pago</button>' +
+        '<button class="icon-btn" data-editar-fiado="' + o.id + '" title="Corregir nombre, teléfono o saldo">✏️ Editar</button>' +
         '<button class="icon-btn" data-portal-cliente="' + escapeHtml(o.customer_name || '') + '" ' +
           'data-portal-tel="' + escapeHtml(o.customer_phone || '') + '" ' +
           'title="Mandarle su estado de cuenta por WhatsApp">📄 Estado</button>' +
@@ -6734,6 +6739,131 @@ function renderFiado() {
     b.addEventListener('click', () => verHistorialPagos(b.dataset.verPagos)));
   cuerpo.querySelectorAll('[data-portal-cliente]').forEach(b =>
     b.addEventListener('click', () => enviarEstadoDeCuenta(b.dataset.portalCliente, b.dataset.portalTel)));
+  cuerpo.querySelectorAll('[data-editar-fiado]').forEach(b =>
+    b.addEventListener('click', () => abrirEditarFiado(b.dataset.editarFiado)));
+}
+
+// ---- Editar una deuda ya cargada ----
+// Reusa el modal de "Cargar fiado anterior" en modo edición. Sirve para
+// corregir lo que se cargó mal: un nombre con un error de tipeo (que ahora
+// además importa, porque el portal del cliente agrupa por nombre exacto),
+// un teléfono que faltaba, o un monto equivocado.
+let fiadoEnEdicion = null;
+
+// Una deuda cargada a mano tiene items sin product_id (los arma
+// guardarFiadoManual). Una que salió de una venta real sí los tiene, y ahí
+// el detalle es el comprobante de lo vendido: se puede corregir el saldo,
+// pero no reescribir qué se llevó.
+function fiadoEsManual(o) {
+  const items = Array.isArray(o?.items) ? o.items : [];
+  return items.every(it => !it || !it.product_id);
+}
+
+function abrirEditarFiado(orderId) {
+  if (!puedeOperar()) return;
+  const deuda = orders.find(o => String(o.id) === String(orderId));
+  if (!deuda) return;
+
+  fiadoEnEdicion = deuda;
+  const esManual = fiadoEsManual(deuda);
+
+  byId('fmTitulo').innerHTML = '<i class="fa-solid fa-pen" style="color:var(--celeste);"></i> Editar deuda';
+  byId('fmAyuda').textContent = 'Corregí lo que se haya cargado mal. Para registrar un pago usá "+ Pago", no bajes el saldo a mano.';
+  byId('fmNombre').value = deuda.customer_name || '';
+  byId('fmTelefono').value = (deuda.customer_phone === 'scanner') ? '' : (deuda.customer_phone || '');
+  byId('fmMonto').value = Number(deuda.saldo_pendiente || 0);
+
+  const items = Array.isArray(deuda.items) ? deuda.items : [];
+  byId('fmDetalle').value = esManual ? (items[0]?.name || '') : items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it)).join(', ');
+
+  byId('fmCampoDetalle').classList.toggle('hidden', !esManual);
+  byId('fmAvisoVenta').classList.toggle('hidden', esManual);
+  byId('guardarFiadoManualBtn').textContent = 'Guardar cambios';
+
+  show(byId('fiadoManualModal'));
+}
+
+function abrirNuevoFiadoManual() {
+  fiadoEnEdicion = null;
+  byId('fmTitulo').innerHTML = '<i class="fa-solid fa-book" style="color:var(--celeste);"></i> Cargar fiado anterior';
+  byId('fmAyuda').textContent = 'Para anotar una deuda que ya tenías anotada aparte (cuaderno, etc.), de antes de usar el sistema. No descuenta stock: esa venta ya pasó.';
+  byId('fmNombre').value = '';
+  byId('fmTelefono').value = '';
+  byId('fmMonto').value = '';
+  byId('fmDetalle').value = '';
+  byId('fmCampoDetalle').classList.remove('hidden');
+  byId('fmAvisoVenta').classList.add('hidden');
+  byId('guardarFiadoManualBtn').textContent = 'Guardar deuda';
+  show(byId('fiadoManualModal'));
+}
+
+async function guardarEdicionFiado() {
+  const deuda = fiadoEnEdicion;
+  const nombre = byId('fmNombre').value.trim();
+  const telefono = byId('fmTelefono').value.trim();
+  const monto = Number(byId('fmMonto').value);
+  const detalle = byId('fmDetalle').value.trim();
+
+  if (!nombre) { alert('Poné el nombre del cliente.'); return; }
+  if (!Number.isFinite(monto) || monto < 0) { alert('El monto no puede quedar vacío ni ser negativo.'); return; }
+
+  const saldoAnterior = Number(deuda.saldo_pendiente || 0);
+
+  // Bajar el saldo a mano NO es lo mismo que cobrar: la Caja calcula lo
+  // cobrado como (total - saldo_pendiente), así que achicar el saldo acá
+  // hace aparecer plata que nunca entró, y encima sin quedar registrada en
+  // el historial de pagos del cliente. Mismo criterio que separa "reponer
+  // stock" de "corregir el stock" en Productos.
+  if (monto < saldoAnterior) {
+    const seguir = confirm(
+      '⚠️ Estás bajando el saldo de ' + money(saldoAnterior) + ' a ' + money(monto) + '.\n\n' +
+      'Si el cliente te pagó, cancelá y usá "+ Pago": así queda registrado en su historial y en la Caja.\n\n' +
+      'Seguí solo si estás corrigiendo un monto que se había cargado mal.'
+    );
+    if (!seguir) return;
+  }
+
+  const cambios = {
+    customer_name: nombre,
+    customer_phone: telefono || deuda.customer_phone || null,
+    saldo_pendiente: monto
+  };
+
+  // El total solo se toca en los fiados cargados a mano, donde total y
+  // saldo nacieron iguales. En una venta real el total es lo que se vendió
+  // y no cambia porque se corrija cuánto queda debiendo.
+  if (fiadoEsManual(deuda)) {
+    cambios.total = monto;
+    cambios.items = [{ name: detalle || 'Fiado anterior', qty: 1, price: monto }];
+  }
+
+  const { error } = await sb.from('orders').update(cambios).eq('id', deuda.id);
+  if (error) {
+    alert('No se pudieron guardar los cambios:\n\n' + error.message);
+    return;
+  }
+
+  // Si le cambió el nombre, hay dos cosas más que quedarían desenganchadas:
+  const nombreViejo = deuda.customer_name || '';
+  if (nombreViejo && nombre !== nombreViejo) {
+    // 1) Los otros pedidos del mismo cliente: el panel agrupa por nombre, así
+    //    que dejarlos con el nombre viejo lo parte en dos clientes distintos.
+    const otros = orders.filter(o => o.customer_name === nombreViejo && String(o.id) !== String(deuda.id));
+    if (otros.length && confirm('Hay ' + otros.length + ' pedido' + (otros.length === 1 ? '' : 's') +
+        ' más a nombre de "' + nombreViejo + '".\n\n¿Renombrarlos también? (Si no, van a quedar como dos clientes separados.)')) {
+      await sb.from('orders').update({ customer_name: nombre })
+        .eq('store_slug', currentStore.slug).eq('customer_name', nombreViejo);
+    }
+    // 2) El link del portal, que apunta al nombre — sin esto el cliente abre
+    //    su link y no ve nada. Se actualiza siempre y en silencio: es
+    //    plomería, no una decisión del usuario.
+    await sb.from('store_clientes_token').update({ cliente_nombre: nombre })
+      .eq('store_slug', currentStore.slug).eq('cliente_nombre', nombreViejo);
+  }
+
+  fiadoEnEdicion = null;
+  hide(byId('fiadoManualModal'));
+  await refreshData();
 }
 
 // ---- Portal del cliente ----
@@ -8784,6 +8914,10 @@ byId('tabEstadisticas').addEventListener('click', () => {
 // antes de usar la app, así que no hay mercadería que descontar ahora.
 async function guardarFiadoManual() {
   if (!puedeOperar()) return;
+
+  // El mismo modal sirve para cargar y para corregir: si hay una deuda en
+  // edición, este botón guarda los cambios en vez de crear una deuda nueva.
+  if (fiadoEnEdicion) return guardarEdicionFiado();
 
   const nombre = byId('fmNombre').value.trim();
   const telefono = byId('fmTelefono').value.trim();
@@ -11149,8 +11283,11 @@ byId('repRepuestoVarianteConfirmar').addEventListener('click', () => {
   byId('repRepuestoCant').value = '1';
 });
 
-byId('abrirFiadoManualBtn').addEventListener('click', () => show(byId('fiadoManualModal')));
-byId('closeFiadoManualModal').addEventListener('click', () => hide(byId('fiadoManualModal')));
+byId('abrirFiadoManualBtn').addEventListener('click', abrirNuevoFiadoManual);
+byId('closeFiadoManualModal').addEventListener('click', () => {
+  fiadoEnEdicion = null;   // cerrar sin guardar no deja el modal "pegado" en modo edición
+  hide(byId('fiadoManualModal'));
+});
 byId('guardarFiadoManualBtn').addEventListener('click', guardarFiadoManual);
 
 byId('exportarExcelBtn').addEventListener('click', exportarCatalogoExcel);
