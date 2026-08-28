@@ -1848,7 +1848,13 @@ tr:last-child td { border-bottom: none; }
 
         <div class="wizard-step hidden" data-step="2">
         <div id="campoNombreDescripcion">
-          <div class="field"><label>Nombre</label><input type="text" id="pName" required></div>
+          <!-- Sin `required`: el wizard esconde los pasos que no son el
+               actual, y un campo obligatorio oculto hace que el navegador
+               bloquee el submit con "An invalid form control is not
+               focusable" — sin mostrar nada, así que el botón Guardar
+               parecía no hacer nada. Se valida en JS (ver el submit), que
+               además puede llevar al paso donde está el problema. -->
+          <div class="field"><label>Nombre</label><input type="text" id="pName"></div>
           <div class="field"><label>Descripción</label><input type="text" id="pDesc"></div>
         </div>
 
@@ -1924,7 +1930,9 @@ tr:last-child td { border-bottom: none; }
         <div class="field">
           <label>Precio</label>
           <div style="display:flex;gap:6px;">
-            <input type="number" id="pPrice" min="0" step="0.01" required style="flex:1;">
+            <!-- Sin `required` por el mismo motivo que pName: en el wizard
+                 este paso está oculto cuando se aprieta Guardar. -->
+            <input type="number" id="pPrice" min="0" step="0.01" style="flex:1;">
             <select id="pPriceMoneda" class="campo-electronica hidden" style="padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
               <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
             </select>
@@ -10754,11 +10762,30 @@ byId('productForm').addEventListener('submit', async (e) => {
     return;
   }
 
-  // pName queda oculto en electrónica (lo arma Marca+Modelo), así que el
-  // navegador no lo valida solo por estar "required" — hay que chequearlo
-  // a mano acá.
-  if (rubroEsElectronica() && !byId('pName').value.trim()) {
-    alert('Completá al menos la Marca o el Modelo.');
+  // Nombre y precio se validan acá y no con `required` del HTML: en el
+  // wizard el paso que los contiene está oculto al apretar Guardar, y un
+  // campo obligatorio invisible hace que el navegador cancele el submit en
+  // silencio ("An invalid form control is not focusable") — el botón
+  // parecía roto. Además así podemos llevarlo al paso exacto del problema.
+  const irAlPasoYAvisar = (paso, mensaje, idFoco) => {
+    alert(mensaje);
+    if (wizardModoGuiado) mostrarPasoWizard(paso);
+    const campo = byId(idFoco);
+    if (campo) { campo.scrollIntoView({ behavior: 'smooth', block: 'center' }); campo.focus(); }
+  };
+
+  if (!byId('pName').value.trim()) {
+    irAlPasoYAvisar(2,
+      rubroEsElectronica()
+        ? 'Completá al menos la Marca o el Modelo.'
+        : 'Poné el nombre del producto.',
+      rubroEsElectronica() ? 'pMarca' : 'pName');
+    return;
+  }
+
+  const precioEscrito = byId('pPrice').value;
+  if (precioEscrito === '' || !(Number(precioEscrito) >= 0)) {
+    irAlPasoYAvisar(3, 'Poné el precio. Si es gratis o todavía no lo definiste, escribí 0.', 'pPrice');
     return;
   }
 
