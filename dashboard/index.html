@@ -2513,6 +2513,23 @@ tr:last-child td { border-bottom: none; }
       <div class="field"><label>Hora</label><input type="time" id="turnoHoraCampo"></div>
     </div>
 
+    <div class="field">
+      <label>¿Cuánto dura?</label>
+      <select id="turnoDuracion" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+        <option value="">Lo que dure un turno normal</option>
+        <option value="15">15 minutos</option>
+        <option value="30">30 minutos</option>
+        <option value="45">45 minutos</option>
+        <option value="60">1 hora</option>
+        <option value="90">1 hora y media</option>
+        <option value="120">2 horas</option>
+        <option value="180">3 horas</option>
+      </select>
+      <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+        Los horarios que ocupa quedan tapados en la agenda: si arranca 8:45 y dura una hora, no vas a poder cargar otro turno hasta las 9:45.
+      </small>
+    </div>
+
     <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-radius:8px;">
       <input type="checkbox" id="turnoSoloBloquear" style="margin:0;cursor:pointer;width:auto;">
       Bloquear el horario sin cargar un cliente
@@ -5532,6 +5549,15 @@ function franjasDelDiaAgenda(diaSemana) {
   return dias.includes(diaSemana) ? [{ desde: t.desde || '09:00', hasta: t.hasta || '18:00' }] : [];
 }
 
+// "08:45" -> 525, y la vuelta. Comparar turnos que se pisan es mucho más
+// simple en minutos desde medianoche que con horas y minutos por separado.
+const aMinutosAgenda = (hhmm) => {
+  const [h, m] = String(hhmm || '0:0').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+const aHoraAgenda = (min) =>
+  String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+
 function horariosDelDiaAgenda(diaSemana) {
   const t = currentStore && currentStore.turnos;
   if (!t) return [];
@@ -5604,8 +5630,34 @@ async function renderAgendaDia() {
   const horasExtra = turnos.map(t => soloHoraMinuto(t.hora)).filter(h => !horarios.includes(h));
   const todasLasHoras = [...new Set([...horarios, ...horasExtra])].sort();
 
+  // Un turno que dura más que un slot tapa los que siguen: si empieza 8:45
+  // y lleva una hora, las 9:00, 9:15 y 9:30 NO están libres. Antes solo se
+  // marcaba el slot exacto de inicio y se podían cargar turnos encima.
+  const paso = Number(currentStore.turnos.intervalo) || 30;
+  const ocupadoPor = {};   // hora del slot -> turno que lo está tapando
+  turnos.forEach(t => {
+    const inicio = aMinutosAgenda(soloHoraMinuto(t.hora));
+    const fin = inicio + (Number(t.duracion_minutos) || paso);
+    todasLasHoras.forEach(h => {
+      const slot = aMinutosAgenda(h);
+      // Se cuentan los slots que empiezan dentro del turno, sin contar el
+      // de inicio (ese ya muestra la ficha completa del cliente).
+      if (slot > inicio && slot < fin) ocupadoPor[h] = t;
+    });
+  });
+
   grid.innerHTML = todasLasHoras.length ? todasLasHoras.map(hora => {
     const t = porHora[hora];
+
+    if (!t && ocupadoPor[hora]) {
+      const dueño = ocupadoPor[hora];
+      return '<div class="turno-slot" style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:#EAF4FD;border-radius:8px;opacity:.72;">' +
+        '<span style="font-weight:700;color:var(--navy);min-width:52px;">' + hora + '</span>' +
+        '<span style="flex:1;font-size:12.5px;color:var(--text-mute);">↳ sigue ' +
+          escapeHtml(dueño.bloqueado ? 'el bloqueo' : (dueño.cliente || 'el turno anterior')) + '</span>' +
+      '</div>';
+    }
+
     if (!t) {
       return '<div class="turno-slot turno-libre" data-slot-libre="' + hora + '" ' +
         'style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed var(--line);border-radius:8px;cursor:pointer;color:var(--text-mute);">' +
@@ -5620,8 +5672,18 @@ async function renderAgendaDia() {
         '<button class="icon-btn" data-liberar-turno="' + t.id + '" title="Liberar este horario" style="color:var(--danger);">🗑</button>' +
       '</div>';
     }
+    // Con duración cargada se muestra el rango ("8:45 a 9:45"), que es lo
+    // que el dueño necesita para saber hasta cuándo está ocupado.
+    const duracionTurno = Number(t.duracion_minutos) || 0;
+    const rango = duracionTurno > 0
+      ? '<div style="font-size:11px;color:var(--text-mute);">a ' +
+          aHoraAgenda(aMinutosAgenda(hora) + duracionTurno) + ' (' + duracionTurno + ' min)</div>'
+      : '';
+
     return '<div class="turno-slot" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#EAF4FD;border-radius:8px;">' +
-      '<span style="font-weight:700;color:var(--navy);min-width:52px;">' + escapeHtml(hora) + '</span>' +
+      '<span style="min-width:52px;">' +
+        '<span style="font-weight:700;color:var(--navy);">' + escapeHtml(hora) + '</span>' + rango +
+      '</span>' +
       '<span style="flex:1;">' +
         '<span style="font-size:14px;font-weight:600;">' + escapeHtml(t.cliente || 'Sin nombre') + '</span>' +
         (t.servicio ? ' <span style="font-size:12.5px;color:var(--text-mute);">— ' + escapeHtml(t.servicio) + '</span>' : '') +
@@ -5729,6 +5791,7 @@ function abrirModalTurno(fecha, hora) {
   byId('turnoTelefono').value = '';
   byId('turnoServicio').value = '';
   byId('turnoMotivoBloqueo').value = '';
+  byId('turnoDuracion').value = '';
   actualizarModalTurno();
   show(byId('turnoModal'));
 }
@@ -5766,10 +5829,38 @@ async function guardarTurno() {
   const cliente = bloqueo ? null : byId('turnoCliente').value.trim();
   if (!bloqueo && !cliente) { alert('Poné el nombre del cliente, o marcá "Bloquear sin cliente".'); return; }
 
+  const paso = Number(currentStore.turnos?.intervalo) || 30;
+  const duracion = Number(byId('turnoDuracion').value) || paso;
+
+  // El índice único de la base solo evita repetir la hora EXACTA, así que
+  // no alcanza: un turno de 8:45 a 9:45 y otro que arranca 9:00 tienen horas
+  // distintas y entrarían los dos. Se chequea el solapamiento a mano.
+  const inicioNuevo = aMinutosAgenda(hora);
+  const finNuevo = inicioNuevo + duracion;
+
+  const { data: delDia } = await sb.from('store_turnos')
+    .select('hora,duracion_minutos,cliente')
+    .eq('store_slug', currentStore.slug)
+    .eq('fecha', fecha);
+
+  const pisa = (delDia || []).find(t => {
+    const desde = aMinutosAgenda(String(t.hora).slice(0, 5));
+    const hasta = desde + (Number(t.duracion_minutos) || paso);
+    return inicioNuevo < hasta && desde < finNuevo;
+  });
+
+  if (pisa) {
+    alert('Ese horario se pisa con el turno de ' + (pisa.cliente || 'otro cliente') +
+      ', que va de ' + String(pisa.hora).slice(0, 5) +
+      ' a ' + aHoraAgenda(aMinutosAgenda(String(pisa.hora).slice(0, 5)) + (Number(pisa.duracion_minutos) || paso)) + '.');
+    return;
+  }
+
   const payload = {
     store_slug: currentStore.slug,
     fecha: fecha,
     hora: hora,
+    duracion_minutos: duracion,
     bloqueado: bloqueo,
     cliente: bloqueo ? 'Bloqueado por el local' : cliente,
     telefono: bloqueo ? null : (byId('turnoTelefono').value.trim() || null),

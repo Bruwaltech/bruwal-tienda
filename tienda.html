@@ -1706,6 +1706,31 @@ function armarTurnos(store) {
   fecha.addEventListener('change', () => cargarHorariosDisponibles());
 }
 
+// "08:45" -> 525. Trabajar en minutos desde medianoche evita tener que
+// hacer cuentas con horas y minutos por separado al ver si dos turnos se
+// pisan.
+const aMinutos = (hhmm) => {
+  const [h, m] = String(hhmm || '0:0').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+const pasoDeTurno = () => Number(configTurnos && configTurnos.intervalo) || 30;
+
+// Cuánto ocupa el turno que se está reservando: la suma de la duración de
+// cada servicio del carrito (un corte + color lleva más que un corte solo).
+// Un servicio sin duración cargada vale un slot, que es el comportamiento
+// que tenía todo antes de esto.
+function duracionDelCarrito() {
+  const paso = pasoDeTurno();
+  const total = Object.values(cart).reduce((suma, linea) => {
+    const p = productoDe(linea);
+    if (!p) return suma;
+    const propia = Number(p.duracion_minutos) || paso;
+    return suma + propia * (linea.qty || 1);
+  }, 0);
+  return total > 0 ? total : paso;
+}
+
 async function cargarHorariosDisponibles() {
   const sel = byId('turnoHora');
   const valor = byId('turnoFecha').value;
@@ -1723,26 +1748,45 @@ async function cargarHorariosDisponibles() {
 
   sel.innerHTML = '<option value="">Buscando horarios...</option>';
 
-  // Que horarios ya estan tomados ese dia. Solo podemos leer fecha y hora:
-  // el nombre y el telefono de quien reservo no son visibles para nadie
-  // mas que el dueño.
+  // Qué horarios ya están tomados ese día, con cuánto dura cada uno. Solo
+  // podemos leer fecha, hora y duración: el nombre y el teléfono de quien
+  // reservó no son visibles para nadie más que el dueño.
   let ocupados = [];
   try {
     const { data } = await sb.from('store_turnos')
-      .select('hora').eq('store_slug', getSlugFromUrl()).eq('fecha', valor);
-    ocupados = (data || []).map(t => t.hora);
+      .select('hora,duracion_minutos').eq('store_slug', getSlugFromUrl()).eq('fecha', valor);
+    ocupados = (data || []).map(t => ({
+      desde: aMinutos(t.hora),
+      // Los turnos viejos (y los de tiendas que todavía no corrieron la
+      // migración) no tienen duración: valen un slot, como se comportaban.
+      hasta: aMinutos(t.hora) + (Number(t.duracion_minutos) || pasoDeTurno())
+    }));
   } catch (e) { /* si falla la consulta mostramos todos y que el negocio confirme */ }
 
   const ahora = new Date();
   const esHoy = (new Date(a, m - 1, d)).toDateString() === ahora.toDateString();
 
+  // Cuánto va a durar ESTE turno: la suma de los servicios que eligió. Si
+  // dura una hora, no alcanza con que su horario de inicio esté libre —
+  // tiene que estar libre toda la hora.
+  const duracion = duracionDelCarrito();
+  const cierres = franjasDelDia(diaSemana).map(f => aMinutos(f.hasta || '18:00'));
+
   const libres = horariosDelDia(diaSemana).filter(h => {
-    if (ocupados.includes(h)) return false;
+    const inicio = aMinutos(h);
+    const fin = inicio + duracion;
+
+    // Se pisa con un turno ya reservado. Dos rangos se solapan cuando cada
+    // uno empieza antes de que termine el otro: por eso alcanza con esta
+    // comparación y no hace falta recorrer slot por slot.
+    if (ocupados.some(o => inicio < o.hasta && o.desde < fin)) return false;
+
+    // No puede terminar después de que cierra el negocio.
+    if (!cierres.some(cierre => fin <= cierre)) return false;
+
     // No ofrecer horarios que ya pasaron si el turno es para hoy
-    if (esHoy) {
-      const [hh, mm] = h.split(':').map(Number);
-      if (hh * 60 + mm <= ahora.getHours() * 60 + ahora.getMinutes()) return false;
-    }
+    if (esHoy && inicio <= ahora.getHours() * 60 + ahora.getMinutes()) return false;
+
     return true;
   });
 
@@ -1804,6 +1848,9 @@ byId('openCheckoutBtn').addEventListener('click', () => {
   // Se arma acá y no al cargar la página porque depende del carrito, que
   // cambia hasta el último momento.
   configurarEntrega();
+  // Los horarios libres dependen de cuánto dura lo que hay en el carrito:
+  // si sumó otro servicio, los huecos cortos ya no le sirven.
+  if (configTurnos && byId('turnoFecha').value) cargarHorariosDisponibles();
   show(byId('checkoutModal'));
 });
 byId('closeCheckoutModal').addEventListener('click', () => hide(byId('checkoutModal')));
@@ -2001,6 +2048,9 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
         store_slug: getSlugFromUrl(),
         fecha: byId('turnoFecha').value,
         hora: byId('turnoHora').value,
+        // Se congela acá: si mañana el negocio cambia la duración del
+        // servicio, los turnos ya reservados no se corren de lugar.
+        duracion_minutos: duracionDelCarrito(),
         cliente: name,
         telefono: phone,
         servicio: Object.values(cart).map(l => {
