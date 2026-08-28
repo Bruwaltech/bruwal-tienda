@@ -5590,13 +5590,19 @@ async function renderAgendaDia() {
     hide(avisoFuera);
   }
 
+  // La grilla arma sus horas como "HH:MM". Un turno que viniera como
+  // "08:00:00" (formato con segundos) no matchearía, y terminaría en una
+  // fila aparte: la Agenda mostraría las 8:00 dos veces, una libre y otra
+  // ocupada. Se recorta a HH:MM para comparar siempre el mismo formato.
+  const soloHoraMinuto = (h) => String(h == null ? '' : h).slice(0, 5);
+
   const porHora = {};
-  turnos.forEach(t => { porHora[t.hora] = t; });
+  turnos.forEach(t => { porHora[soloHoraMinuto(t.hora)] = t; });
 
   // Un turno cargado fuera de los horarios configurados (una excepción) no
   // debe desaparecer solo porque no está en la grilla estándar del día.
-  const horasExtra = turnos.map(t => t.hora).filter(h => !horarios.includes(h));
-  const todasLasHoras = [...horarios, ...horasExtra].sort();
+  const horasExtra = turnos.map(t => soloHoraMinuto(t.hora)).filter(h => !horarios.includes(h));
+  const todasLasHoras = [...new Set([...horarios, ...horasExtra])].sort();
 
   grid.innerHTML = todasLasHoras.length ? todasLasHoras.map(hora => {
     const t = porHora[hora];
