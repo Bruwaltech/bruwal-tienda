@@ -2778,11 +2778,12 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="field">
-          <label>Costo de envío <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <!-- Etiqueta y ayuda las escribe actualizarTextoRecargoDomicilio():
+               en un negocio de turnos (peluquería) esto no es un envío, es ir
+               a la casa del cliente a hacer el servicio. -->
+          <label id="configCostoEnvioLabel">Costo de envío <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <input type="number" id="configCostoEnvio" min="0" step="0.01" placeholder="Ej: 2000">
-          <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
-            Se suma solo cuando el cliente elige "Envío a domicilio" en el checkout. Dejalo vacío si no cobrás envío.
-          </small>
+          <small id="configCostoEnvioAyuda" style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;"></small>
         </div>
 
         <div class="field">
@@ -11443,8 +11444,29 @@ function configuracionDeTurnos() {
   return base;
 }
 
+// Un negocio de turnos (peluquería, barbería, estética) no "envía" nada:
+// si va a la casa del cliente, va a prestar el servicio ahí. Es el mismo
+// campo y la misma plata, pero llamarlo "costo de envío" en ese rubro no se
+// entiende — así que la etiqueta acompaña al tipo de negocio.
+function actualizarTextoRecargoDomicilio() {
+  const esDeTurnos = byId('turnosActivo')?.checked;
+  const label = byId('configCostoEnvioLabel');
+  const ayuda = byId('configCostoEnvioAyuda');
+  const opcional = ' <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>';
+
+  if (label) label.innerHTML = (esDeTurnos ? 'Precio del servicio a domicilio' : 'Costo de envío') + opcional;
+  if (ayuda) {
+    ayuda.textContent = esDeTurnos
+      ? 'Si atendés también a domicilio, poné acá cuánto cobrás de más por ir. El cliente lo elige al sacar el turno y se suma al total. Dejalo vacío si solo atendés en el local.'
+      : 'Se suma solo cuando el cliente elige "Envío a domicilio" en el checkout. Dejalo vacío si no cobrás envío.';
+  }
+  const input = byId('configCostoEnvio');
+  if (input) input.placeholder = esDeTurnos ? 'Ej: 5000' : 'Ej: 2000';
+}
+
 byId('turnosActivo').addEventListener('change', (e) => {
   byId('turnosConfig').classList.toggle('hidden', !e.target.checked);
+  actualizarTextoRecargoDomicilio();
 });
 
 // Medios de pago que puede aceptar una tienda
@@ -11679,6 +11701,9 @@ async function cargarConfiguracion() {
     byId('turnosHasta').value = t.hasta || '18:00';
     byId('turnosIntervalo').value = String(t.intervalo || 30);
     cargarTurnosPorDia(t.horarios);
+    // Después de saber si la tienda usa turnos: de eso depende si el campo
+    // se llama "costo de envío" o "servicio a domicilio".
+    actualizarTextoRecargoDomicilio();
 
     if (store.image_url) {
       byId('configLogoPreview').style.backgroundImage = `url(${store.image_url})`;

@@ -421,11 +421,10 @@
     </div>
 
     <div class="field" id="campoEntrega">
-      <label>¿Cómo lo recibís?</label>
-      <div class="opciones" id="opcionesEntrega">
-        <button type="button" class="opcion activa" data-valor="Retiro por el local">🏪 Retiro por el local</button>
-        <button type="button" class="opcion" data-valor="Envío a domicilio">🛵 Envío a domicilio</button>
-      </div>
+      <!-- Los botones los arma configurarEntrega() al abrir el checkout: cambian
+           según si el carrito lleva productos o solo servicios. -->
+      <label id="campoEntregaLabel">¿Cómo lo recibís?</label>
+      <div class="opciones" id="opcionesEntrega"></div>
     </div>
 
     <div class="hidden" id="campoDireccion">
@@ -1496,6 +1495,58 @@ const carritoTieneFisico = () => Object.values(cart).some(l => {
   return p && esProductoFisico(p);
 });
 
+// Recargo por ir hasta el cliente. Es el MISMO campo para los dos casos
+// (store_profiles.costo_envio) porque la plata se comporta igual, pero se
+// llama distinto según qué se lleve: enviar una manguera es un envío;
+// cortarle el pelo a alguien en la casa es un servicio a domicilio.
+let configRecargoDomicilio = null;
+
+const A_DOMICILIO_PRODUCTO = 'Envío a domicilio';
+const A_DOMICILIO_SERVICIO = 'A domicilio';
+const esOpcionADomicilio = (valor) => valor === A_DOMICILIO_PRODUCTO || valor === A_DOMICILIO_SERVICIO;
+
+// Arma el bloque de "dónde" según lo que haya en el carrito:
+//  - con algo físico: retiro o envío, como siempre;
+//  - solo servicios (peluquería): en el local o a domicilio, y SOLO si el
+//    negocio cargó un precio para ir — si no cargó nada es que no lo ofrece,
+//    y preguntarlo sería ofrecer algo que no existe.
+function configurarEntrega() {
+  const campo = byId('campoEntrega');
+  const grupo = byId('opcionesEntrega');
+  if (!campo || !grupo) return;
+
+  const soloServicios = !carritoTieneFisico();
+  const ofreceDomicilio = configRecargoDomicilio != null;
+
+  if (soloServicios && !ofreceDomicilio) {
+    campo.classList.add('hidden');
+    byId('campoDireccion').classList.add('hidden');
+    return;
+  }
+
+  const recargo = Number(configRecargoDomicilio || 0);
+  const sufijo = recargo > 0 ? ' (+' + money(recargo) + ')' : '';
+
+  byId('campoEntregaLabel').textContent = soloServicios ? '¿Dónde te atendemos?' : '¿Cómo lo recibís?';
+  grupo.innerHTML = soloServicios
+    ? '<button type="button" class="opcion activa" data-valor="En el local">🏪 En el local</button>' +
+      '<button type="button" class="opcion" data-valor="' + A_DOMICILIO_SERVICIO + '">🏠 A domicilio' + sufijo + '</button>'
+    : '<button type="button" class="opcion activa" data-valor="Retiro por el local">🏪 Retiro por el local</button>' +
+      '<button type="button" class="opcion" data-valor="' + A_DOMICILIO_PRODUCTO + '">🛵 Envío a domicilio' + sufijo + '</button>';
+
+  grupo.querySelectorAll('.opcion').forEach(b => {
+    b.addEventListener('click', () => {
+      elegirOpcion(grupo, b);
+      // La dirección hace falta en los dos casos de "a domicilio": para
+      // llevar el producto o para ir a hacer el servicio.
+      byId('campoDireccion').classList.toggle('hidden', !esOpcionADomicilio(b.dataset.valor));
+    });
+  });
+
+  campo.classList.remove('hidden');
+  byId('campoDireccion').classList.add('hidden');   // arranca en "en el local"
+}
+
 // Cuántas unidades de un producto hay, sumando todas sus combinaciones
 const cantidadDelProducto = (productoId) =>
   Object.values(cart)
@@ -1622,7 +1673,9 @@ function armarTurnos(store) {
   if (!configTurnos) return;
 
   show(byId('campoTurno'));
-  hide(byId('campoEntrega'));          // un turno no se envia a domicilio
+  // El bloque de "dónde" lo decide configurarEntrega() según lo que haya en
+  // el carrito: un turno de peluquería NO se envía, pero sí puede hacerse a
+  // domicilio si el negocio presta ese servicio.
   byId('campoDireccion').classList.add('hidden');
 
   const dias = diasConAtencion();
@@ -1702,15 +1755,11 @@ function horariosDelDia(diaSemana) {
 }
 
 function armarOpcionesDeCheckout(store) {
-  // Entrega
-  const entrega = byId('opcionesEntrega');
-  entrega.querySelectorAll('.opcion').forEach(b => {
-    b.addEventListener('click', () => {
-      elegirOpcion(entrega, b);
-      // La dirección solo se pide si eligió envío
-      byId('campoDireccion').classList.toggle('hidden', b.dataset.valor !== 'Envío a domicilio');
-    });
-  });
+  // El recargo por ir hasta el cliente (envío de un producto, o el servicio
+  // a domicilio de una peluquería) se guarda una sola vez acá, porque el
+  // checkout lo necesita para mostrar el precio en el botón mucho antes de
+  // confirmar el pedido. null = el negocio no lo ofrece.
+  configRecargoDomicilio = (store && store.costo_envio != null) ? Number(store.costo_envio) : null;
 
   // Casa o departamento: el piso y el timbre solo tienen sentido en depto
   const vivienda = byId('opcionesVivienda');
@@ -1739,15 +1788,9 @@ function armarOpcionesDeCheckout(store) {
 
 byId('openCheckoutBtn').addEventListener('click', () => {
   byId('checkoutError').classList.add('hidden');
-  // armarTurnos ya oculta "¿Cómo lo recibís?" cuando la tienda tiene Turnos
-  // activado. Esto cubre el otro caso: una tienda con productos tipo
-  // "servicio" (ej. una peluquería) que no llegó a prender el calendario de
-  // Turnos — un corte de pelo tampoco se retira ni se envía a domicilio.
-  if (!configTurnos) {
-    const fisico = carritoTieneFisico();
-    byId('campoEntrega').classList.toggle('hidden', !fisico);
-    if (!fisico) byId('campoDireccion').classList.add('hidden');
-  }
+  // Se arma acá y no al cargar la página porque depende del carrito, que
+  // cambia hasta el último momento.
+  configurarEntrega();
   show(byId('checkoutModal'));
 });
 byId('closeCheckoutModal').addEventListener('click', () => hide(byId('checkoutModal')));
@@ -1789,7 +1832,10 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
                  String(d).padStart(2,'0') + '/' + String(m).padStart(2,'0') + ' a las ' + h;
   }
 
-  const entrega = (configTurnos || !carritoTieneFisico()) ? null : valorElegido('opcionesEntrega');
+  // null cuando el bloque quedó oculto (el negocio no va a domicilio).
+  const entrega = byId('campoEntrega').classList.contains('hidden')
+    ? null
+    : valorElegido('opcionesEntrega');
   const medioDePago = valorElegido('opcionesPago');
 
   const calle = byId('custCalle').value.trim();
@@ -1800,7 +1846,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   const aNombre = byId('custAnombre').value.trim();
   const referencias = byId('custReferencias').value.trim();
 
-  if (entrega === 'Envío a domicilio'){
+  if (esOpcionADomicilio(entrega)){
     if (!calle){
       errEl.textContent = 'Escribí la calle y el número.';
       errEl.classList.remove('hidden');
@@ -1890,20 +1936,28 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     detalles += '📱 *Teléfono:* ' + phone + '\n\n';
     detalles += '*Productos:*\n' + listaProductos;
 
-    // El costo de envío es un valor fijo por tienda (Configuración) — se
+    // Recargo por ir hasta el cliente: el mismo campo cubre el envío de un
+    // producto y el servicio a domicilio (ver configRecargoDomicilio). Se
     // suma recién acá, así el total que se guarda en la orden y el que ve
     // el negocio ya vienen completos, sin tener que sumarlo a mano.
-    const costoEnvio = (entrega === 'Envío a domicilio') ? Number(store.costo_envio || 0) : 0;
-    if (costoEnvio > 0) total += costoEnvio;
+    const esADomicilio = esOpcionADomicilio(entrega);
+    const recargo = esADomicilio ? Number(store.costo_envio || 0) : 0;
+    const nombreRecargo = (entrega === A_DOMICILIO_SERVICIO) ? 'de servicio a domicilio' : 'de envío';
+    if (recargo > 0) total += recargo;
     detalles += '\n💰 *Total:* $' + total.toLocaleString('es-AR') +
-      (costoEnvio > 0 ? ' (incluye $' + costoEnvio.toLocaleString('es-AR') + ' de envío)' : '');
+      (recargo > 0 ? ' (incluye $' + recargo.toLocaleString('es-AR') + ' ' + nombreRecargo + ')' : '');
 
+    // Turno y lugar NO son excluyentes: un corte a domicilio tiene día y
+    // hora igual. Antes esto era un if/else y el "a domicilio" se perdía.
     if (turnoTexto) {
       detalles += '\n\n📅 *Turno solicitado:* ' + turnoTexto;
-    } else if (entrega) {
-      detalles += '\n\n' + (entrega === 'Envío a domicilio' ? '🚚' : '🏪') + ' *Entrega:* ' + entrega;
+    }
 
-      if (entrega === 'Envío a domicilio') {
+    if (entrega) {
+      detalles += '\n\n' + (esADomicilio ? '🚚' : '🏪') + ' *' +
+        (turnoTexto ? 'Dónde' : 'Entrega') + ':* ' + entrega;
+
+      if (esADomicilio) {
         // Solo emojis de la primera generación (2010), que existen en todos
         // los teléfonos. Los más nuevos, o los que llevan selector de
         // variación invisible como 🏙️, salen como rombo con signo de
