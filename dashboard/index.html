@@ -1218,6 +1218,19 @@ tr:last-child td { border-bottom: none; }
 
     <form id="registerForm" class="hidden">
       <div class="field"><label>Nombre de tu negocio</label><input type="text" id="regBusiness" required></div>
+
+      <!-- Hasta ahora el rubro se adivinaba por palabras clave del nombre y
+           la descripción, y cuando no acertaba el vendedor se quedaba sin las
+           funciones de su rubro sin saber por qué (le pasó a Wabi Import con
+           Reparaciones). Preguntarlo de una lo deja bien configurado desde el
+           primer minuto. Igual se puede cambiar después en Configuración. -->
+      <div class="field">
+        <label>¿Qué vendés? <span style="font-weight:400;color:var(--text-mute);">(prendemos las funciones de tu rubro)</span></label>
+        <div id="regRubroOpciones" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:7px;margin-top:4px;"></div>
+        <small id="regRubroAyuda" style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+          Elegí el que más se parezca. Después lo podés cambiar.
+        </small>
+      </div>
       <div class="field"><label>Logo/Imagen de tu tienda</label><input type="file" id="regLogo" accept="image/*"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Max 2MB</small></div>
       <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
@@ -2732,6 +2745,7 @@ tr:last-child td { border-bottom: none; }
             <option value="">Automático (según nombre y descripción)</option>
             <option value="indumentaria">Indumentaria / calzado</option>
             <option value="electronica">Celulares / electrónica</option>
+            <option value="servicios">Peluquería / servicios con turno</option>
             <option value="comida">Comida</option>
             <option value="bebidas">Bebidas / cafetería</option>
             <option value="otro">Otro (sin categoría especial)</option>
@@ -5206,6 +5220,64 @@ document.querySelectorAll('.toggle-clave').forEach(b => {
 });
 
 // REGISTER
+// Rubros que se ofrecen al registrarse. `valor` es lo que va a
+// store_profiles.rubro_manual, así que tiene que coincidir con las opciones
+// de configRubroManual. `ayuda` explica qué se prende, para que la elección
+// sea informada y no un trámite.
+//
+// 'servicios' activa además la agenda de turnos: una peluquería sin turnos
+// arranca sin la mitad de lo que necesita.
+const RUBROS_REGISTRO = [
+  { valor: 'electronica',  icono: '📱', texto: 'Celulares / electrónica',
+    ayuda: 'Vas a tener IMEI por equipo, reparaciones y precios en dólares.' },
+  { valor: 'indumentaria', icono: '👕', texto: 'Ropa / calzado',
+    ayuda: 'Vas a poder cargar talles y colores con stock propio para cada uno.' },
+  { valor: 'servicios',    icono: '✂️', texto: 'Peluquería / servicios',
+    ayuda: 'Te prendemos la agenda de turnos, y vas a poder cargar cuánto dura cada servicio y qué insumos gasta.' },
+  { valor: 'comida',       icono: '🍔', texto: 'Comida',
+    ayuda: 'Vas a poder sumarle agregados a cada plato (cheddar, panceta, sin cebolla).' },
+  { valor: 'bebidas',      icono: '☕', texto: 'Bebidas / cafetería',
+    ayuda: 'Vas a poder sumarle opciones a cada pedido (con hielo, con limón).' },
+  { valor: 'otro',         icono: '🏪', texto: 'Otro rubro',
+    ayuda: 'Kiosco, ferretería, forrajería, librería... Tenés todo lo básico y podés vender por metro o por kilo.' }
+];
+
+let rubroElegidoRegistro = '';
+
+function renderRubrosRegistro() {
+  const cont = byId('regRubroOpciones');
+  if (!cont) return;
+
+  cont.innerHTML = RUBROS_REGISTRO.map(r => {
+    const activo = rubroElegidoRegistro === r.valor;
+    return '<button type="button" data-rubro="' + r.valor + '" style="' +
+      'display:flex;flex-direction:column;align-items:center;gap:3px;padding:11px 8px;cursor:pointer;' +
+      'border:1.5px solid ' + (activo ? 'var(--celeste)' : 'var(--line)') + ';border-radius:9px;' +
+      'background:' + (activo ? '#EAF4FD' : '#fff') + ';color:var(--text-dark);' +
+      'font-family:inherit;font-size:12.5px;font-weight:' + (activo ? '700' : '600') + ';text-align:center;">' +
+      '<span style="font-size:19px;">' + r.icono + '</span>' + escapeHtml(r.texto) + '</button>';
+  }).join('');
+
+  cont.querySelectorAll('[data-rubro]').forEach(b => {
+    b.addEventListener('click', () => {
+      rubroElegidoRegistro = b.dataset.rubro;
+      const r = RUBROS_REGISTRO.find(x => x.valor === rubroElegidoRegistro);
+      byId('regRubroAyuda').textContent = r ? r.ayuda : '';
+      // La casilla de reparaciones ya no hace falta si eligió electrónica:
+      // es exactamente lo mismo, y verla dos veces confunde.
+      const campoRep = byId('campoRegReparaciones');
+      if (campoRep) {
+        const esElectronica = rubroElegidoRegistro === 'electronica';
+        campoRep.classList.toggle('hidden', !esElectronica);
+        if (esElectronica) byId('regReparaciones').checked = true;
+        else byId('regReparaciones').checked = false;
+      }
+      renderRubrosRegistro();
+    });
+  });
+}
+renderRubrosRegistro();
+
 byId('registerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const business_name = byId('regBusiness').value.trim();
@@ -5213,6 +5285,14 @@ byId('registerForm').addEventListener('submit', async (e) => {
   const email = byId('regEmail').value.trim();
   const password = byId('regPassword').value;
   const hace_reparaciones = byId('regReparaciones').checked;
+  const rubro_manual = rubroElegidoRegistro;
+
+  if (!rubro_manual) {
+    byId('authError').textContent = 'Elegí qué vendés para configurarte las funciones de tu rubro.';
+    show(byId('authError'));
+    byId('regRubroOpciones').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
 
   const boton = e.target.querySelector('button[type=submit]');
   boton.disabled = true;
@@ -5223,7 +5303,7 @@ byId('registerForm').addEventListener('submit', async (e) => {
     email,
     password,
     options: {
-      data: { business_name, phone, hace_reparaciones },
+      data: { business_name, phone, hace_reparaciones, rubro_manual },
       // A dónde vuelve después de confirmar el mail. Sin esto Supabase usa
       // su Site URL por defecto, que puede no ser bruwaltech.com.ar.
       emailRedirectTo: window.location.origin + '/dashboard'
@@ -5367,13 +5447,24 @@ async function onLoggedIn() {
         slug = baseSlug + '-' + counter;
       }
 
-      const { data: newStore, error: errorAlta } = await sb.from('store_profiles').insert({
+      // El rubro que eligió al registrarse. Un negocio de servicios arranca
+      // con la agenda de turnos prendida: sin eso una peluquería se queda
+      // sin la mitad de lo que necesita y tiene que descubrirlo sola.
+      const rubroElegido = user.user_metadata?.rubro_manual || null;
+      const alta = {
         user_id: user.id,
         slug: slug,
         business_name: business_name,
         phone: phone,
-        hace_reparaciones: !!user.user_metadata?.hace_reparaciones
-      }).select().single();
+        hace_reparaciones: !!user.user_metadata?.hace_reparaciones,
+        rubro_manual: rubroElegido
+      };
+      if (rubroElegido === 'servicios') {
+        alta.turnos = { activo: true, porDia: false, dias: [1, 2, 3, 4, 5, 6],
+                        desde: '09:00', hasta: '18:00', intervalo: 30 };
+      }
+
+      const { data: newStore, error: errorAlta } = await sb.from('store_profiles').insert(alta).select().single();
 
       if (errorAlta) throw errorAlta;
       currentStore = newStore;
@@ -10404,7 +10495,9 @@ if (byId('newServiceBtn')) byId('newServiceBtn').addEventListener('click', () =>
 // cambiarlo adentro del formulario. Para el resto de las tiendas, que casi
 // no cargan servicios, un solo botón sigue siendo más simple.
 const negocioDaServicios = () =>
-  !!(currentStore?.turnos?.activo) || (products || []).some(p => !esProductoFisico(p));
+  categoriaDeRubro() === 'servicios' ||
+  !!(currentStore?.turnos?.activo) ||
+  (products || []).some(p => !esProductoFisico(p));
 
 function aplicarBotonesDeCarga() {
   const btnProducto = byId('newProductBtn');
