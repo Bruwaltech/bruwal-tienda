@@ -3216,6 +3216,20 @@ const byId = (id) => document.getElementById(id);
 const show = (el) => el.classList.remove('hidden');
 const hide = (el) => el.classList.add('hidden');
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+
+// La fecha de un día (YYYY-MM-DD) tal como la vive el usuario, NO en UTC.
+//
+// toISOString() convierte a UTC antes de recortar: en Argentina (UTC-3),
+// desde las 21:00 devuelve YA el día siguiente. Con eso, a la noche la
+// Agenda abría en mañana, la Caja mostraba el día equivocado y un gasto se
+// guardaba con fecha de mañana. Las fechas de turnos, caja y gastos son
+// días del calendario del negocio, no instantes: se arman con la hora local.
+function fechaLocalISO(fecha) {
+  const f = fecha || new Date();
+  return f.getFullYear() + '-' +
+         String(f.getMonth() + 1).padStart(2, '0') + '-' +
+         String(f.getDate()).padStart(2, '0');
+}
 const escapeHtml = (str) => {
   const d = document.createElement('div');
   d.textContent = str == null ? '' : String(str);
@@ -5536,7 +5550,7 @@ function horariosDelDiaAgenda(diaSemana) {
 }
 
 function fechaAgendaActual() {
-  if (!byId('agendaFecha').value) byId('agendaFecha').value = new Date().toISOString().slice(0, 10);
+  if (!byId('agendaFecha').value) byId('agendaFecha').value = fechaLocalISO();
   return byId('agendaFecha').value;
 }
 
@@ -5641,8 +5655,8 @@ async function renderRecordatorios() {
   if (!currentStore.turnos || !currentStore.turnos.activo) { hide(panel); return; }
 
   const ahora = new Date();
-  const hoyStr = ahora.toISOString().slice(0, 10);
-  const mananaStr = new Date(ahora.getTime() + 86400000).toISOString().slice(0, 10);
+  const hoyStr = fechaLocalISO(ahora);
+  const mananaStr = fechaLocalISO(new Date(ahora.getTime() + 86400000));
 
   const { data, error } = await sb.from('store_turnos')
     .select('*')
@@ -5685,8 +5699,8 @@ async function enviarRecordatorio(turno) {
   if (!turno) return;
 
   const ahora = new Date();
-  const hoyStr = ahora.toISOString().slice(0, 10);
-  const mananaStr = new Date(ahora.getTime() + 86400000).toISOString().slice(0, 10);
+  const hoyStr = fechaLocalISO(ahora);
+  const mananaStr = fechaLocalISO(new Date(ahora.getTime() + 86400000));
   const cuando = turno.fecha === hoyStr ? 'hoy' : (turno.fecha === mananaStr ? 'mañana' : turno.fecha);
 
   const negocio = (currentStore && currentStore.business_name) || 'nuestro local';
@@ -5771,19 +5785,19 @@ byId('guardarTurnoBtn').addEventListener('click', guardarTurno);
 
 byId('agendaFecha').addEventListener('change', renderAgendaDia);
 byId('agendaHoyBtn').addEventListener('click', () => {
-  byId('agendaFecha').value = new Date().toISOString().slice(0, 10);
+  byId('agendaFecha').value = fechaLocalISO();
   renderAgendaDia();
 });
 byId('agendaAnteriorBtn').addEventListener('click', () => {
   const f = new Date(fechaAgendaActual() + 'T00:00:00');
   f.setDate(f.getDate() - 1);
-  byId('agendaFecha').value = f.toISOString().slice(0, 10);
+  byId('agendaFecha').value = fechaLocalISO(f);
   renderAgendaDia();
 });
 byId('agendaSiguienteBtn').addEventListener('click', () => {
   const f = new Date(fechaAgendaActual() + 'T00:00:00');
   f.setDate(f.getDate() + 1);
-  byId('agendaFecha').value = f.toISOString().slice(0, 10);
+  byId('agendaFecha').value = fechaLocalISO(f);
   renderAgendaDia();
 });
 
@@ -7510,7 +7524,7 @@ async function confirmarFacturaIa() {
       moneda: 'ARS',
       monto_original: gastoMonto,
       cotizacion: 1,
-      fecha: facturaIaMeta.fecha || new Date().toISOString().slice(0, 10),
+      fecha: facturaIaMeta.fecha || fechaLocalISO(),
       medio_pago: gastoMedioPago,
       notas: 'Cargado automáticamente desde "Cargar por factura (IA)".'
     }]);
@@ -7693,7 +7707,7 @@ function exportarCatalogoExcel() {
     XLSX.utils.book_append_sheet(libro, armarHojaExcel(filasVar, [3]), 'Variantes');
   }
 
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = fechaLocalISO();
   XLSX.writeFile(libro, 'catalogo-' + (currentStore?.slug || 'bruwal') + '-' + fecha + '.xlsx');
 }
 
@@ -8299,7 +8313,7 @@ function abrirModalGasto(id) {
   byId('gastoMonto').value = g ? Number((g.moneda ? g.monto_original : g.monto) || 0) : 0;
   actualizarHintMoneda('gastoMonto', 'gastoMoneda', 'gastoMontoHint');
 
-  byId('gastoFecha').value = g ? (g.fecha || '') : new Date().toISOString().slice(0, 10);
+  byId('gastoFecha').value = g ? (g.fecha || '') : fechaLocalISO();
   byId('gastoMedioPago').value = g ? (g.medio_pago || '') : '';
   byId('gastoNotas').value = g ? (g.notas || '') : '';
 
@@ -8323,7 +8337,7 @@ async function guardarGasto() {
     moneda: conv.moneda,
     monto_original: conv.monto_original,
     cotizacion: conv.cotizacion,
-    fecha: byId('gastoFecha').value || new Date().toISOString().slice(0, 10),
+    fecha: byId('gastoFecha').value || fechaLocalISO(),
     medio_pago: byId('gastoMedioPago').value || null,
     notas: byId('gastoNotas').value.trim()
   };
@@ -8442,7 +8456,7 @@ function renderCaja() {
   const cuerpo = byId('cajaMovimientosBody');
   if (!cuerpo) return;
 
-  const fecha = byId('cajaFecha').value || new Date().toISOString().slice(0, 10);
+  const fecha = byId('cajaFecha').value || fechaLocalISO();
   const esDelDia = (fechaHora) => (fechaHora || '').slice(0, 10) === fecha;
 
   const movimientos = [];
@@ -8541,7 +8555,7 @@ function renderCaja() {
 
 byId('cajaFecha').addEventListener('change', renderCaja);
 byId('cajaHoyBtn').addEventListener('click', () => {
-  byId('cajaFecha').value = new Date().toISOString().slice(0, 10);
+  byId('cajaFecha').value = fechaLocalISO();
   renderCaja();
 });
 
@@ -8551,7 +8565,7 @@ byId('nuevoMovimientoCajaBtn').addEventListener('click', () => {
   byId('movCajaConcepto').value = '';
   byId('movCajaMonto').value = 0;
   byId('movCajaMedioPago').value = '';
-  byId('movCajaFecha').value = byId('cajaFecha').value || new Date().toISOString().slice(0, 10);
+  byId('movCajaFecha').value = byId('cajaFecha').value || fechaLocalISO();
   byId('movCajaNotas').value = '';
   show(byId('movimientoCajaModal'));
 });
@@ -8571,7 +8585,7 @@ async function guardarMovimientoCaja() {
     concepto: concepto,
     monto: monto,
     medio_pago: byId('movCajaMedioPago').value || null,
-    fecha: byId('movCajaFecha').value || new Date().toISOString().slice(0, 10),
+    fecha: byId('movCajaFecha').value || fechaLocalISO(),
     notas: byId('movCajaNotas').value.trim()
   }]);
 
@@ -11166,7 +11180,7 @@ function mostrarVistaCaja() {
   byId('tabCaja').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('cajaView').classList.add('visible');
-  if (!byId('cajaFecha').value) byId('cajaFecha').value = new Date().toISOString().slice(0, 10);
+  if (!byId('cajaFecha').value) byId('cajaFecha').value = fechaLocalISO();
   renderCaja();
 }
 

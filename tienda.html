@@ -502,6 +502,16 @@ const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 function byId(id){ return document.getElementById(id); }
+
+// La fecha de un día (YYYY-MM-DD) como la vive el usuario, NO en UTC:
+// toISOString() convierte a UTC antes de recortar y en Argentina (UTC-3)
+// desde las 21:00 devuelve ya el día siguiente. Espejo del helper del panel.
+function fechaLocalISO(fecha){
+  const f = fecha || new Date();
+  return f.getFullYear() + '-' +
+         String(f.getMonth() + 1).padStart(2, '0') + '-' +
+         String(f.getDate()).padStart(2, '0');
+}
 function show(el){ el.classList.remove('hidden'); }
 function hide(el){ el.classList.add('hidden'); }
 function money(n){ return '$' + Number(n || 0).toLocaleString('es-AR'); }
@@ -1686,9 +1696,12 @@ function armarTurnos(store) {
 
   const hoy = new Date();
   const fecha = byId('turnoFecha');
-  fecha.min = hoy.toISOString().slice(0, 10);
+  // fechaLocalISO y no toISOString: en Argentina (UTC-3) desde las 21:00
+  // toISOString ya devuelve mañana, y el calendario dejaba de permitir
+  // reservar para hoy justo en el horario en que la gente busca turno.
+  fecha.min = fechaLocalISO(hoy);
   const tope = new Date(hoy.getTime() + 60 * 86400000);   // hasta 60 dias
-  fecha.max = tope.toISOString().slice(0, 10);
+  fecha.max = fechaLocalISO(tope);
 
   fecha.addEventListener('change', () => cargarHorariosDisponibles());
 }
@@ -1931,10 +1944,13 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     // admite texto, asi que el logo no se puede incluir.
     let detalles = '';
     if (store.business_name) detalles += '🏪 *' + store.business_name + '*\n';
-    detalles += '📦 *NUEVO PEDIDO*\n\n';
+    // Reservar un turno no es "hacer un pedido": el mensaje que le llega al
+    // negocio (y la copia que le queda al cliente en su WhatsApp) tiene que
+    // llamarlo por su nombre.
+    detalles += turnoTexto ? '📅 *NUEVO TURNO*\n\n' : '📦 *NUEVO PEDIDO*\n\n';
     detalles += '👤 *Cliente:* ' + name + '\n';
     detalles += '📱 *Teléfono:* ' + phone + '\n\n';
-    detalles += '*Productos:*\n' + listaProductos;
+    detalles += (turnoTexto ? '*Servicio:*\n' : '*Productos:*\n') + listaProductos;
 
     // Recargo por ir hasta el cliente: el mismo campo cubre el envío de un
     // producto y el servicio a domicilio (ver configRecargoDomicilio). Se
