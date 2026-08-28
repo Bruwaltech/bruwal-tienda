@@ -1411,12 +1411,19 @@ tr:last-child td { border-bottom: none; }
       </div>
       <div id="scannerStatus" class="scanner-status hidden"></div>
 
-      <div style="display:flex;gap:8px;margin:14px 0 4px;" id="productosDestinoTabs">
+      <!-- La solapa "Servicios" solo aparece en negocios que los prestan
+           (ver aplicarSolapasDeProductos): un kiosco no necesita una solapa
+           vacía. Cuando aparece, "Tienda" pasa a llamarse "Productos" para
+           que las tres sean del mismo tipo de cosa. -->
+      <div style="display:flex;gap:8px;margin:14px 0 4px;flex-wrap:wrap;" id="productosDestinoTabs">
+        <button type="button" class="productos-destino-tab hidden" data-productos-destino="servicios" style="flex:1;max-width:220px;padding:9px 14px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
+          🛠️ Servicios
+        </button>
         <button type="button" class="productos-destino-tab" data-productos-destino="tienda" style="flex:1;max-width:220px;padding:9px 14px;border:1.5px solid var(--celeste);border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;background:#EAF4FD;color:var(--text-dark);font-family:inherit;">
-          🏪 Tienda
+          <span id="tabTiendaTexto">🏪 Tienda</span>
         </button>
         <button type="button" class="productos-destino-tab" data-productos-destino="interno" style="flex:1;max-width:220px;padding:9px 14px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
-          🔒 Stock interno
+          <span id="tabInternoTexto">🔒 Stock interno</span>
         </button>
       </div>
 
@@ -1426,9 +1433,11 @@ tr:last-child td { border-bottom: none; }
       </div>
 
       <div id="productsPanel" class="panel hidden">
-        <div class="panel-head">Tus productos</div>
+        <div class="panel-head" id="productsPanelTitulo">Tus productos</div>
         <table>
-          <thead><tr><th>Foto</th><th>Producto</th><th>Precio</th><th>Stock</th><th>EAN</th><th>Acciones</th></tr></thead>
+          <!-- Los encabezados cambian según la solapa: en Servicios no hay
+               stock que mostrar y sí duración e insumos. Ver renderProducts. -->
+          <thead id="productsHead"></thead>
           <tbody id="productsBody"></tbody>
         </table>
       </div>
@@ -5457,7 +5466,10 @@ async function refreshData() {
   movimientosCaja = movs || [];
 
   renderDashboard();
-  aplicarBotonesDeCarga();   // depende de si la tienda tiene servicios cargados
+  // Los dos dependen de si la tienda tiene servicios cargados, así que van
+  // antes de pintar la lista.
+  aplicarBotonesDeCarga();
+  aplicarSolapasDeProductos();
   renderProducts();
   renderOrders();
   renderClientes();
@@ -6458,15 +6470,50 @@ function mostrarDetalleVariantes(id) {
 }
 byId('closeDetalleVariantesModal')?.addEventListener('click', () => hide(byId('detalleVariantesModal')));
 
+// Qué servicios gastan este insumo. Es la vuelta del círculo: desde el
+// servicio ya se ve qué descuenta, pero parado en el insumo no había forma
+// de saber quién se lo come.
+function serviciosQueUsan(idInsumo) {
+  return (products || []).filter(p =>
+    Array.isArray(p.insumos) && p.insumos.some(i => String(i.producto_id) === String(idInsumo)));
+}
+
+// Los tres paneles no son el mismo listado filtrado: son cosas de distinta
+// naturaleza y se controlan mirando datos distintos. Un servicio no tiene
+// stock (la columna no significa nada) y un insumo no tiene precio de venta
+// porque no se vende: lo que importa es cuánto queda y quién lo gasta.
+const PANELES_PRODUCTOS = {
+  servicios: {
+    titulo: 'Tus servicios',
+    columnas: ['Foto', 'Servicio', 'Precio', 'Duración', 'Qué gasta', 'Acciones'],
+    filtro: (p) => !esProductoFisico(p),
+    vacio: 'Todavía no cargaste ningún servicio. Usá "+ Nuevo servicio" para el corte, el color, la barba...'
+  },
+  tienda: {
+    titulo: 'Tus productos',
+    columnas: ['Foto', 'Producto', 'Precio', 'Stock', 'EAN', 'Acciones'],
+    filtro: (p) => esProductoFisico(p) && !p.solo_interno,
+    vacio: 'Creá tu primer producto para comenzar a recibir pedidos.'
+  },
+  interno: {
+    titulo: 'Tu stock interno',
+    columnas: ['Foto', 'Insumo', 'Stock', 'Usado en', 'Acciones'],
+    filtro: (p) => esProductoFisico(p) && !!p.solo_interno,
+    vacio: 'Todavía no cargaste stock interno (repuestos, insumos y demás uso propio).'
+  }
+};
+
 function renderProducts() {
-  const lista = products.filter(p => !!p.solo_interno === (filtroProductosDestino === 'interno'));
+  const panel = PANELES_PRODUCTOS[filtroProductosDestino] || PANELES_PRODUCTOS.tienda;
+  const lista = products.filter(panel.filtro);
+
+  byId('productsPanelTitulo').textContent = panel.titulo;
+  byId('productsHead').innerHTML = '<tr>' + panel.columnas.map(c => '<th>' + c + '</th>').join('') + '</tr>';
 
   if (lista.length === 0) {
     show(byId('emptyProducts'));
     hide(byId('productsPanel'));
-    byId('emptyProducts').querySelector('p').textContent = filtroProductosDestino === 'interno'
-      ? 'Todavía no cargaste stock interno (repuestos y demás uso propio).'
-      : 'Creá tu primer producto para comenzar a recibir pedidos.';
+    byId('emptyProducts').querySelector('p').textContent = panel.vacio;
     return;
   }
 
@@ -6486,10 +6533,59 @@ function renderProducts() {
     const imgHtml = p.image_url ?
       '<img src="' + p.image_url + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;display:block;">' :
       '<div style="width:40px;height:40px;background:#EAF4FD;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:20px;">📦</div>';
+    const celdaNombre = '<td><strong>' + escapeHtml(p.name) + '</strong>' +
+      (p.pendiente_restauracion ? ' <span class="badge" style="background:#FEF3E2;color:#8A5200;" title="Tomado en parte de pago, todavía no está listo para vender">🔧 Restauración</span>' : '') +
+      '</td>';
+
+    const celdaAcciones = '<td><div class="row-actions">' +
+      (esProductoFisico(p)
+        ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
+        : '') +
+      '<button class="icon-btn" data-etiqueta="' + p.id + '" title="Imprimir etiqueta" style="color:var(--celeste);">🏷️</button>' +
+      '<button class="icon-btn" data-edit="' + p.id + '">Editar</button>' +
+      '<button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>';
+
+    // SERVICIOS: precio, cuánto dura y qué descuenta del stock.
+    if (filtroProductosDestino === 'servicios') {
+      const insumos = Array.isArray(p.insumos) ? p.insumos : [];
+      const detalleInsumos = insumos.length
+        ? insumos.map(i => {
+            const ins = products.find(x => String(x.id) === String(i.producto_id));
+            return '<div style="font-size:11.5px;">' +
+              Number(i.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 3 }) + '× ' +
+              escapeHtml(ins ? ins.name : 'insumo borrado') + '</div>';
+          }).join('')
+        : '<span style="color:var(--text-mute);font-size:12px;">Nada</span>';
+
+      return '<tr>' +
+        '<td>' + imgHtml + '</td>' + celdaNombre +
+        '<td>' + money(p.price) + precioSecundarioProducto(p) + '</td>' +
+        '<td>' + (p.duracion_minutos
+          ? '<strong>' + p.duracion_minutos + '</strong> min'
+          : '<span style="color:var(--text-mute);font-size:12px;">Sin cargar</span>') + '</td>' +
+        '<td>' + detalleInsumos + '</td>' +
+        celdaAcciones +
+      '</tr>';
+    }
+
+    // INSUMOS: no se venden, así que el precio no aporta. Interesa cuánto
+    // queda y qué servicios se lo comen.
+    if (filtroProductosDestino === 'interno') {
+      const usadoEn = serviciosQueUsan(p.id);
+      return '<tr>' +
+        '<td>' + imgHtml + '</td>' + celdaNombre +
+        '<td>' + formatearCantidad(p.stock, p) +
+          ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span></td>' +
+        '<td>' + (usadoEn.length
+          ? usadoEn.map(s => '<div style="font-size:11.5px;">' + escapeHtml(s.name) + '</div>').join('')
+          : '<span style="color:var(--text-mute);font-size:12px;">Ningún servicio</span>') + '</td>' +
+        celdaAcciones +
+      '</tr>';
+    }
+
     return '<tr>' +
       '<td>' + imgHtml + '</td>' +
       '<td><strong>' + escapeHtml(p.name) + '</strong>' +
-        (p.solo_interno ? ' <span class="badge" style="background:#F1F3F6;color:var(--text-mute);" title="No se vende en tu tienda online">🔒 Interno</span>' : '') +
         (p.pendiente_restauracion ? ' <span class="badge" style="background:#FEF3E2;color:#8A5200;" title="Tomado en parte de pago, todavía no está listo para vender">🔧 Restauración</span>' : '') +
       '</td>' +
       '<td>' + money(p.price) + sufijoPrecioPorMedida(p) + precioSecundarioProducto(p) + '</td>' +
@@ -10307,16 +10403,43 @@ if (byId('newServiceBtn')) byId('newServiceBtn').addEventListener('click', () =>
 // dos botones evita que abra siempre en "Producto" y tenga que acordarse de
 // cambiarlo adentro del formulario. Para el resto de las tiendas, que casi
 // no cargan servicios, un solo botón sigue siendo más simple.
+const negocioDaServicios = () =>
+  !!(currentStore?.turnos?.activo) || (products || []).some(p => !esProductoFisico(p));
+
 function aplicarBotonesDeCarga() {
   const btnProducto = byId('newProductBtn');
   const btnServicio = byId('newServiceBtn');
   if (!btnProducto || !btnServicio) return;
 
-  const daServicios = !!(currentStore?.turnos?.activo) ||
-    (products || []).some(p => !esProductoFisico(p));
-
+  const daServicios = negocioDaServicios();
   btnServicio.classList.toggle('hidden', !daServicios);
   btnProducto.textContent = daServicios ? '+ Nuevo producto' : '+ Nuevo producto o servicio';
+}
+
+// La solapa "Servicios" solo existe donde hay servicios. Cuando existe, las
+// tres solapas pasan a nombrar QUÉ ES cada cosa (Servicios / Productos /
+// Insumos) en vez de dónde va — que es la distinción que le sirve a una
+// peluquería. Un comercio sin servicios conserva Tienda / Stock interno.
+function aplicarSolapasDeProductos() {
+  const solapaServicios = document.querySelector('[data-productos-destino="servicios"]');
+  if (!solapaServicios) return;
+
+  const daServicios = negocioDaServicios();
+  solapaServicios.classList.toggle('hidden', !daServicios);
+
+  byId('tabTiendaTexto').textContent = daServicios ? '🏪 Productos' : '🏪 Tienda';
+  byId('tabInternoTexto').textContent = daServicios ? '🔒 Insumos' : '🔒 Stock interno';
+
+  // Si estaba parado en Servicios y el negocio dejó de tenerlos, no lo
+  // dejamos varado en una solapa que ya no se ve.
+  if (!daServicios && filtroProductosDestino === 'servicios') {
+    filtroProductosDestino = 'tienda';
+    document.querySelectorAll('.productos-destino-tab').forEach(o => {
+      const activo = o.dataset.productosDestino === 'tienda';
+      o.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
+      o.style.background = activo ? '#EAF4FD' : '#fff';
+    });
+  }
 }
 
 wireSelectorMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
