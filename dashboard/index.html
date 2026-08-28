@@ -2796,10 +2796,14 @@ tr:last-child td { border-bottom: none; }
               <option value="60">Cada 1 hora (8:00, 9:00, 10:00...)</option>
             </select>
             <small style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
-              Esto es solo en qué horarios se puede empezar. <strong>Cuánto dura</strong> lo define cada servicio:
-              cargale la duración al corte, al color, etc. en Productos, y el sistema tapa solo los horarios que ese
-              servicio ocupa. Un servicio sin duración cargada ocupa un lugar de la grilla.
+              Solo define <strong>en qué horarios se puede empezar</strong>, no cuánto dura la atención.
             </small>
+
+            <!-- Las dos mitades del sistema de turnos, una al lado de la otra:
+                 acá se ve qué hace este campo y qué hace la duración de cada
+                 servicio. Sin esto son dos números de minutos en pantallas
+                 distintas y es imposible saber cuál manda. -->
+            <div id="turnosResumen" style="margin-top:12px;background:var(--bg);border-radius:8px;padding:12px 13px;"></div>
           </div>
         </div>
 
@@ -11607,9 +11611,62 @@ function actualizarTextoRecargoDomicilio() {
   if (input) input.placeholder = esDeTurnos ? 'Ej: 5000' : 'Ej: 2000';
 }
 
+// Muestra, en la misma pantalla, qué hace cada uno de los dos números que
+// intervienen en un turno — porque son dos cantidades de minutos que viven
+// en lugares distintos y es fácil creer que se pisan:
+//   1) el intervalo de acá  -> en qué horarios se puede EMPEZAR
+//   2) la duración de cada servicio (en Productos) -> cuánto OCUPA
+// Se muestra la grilla real que va a ver el cliente y la lista de servicios
+// con su duración, así se ve de una que no compiten: se complementan.
+function renderResumenTurnos() {
+  const cont = byId('turnosResumen');
+  if (!cont) return;
+
+  const paso = Number(byId('turnosIntervalo').value) || 30;
+  const desde = byId('turnosDesde').value || '09:00';
+
+  // Ejemplo corto de la grilla, arrancando en el horario real de la tienda.
+  const inicio = aMinutosAgenda(desde);
+  const ejemplo = [0, 1, 2, 3].map(i => aHoraAgenda(inicio + paso * i)).join(' · ') + ' …';
+
+  const servicios = (products || []).filter(p => !esProductoFisico(p));
+  const conDuracion = servicios.filter(s => Number(s.duracion_minutos) > 0);
+  const sinDuracion = servicios.filter(s => !Number(s.duracion_minutos));
+
+  let html =
+    '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">1. Cuándo puede empezar</div>' +
+    '<div style="font-size:12.5px;color:var(--text-mute);margin-bottom:11px;">Tus clientes van a ver estos horarios: <strong style="color:var(--text-dark);">' + ejemplo + '</strong></div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">2. Cuánto ocupa cada uno</div>';
+
+  if (!servicios.length) {
+    html += '<div style="font-size:12.5px;color:var(--text-mute);">Todavía no cargaste servicios. Cargalos en <strong>Productos</strong> con su duración y la agenda se bloquea sola.</div>';
+  } else {
+    html += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">' +
+      conDuracion.map(s =>
+        '<span style="background:#EAF4FD;color:var(--navy);padding:3px 9px;border-radius:12px;font-size:11.5px;font-weight:600;">' +
+        escapeHtml(s.name) + ': ' + Number(s.duracion_minutos) + ' min</span>').join('') +
+      sinDuracion.map(s =>
+        '<span style="background:#FEF3E2;color:#8A5200;padding:3px 9px;border-radius:12px;font-size:11.5px;">' +
+        escapeHtml(s.name) + ': sin cargar</span>').join('') +
+      '</div>';
+
+    html += sinDuracion.length
+      ? '<div style="font-size:12px;color:#8A5200;line-height:1.5;">Los que están en naranja ocupan un solo lugar de la grilla (' + paso + ' min). ' +
+        'Si alguno lleva más, cargale la duración en <strong>Productos → editar el servicio</strong> para que no te tomen otro turno encima.</div>'
+      : '<div style="font-size:12px;color:var(--text-mute);line-height:1.5;">Eso es lo que tapa la agenda. Un turno de ' +
+        Math.max(...conDuracion.map(s => Number(s.duracion_minutos))) + ' min bloquea todos los horarios que pisa, no solo el de inicio.</div>';
+  }
+
+  cont.innerHTML = html;
+}
+
+byId('turnosIntervalo').addEventListener('change', renderResumenTurnos);
+byId('turnosDesde').addEventListener('change', renderResumenTurnos);
+
 byId('turnosActivo').addEventListener('change', (e) => {
   byId('turnosConfig').classList.toggle('hidden', !e.target.checked);
   actualizarTextoRecargoDomicilio();
+  renderResumenTurnos();
 });
 
 // Medios de pago que puede aceptar una tienda
@@ -11847,6 +11904,7 @@ async function cargarConfiguracion() {
     // Después de saber si la tienda usa turnos: de eso depende si el campo
     // se llama "costo de envío" o "servicio a domicilio".
     actualizarTextoRecargoDomicilio();
+    renderResumenTurnos();
 
     if (store.image_url) {
       byId('configLogoPreview').style.backgroundImage = `url(${store.image_url})`;
