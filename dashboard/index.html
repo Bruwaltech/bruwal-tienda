@@ -1927,8 +1927,8 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="wizard-step hidden" data-step="3">
-        <div class="field">
-          <label>Precio</label>
+        <div class="field" id="campoPrecioVenta">
+          <label id="pPrecioLabel">Precio</label>
           <div style="display:flex;gap:6px;">
             <!-- Sin `required` por el mismo motivo que pName: en el wizard
                  este paso está oculto cuando se aprieta Guardar. -->
@@ -3987,7 +3987,38 @@ function seleccionarTipoTab(tab) {
     byId('pDestinoTienda').checked = !esInterno;
   }
 
+  // Va acá y no arriba: depende de pDestinoInterno, que recién se fija en
+  // las ramas de arriba. Llamarla antes leía el estado anterior y el campo
+  // Precio quedaba al revés (visible en lo interno y oculto en lo de venta).
+  aplicarVisibilidadPrecio();
+
   byId('pTipoProducto').dispatchEvent(new Event('change'));
+}
+
+// Un insumo de uso interno no se vende: el rollo de tiras o la hoja de
+// afeitar tienen COSTO, no precio de venta. Pedirlo obligatorio era pura
+// fricción — y encima un precio inventado ensucia las estadísticas.
+//
+// La excepción es electrónica: ahí "uso interno" también cubre el equipo
+// que entra a reparar o a desarmar, y ese sí puede tener un precio de
+// reventa cargado de antemano. Por eso ahí el campo se muestra igual, pero
+// aclarado como opcional.
+function aplicarVisibilidadPrecio() {
+  const campo = byId('campoPrecioVenta');
+  if (!campo) return;
+
+  const esInterno = byId('pDestinoInterno')?.checked;
+  const esElectronica = rubroEsElectronica();
+  const ocultar = esInterno && !esElectronica;
+
+  campo.classList.toggle('hidden', ocultar);
+
+  const label = byId('pPrecioLabel');
+  if (label) {
+    label.innerHTML = esInterno
+      ? 'Precio de venta <span style="font-weight:400;color:var(--text-mute);">(opcional — es para uso interno)</span>'
+      : 'Precio';
+  }
 }
 
 document.querySelectorAll('.tipo-tab').forEach(b => {
@@ -5677,6 +5708,9 @@ function aplicarVisibilidadPorRubro() {
   const esElectronica = rubroEsElectronica();
   actualizarTextoVariantes();
   aplicarVentaPorMedidaVisibilidad();
+  // La excepción de electrónica para el precio de lo interno depende del
+  // rubro, así que se recalcula cuando el rubro cambia.
+  if (typeof aplicarVisibilidadPrecio === 'function') aplicarVisibilidadPrecio();
 
   // Nombre/Descripción se reemplazan por Marca/Modelo en electrónica.
   if (byId('campoNombreDescripcion')) byId('campoNombreDescripcion').classList.toggle('hidden', esElectronica);
@@ -10783,8 +10817,15 @@ byId('productForm').addEventListener('submit', async (e) => {
     return;
   }
 
+  // El precio solo es obligatorio en lo que se vende. Un insumo de uso
+  // interno (una hoja de afeitar, un rollo de tiras) no tiene precio de
+  // venta, y exigirlo obliga a inventar un número que después ensucia las
+  // estadísticas. En electrónica sí se pide igual, porque ahí lo interno
+  // puede ser un equipo que se va a revender.
+  const precioEsOpcional = byId('pDestinoInterno')?.checked;
   const precioEscrito = byId('pPrice').value;
-  if (precioEscrito === '' || !(Number(precioEscrito) >= 0)) {
+
+  if (!precioEsOpcional && (precioEscrito === '' || !(Number(precioEscrito) >= 0))) {
     irAlPasoYAvisar(3, 'Poné el precio. Si es gratis o todavía no lo definiste, escribí 0.', 'pPrice');
     return;
   }
