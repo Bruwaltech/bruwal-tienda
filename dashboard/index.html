@@ -7656,7 +7656,7 @@ function descargarPlantillaImportacion() {
   const libro = XLSX.utils.book_new();
   // Mismo formato que el catálogo exportado: si las dos planillas se ven
   // igual, se entiende sola que una es la ida y la otra la vuelta.
-  XLSX.utils.book_append_sheet(libro, armarHojaExcel(datos, [2]), 'Productos');
+  XLSX.utils.book_append_sheet(libro, armarHojaExcel(datos, [2], [0]), 'Productos');
   XLSX.writeFile(libro, 'plantilla-productos-bruwal.xlsx');
 }
 
@@ -7669,16 +7669,29 @@ function descargarPlantillaImportacion() {
 const ANCHO_MINIMO_COLUMNA = 9;
 const ANCHO_MAXIMO_COLUMNA = 46;
 
-function anchosDeColumna(filas) {
+// La columna del nombre es la que se lee primero y la que identifica cada
+// fila: se le da el doble de piso que al resto y más techo, así no queda
+// apretada aunque el producto se llame corto ("Corte") ni se corta cuando
+// se llama largo ("Manguera reforzada 1/2 pulgada tricapa").
+const ANCHO_MINIMO_NOMBRE = 34;
+const ANCHO_MAXIMO_NOMBRE = 62;
+
+// `columnasAnchas` son índices de columna (0 = primera) que llevan ese
+// tratamiento especial.
+function anchosDeColumna(filas, columnasAnchas) {
   if (!filas.length) return [];
+  const anchas = columnasAnchas || [];
   return filas[0].map((_, col) => {
     const masLargo = filas.reduce((max, fila) => {
       const celda = fila[col];
       const largo = String(celda == null ? '' : celda).length;
       return largo > max ? largo : max;
     }, 0);
+    const esAncha = anchas.includes(col);
+    const piso = esAncha ? ANCHO_MINIMO_NOMBRE : ANCHO_MINIMO_COLUMNA;
+    const techo = esAncha ? ANCHO_MAXIMO_NOMBRE : ANCHO_MAXIMO_COLUMNA;
     // +2 de aire para que el texto no toque el borde de la celda.
-    return { wch: Math.min(ANCHO_MAXIMO_COLUMNA, Math.max(ANCHO_MINIMO_COLUMNA, masLargo + 2)) };
+    return { wch: Math.min(techo, Math.max(piso, masLargo + 2)) };
   });
 }
 
@@ -7693,18 +7706,28 @@ const ESTILO_ENCABEZADO = {
 // contenido, fila de títulos congelada (queda a la vista al bajar), filtros
 // en cada columna y formato de moneda donde corresponde.
 //
-// `columnasMoneda` son índices (0 = primera columna).
-function armarHojaExcel(filas, columnasMoneda) {
+// `columnasMoneda` y `columnasAnchas` son índices (0 = primera columna).
+// Las anchas van al doble de piso y además en negrita: son la columna que
+// identifica la fila (el nombre del producto), no un dato más.
+function armarHojaExcel(filas, columnasMoneda, columnasAnchas) {
   const hoja = XLSX.utils.aoa_to_sheet(filas);
   const totalCols = filas[0].length;
   const totalFilas = filas.length;
+  const anchas = columnasAnchas || [];
 
-  hoja['!cols'] = anchosDeColumna(filas);
+  hoja['!cols'] = anchosDeColumna(filas, anchas);
   hoja['!rows'] = [{ hpt: 22 }];   // encabezado un poco más alto
 
   filas[0].forEach((_, col) => {
     const ref = XLSX.utils.encode_cell({ r: 0, c: col });
     if (hoja[ref]) hoja[ref].s = ESTILO_ENCABEZADO;
+  });
+
+  anchas.forEach(col => {
+    for (let fila = 1; fila < totalFilas; fila++) {
+      const ref = XLSX.utils.encode_cell({ r: fila, c: col });
+      if (hoja[ref]) hoja[ref].s = { font: { bold: true }, alignment: { vertical: 'center' } };
+    }
   });
 
   (columnasMoneda || []).forEach(col => {
@@ -7781,7 +7804,7 @@ function exportarCatalogoExcel() {
 
   const libro = XLSX.utils.book_new();
   const colsMoneda = incluirCostos ? [2, 11] : [2];
-  XLSX.utils.book_append_sheet(libro, armarHojaExcel(filas, colsMoneda), 'Catálogo');
+  XLSX.utils.book_append_sheet(libro, armarHojaExcel(filas, colsMoneda, [0]), 'Catálogo');
 
   // Segunda hoja: el desglose que la primera no puede mostrar sin repetir
   // el producto en varias filas (y romper la reimportación).
@@ -7810,7 +7833,7 @@ function exportarCatalogoExcel() {
       });
     });
 
-    XLSX.utils.book_append_sheet(libro, armarHojaExcel(filasVar, [3]), 'Variantes');
+    XLSX.utils.book_append_sheet(libro, armarHojaExcel(filasVar, [3], [0]), 'Variantes');
   }
 
   const fecha = fechaLocalISO();
