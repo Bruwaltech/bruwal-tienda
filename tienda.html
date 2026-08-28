@@ -1714,7 +1714,18 @@ const aMinutos = (hhmm) => {
   return (h || 0) * 60 + (m || 0);
 };
 
-const pasoDeTurno = () => Number(configTurnos && configTurnos.intervalo) || 30;
+// Cada cuánto arranca un turno. No es una configuración: sale del servicio
+// más corto del negocio (espejo de pasoDeTurnos() en el panel). El
+// `intervalo` guardado queda de respaldo para las tiendas que todavía no
+// cargaron ninguna duración.
+function pasoDeTurno() {
+  const duraciones = (products || [])
+    .filter(p => !esProductoFisico(p))
+    .map(p => Number(p.duracion_minutos))
+    .filter(d => d > 0);
+  if (duraciones.length) return Math.min(...duraciones);
+  return Number(configTurnos && configTurnos.intervalo) || 30;
+}
 
 // Cuánto ocupa el turno que se está reservando: la suma de la duración de
 // cada servicio del carrito (un corte + color lleva más que un corte solo).
@@ -1798,7 +1809,7 @@ async function cargarHorariosDisponibles() {
 
 function horariosDelDia(diaSemana) {
   const aMin = (s) => { const [h, m] = String(s).split(':').map(Number); return h * 60 + m; };
-  const paso = Number(configTurnos.intervalo) || 30;
+  const paso = pasoDeTurno();
 
   const salida = [];
   franjasDelDia(diaSemana).forEach(f => {
