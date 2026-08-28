@@ -1398,6 +1398,9 @@ tr:last-child td { border-bottom: none; }
     <!-- PRODUCTOS -->
     <div id="productosView" class="hidden">
       <div class="toolbar">
+        <!-- En un negocio de servicios se muestran los dos; en el resto, solo
+             el primero con el texto largo (ver aplicarBotonesDeCarga). -->
+        <button class="btn-action primary hidden" id="newServiceBtn">+ Nuevo servicio</button>
         <button class="btn-action primary" id="newProductBtn">+ Nuevo producto o servicio</button>
         <button class="btn-action" id="importarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-excel"></i> Importar Excel</button>
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
@@ -5372,6 +5375,7 @@ async function refreshData() {
   movimientosCaja = movs || [];
 
   renderDashboard();
+  aplicarBotonesDeCarga();   // depende de si la tienda tiene servicios cargados
   renderProducts();
   renderOrders();
   renderClientes();
@@ -10125,10 +10129,14 @@ function stopRepImeiCameraScanner() {
   cerrarCamara('repImei', 'repImeiCameraScanner', 'qr-reader-rep-imei');
 }
 
-if (byId('newProductBtn')) {
-  byId('newProductBtn').addEventListener('click', () => {
+// `tipo` puede venir 'producto' o 'servicio': un negocio de servicios entra
+// por botones separados y el formulario ya arranca en lo que eligió, en vez
+// de abrir siempre en Producto y obligarlo a cambiarlo adentro.
+function abrirFormularioNuevo(tipo) {
+  {
     if (!puedeOperar()) return;
-    if (byId('modalTitle')) byId('modalTitle').textContent = 'Nuevo producto o servicio';
+    const esServicio = tipo === 'servicio';
+    if (byId('modalTitle')) byId('modalTitle').textContent = esServicio ? 'Nuevo servicio' : 'Nuevo producto';
     if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = true;
     if (byId('pName')) byId('pName').value = '';
     if (byId('pDesc')) byId('pDesc').value = '';
@@ -10158,7 +10166,7 @@ if (byId('newProductBtn')) {
     renderUnidadMedidaChips();
     aplicarVentaPorMedida();
     aplicarVentaPorMedidaVisibilidad();
-    seleccionarTipoTab('producto');
+    seleccionarTipoTab(esServicio ? 'servicio' : 'producto');
     byId('pDuracion').value = '';
     byId('pPendienteRestauracion').checked = false;
     byId('campoStock').classList.remove('hidden');
@@ -10170,7 +10178,27 @@ if (byId('newProductBtn')) {
     iniciarWizard(true);
     if (byId('productModal')) show(byId('productModal'));
     if (byId('pCategory')) byId('pCategory').focus();
-  });
+  }
+}
+
+if (byId('newProductBtn')) byId('newProductBtn').addEventListener('click', () => abrirFormularioNuevo('producto'));
+if (byId('newServiceBtn')) byId('newServiceBtn').addEventListener('click', () => abrirFormularioNuevo('servicio'));
+
+// Un negocio de servicios (peluquería, barbería, estética) carga las dos
+// cosas: los servicios que presta y los productos que revende. Separarlo en
+// dos botones evita que abra siempre en "Producto" y tenga que acordarse de
+// cambiarlo adentro del formulario. Para el resto de las tiendas, que casi
+// no cargan servicios, un solo botón sigue siendo más simple.
+function aplicarBotonesDeCarga() {
+  const btnProducto = byId('newProductBtn');
+  const btnServicio = byId('newServiceBtn');
+  if (!btnProducto || !btnServicio) return;
+
+  const daServicios = !!(currentStore?.turnos?.activo) ||
+    (products || []).some(p => !esProductoFisico(p));
+
+  btnServicio.classList.toggle('hidden', !daServicios);
+  btnProducto.textContent = daServicios ? '+ Nuevo producto' : '+ Nuevo producto o servicio';
 }
 
 wireSelectorMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
