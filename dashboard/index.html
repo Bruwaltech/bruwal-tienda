@@ -617,8 +617,15 @@ h1, h2, h3 {
 }
 
 /* ---- Planes ---- */
-.planes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+/* Las tarjetas de plan listan el detalle completo agrupado por módulo
+   (Productos, Ventas, Caja...), no cuatro bullets sueltos: el cliente
+   compara contra sistemas de gestión que sí detallan todo, y lo que
+   BRUWAL hace de más no se ve si no está escrito. auto-fit acomoda las
+   tres tarjetas (Basic, Pro, Bot) en una fila cuando entra, y baja a dos
+   o a una sola sin media queries extra. */
+.planes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 20px; align-items: stretch; }
 .plan-card {
+  position: relative;
   border: 2px solid var(--line);
   border-radius: var(--radius);
   padding: 20px;
@@ -627,12 +634,51 @@ h1, h2, h3 {
   transition: border-color .2s, transform .2s;
 }
 .plan-card:hover { border-color: var(--celeste); transform: translateY(-2px); }
+.plan-card.destacada { border-color: var(--celeste); box-shadow: 0 10px 26px rgba(47, 143, 224, 0.15); }
+.plan-badge {
+  position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+  background: var(--celeste); color: #fff; font-size: 10px; font-weight: 800;
+  letter-spacing: .7px; padding: 4px 12px; border-radius: 999px; white-space: nowrap;
+}
 .plan-card .nombre { font-weight: 700; font-size: 17px; color: var(--navy); }
 .plan-card .precio { font-size: 26px; font-weight: 700; margin: 8px 0 2px; color: var(--navy); }
 .plan-card .periodo { font-size: 12px; color: var(--text-mute); margin-bottom: 14px; }
-.plan-card ul { list-style: none; margin: 0 0 18px; font-size: 13px; color: var(--text-mute); line-height: 1.9; }
+.plan-card .plan-resumen {
+  font-size: 12.5px; color: var(--text-dark); background: var(--bg);
+  border-radius: 8px; padding: 9px 11px; margin-bottom: 4px; line-height: 1.5;
+}
+.plan-card .plan-grupo {
+  font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--navy); margin: 14px 0 7px;
+}
+.plan-card ul { list-style: none; margin: 0; padding: 0; font-size: 12.5px; color: var(--text-mute); line-height: 1.5; display: grid; gap: 6px; }
+.plan-card ul li { padding-left: 16px; text-indent: -16px; }
 .plan-card ul li::before { content: '✓ '; color: var(--stock); font-weight: 700; }
+/* El aire va en la ultima lista, no en el boton (tocarle el padding al
+   .btn lo deforma). margin-top:auto empuja el CTA al fondo, asi los tres
+   quedan alineados aunque las listas midan distinto. */
+.plan-card ul:last-of-type { margin-bottom: 20px; }
 .plan-card .btn { margin-top: auto; }
+.plan-card .plan-nota { font-size: 11.5px; color: var(--text-mute); margin-top: 10px; text-align: center; line-height: 1.5; }
+
+/* Lista de videos de la guia. Con un video suelto alcanzaba un iframe; con
+   varios hace falta poder elegir, y la miniatura de YouTube ya existe para
+   cada uno (img.youtube.com/vi/ID/mqdefault.jpg), asi que no hay que subir
+   ninguna imagen a mano al sumar un tutorial. */
+.guia-lista { display: grid; gap: 10px; margin-top: 18px; }
+.guia-item {
+  display: flex; gap: 12px; align-items: center; text-align: left; width: 100%;
+  background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px;
+  padding: 9px; cursor: pointer; font-family: inherit;
+  transition: border-color .2s, background .2s;
+}
+.guia-item:hover { border-color: var(--celeste); }
+.guia-item.activo { border-color: var(--celeste); background: #EAF4FD; }
+.guia-item img { width: 104px; height: 59px; object-fit: cover; border-radius: 7px; flex-shrink: 0; background: #000; }
+.guia-item b { display: block; font-size: 13.5px; color: var(--navy); margin-bottom: 3px; }
+.guia-item small { display: block; font-size: 12px; color: var(--text-mute); line-height: 1.45; }
+.guia-titulo { font-size: 15px; font-weight: 700; color: var(--navy); margin-top: 16px; }
+.guia-desc { font-size: 13px; color: var(--text-mute); line-height: 1.6; margin-top: 4px; }
 
 @media (max-width: 640px) {
   .planes-grid { grid-template-columns: 1fr; }
@@ -1516,6 +1562,14 @@ tr:last-child td { border-bottom: none; }
           <input type="text" id="barcodeInput" placeholder="Escanea código, EAN o nombre del producto..." autofocus style="padding:12px 14px;border:1px solid var(--line);border-radius:8px;font-size:15px;">
           <button onclick="searchByBarcode()" class="btn btn-primary" style="width:auto;padding:12px 24px;">Buscar</button>
           <button onclick="toggleCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 24px;background:#1FA088;">📷 Cámara</button>
+          <button type="button" id="conectarBalanzaBtn" class="btn btn-primary hidden" style="width:auto;padding:12px 20px;background:#8A5200;">⚖️ Conectar balanza</button>
+        </div>
+        <div id="balanzaEnVivo" class="hidden" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:12px;">
+          <span style="font-size:13px;color:var(--text-mute);">Balanza:</span>
+          <b id="balanzaPeso" style="font-size:20px;color:var(--navy);">—</b>
+          <button type="button" id="balanzaUsarBtn" class="btn" style="width:auto;padding:7px 14px;font-size:13px;">Usar este peso</button>
+          <button type="button" id="balanzaDesconectarBtn" class="btn-ghost" style="padding:7px 12px;font-size:12px;">Desconectar</button>
+          <span id="balanzaEstado" style="font-size:12px;color:var(--text-mute);"></span>
         </div>
         <div id="cameraScanner" class="hidden" style="margin-bottom:16px;border-radius:8px;overflow:hidden;border:2px solid var(--line);">
           <div id="qr-reader" style="width:100%;height:300px;"></div>
@@ -1530,7 +1584,7 @@ tr:last-child td { border-bottom: none; }
             <div>
               <div style="font-weight:700;color:var(--navy);margin-bottom:4px;" id="barcodeProductName"></div>
               <div style="font-size:14px;color:var(--text-mute);margin-bottom:12px;">Precio unitario: <span id="barcodeProductPrice" style="font-weight:700;color:var(--celeste);"></span></div>
-              <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;">
                 <label style="font-size:14px;color:var(--text-mute);" id="barcodeQtyLabel">Cantidad:</label>
                 <input type="number" id="barcodeQty" value="1" min="0" style="width:70px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;" oninput="calculateTotal()">
                 <label style="font-size:14px;color:var(--text-mute);margin-left:10px;">Cliente:</label>
@@ -1538,7 +1592,13 @@ tr:last-child td { border-bottom: none; }
                        autocomplete="off"
                        style="flex:1;min-width:130px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
                 <datalist id="listaClientes"></datalist>
+                <label style="font-size:14px;color:var(--text-mute);">Tel.:</label>
+                <input type="tel" id="barcodeClienteTel" placeholder="opcional"
+                       autocomplete="off" inputmode="tel"
+                       style="flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
               </div>
+              <div id="barcodeTelAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;"></div>
+              <div id="barcodeBalanzaAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;color:var(--stock);font-weight:600;"></div>
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
                 <label style="font-size:14px;color:var(--text-mute);">Atendió:</label>
                 <input type="text" id="barcodeVendedor" list="listaVendedores" placeholder="Tu nombre o el de quien vende"
@@ -2037,6 +2097,18 @@ tr:last-child td { border-bottom: none; }
           </small>
           <div id="campoUnidadMedida" class="hidden" style="margin-top:10px;">
             <div style="display:flex;flex-wrap:wrap;gap:6px;" id="pUnidadMedidaChips"></div>
+
+            <div style="margin-top:12px;">
+              <label style="display:block;font-size:13px;font-weight:600;color:var(--text-dark);margin-bottom:4px;">
+                ⚖️ Código en la balanza (PLU) <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>
+              </label>
+              <input type="text" id="pPluBalanza" inputmode="numeric" autocomplete="off" placeholder="Ej: 0123"
+                     style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+              <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+                El número con el que este producto está cargado adentro de la balanza. Con eso,
+                escanear la etiqueta carga el producto y los kilos de una, sin tipear nada.
+              </small>
+            </div>
           </div>
         </div>
 
@@ -2158,6 +2230,9 @@ tr:last-child td { border-bottom: none; }
     <!-- El video se inserta recién al abrir el modal: si estuviera siempre
          acá, YouTube cargaría en cada visita al panel aunque nadie lo mire. -->
     <div id="guiaVideo" style="position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#000;"></div>
+    <div class="guia-titulo" id="guiaTitulo"></div>
+    <div class="guia-desc" id="guiaDesc"></div>
+    <div class="guia-lista" id="guiaLista"></div>
     <p style="color:var(--text-mute);font-size:12px;margin-top:14px;line-height:1.6;">
       ¿Te quedó alguna duda? Escribinos por WhatsApp y te ayudamos.
     </p>
@@ -2631,8 +2706,14 @@ tr:last-child td { border-bottom: none; }
       Para anotar una deuda que ya tenías anotada aparte (cuaderno, etc.), de antes
       de usar el sistema. No descuenta stock: esa venta ya pasó.
     </p>
-    <div class="field"><label>Nombre del cliente</label><input type="text" id="fmNombre" placeholder="Ej: Juan Pérez"></div>
-    <div class="field"><label>Teléfono (opcional)</label><input type="text" id="fmTelefono" placeholder="Ej: 11 2345 6789"></div>
+    <div class="field">
+      <label>Nombre del cliente</label>
+      <input type="text" id="fmNombre" list="listaClientes" autocomplete="off" placeholder="Ej: Juan Pérez">
+      <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
+        Si ya te compró antes, elegílo de la lista y traemos su teléfono solo.
+      </small>
+    </div>
+    <div class="field"><label>Teléfono (opcional)</label><input type="tel" id="fmTelefono" inputmode="tel" placeholder="Ej: 11 2345 6789"></div>
     <div class="field"><label>Monto que adeuda</label><input type="number" id="fmMonto" min="0" step="1" placeholder="0"></div>
     <div class="field" id="fmCampoDetalle"><label>Detalle (qué se llevó)</label><input type="text" id="fmDetalle" placeholder="Ej: 2 remeras talle M y un pantalón"></div>
     <div id="fmAvisoVenta" class="hidden" style="background:#FEF3E2;color:#8A5200;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.55;margin-bottom:12px;">
@@ -2645,7 +2726,7 @@ tr:last-child td { border-bottom: none; }
 
 <!-- MODAL PLANES -->
 <div class="modal-overlay hidden" id="planesModal">
-  <div class="modal" style="max-width:640px;">
+  <div class="modal" style="max-width:1000px;">
     <button class="modal-close" id="closePlanesModal">✕</button>
     <h3 id="planesTitulo">Elegí tu plan</h3>
     <p id="planesSubtitulo" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;"></p>
@@ -2771,6 +2852,59 @@ tr:last-child td { border-bottom: none; }
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Activa la pestaña Reparaciones y "Toma un equipo usado" en la venta de mostrador.
           </small>
+        </div>
+
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="configBalanzaActiva" style="margin:0;cursor:pointer;width:auto;">
+            ⚖️ Uso balanza etiquetadora (Systel, Kretz...)
+          </label>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Si la balanza imprime una etiqueta con código de barras, escanearla carga el
+            producto y los kilos solos, con el mismo lector que usás siempre.
+          </small>
+
+          <div id="configBalanzaDetalle" class="hidden" style="margin-top:12px;background:var(--bg);padding:12px;border-radius:10px;">
+            <label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;">Formato del código</label>
+            <input type="text" id="configBalanzaFormato" autocomplete="off" placeholder="20PPPPPIIIII"
+                   style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:monospace;letter-spacing:1px;">
+            <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.6;">
+              Copiá el <b>mismo</b> formato que tiene configurado la balanza:<br>
+              <b>P</b> = código del producto · <b>I</b> = importe · <b>C</b> = peso en gramos ·
+              <b>B</b> = número de balanza · los números sueltos son la cabecera fija.<br>
+              Un EAN-13 tiene 13 dígitos: escribí los <b>12 primeros</b>, el último es el
+              verificador y lo calcula la balanza sola.
+            </small>
+
+            <label style="display:block;font-size:13px;font-weight:600;margin:12px 0 4px;">El importe viene en</label>
+            <select id="configBalanzaDecimales" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+              <option value="2">Pesos con centavos (99999 = $999,99)</option>
+              <option value="0">Pesos enteros (99999 = $99.999)</option>
+            </select>
+
+            <label style="display:block;font-size:13px;font-weight:600;margin:12px 0 4px;">Velocidad del puerto (si la conectás por USB)</label>
+            <select id="configBalanzaBaud" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+              <option value="9600">9600 (lo más común)</option>
+              <option value="4800">4800</option>
+              <option value="19200">19200</option>
+              <option value="38400">38400</option>
+              <option value="57600">57600</option>
+              <option value="115200">115200</option>
+            </select>
+            <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.6;">
+              Solo hace falta si vas a enchufar la balanza a la computadora con un cable USB.
+              Tenés que poner la misma velocidad que tiene configurada la balanza en su menú de
+              comunicación. Si el peso aparece como símbolos raros, es esto lo que no coincide.
+            </small>
+
+            <label style="display:block;font-size:13px;font-weight:600;margin:12px 0 4px;">Probá una etiqueta</label>
+            <input type="text" id="configBalanzaPrueba" autocomplete="off" placeholder="Escaneá o pegá acá un código de la balanza"
+                   style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+            <div id="configBalanzaResultado" style="margin-top:8px;font-size:12.5px;line-height:1.6;color:var(--text-mute);">
+              Pegá un código de una etiqueta real y te digo qué leí. Es la forma segura de saber
+              si el formato está bien antes de vender con esto.
+            </div>
+          </div>
         </div>
 
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
@@ -3002,45 +3136,93 @@ const PLANES = {
   basic: {
     nombre: 'Stock y Pedidos',
     tipo: 'pago',               // se activa solo, con Mercado Pago
-    // OJO: sigue apuntando al plan de Mercado Pago que cobra $25.000 de
-    // verdad (mismo preapproval_plan_id de siempre). precioAnterior/precio
-    // son solo lo que se MUESTRA -- si van a cobrar $25.900 en serio, hay
-    // que crear/editar el plan en Mercado Pago y actualizar el link acá,
-    // si no la web promete un precio distinto al que factura.
     precioAnterior: '$35.000',
     precio: '$25.900',
     periodo: 'por mes',
+    resumen: 'Todo el negocio ordenado en un solo lugar: stock, ventas, clientes y tu tienda online.',
     // Plan "Bruwalstock Basic" en Mercado Pago. Usamos la URL larga a
     // proposito: el link corto (mpago.la/28KDgwc) descarta los parametros
     // al redirigir y perderiamos el external_reference, que es lo que le
     // dice al webhook QUE tienda pago.
     link: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=558bf71f6d62460797b95829fc767e0d',
-    beneficios: [
-      'Control de stock en tiempo real',
-      'Registro de ventas con lector de código',
-      'Historial de ventas y pedidos',
-      'Productos ilimitados',
-      'Tienda pública con carrito y pedidos por WhatsApp'
-    ]
+    grupos: [
+      { t: 'Productos y stock', items: [
+        'Productos ilimitados, con foto y categorías',
+        'Variantes por talle, color y modelo',
+        'Alertas automáticas de stock bajo',
+        'Importación y exportación masiva por Excel',
+        'Etiquetas con código de barras para imprimir',
+        'Carga de equipos por IMEI, uno por uno',
+        'Valoración de tu stock a costo, en vivo'
+      ]},
+      { t: 'Ventas y clientes', items: [
+        'Ventas con lector de código de barras',
+        'Historial completo de ventas y pedidos',
+        'Ficha de cliente con todo lo que compró',
+        'Cuentas corrientes: fiado con saldo por cliente',
+        'Gastos del negocio, mes a mes',
+        'Toma de equipo usado en parte de pago'
+      ]},
+      { t: 'Tu tienda pública', items: [
+        'Tienda online propia con carrito',
+        'Los pedidos te llegan por WhatsApp',
+        'Link propio para compartir donde quieras',
+        'Aparecés en el mapa de tiendas de BRUWAL'
+      ]},
+      { t: 'Servicio técnico y agenda', items: [
+        'Reparaciones de punta a punta, con estados',
+        'Agenda de turnos por día',
+        'Panel con tendencia de ventas de 12 meses'
+      ]},
+      { t: 'Y además', items: [
+        'App instalable en el celular',
+        'PIN para que un empleado no vea los costos',
+        'Actualizaciones incluidas, sin instalar nada',
+        'Soporte por WhatsApp'
+      ]}
+    ],
+    nota: 'Cancelás cuando quieras, desde tu panel.'
   },
   pro: {
     nombre: 'Pro',
     tipo: 'pago',                // se activa solo, con Mercado Pago
+    destacado: true,
     precioAnterior: '$87.500',
     precio: '$70.000',
     periodo: 'por mes',
-    // Plan de Mercado Pago — cobra $70.000 de verdad, coincide con lo que
-    // se muestra. URL larga a propósito, igual que Basic: el acortador
+    resumen: 'Todo lo del plan Stock y Pedidos, más el control de la plata y los números del negocio:',
+    // Plan de Mercado Pago -- cobra $70.000 de verdad, coincide con lo que
+    // se muestra. URL larga a proposito, igual que Basic: el acortador
     // (mpago.la) descarta el external_reference del slug de la tienda al
-    // redirigir, y sin eso no hay forma de saber qué tienda pagó.
+    // redirigir, y sin eso no hay forma de saber que tienda pago.
     link: 'https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=7f3874b7347b43698e4b9daf92a5405b',
-    beneficios: [
-      'Todo lo del plan Basic',
-      'Caja diaria por medio de pago',
-      'Estadísticas de productos y clientes',
-      'Historial completo por IMEI',
-      'Soporte prioritario'
-    ]
+    grupos: [
+      { t: 'Caja diaria', items: [
+        'Ingresos y egresos del día en una sola pantalla',
+        'Todo separado por medio de pago',
+        'Suma sola las ventas, los cobros de fiado y los gastos',
+        'Movimientos manuales para lo que no pasa por el sistema'
+      ]},
+      { t: 'Estadísticas del negocio', items: [
+        'Ranking de productos por facturación y margen real',
+        'Productos con stock que no se están vendiendo',
+        'Clientes segmentados: VIP, frecuente, en riesgo, inactivo',
+        'Comparación por período, con un clic'
+      ]},
+      { t: 'Equipos e IMEI', items: [
+        'Historial completo por IMEI en una línea de tiempo',
+        'Ingreso, venta y reparación de cada equipo, juntos',
+        'Buscador de IMEI desde Productos'
+      ]},
+      { t: 'Carga inteligente', items: [
+        'Cargá el stock sacándole una foto a la factura (IA)',
+        'Reconoce productos, cantidades y costos'
+      ]},
+      { t: 'Soporte', items: [
+        'Atención prioritaria por WhatsApp'
+      ]}
+    ],
+    nota: 'Cancelás cuando quieras, desde tu panel.'
   }
 };
 
@@ -3053,12 +3235,22 @@ const BOT_PEDIDOS = {
   nombre: 'Bot de pedidos con IA',
   precio: 'A medida',
   periodo: 'lo armamos con vos',
-  beneficios: [
-    'Toma los pedidos solo, sin que nadie esté atendiendo',
-    'Responde a tus clientes las 24 horas',
-    'Configurado según tu rubro y tu carta',
-    'Se suma sobre cualquier plan'
-  ]
+  resumen: 'Un adicional que se suma sobre cualquier plan: atiende el WhatsApp por vos.',
+  grupos: [
+    { t: 'Qué hace', items: [
+      'Toma los pedidos solo, sin que nadie esté atendiendo',
+      'Responde precios, stock y horarios las 24 horas',
+      'Consulta tu stock real antes de confirmar',
+      'Descuenta el stock cuando el pedido se cierra'
+    ]},
+    { t: 'Cómo se arma', items: [
+      'Configurado según tu rubro y tu carta',
+      'Con tus respuestas y tu forma de hablar',
+      'Se suma sobre el plan que ya tengas',
+      'Lo cotizamos según tu volumen de consultas'
+    ]}
+  ],
+  nota: 'Se factura aparte del plan de stock.'
 };
 
 // Caja, Estadísticas e Historial IMEI quedaron adentro del plan Pro — son
@@ -3250,16 +3442,31 @@ function abrirPlanes() {
     }
 
     return `
-    <div class="plan-card">
+    <div class="plan-card${p.destacado ? ' destacada' : ''}">
+      ${p.destacado ? '<div class="plan-badge">MÁS ELEGIDO</div>' : ''}
       <div class="nombre">${escapeHtml(p.nombre)}</div>
       <div class="precio">${p.precioAnterior ? `<span style="text-decoration:line-through;color:var(--text-mute);font-weight:500;font-size:16px;margin-right:7px;">${escapeHtml(p.precioAnterior)}</span>` : ''}${escapeHtml(p.precio)}</div>
       <div class="periodo">${escapeHtml(p.periodo)}</div>
-      <ul>${p.beneficios.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+      ${detalleDelPlan(p)}
       ${accion}
+      ${p.nota ? `<div class="plan-nota">${escapeHtml(p.nota)}</div>` : ''}
     </div>`;
   }).join('') + tarjetaBotPedidos() + '</div>';
 
   show(byId('planesModal'));
+}
+
+// El detalle de cada plan va agrupado por modulo ("Productos y stock",
+// "Caja diaria"...) en vez de una lista plana: son 20 lineas por tarjeta y
+// sin subtitulos no las lee nadie. Misma funcion para los planes y el bot.
+function detalleDelPlan(p) {
+  const resumen = p.resumen
+    ? `<div class="plan-resumen">${escapeHtml(p.resumen)}</div>`
+    : '';
+  const grupos = (p.grupos || []).map(g => `
+      <div class="plan-grupo">${escapeHtml(g.t)}</div>
+      <ul>${g.items.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`).join('');
+  return resumen + grupos;
 }
 
 // El Bot de pedidos se muestra siempre como una tarjeta más, sea cual sea
@@ -3272,10 +3479,11 @@ function tarjetaBotPedidos() {
       <div class="nombre">${escapeHtml(BOT_PEDIDOS.nombre)}</div>
       <div class="precio">${escapeHtml(BOT_PEDIDOS.precio)}</div>
       <div class="periodo">${escapeHtml(BOT_PEDIDOS.periodo)}</div>
-      <ul>${BOT_PEDIDOS.beneficios.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+      ${detalleDelPlan(BOT_PEDIDOS)}
       <a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
          href="https://wa.me/${WHATSAPP_BRUWAL}?text=${encodeURIComponent(msg)}"
          target="_blank" rel="noopener">Hablar con un asesor</a>
+      ${BOT_PEDIDOS.nota ? `<div class="plan-nota">${escapeHtml(BOT_PEDIDOS.nota)}</div>` : ''}
     </div>`;
 }
 // ==================================================================
@@ -3871,6 +4079,87 @@ const UNIDADES_MEDIDA = {
   metro: { singular: 'metro', plural: 'metros', corto: 'm',  paso: 0.5,  ejemplo: 'Ej: 50' },
   kilo:  { singular: 'kilo',  plural: 'kilos',  corto: 'kg', paso: 0.25, ejemplo: 'Ej: 25' }
 };
+
+// ---- Balanza etiquetadora (Systel, Kretz) ----
+// La balanza imprime una etiqueta con un EAN-13 que arma el propio comercio:
+// en la balanza se configura un patron tipo "20PPPPIIIII" y cada letra es un
+// dato. Por eso aca NO hay un formato fijo hardcodeado -- se copia el mismo
+// patron que ya quedo configurado en la balanza y no hay que reconfigurar la
+// balanza de nadie.
+//   P = codigo del producto en la balanza (PLU)
+//   I = importe total
+//   C = cantidad pesada, en gramos
+//   B = numero de balanza (se lee y se descarta)
+//   digitos sueltos = cabecera fija (20, 21, 29...)
+// El verificador final del EAN-13 no entra en el patron: se acepta que venga
+// o que no, segun como lo mande el lector.
+const BALANZA_DEFAULT = { formato: '20PPPPPIIIII', decimalesImporte: 2 };
+
+function configBalanza() {
+  const c = currentStore?.balanza;
+  if (!c || !c.formato) return null;
+  return {
+    formato: String(c.formato).trim().toUpperCase(),
+    decimalesImporte: Number(c.decimalesImporte != null ? c.decimalesImporte : 2)
+  };
+}
+
+// Devuelve { plu, importe, cantidad } o null si el codigo no es de balanza.
+// Devolver null es la respuesta normal, no un error: la enorme mayoria de lo
+// que se escanea son EAN de fabrica y tienen que seguir de largo.
+function leerCodigoDeBalanza(codigo, cfg) {
+  const conf = cfg || configBalanza();
+  if (!conf || !conf.formato) return null;
+
+  const digitos = String(codigo || '').replace(/\D/g, '');
+  const patron = conf.formato;
+  if (digitos.length !== patron.length && digitos.length !== patron.length + 1) return null;
+
+  const campos = { P: '', I: '', C: '', B: '' };
+  for (let i = 0; i < patron.length; i++) {
+    const letra = patron[i];
+    if (letra >= '0' && letra <= '9') {
+      if (digitos[i] !== letra) return null;      // no es de esta balanza
+    } else if (campos[letra] !== undefined) {
+      campos[letra] += digitos[i];
+    } else {
+      return null;                                 // letra que no existe
+    }
+  }
+  if (!campos.P) return null;
+
+  const decimales = Math.max(0, conf.decimalesImporte || 0);
+  return {
+    plu: campos.P,
+    importe: campos.I ? Number(campos.I) / Math.pow(10, decimales) : null,
+    // El peso viaja en gramos: 5 digitos llegan hasta 99,999 kg.
+    cantidad: campos.C ? Number(campos.C) / 1000 : null
+  };
+}
+
+// El PLU puede venir con ceros a la izquierda: "00123" y "123" son el mismo
+// producto adentro de la balanza, pero no el mismo string.
+function productoPorPlu(plu) {
+  const pedido = String(plu || '').trim();
+  const sinCeros = pedido.replace(/^0+/, '') || '0';
+  return products.find(p => {
+    const suyo = String(p.plu_balanza || '').trim();
+    if (!suyo) return false;
+    return suyo === pedido || (suyo.replace(/^0+/, '') || '0') === sinCeros;
+  }) || null;
+}
+
+// Segun como este configurada la balanza, la etiqueta trae el peso o el
+// importe. Con el importe se despeja el peso dividiendo por el precio: es la
+// misma cuenta que hizo la balanza, al reves. En un producto que se vende por
+// unidad esa division no significa nada, asi que ahi se deja en 1.
+function cantidadDesdeBalanza(leido, producto) {
+  if (leido.cantidad != null && leido.cantidad > 0) return redondearMedida(leido.cantidad);
+  if (leido.importe != null && seVendePorMedida(producto) && Number(producto.price) > 0) {
+    return redondearMedida(leido.importe / Number(producto.price));
+  }
+  return 1;
+}
 
 const seVendePorMedida = (p) => !!(p && p.unidad_medida && UNIDADES_MEDIDA[p.unidad_medida]);
 const unidadDe = (p) => UNIDADES_MEDIDA[p?.unidad_medida] || null;
@@ -7094,12 +7383,34 @@ function renderClientes() {
   if (dl) dl.innerHTML = sorted.map(c => '<option value="' + escapeHtml(c.name) + '">').join('');
 }
 
+// 'scanner' era el centinela de "venta de mostrador, sin telefono" cuando
+// la pantalla de ventas todavia no pedia uno. Sigue guardandose asi cuando
+// no se carga nada, por eso hay que descartarlo explicitamente: no es un
+// numero. Lo mismo un '0' suelto, que aparecia en pedidos viejos.
+function esTelefonoReal(tel) {
+  const d = String(tel || '').replace(/\D/g, '');
+  return !!d && d !== '0' && tel !== 'scanner';
+}
+
+// El cliente no es una tabla propia: existe como el texto customer_name
+// repetido en sus pedidos. "Asociarlo" a uno ya cargado es, entonces,
+// recuperar el ultimo telefono real que dejo en alguna compra.
+function telefonoDeCliente(nombre) {
+  const buscado = (nombre || '').trim().toLowerCase();
+  if (!buscado) return '';
+  const conTelefono = orders
+    .filter(o => (o.customer_name || '').trim().toLowerCase() === buscado && esTelefonoReal(o.customer_phone))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return conTelefono.length ? conTelefono[0].customer_phone : '';
+}
+
 // Lleva a la pantalla de ventas con el cliente ya cargado
 function venderACliente(nombre) {
   if (!puedeOperar()) return;
   byId('tabVentas').click();
   setTimeout(() => {
     byId('barcodeCliente').value = nombre;
+    autocompletarTelefonoCliente();
     byId('barcodeInput').focus();
   }, 250);
 }
@@ -7196,8 +7507,21 @@ function renderFiado() {
     const detalle = Array.isArray(o.items)
       ? o.items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it)).join(', ')
       : '';
+    // El teléfono se muestra en la fila, no escondido en el modal de editar:
+    // es lo que decide si al deudor se le puede mandar el estado de cuenta
+    // de una, o hay que copiar el link y buscarlo por otro lado.
+    const tieneTel = esTelefonoReal(o.customer_phone);
+    const lineaTel = tieneTel
+      ? '<br><a href="https://wa.me/' + numeroWhatsApp(o.customer_phone) + '" target="_blank" rel="noopener" ' +
+        'style="font-size:12px;color:var(--celeste);text-decoration:none;" title="Abrir el chat con ' +
+        escapeHtml(o.customer_name || '') + '">📱 ' + escapeHtml(o.customer_phone) + '</a>'
+      : '<br><button type="button" data-agregar-tel="' + o.id + '" ' +
+        'style="background:none;border:none;padding:0;font-size:12px;color:var(--text-mute);' +
+        'text-decoration:underline;cursor:pointer;font-family:inherit;" ' +
+        'title="Cargarle el teléfono para poder escribirle">+ agregar teléfono</button>';
+
     return '<tr>' +
-      '<td><strong>' + escapeHtml(o.customer_name || '—') + '</strong></td>' +
+      '<td><strong>' + escapeHtml(o.customer_name || '—') + '</strong>' + lineaTel + '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(detalle) + '</td>' +
       '<td style="font-size:12.5px;">' + new Date(o.created_at).toLocaleDateString('es-AR') + '</td>' +
       '<td style="font-weight:700;color:var(--danger);text-align:right;">' + money(o.saldo_pendiente) + '</td>' +
@@ -7205,9 +7529,15 @@ function renderFiado() {
         '<button class="icon-btn" data-ver-pagos="' + o.id + '" title="Ver pagos anteriores">Historial</button>' +
         '<button class="icon-btn" data-registrar-pago="' + o.id + '" style="color:var(--stock);" title="Anotar un pago">+ Pago</button>' +
         '<button class="icon-btn" data-editar-fiado="' + o.id + '" title="Corregir nombre, teléfono o saldo">✏️ Editar</button>' +
+        '<button class="icon-btn" data-copiar-link="' + escapeHtml(o.customer_name || '') + '" ' +
+          'title="Copiar el link de su cuenta para mandarlo por donde quieras">🔗 Copiar link</button>' +
         '<button class="icon-btn" data-portal-cliente="' + escapeHtml(o.customer_name || '') + '" ' +
           'data-portal-tel="' + escapeHtml(o.customer_phone || '') + '" ' +
-          'title="Mandarle su estado de cuenta por WhatsApp">📄 Estado</button>' +
+          'style="' + (tieneTel ? 'color:var(--celeste);' : '') + '" ' +
+          'title="' + (tieneTel
+            ? 'Abrir WhatsApp con su estado de cuenta listo para enviar'
+            : 'Sin teléfono cargado: se copia el link en vez de abrir el chat') +
+          '">📄 Estado</button>' +
       '</div></td>' +
     '</tr>';
   }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Nadie te debe nada 🎉</td></tr>';
@@ -7220,6 +7550,15 @@ function renderFiado() {
     b.addEventListener('click', () => enviarEstadoDeCuenta(b.dataset.portalCliente, b.dataset.portalTel)));
   cuerpo.querySelectorAll('[data-editar-fiado]').forEach(b =>
     b.addEventListener('click', () => abrirEditarFiado(b.dataset.editarFiado)));
+  cuerpo.querySelectorAll('[data-copiar-link]').forEach(b =>
+    b.addEventListener('click', () => copiarLinkDeCuenta(b.dataset.copiarLink)));
+  // "+ agregar teléfono" es el mismo modal de editar, pero con el cursor ya
+  // puesto donde falta el dato: si no, hay que buscarlo entre los campos.
+  cuerpo.querySelectorAll('[data-agregar-tel]').forEach(b =>
+    b.addEventListener('click', () => {
+      abrirEditarFiado(b.dataset.agregarTel);
+      setTimeout(() => byId('fmTelefono')?.focus(), 120);
+    }));
 }
 
 // ---- Editar una deuda ya cargada ----
@@ -7274,6 +7613,16 @@ function abrirNuevoFiadoManual() {
   byId('fmAvisoVenta').classList.add('hidden');
   byId('guardarFiadoManualBtn').textContent = 'Guardar deuda';
   show(byId('fiadoManualModal'));
+}
+
+// Mismo criterio que en la venta: si el cliente ya existe le traemos el
+// telefono, pero solo cuando el campo esta vacio -- en modo edicion el que
+// ya estaba cargado manda.
+function autocompletarTelefonoFiadoManual() {
+  const campoTel = byId('fmTelefono');
+  if (!campoTel || campoTel.value.trim()) return;
+  const conocido = telefonoDeCliente(byId('fmNombre').value);
+  if (conocido) campoTel.value = conocido;
 }
 
 async function guardarEdicionFiado() {
@@ -7353,12 +7702,15 @@ async function guardarEdicionFiado() {
 //
 // El token lo genera la base (default de la columna), no el navegador: así
 // no depende de que el dispositivo tenga un generador aleatorio seguro.
-async function enviarEstadoDeCuenta(nombreCliente, telefono) {
-  if (!puedeOperar()) return;
+// Devuelve el link unico del cliente, creandolo si todavia no tenia. null
+// si algo fallo (ya avisa adentro). Separado del envio porque el link se usa
+// para dos cosas distintas: abrir WhatsApp, o copiarlo y mandarlo por donde
+// sea -- y generar el token dos veces seria dar dos links al mismo cliente.
+async function obtenerLinkDeCuenta(nombreCliente) {
   const cliente = (nombreCliente || '').trim();
   if (!cliente) {
     alert('Esta deuda no tiene nombre de cliente cargado, así que no se le puede armar un link propio.');
-    return;
+    return null;
   }
 
   // Si ya tiene link, se reusa: el que ya se mandó por WhatsApp tiene que
@@ -7373,7 +7725,7 @@ async function enviarEstadoDeCuenta(nombreCliente, telefono) {
   if (errBuscar) {
     alert('No se pudo generar el link:\n\n' + errBuscar.message +
       '\n\n(Si dice que falta la tabla, correr schema/33-portal-clientes.sql en Supabase.)');
-    return;
+    return null;
   }
 
   token = existente?.token || null;
@@ -7385,32 +7737,56 @@ async function enviarEstadoDeCuenta(nombreCliente, telefono) {
       .maybeSingle();
     if (errCrear) {
       alert('No se pudo generar el link:\n\n' + errCrear.message);
-      return;
+      return null;
     }
     token = creado?.token;
   }
 
-  if (!token) { alert('No se pudo generar el link. Probá de nuevo.'); return; }
+  if (!token) { alert('No se pudo generar el link. Probá de nuevo.'); return null; }
 
-  const link = location.origin + '/cuenta.html?t=' + token;
-  const mensaje = 'Hola ' + cliente + '! Te dejo el link para ver tu cuenta con ' +
+  return location.origin + '/cuenta.html?t=' + token;
+}
+
+function mensajeDeCuenta(nombreCliente, link) {
+  return 'Hola ' + (nombreCliente || '').trim() + '! Te dejo el link para ver tu cuenta con ' +
     (currentStore.business_name || 'nosotros') + ' cuando quieras:\n\n' + link;
+}
 
-  const tel = String(telefono || '').replace(/\D/g, '');
-  const esTelefonoReal = tel && tel !== '0' && telefono !== 'scanner';
+async function enviarEstadoDeCuenta(nombreCliente, telefono) {
+  if (!puedeOperar()) return;
+  const link = await obtenerLinkDeCuenta(nombreCliente);
+  if (!link) return;
 
-  if (esTelefonoReal) {
+  const mensaje = mensajeDeCuenta(nombreCliente, link);
+
+  if (esTelefonoReal(telefono)) {
     window.open('https://wa.me/' + numeroWhatsApp(telefono) + '?text=' + encodeURIComponent(mensaje), '_blank');
     return;
   }
 
   // Sin teléfono cargado (típico de una venta de mostrador) no hay a quién
   // abrirle el chat: se copia el link para que lo mande por donde quiera.
+  await copiarTexto(link,
+    'Este cliente no tiene teléfono cargado.\n\nEl link se copió — pegáselo por donde le escribas:\n\n' + link);
+}
+
+// Copiar el link sin abrir WhatsApp: sirve para pegarlo en un mail, en
+// Instagram, o para mandárselo a alguien que no atiende por WhatsApp.
+async function copiarLinkDeCuenta(nombreCliente) {
+  if (!puedeOperar()) return;
+  const link = await obtenerLinkDeCuenta(nombreCliente);
+  if (!link) return;
+  await copiarTexto(link, 'Link de la cuenta de ' + (nombreCliente || '').trim() + ' copiado:\n\n' + link);
+}
+
+// El portapapeles falla en navegadores viejos y en http sin candado: ahí el
+// prompt es la salida, porque deja el texto seleccionable a mano.
+async function copiarTexto(texto, avisoOk) {
   try {
-    await navigator.clipboard.writeText(link);
-    alert('Este cliente no tiene teléfono cargado.\n\nEl link se copió — pegáselo por donde le escribas:\n\n' + link);
+    await navigator.clipboard.writeText(texto);
+    alert(avisoOk);
   } catch (e) {
-    prompt('Copiá el link y mandáselo al cliente:', link);
+    prompt('Copiá el link y mandáselo al cliente:', texto);
   }
 }
 
@@ -9628,9 +10004,30 @@ async function anularVenta(id) {
 let currentBarcodeProduct = null;
 
 async function searchByBarcode() {
-  const query = normalizarTexto(byId('barcodeInput').value.trim());
+  const crudo = byId('barcodeInput').value.trim();
+  const query = normalizarTexto(crudo);
   if (!query) {
     alert('Ingresa un código, EAN o nombre del producto');
+    return;
+  }
+
+  // Etiqueta de balanza: trae el producto Y cuanto peso, asi que un solo
+  // escaneo deja la venta armada. Va antes que la busqueda por EAN porque el
+  // codigo de una etiqueta es un EAN-13 valido y si no, se lo comeria el
+  // find() de abajo sin leer el peso.
+  const pesada = leerCodigoDeBalanza(crudo);
+  if (pesada) {
+    const delaBalanza = productoPorPlu(pesada.plu);
+    if (!delaBalanza) {
+      alert('Leí la etiqueta de la balanza (código ' + pesada.plu + '),\n' +
+            'pero ningún producto tiene ese código cargado.\n\n' +
+            'Abrí el producto en Productos y escribí ' + pesada.plu +
+            ' en "Código en la balanza".');
+      byId('barcodeInput').select();
+      return;
+    }
+    seleccionarProductoVenta(delaBalanza.id, cantidadDesdeBalanza(pesada, delaBalanza));
+    byId('barcodeInput').value = '';
     return;
   }
 
@@ -9724,7 +10121,9 @@ function renderListaVendedores() {
     .map(n => '<option value="' + escapeHtml(n) + '">').join('');
 }
 
-function seleccionarProductoVenta(id) {
+// `cantidad` solo llega desde la etiqueta de una balanza: en el resto de los
+// caminos la venta arranca en 1, como siempre.
+function seleccionarProductoVenta(id, cantidad) {
   const product = products.find(p => String(p.id) === String(id));
   if (!product) return;
 
@@ -9741,7 +10140,9 @@ function seleccionarProductoVenta(id) {
   const uVenta = unidadDe(product);
   byId('barcodeQty').step = uVenta ? 'any' : '1';
   byId('barcodeQtyLabel').textContent = uVenta ? 'Cantidad (' + uVenta.plural + '):' : 'Cantidad:';
-  byId('barcodeQty').value = '1';
+  const vinoDeBalanza = cantidad != null && Number(cantidad) > 0;
+  byId('barcodeQty').value = vinoDeBalanza ? cantidad : '1';
+  avisoBalanzaVenta(vinoDeBalanza ? { producto: product, cantidad } : null);
   byId('barcodeAbono').value = '0';
   renderListaVendedores();
   // Solo lo autocompleta si todavía no escribió nada: así, si en la misma
@@ -10008,8 +10409,9 @@ async function confirmBarcodeVenta() {
 
   const vendedor = (byId('barcodeVendedor')?.value || '').trim();
   const medioPago = byId('barcodeMedioPago')?.value || '';
+  const telefonoCliente = (byId('barcodeClienteTel')?.value || '').trim();
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, imei: imeiSeleccionadoVenta });
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, imei: imeiSeleccionadoVenta });
   if (ok) {
     guardarNombreVendedor(vendedor);
     let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty);
@@ -10023,6 +10425,8 @@ async function confirmBarcodeVenta() {
     const idEquipoParaFoto = (ok.tradeIn && ok.equipoTomadoOk) ? ok.equipoTomadoId : null;
 
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
+    if (byId('barcodeClienteTel')) byId('barcodeClienteTel').value = '';
+    telefonoVentaAutocompletado = true;
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
     byId('barcodeFiadoAbono').value = '0';
@@ -10036,6 +10440,7 @@ async function confirmBarcodeVenta() {
     varianteSeleccionadaVenta = {};
     imeiSeleccionadoVenta = null;
     byId('barcodeVarianteBloque').classList.add('hidden');
+    avisoTelefonoVenta();
     clearBarcodeResult();
 
     // Se ofrece después de limpiar el formulario de venta: si el vendedor
@@ -10047,8 +10452,86 @@ async function confirmBarcodeVenta() {
   }
 }
 
+// El telefono lo puede poner el vendedor a mano o salir del cliente ya
+// cargado. La bandera distingue los dos casos: si lo escribio una persona
+// no se pisa nunca, aunque despues cambie el nombre.
+let telefonoVentaAutocompletado = true;
+
+function autocompletarTelefonoCliente() {
+  const campoTel = byId('barcodeClienteTel');
+  if (!campoTel) return;
+  const conocido = telefonoDeCliente(byId('barcodeCliente').value);
+
+  if (conocido && (telefonoVentaAutocompletado || !campoTel.value.trim())) {
+    campoTel.value = conocido;
+    telefonoVentaAutocompletado = true;
+  } else if (!conocido && telefonoVentaAutocompletado) {
+    campoTel.value = '';
+  }
+  avisoTelefonoVenta();
+}
+
+// Un solo cartel, que dice lo unico util en cada momento: que el telefono
+// vino de un cliente que ya estaba, o que si lo anota como fiado sin
+// telefono despues no va a poder mandarle el estado de cuenta.
+function avisoTelefonoVenta() {
+  const aviso = byId('barcodeTelAviso');
+  if (!aviso) return;
+
+  const tel = (byId('barcodeClienteTel')?.value || '').trim();
+  const nombre = (byId('barcodeCliente')?.value || '').trim();
+
+  const conocido = telefonoDeCliente(nombre);
+
+  if (tel && telefonoVentaAutocompletado && conocido) {
+    aviso.classList.remove('hidden');
+    aviso.style.color = 'var(--stock)';
+    aviso.textContent = '\u2713 Tel\u00e9fono de ' + nombre + ', que ya ten\u00edas cargado.';
+  } else if (conocido && tel && !telefonoVentaAutocompletado && conocido.replace(/\D/g, '') !== tel.replace(/\D/g, '')) {
+    // Escribio un numero a mano y ademas el cliente ya tenia otro guardado.
+    // No se pisa solo (puede ser que el cliente cambio de numero), pero
+    // tampoco se deja pasar en silencio: el riesgo real es pegarle a un
+    // deudor el telefono de otra persona.
+    aviso.classList.remove('hidden');
+    aviso.style.color = '#8A5200';
+    aviso.innerHTML = '\u26a0\ufe0f ' + escapeHtml(nombre) + ' ya ten\u00eda el ' + escapeHtml(conocido) +
+      '. <button type="button" id="usarTelGuardado" style="background:none;border:none;padding:0;' +
+      'font:inherit;color:var(--celeste);text-decoration:underline;cursor:pointer;">Usar ese</button>';
+    byId('usarTelGuardado').addEventListener('click', () => {
+      byId('barcodeClienteTel').value = conocido;
+      telefonoVentaAutocompletado = true;
+      avisoTelefonoVenta();
+    });
+  } else if (byId('barcodeFiado')?.checked && !tel) {
+    aviso.classList.remove('hidden');
+    aviso.style.color = '#8A5200';
+    aviso.textContent = '\ud83d\udcf1 Anot\u00e1 el tel\u00e9fono y despu\u00e9s le mand\u00e1s el estado de cuenta por WhatsApp con un clic.';
+  } else {
+    aviso.classList.add('hidden');
+  }
+}
+
+// Que la cantidad se haya llenado sola tiene que verse: si el vendedor no
+// se entera de que ya vienen los kilos de la balanza, los vuelve a tipear.
+function avisoBalanzaVenta(datos) {
+  const aviso = byId('barcodeBalanzaAviso');
+  if (!aviso) return;
+  if (!datos) { aviso.classList.add('hidden'); return; }
+  aviso.classList.remove('hidden');
+  aviso.textContent = '\u2696\ufe0f De la balanza: ' + formatearCantidad(datos.cantidad, datos.producto) +
+    ' de ' + datos.producto.name + '. Cambialo si hace falta.';
+}
+
+byId('barcodeCliente').addEventListener('input', autocompletarTelefonoCliente);
+byId('barcodeCliente').addEventListener('change', autocompletarTelefonoCliente);
+byId('barcodeClienteTel').addEventListener('input', () => {
+  telefonoVentaAutocompletado = false;
+  avisoTelefonoVenta();
+});
+
 byId('barcodeFiado').addEventListener('change', (e) => {
   byId('campoFiadoMonto').classList.toggle('hidden', !e.target.checked);
+  avisoTelefonoVenta();
 });
 
 byId('barcodeTradeIn').addEventListener('change', (e) => {
@@ -10070,7 +10553,7 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', imei: imeiElegido = null } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', imei: imeiElegido = null } = opciones || {};
   const total = product.price * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
@@ -10089,7 +10572,9 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   const { data, error } = await sb.from('orders').insert([{
     store_slug: currentStore.slug,
     customer_name: nombre,
-    customer_phone: 'scanner',
+    // Sin telefono cargado se sigue guardando 'scanner', el centinela que ya
+    // entienden Pedidos, Fiado y el estado de cuenta (ver esTelefonoReal).
+    customer_phone: String(telefono || '').trim() || 'scanner',
     items: [{ product_id: product.id, qty, name: nombreItem, price: product.price, variante }],
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
@@ -10506,6 +10991,7 @@ function abrirFormularioNuevo(tipo) {
     if (byId('productForm')) byId('productForm').dataset.id = '';
     unidadMedidaEnEdicion = null;
     if (byId('pVentaPorMedida')) byId('pVentaPorMedida').checked = false;
+    if (byId('pPluBalanza')) byId('pPluBalanza').value = '';
     if (byId('pMedidaBultos')) byId('pMedidaBultos').value = '1';
     if (byId('pMedidaPorBulto')) byId('pMedidaPorBulto').value = '';
     renderUnidadMedidaChips();
@@ -10589,17 +11075,60 @@ byId('configDesc').addEventListener('input', actualizarVisibilidadReparacionesCo
 byId('configRubroManual').addEventListener('change', actualizarVisibilidadReparacionesConfig);
 
 // ---- Guía en video ----
-const VIDEO_GUIA = 'v0WjogCQ4WE';
+// Una lista y no un video suelto: los tutoriales son cortos y cada uno
+// explica una sola cosa, así que se van a ir sumando. Para agregar el
+// próximo alcanza con una entrada más acá — el id es lo que viene después
+// de youtu.be/ en el link que comparte YouTube.
+const VIDEOS_GUIA = [
+  {
+    id: 'v0WjogCQ4WE',
+    titulo: 'Cómo usar BRUWAL',
+    desc: 'El recorrido general: cargar productos, compartir tu tienda y registrar ventas.'
+  },
+  {
+    id: 'Dfp6iA6ZTww',
+    titulo: 'Cómo cargar un producto nuevo',
+    desc: 'Subí la factura de tu proveedor y sumala directo a tu catálogo y a costos de mercadería.'
+  }
+];
 
-byId('verGuiaBtn').addEventListener('click', () => {
-  const caja = byId('guiaVideo');
-  // Se arma al abrir y se destruye al cerrar: así el video no queda sonando
-  // de fondo si cierran el modal a mitad de camino.
-  caja.innerHTML =
-    '<iframe src="https://www.youtube.com/embed/' + VIDEO_GUIA + '?rel=0" ' +
+let videoGuiaActual = 0;
+
+// El iframe se arma recién acá y se destruye al cerrar: si estuviera fijo en
+// el HTML, YouTube cargaría en cada visita al panel aunque nadie lo mire, y
+// al cerrar el modal el video seguiría sonando de fondo.
+function reproducirVideoGuia(indice) {
+  const video = VIDEOS_GUIA[indice];
+  if (!video) return;
+  videoGuiaActual = indice;
+
+  byId('guiaVideo').innerHTML =
+    '<iframe src="https://www.youtube.com/embed/' + video.id + '?rel=0" ' +
     'style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" ' +
     'allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" ' +
-    'allowfullscreen title="Cómo usar BRUWAL"></iframe>';
+    'allowfullscreen title="' + escapeHtml(video.titulo) + '"></iframe>';
+
+  byId('guiaTitulo').textContent = video.titulo;
+  byId('guiaDesc').textContent = video.desc;
+  renderListaGuia();
+}
+
+function renderListaGuia() {
+  const lista = byId('guiaLista');
+  lista.innerHTML = VIDEOS_GUIA.map((v, i) =>
+    '<button type="button" class="guia-item' + (i === videoGuiaActual ? ' activo' : '') + '" ' +
+      'data-video-guia="' + i + '">' +
+      '<img src="https://img.youtube.com/vi/' + encodeURIComponent(v.id) + '/mqdefault.jpg" alt="" loading="lazy">' +
+      '<span><b>' + escapeHtml(v.titulo) + '</b><small>' + escapeHtml(v.desc) + '</small></span>' +
+    '</button>'
+  ).join('');
+
+  lista.querySelectorAll('[data-video-guia]').forEach(b =>
+    b.addEventListener('click', () => reproducirVideoGuia(Number(b.dataset.videoGuia))));
+}
+
+byId('verGuiaBtn').addEventListener('click', () => {
+  reproducirVideoGuia(0);
   show(byId('guiaModal'));
 });
 
@@ -10906,6 +11435,9 @@ byId('productForm').addEventListener('submit', async (e) => {
     costo: valorCostoParaGuardar(),
     stock: stockGeneral,
     unidad_medida: unidadAGuardar,
+    // Solo tiene sentido en un producto por medida: si lo pasan a venderse por
+    // unidad, el PLU queda colgado apuntando a una balanza que ya no se usa.
+    plu_balanza: unidadAGuardar ? ((byId('pPluBalanza')?.value || '').trim() || null) : null,
     category: byId('pCategory').value,
     ean: byId('pEan').value || null,
     imei: byId('pImei') ? (byId('pImei').value.trim() || null) : null,
@@ -11016,6 +11548,7 @@ async function editProduct(id) {
   if (byId('pStock')) byId('pStock').value = p.stock;
   unidadMedidaEnEdicion = seVendePorMedida(p) ? p.unidad_medida : null;
   if (byId('pVentaPorMedida')) byId('pVentaPorMedida').checked = !!unidadMedidaEnEdicion;
+  if (byId('pPluBalanza')) byId('pPluBalanza').value = p.plu_balanza || '';
   if (byId('pMedidaBultos')) byId('pMedidaBultos').value = '1';
   if (byId('pMedidaPorBulto')) byId('pMedidaPorBulto').value = '';
   renderUnidadMedidaChips();
@@ -11877,6 +12410,8 @@ byId('closeFiadoManualModal').addEventListener('click', () => {
   fiadoEnEdicion = null;   // cerrar sin guardar no deja el modal "pegado" en modo edición
   hide(byId('fiadoManualModal'));
 });
+byId('fmNombre').addEventListener('input', autocompletarTelefonoFiadoManual);
+byId('fmNombre').addEventListener('change', autocompletarTelefonoFiadoManual);
 byId('guardarFiadoManualBtn').addEventListener('click', guardarFiadoManual);
 
 byId('exportarExcelBtn').addEventListener('click', exportarCatalogoExcel);
@@ -12332,6 +12867,17 @@ async function cargarConfiguracion() {
     aplicarPosicionPortadaPreview();
 
     if (byId('configCostoEnvio')) byId('configCostoEnvio').value = store.costo_envio != null ? store.costo_envio : '';
+
+    const bal = store.balanza || {};
+    if (byId('configBalanzaActiva')) {
+      byId('configBalanzaActiva').checked = !!bal.formato;
+      byId('configBalanzaDetalle').classList.toggle('hidden', !bal.formato);
+      byId('configBalanzaFormato').value = bal.formato || BALANZA_DEFAULT.formato;
+      byId('configBalanzaDecimales').value = String(bal.decimalesImporte != null ? bal.decimalesImporte : 2);
+      if (byId('configBalanzaBaud')) byId('configBalanzaBaud').value = String(bal.baud || 9600);
+      byId('configBalanzaPrueba').value = '';
+      probarCodigoDeBalanza();
+    }
     renderMediosDePago(store.medios_pago);
 
     const t = store.turnos || {};
@@ -12505,7 +13051,8 @@ async function guardarConfiguracion() {
     turnos: configuracionDeTurnos(),
     tema: temaElegido(),
     rubro_manual: byId('configRubroManual').value || null,
-    hace_reparaciones: byId('configHaceReparaciones').checked
+    hace_reparaciones: byId('configHaceReparaciones').checked,
+    balanza: configuracionDeBalanza()
   };
 
   if (imageUrl) updateData.image_url = imageUrl;
@@ -12539,6 +13086,205 @@ async function guardarConfiguracion() {
   byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
   aplicarVisibilidadPorRubro();
   hide(byId('configModal'));
+}
+
+// null cuando el tilde esta apagado: asi una tienda sin balanza no arrastra
+// un formato viejo que despues intente leer codigos de fabrica.
+function configuracionDeBalanza() {
+  if (!byId('configBalanzaActiva')?.checked) return null;
+  const formato = (byId('configBalanzaFormato')?.value || '').trim().toUpperCase();
+  if (!formato) return null;
+  return {
+    formato,
+    decimalesImporte: Number(byId('configBalanzaDecimales')?.value || 2),
+    baud: Number(byId('configBalanzaBaud')?.value || 9600)
+  };
+}
+
+// El probador lee con lo que hay escrito EN EL FORMULARIO, no con lo guardado:
+// la idea es justamente ajustar el formato hasta que de bien, antes de guardar.
+function probarCodigoDeBalanza() {
+  const salida = byId('configBalanzaResultado');
+  if (!salida) return;
+
+  const codigo = (byId('configBalanzaPrueba')?.value || '').trim();
+  if (!codigo) {
+    salida.style.color = 'var(--text-mute)';
+    salida.textContent = 'Peg\u00e1 un c\u00f3digo de una etiqueta real y te digo qu\u00e9 le\u00ed. Es la forma segura de saber si el formato est\u00e1 bien antes de vender con esto.';
+    return;
+  }
+
+  const cfg = {
+    formato: (byId('configBalanzaFormato')?.value || '').trim().toUpperCase(),
+    decimalesImporte: Number(byId('configBalanzaDecimales')?.value || 2)
+  };
+  const leido = leerCodigoDeBalanza(codigo, cfg);
+
+  if (!leido) {
+    salida.style.color = 'var(--danger)';
+    salida.textContent = '\u2717 Con este formato el c\u00f3digo no se entiende. Fijate que la cabecera y la cantidad de letras coincidan con lo que tiene la balanza (le\u00ed ' +
+      String(codigo).replace(/\D/g, '').length + ' d\u00edgitos, el formato describe ' + cfg.formato.length + ').';
+    return;
+  }
+
+  const prod = productoPorPlu(leido.plu);
+  const partes = ['C\u00f3digo de producto: <b>' + escapeHtml(leido.plu) + '</b>'];
+  if (leido.cantidad != null) partes.push('Peso: <b>' + leido.cantidad.toLocaleString('es-AR', { maximumFractionDigits: 3 }) + ' kg</b>');
+  if (leido.importe != null) partes.push('Importe: <b>' + money(leido.importe) + '</b>');
+  partes.push(prod
+    ? '\u2713 Es <b>' + escapeHtml(prod.name) + '</b>'
+    : '\u26a0\ufe0f Ning\u00fan producto tiene cargado ese c\u00f3digo todav\u00eda');
+
+  salida.style.color = prod ? 'var(--stock)' : '#8A5200';
+  salida.innerHTML = partes.join(' \u00b7 ');
+}
+
+if (byId('configBalanzaActiva')) {
+  byId('configBalanzaActiva').addEventListener('change', (e) => {
+    byId('configBalanzaDetalle').classList.toggle('hidden', !e.target.checked);
+  });
+  byId('configBalanzaFormato').addEventListener('input', probarCodigoDeBalanza);
+  byId('configBalanzaDecimales').addEventListener('change', probarCodigoDeBalanza);
+  byId('configBalanzaPrueba').addEventListener('input', probarCodigoDeBalanza);
+}
+
+// ============ BALANZA POR CABLE (Web Serial) ============
+// Segundo camino, aparte de la etiqueta: la balanza enchufada por USB manda
+// el peso solo. Limitaciones REALES que hay que tener presentes:
+//   - Web Serial existe en Chrome y Edge de ESCRITORIO. En iPhone no existe,
+//     en Android tampoco. Por eso el boton se esconde en vez de fallar: en el
+//     celular la etiqueta sigue siendo el camino.
+//   - El permiso al puerto lo da la persona, una vez por navegador y equipo.
+//     No se puede pedir sin un clic suyo.
+//   - Cada balanza larga su propia trama. En vez de casarnos con una marca,
+//     se busca el primer numero con decimales de cada linea y se descarta la
+//     lectura mientras el equipo avisa que todavia se esta moviendo.
+let puertoBalanza = null;
+let lectorBalanza = null;
+let pesoBalanza = null;
+
+const hayPuertoSerie = () => typeof navigator !== 'undefined' && 'serial' in navigator;
+
+// 'ST' = estable, 'US'/'MO' = todavia moviendose (nomenclatura que comparten
+// casi todas las balanzas con salida serie). Pesar mientras el plato oscila
+// da un numero que cambia solo: si la trama dice que no esta firme, se ignora.
+function pesoDesdeLinea(linea) {
+  const texto = String(linea || '').trim();
+  if (!texto) return null;
+  if (/\b(US|MO)\b/i.test(texto)) return null;
+
+  // El orden importa. Varias balanzas mandan su numero de equipo adelante
+  // ("B1,ST,+12.500kg"): agarrar "el primer numero de la linea" devolveria 1.
+  // Por eso se busca primero el que tiene la unidad pegada, que es el peso
+  // sin ninguna duda, y recien despues se afloja.
+  const intentos = [
+    /([+-]?\d+[.,]\d+)\s*(kg|g)\b/i,   // 12.500 kg
+    /([+-]?\d+)\s*(kg|g)\b/i,          // 1250 g
+    /([+-]?\d+[.,]\d+)()/                // 12,5 suelto
+  ];
+  let m = null;
+  for (const re of intentos) { m = texto.match(re); if (m) break; }
+  if (!m) return null;
+
+  let valor = Number(m[1].replace(',', '.'));
+  if (!isFinite(valor)) return null;
+  // Si viene en gramos hay que pasarlo a kilos o se venderian 1250 kg de
+  // fiambre. Sin unidad se asume kg, que es como sale casi siempre.
+  if ((m[2] || '').toLowerCase() === 'g') valor = valor / 1000;
+  if (valor <= 0) return null;
+  return redondearMedida(valor);
+}
+
+function mostrarPesoBalanza(valor, estado) {
+  pesoBalanza = valor;
+  if (byId('balanzaPeso')) {
+    byId('balanzaPeso').textContent = valor != null
+      ? valor.toLocaleString('es-AR', { maximumFractionDigits: 3 }) + ' kg'
+      : '\u2014';
+  }
+  if (byId('balanzaEstado') && estado != null) byId('balanzaEstado').textContent = estado;
+}
+
+async function conectarBalanza() {
+  if (!hayPuertoSerie()) {
+    alert('Este navegador no puede conectarse a la balanza por cable.\n\n' +
+          'Funciona en Chrome o Edge de computadora. En el celular usá la etiqueta ' +
+          'con código de barras, que hace lo mismo.');
+    return;
+  }
+
+  try {
+    const puerto = await navigator.serial.requestPort();
+    const baud = Number(currentStore?.balanza?.baud || 9600);
+    await puerto.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none' });
+    puertoBalanza = puerto;
+    show(byId('balanzaEnVivo'));
+    byId('conectarBalanzaBtn').classList.add('hidden');
+    mostrarPesoBalanza(null, 'Conectada a ' + baud + ' baudios. Poné algo en el plato.');
+    leerBalanzaEnLoop();
+  } catch (e) {
+    // Cancelar el selector de puertos no es un error que haya que gritar.
+    if (e && (e.name === 'NotFoundError' || e.name === 'AbortError')) return;
+    alert('No se pudo abrir la balanza:\n\n' + (e?.message || e) +
+          '\n\n(Si dice que el puerto está ocupado, cerrá cualquier otro programa que la esté usando.)');
+  }
+}
+
+async function leerBalanzaEnLoop() {
+  // La balanza manda un chorro continuo sin respetar los limites de linea, asi
+  // que se acumula en un buffer y se corta por salto de linea. Sin esto se
+  // leen numeros partidos al medio ("12.5" + "00 kg" en dos pedazos).
+  const decoder = new TextDecoderStream();
+  puertoBalanza.readable.pipeTo(decoder.writable).catch(() => {});
+  lectorBalanza = decoder.readable.getReader();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { value, done } = await lectorBalanza.read();
+      if (done) break;
+      buffer += value;
+      const lineas = buffer.split(/[\r\n]+/);
+      buffer = lineas.pop() || '';
+      lineas.forEach(l => {
+        const p = pesoDesdeLinea(l);
+        if (p != null) mostrarPesoBalanza(p, 'Leyendo en vivo');
+      });
+      if (buffer.length > 200) buffer = '';   // trama sin saltos: no acumular basura
+    }
+  } catch (e) {
+    mostrarPesoBalanza(null, 'Se cortó la lectura: ' + (e?.message || e));
+  }
+}
+
+async function desconectarBalanza() {
+  try { if (lectorBalanza) await lectorBalanza.cancel(); } catch (e) {}
+  try { if (puertoBalanza) await puertoBalanza.close(); } catch (e) {}
+  lectorBalanza = null;
+  puertoBalanza = null;
+  pesoBalanza = null;
+  hide(byId('balanzaEnVivo'));
+  if (hayPuertoSerie()) byId('conectarBalanzaBtn').classList.remove('hidden');
+}
+
+// El peso NO se copia solo a la cantidad: el plato sigue vivo mientras el
+// vendedor carga la venta, y un numero que se mueve bajo la mano es peor que
+// tipearlo. Lo pasa el vendedor cuando ya esta.
+function usarPesoDeBalanza() {
+  if (pesoBalanza == null) { alert('Todavía no hay un peso estable en la balanza.'); return; }
+  if (!currentBarcodeProduct) { alert('Buscá primero el producto que estás pesando.'); return; }
+  byId('barcodeQty').value = pesoBalanza;
+  avisoBalanzaVenta({ producto: currentBarcodeProduct, cantidad: pesoBalanza });
+  calculateTotal();
+}
+
+if (byId('conectarBalanzaBtn')) {
+  // Se muestra solo donde puede funcionar: en el celular ni aparece, para no
+  // ofrecer un boton que va a fallar siempre.
+  byId('conectarBalanzaBtn').classList.toggle('hidden', !hayPuertoSerie());
+  byId('conectarBalanzaBtn').addEventListener('click', conectarBalanza);
+  byId('balanzaUsarBtn').addEventListener('click', usarPesoDeBalanza);
+  byId('balanzaDesconectarBtn').addEventListener('click', desconectarBalanza);
 }
 
 async function checkIfPublicStore() {

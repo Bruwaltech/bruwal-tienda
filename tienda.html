@@ -190,10 +190,19 @@
     margin:28px 0 14px;padding-top:20px;border-top:1px solid #e3ebf3;
   }
 
+  /* Sticky a proposito: adentro de una categoria con 40 productos el boton
+     quedaba a 12.000px de scroll arriba, o sea inexistente en el celular
+     -- se entraba a un rubro y no había forma de salir sin subir todo. */
   .volver-cat{
+    position:sticky;top:8px;z-index:5;
     display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;
-    background:none;border:none;font-family:inherit;font-size:14px;font-weight:600;
-    color:var(--celeste);cursor:pointer;padding:6px 0;transition:opacity .2s ease;
+    background:rgba(255,255,255,.92);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    border:1px solid #e3ebf3;border-radius:999px;
+    font-family:inherit;font-size:14px;font-weight:600;
+    color:var(--celeste);cursor:pointer;padding:9px 16px;
+    box-shadow:0 4px 14px rgba(21,41,77,.10);
+    transition:opacity .2s ease;
   }
   .volver-cat:hover{opacity:.7;}
 
@@ -799,15 +808,59 @@ function renderTarjetasDeCategoria(categorias){
       : '');
 
   list.querySelectorAll('.cat-card').forEach(c => {
-    c.addEventListener('click', () => {
-      selectedCategory = c.dataset.cat;
-      renderProducts();
-      byId('productsList').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    c.addEventListener('click', () => abrirCategoria(c.dataset.cat));
   });
 
   conectarTarjetas(list);
 }
+
+// Entrar a un rubro y volver son una navegacion, no un filtro: en el
+// celular el reflejo es la flecha de atras del telefono, y sin una entrada
+// en el historial esa flecha sacaba de la tienda entera en vez de volver a
+// los rubros. pushState no cambia la URL (no lleva tercer argumento), solo
+// deja una marca para reconocer de donde venimos.
+function abrirCategoria(cat){
+  selectedCategory = cat;
+  renderProducts();
+  try { history.pushState({ bruwalCategoria: cat }, ''); } catch (e) {}
+  scrollAlListado();
+}
+
+function mostrarCategorias(){
+  selectedCategory = null;
+  renderProducts();
+  scrollAlListado();
+}
+
+// El scroll va DESPUES del re-render, y sin 'smooth'. Al salir de una
+// categoria la pagina pasa de 13.000px de alto a 1.100: un scroll suave
+// arrancado antes de que se acorte apunta a una posicion que ya no existe
+// y termina en cualquier lado, o el navegador lo cancela a mitad de camino.
+function scrollAlListado(){
+  requestAnimationFrame(() => {
+    const lista = byId('productsList');
+    if (!lista) return;
+    const y = lista.getBoundingClientRect().top + window.scrollY - 12;
+    window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
+  });
+}
+
+window.addEventListener('popstate', () => {
+  // Con la ficha de un producto o el checkout abiertos, la flecha de atras
+  // tiene que cerrar eso primero -- salir de la categoria con un modal
+  // encima deja la pantalla tapada y parece que no paso nada. Se devuelve
+  // la entrada al historial para que el proximo atras si vuelva a rubros.
+  const abierto = [byId('fichaModal'), byId('checkoutModal')]
+    .find(m => m && !m.classList.contains('hidden'));
+  if (abierto) {
+    hide(abierto);
+    if (selectedCategory) {
+      try { history.pushState({ bruwalCategoria: selectedCategory }, ''); } catch (e) {}
+    }
+    return;
+  }
+  if (selectedCategory) mostrarCategorias();
+});
 
 function renderProducts(){
   loadCategories();
@@ -1866,9 +1919,12 @@ byId('openCheckoutBtn').addEventListener('click', () => {
 });
 byId('closeCheckoutModal').addEventListener('click', () => hide(byId('checkoutModal')));
 byId('volverCategorias').addEventListener('click', () => {
-  selectedCategory = null;
-  renderProducts();
-  byId('productsList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Si se entro tocando una tarjeta hay una entrada en el historial: volver
+  // es literalmente ir atras. Asi el boton y la flecha del telefono hacen lo
+  // mismo y no queda una entrada muerta que obligue a apretar atras dos
+  // veces para salir de la tienda.
+  if (history.state && history.state.bruwalCategoria) { history.back(); return; }
+  mostrarCategorias();
 });
 
 byId('cerrarFicha').addEventListener('click', () => hide(byId('fichaModal')));
