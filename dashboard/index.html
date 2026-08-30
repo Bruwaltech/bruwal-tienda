@@ -1064,6 +1064,55 @@ tr:last-child td { border-bottom: none; }
   color: var(--text-mute);
 }
 
+/* El alta de producto son dos columnas: el formulario y la vista previa de
+   la foto (#imagePreview). La segunda columna mide 200px fijos y el
+   navegador se los reserva IGUAL aunque #imagePreview este oculto (una
+   pista de tamano fijo ocupa lugar aunque no tenga nada adentro). En el
+   celular eso dejaba al formulario con unos 100px de ancho: el input de
+   Categoria cortado en "Elegi una", los chips uno abajo del otro, el texto
+   de ayuda partido cada dos palabras y "Siguiente" en dos renglones.
+   minmax(0,1fr) ademas evita que un contenido ancho (una tabla, un chip
+   largo) estire la columna y desborde el modal a lo ancho. */
+.modal-grid-producto {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  gap: 24px;
+}
+
+/* Mismo caso en Configuracion de tu tienda: el logo ocupa una columna fija
+   de 180px y en el celular el formulario quedaba directamente afuera de la
+   pantalla, cortado por el borde derecho del modal. */
+.modal-grid-config {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 32px;
+  padding-top: 16px;
+}
+
+@media (max-width: 700px) {
+  /* Una sola columna: la vista previa se va abajo del formulario y el
+     formulario usa todo el ancho de la pantalla. */
+  .modal-grid-producto { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .modal-grid-config { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  /* Apilado, el cuadro del logo (160px fijos) quedaba pegado a la izquierda
+     con el boton a lo ancho debajo: centrado se ve como una sola pieza. */
+  .modal-grid-config #configLogoPreview { margin-left: auto; margin-right: auto; }
+  .modal-grid-config > div:first-child .btn { max-width: 240px; margin: 0 auto; }
+
+  /* Apilada, la foto no tiene una fila alta que llenar: sin esto la <img>
+     con height:100% quedaba con la altura que se le antojara. */
+  .modal-grid-producto #imagePreview img { height: auto; max-height: 240px; object-fit: contain; }
+
+  /* 26px de padding a cada lado se comen 52px de un celular de 375px. */
+  .modal { padding: 18px 15px; }
+  .modal-overlay { padding: 10px; }
+
+  /* 90vh en un celular incluye la barra del navegador, asi que el final
+     del modal (los botones Atras / Siguiente) quedaba tapado. dvh mide lo
+     que realmente se ve; el vh de arriba queda de respaldo. */
+  .modal { max-height: 92dvh; }
+}
+
 .empty-state {
   background: var(--surface);
   border: 1px dashed var(--line);
@@ -1884,7 +1933,7 @@ tr:last-child td { border-bottom: none; }
   <div class="modal">
     <button class="modal-close" id="closeModal">✕</button>
     <h3 id="modalTitle">Nuevo producto o servicio</h3>
-    <div style="display:grid;grid-template-columns:1fr 200px;gap:24px;">
+    <div class="modal-grid-producto">
       <form id="productForm">
         <div id="wizardProgreso" class="hidden" style="font-size:12px;font-weight:700;color:var(--celeste);letter-spacing:.03em;text-transform:uppercase;margin-bottom:10px;"></div>
 
@@ -2743,7 +2792,7 @@ tr:last-child td { border-bottom: none; }
   <div class="modal" style="max-width:700px;">
     <button class="modal-close" id="closeConfigModal">✕</button>
     <h3>⚙️ Configuración de tu tienda</h3>
-    <div style="display:grid;grid-template-columns:180px 1fr;gap:32px;padding-top:16px;">
+    <div class="modal-grid-config">
       <div style="text-align:center;">
         <div id="configLogoPreview" style="width:160px;height:160px;border:2px solid var(--line);border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:48px;overflow:hidden;margin-bottom:12px;object-fit:cover;">
           🏪
