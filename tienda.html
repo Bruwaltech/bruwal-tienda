@@ -358,6 +358,10 @@
     </div>
   </header>
 
+  <!-- Cartel de abierto/cerrado. Lo llena pintarEstadoLocal() y queda
+       oculto si la tienda no configuró horario. -->
+  <div id="hlBanner" class="hidden" style="text-align:center;padding:10px 16px;font-size:13.5px;font-weight:600;line-height:1.5;"></div>
+
   <main class="wrap">
     <div id="categoriesSection" style="margin-bottom:24px;display:none;">
       <div class="category-filters" id="categoriesContainer">
@@ -479,6 +483,7 @@
       <div class="opciones" id="opcionesPago"></div>
     </div>
 
+    <div id="hlAvisoCheckout" class="hidden" style="padding:11px 13px;border-radius:9px;margin-bottom:12px;font-size:13px;line-height:1.5;"></div>
     <button class="btn-primary" id="confirmOrderBtn">Confirmar pedido</button>
   </div>
 </div>
@@ -654,6 +659,15 @@ async function init(){
   }
 
   aplicarTema(store.tema);
+
+  // Horario del local: de esto dependen el cartel de abierto/cerrado y el
+  // aviso del checkout. Si la tienda no lo configuró, queda en null y no
+  // se muestra nada (una tienda sin horario funciona igual que siempre).
+  horarioLocal = store.horario_local || null;
+  pintarEstadoLocal();
+  // El cartel se repinta solo: si alguien deja la tienda abierta desde las
+  // 18:50, a las 19:00 pasa a "Abierto" sin recargar.
+  setInterval(pintarEstadoLocal, 60000);
 
   byId('storeName').textContent = store.business_name || slug;
   byId('storeDesc').textContent = store.description || 'Catálogo online';
@@ -1907,8 +1921,113 @@ function armarOpcionesDeCheckout(store) {
   });
 }
 
+// ---- Horario de atención del local ----------------------------------
+// Copia de las funciones del panel (dashboard/index.html). Estan repetidas
+// a proposito: las dos paginas son HTML sueltos, sin build ni modulo
+// compartido, igual que pasa con money() o escapeHtml().
+//
+// Una franja con "hasta" menor o igual que "desde" cruza la medianoche
+// (19:00 a 00:30), asi que a las 00:15 hay que mirar la franja de AYER.
+
+let horarioLocal = null;
+
+const hlAMin = (hhmm) => {
+  const [h, m] = String(hhmm || '00:00').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+function hlAbiertoAhora(horario, ahora) {
+  if (!horario || !horario.activo || !horario.dias) return null;
+  const t = ahora || new Date();
+  const min = t.getHours() * 60 + t.getMinutes();
+  const hoy = t.getDay();
+  const ayer = (hoy + 6) % 7;
+
+  const franjasDe = (i) => {
+    const d = horario.dias[i] || horario.dias[String(i)];
+    return (d && d.activo && Array.isArray(d.franjas)) ? d.franjas : [];
+  };
+
+  for (const f of franjasDe(hoy)) {
+    const desde = hlAMin(f.desde), hasta = hlAMin(f.hasta);
+    if (hasta > desde ? (min >= desde && min < hasta) : (min >= desde)) return true;
+  }
+  for (const f of franjasDe(ayer)) {
+    const desde = hlAMin(f.desde), hasta = hlAMin(f.hasta);
+    if (hasta <= desde && min < hasta) return true;
+  }
+  return false;
+}
+
+function hlProximaApertura(horario, ahora) {
+  if (!horario || !horario.dias) return null;
+  const t = ahora || new Date();
+  const min = t.getHours() * 60 + t.getMinutes();
+
+  for (let salto = 0; salto < 8; salto++) {
+    const i = (t.getDay() + salto) % 7;
+    const d = horario.dias[i] || horario.dias[String(i)];
+    if (!d || !d.activo || !Array.isArray(d.franjas)) continue;
+    const candidatas = d.franjas
+      .map(f => hlAMin(f.desde))
+      .filter(desde => salto > 0 || desde > min)
+      .sort((a, b) => a - b);
+    if (candidatas.length) {
+      const h = String(Math.floor(candidatas[0] / 60)).padStart(2, '0') + ':' + String(candidatas[0] % 60).padStart(2, '0');
+      return { cuando: salto === 0 ? 'hoy' : (salto === 1 ? 'mañana' : 'el ' + NOMBRE_DIAS[i]), hora: h };
+    }
+  }
+  return null;
+}
+
+// El texto de "cerrado" se usa en dos lugares (el cartel de arriba y el
+// checkout), asi que se arma una sola vez.
+function hlTextoCerrado() {
+  const prox = hlProximaApertura(horarioLocal);
+  return prox ? 'Abrimos ' + prox.cuando + ' a las ' + prox.hora + '.' : '';
+}
+
+function pintarEstadoLocal() {
+  const el = byId('hlBanner');
+  if (!el) return;
+
+  const abierto = hlAbiertoAhora(horarioLocal);
+  if (abierto === null) { el.classList.add('hidden'); return; }   // sin horario cargado: no se opina
+
+  el.classList.remove('hidden');
+  if (abierto) {
+    el.style.background = '#E7F6F1';
+    el.style.color = '#12705E';
+    el.textContent = '● Abierto ahora';
+  } else {
+    el.style.background = '#FDECEC';
+    el.style.color = '#A81E1E';
+    el.textContent = '● Cerrado ahora' + (hlTextoCerrado() ? ' — ' + hlTextoCerrado() : '');
+  }
+}
+
+// Aviso adentro del checkout. Devuelve true si el pedido esta bloqueado.
+function pintarAvisoCheckout() {
+  const el = byId('hlAvisoCheckout');
+  const abierto = hlAbiertoAhora(horarioLocal);
+  if (!el) return false;
+
+  if (abierto !== false) { el.classList.add('hidden'); return false; }
+
+  const bloquea = !!horarioLocal.bloquearCerrado;
+  el.classList.remove('hidden');
+  el.style.background = bloquea ? '#FDECEC' : '#FEF6E7';
+  el.style.color = bloquea ? '#A81E1E' : '#8A5200';
+  el.textContent = bloquea
+    ? 'Estamos cerrados en este momento, no podemos tomar el pedido. ' + hlTextoCerrado()
+    : 'Ojo: estamos cerrados en este momento. ' + hlTextoCerrado() +
+      ' Podés dejar el pedido igual y lo preparamos cuando abramos.';
+  return bloquea;
+}
+
 byId('openCheckoutBtn').addEventListener('click', () => {
   byId('checkoutError').classList.add('hidden');
+  pintarAvisoCheckout();
   // Se arma acá y no al cargar la página porque depende del carrito, que
   // cambia hasta el último momento.
   configurarEntrega();
@@ -1935,6 +2054,14 @@ byId('fichaModal').addEventListener('click', (e) => {
 byId('confirmOrderBtn').addEventListener('click', async () => {
   const errEl = byId('checkoutError');
   errEl.classList.add('hidden');
+
+  // Solo frena si el dueño tildó "no aceptar pedidos con el local cerrado".
+  // Si no, el aviso ya avisa y el pedido sigue su curso normal.
+  if (pintarAvisoCheckout()) {
+    errEl.textContent = 'El local está cerrado en este momento. ' + hlTextoCerrado();
+    errEl.classList.remove('hidden');
+    return;
+  }
   const name = byId('custName').value.trim();
   const phone = byId('custPhone').value.trim();
   if (!name || !phone){

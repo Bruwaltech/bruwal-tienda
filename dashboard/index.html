@@ -2204,7 +2204,7 @@ tr:last-child td { border-bottom: none; }
           <div id="variAtributos"></div>
           <button type="button" id="variAgregarAtributo" class="btn-action" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);width:100%;margin-top:6px;">+ Agregar otro atributo</button>
           <div id="variGrilla" style="margin-top:14px;"></div>
-          <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.6;">
+          <small id="variAvisoStock" style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.6;">
             Importante: el stock de cada variante lo actualizás vos a mano
             acá, igual que el stock normal. Un pedido de la tienda no lo
             descuenta solo — recién se descuenta cuando registrás la venta
@@ -3025,6 +3025,39 @@ tr:last-child td { border-bottom: none; }
                  Ahora la grilla de horarios se deduce sola de esas duraciones
                  (ver pasoDeTurnos), así el dato se carga en un solo lugar. -->
             <div id="turnosResumen" style="background:var(--bg);border-radius:8px;padding:12px 13px;"></div>
+          </div>
+        </div>
+
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="hlActivo" style="margin:0;cursor:pointer;width:auto;">
+            Mostrar en mi tienda si estoy abierto o cerrado
+          </label>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Para locales con horario: pizzería, rotisería, bar, kiosco. Tu tienda
+            muestra un cartel de <strong>Abierto</strong> o <strong>Cerrado</strong> y,
+            cuando está cerrada, a qué hora abrís. Sin esto la tienda toma pedidos
+            a cualquier hora y los ves recién al otro día.
+          </small>
+
+          <div id="hlConfig" class="hidden" style="margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
+            <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:9px;">Horario de cada día</div>
+            <div id="hlDias" style="display:flex;flex-direction:column;gap:10px;"></div>
+
+            <button type="button" id="hlCopiarBtn" class="btn" style="width:auto;padding:8px 14px;font-size:12.5px;margin-top:12px;background:#fff;color:var(--navy);border:1px solid var(--line);">
+              Copiar el horario del lunes a todos los días
+            </button>
+
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-top:14px;">
+              <input type="checkbox" id="hlBloquear" style="margin:0;cursor:pointer;width:auto;">
+              No aceptar pedidos con el local cerrado
+            </label>
+            <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+              Si lo dejás destildado el cliente igual puede pedir fuera de hora, avisado
+              de que estás cerrado — sirve para dejar el pedido encargado para cuando abrís.
+            </small>
+
+            <div id="hlResumen" style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 12px;margin-top:12px;font-size:12.5px;line-height:1.5;"></div>
           </div>
         </div>
 
@@ -4443,7 +4476,17 @@ function rubroUsaVariantes() {
   // necesitar diferenciarse por modelo de equipo (iPhone 13 Pro, Samsung
   // A50...), cada uno con su propio stock — mismo mecanismo que talle/color
   // en indumentaria.
-  return categoriaDeRubro() === 'indumentaria' || rubroEsElectronica();
+  // Gastronomia tambien: una pizza chica y una grande son el mismo
+  // producto con dos precios, igual que un talle. Antes una pizzeria no
+  // veia la casilla y tenia que cargar "Muzzarella chica" y "Muzzarella
+  // grande" como dos productos sueltos, con dos fotos y dos fichas.
+  return categoriaDeRubro() === 'indumentaria' || rubroEsElectronica() || rubroEsComida();
+}
+
+// La comida se comporta distinto en varios lugares (stock, textos,
+// agregados), asi que el chequeo vive en un solo lado.
+function rubroEsComida() {
+  return categoriaDeRubro() === 'comida';
 }
 
 function rubroEsElectronica() {
@@ -4486,6 +4529,11 @@ function actualizarVisibilidadReparacionesConfig() {
 }
 
 // [{nombre:'Talle', valores:['S','M','L']}, {nombre:'Color', valores:['Azul','Rojo']}]
+// Stock con el que arranca una variante de gastronomía. No es "infinito"
+// (la columna stock es un number y el resto del código la resta al vender),
+// es un número lo bastante grande como para que nunca se apague sola.
+const STOCK_SIN_CONTROL = 9999;
+
 let variAtributosEnEdicion = [];
 // [{atributos:{Talle:'S',Color:'Azul'}, stock:4}]
 let variantesEnEdicion = [];
@@ -4568,6 +4616,17 @@ const ATRIBUTOS_SUGERIDOS_INDUMENTARIA = [
   { nombre: 'Talle',       valores: ['S','M','L','XL','XXL'] },
   { nombre: 'Talle numérico', valores: ['36','38','40','42','44'] },
   { nombre: 'Color',       valores: ['Negro','Blanco','Azul','Rojo','Gris'] }
+];
+
+// Gastronomía. "Tamaño" es el que usa casi todo el mundo (pizza, café,
+// hamburguesa simple/doble); los otros tres son atajos para los casos
+// típicos de acá: empanadas por docena, milanesas para compartir y la
+// masa de la pizzería.
+const ATRIBUTOS_SUGERIDOS_COMIDA = [
+  { nombre: 'Tamaño',   valores: ['Chica', 'Mediana', 'Grande'] },
+  { nombre: 'Porción',  valores: ['Individual', 'Para compartir'] },
+  { nombre: 'Cantidad', valores: ['Media docena', 'Docena'] },
+  { nombre: 'Masa',     valores: ['A la piedra', 'Al molde'] }
 ];
 
 const ATRIBUTOS_SUGERIDOS_ELECTRONICA = [
@@ -4672,6 +4731,7 @@ byId('pModelo').addEventListener('input', actualizarNombreDesdeMarcaModelo);
 function grupoAtributosSugeridos() {
   if (rubroEsElectronica()) return ATRIBUTOS_SUGERIDOS_ELECTRONICA;
   if (categoriaDeRubro() === 'indumentaria') return ATRIBUTOS_SUGERIDOS_INDUMENTARIA;
+  if (rubroEsComida()) return ATRIBUTOS_SUGERIDOS_COMIDA;
   return [];
 }
 
@@ -4818,6 +4878,7 @@ function renderGrillaVariantes() {
   }
 
   const esElec = rubroEsElectronica();
+  const esComida = rubroEsComida();
   const esIphone = productoEsIphone(byId('pName') ? byId('pName').value : '');
 
   // Lo que ya tenía cargado cada combinación no se pierde al tocar otro
@@ -4863,18 +4924,32 @@ function renderGrillaVariantes() {
       const imeis = heredados.flatMap(v => Array.isArray(v.imeis) ? v.imeis.map(normalizarUnidadImei) : []);
       return { atributos: c, stock: imeis.length, imeis, precio };
     }
-    return { atributos: c, stock: heredados.reduce((s, v) => s + Number(v.stock || 0), 0), precio };
+    // Gastronomía: la combinación arranca con stock de sobra y la columna
+    // ni se muestra (ver abajo). Sin esto, una pizzería que carga
+    // "Chica / Grande" veía las dos combinaciones en 0 y su propia tienda
+    // le decía "Sin stock en esa combinación" — la variante quedaba
+    // invendible apenas la creaba.
+    const sumado = heredados.reduce((s, v) => s + Number(v.stock || 0), 0);
+    const inicial = (heredados.length || !esComida) ? sumado : STOCK_SIN_CONTROL;
+    return { atributos: c, stock: inicial, precio };
   });
 
   if (!esElec) {
-    cont.innerHTML = '<div style="display:grid;grid-template-columns:1fr 90px 110px;gap:8px;align-items:center;">' +
-      '<div></div><div style="font-size:11px;color:var(--text-mute);">Stock</div><div style="font-size:11px;color:var(--text-mute);">Precio (opc.)</div>' +
+    // En gastronomía se carga precio y nada más: pedirle a una pizzería el
+    // stock de "Grande" es pedirle un número que no lleva y que además le
+    // apaga el producto cuando llega a cero.
+    cont.innerHTML = '<div style="display:grid;grid-template-columns:' + (esComida ? '1fr 130px' : '1fr 90px 110px') + ';gap:8px;align-items:center;">' +
+      '<div></div>' +
+      (esComida ? '' : '<div style="font-size:11px;color:var(--text-mute);">Stock</div>') +
+      '<div style="font-size:11px;color:var(--text-mute);">' + (esComida ? 'Precio de cada uno' : 'Precio (opc.)') + '</div>' +
       variantesEnEdicion.map(v => {
         const clave = claveDeCombinacion(v.atributos);
         return `<div style="font-size:13.5px;">${escapeHtml(Object.values(v.atributos).join(' / '))}</div>` +
-               `<input type="number" min="0" value="${v.stock}" data-combo="${escapeHtml(clave)}" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">` +
+               (esComida ? '' : `<input type="number" min="0" value="${v.stock}" data-combo="${escapeHtml(clave)}" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">`) +
                `<input type="number" min="0" step="0.01" value="${v.precio ?? ''}" placeholder="Igual" data-combo-precio="${escapeHtml(clave)}" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:13px;">`;
-      }).join('') + '</div>';
+      }).join('') +
+      '</div>' +
+      (esComida ? '<small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">Dejá vacío el que cobrás igual que el precio general. No pedimos stock por tamaño: en gastronomía no se lleva.</small>' : '');
 
     cont.querySelectorAll('[data-combo]').forEach(inp => inp.addEventListener('input', (e) => {
       const v = variantesEnEdicion.find(x => claveDeCombinacion(x.atributos) === e.target.dataset.combo);
@@ -5120,12 +5195,29 @@ function quitarImeiDeVariante(clave, idx) {
 // que el placeholder de los campos y los botones de sugeridos.
 function actualizarTextoVariantes() {
   const esElec = rubroEsElectronica();
+  const esComida = rubroEsComida();
+
   const parentesis = byId('variTipoParentesis');
-  if (parentesis) parentesis.textContent = esElec ? '(modelo de equipo...)' : '(talle, color...)';
+  if (parentesis) parentesis.textContent =
+    esElec   ? '(modelo de equipo...)' :
+    esComida ? '(tamaño, porción...)'  : '(talle, color...)';
+
+  // En gastronomía la variante no divide el stock, divide el PRECIO: eso
+  // es lo que hay que explicar, porque nadie lleva la cuenta de cuántas
+  // pizzas grandes "tiene" en stock.
   const ayuda = byId('variTipoAyuda');
-  if (ayuda) ayuda.textContent = esElec
-    ? 'Cada combinación lleva su propio stock. "Pantalla iPhone 13" y "Pantalla iPhone 14" se agotan por separado.'
-    : 'Cada combinación lleva su propio stock. "Remera talle M" y "Remera talle L" se agotan por separado.';
+  if (ayuda) ayuda.textContent =
+    esElec   ? 'Cada combinación lleva su propio stock. "Pantalla iPhone 13" y "Pantalla iPhone 14" se agotan por separado.' :
+    esComida ? 'Cada tamaño lleva su propio precio, en una sola ficha: chica $8.000, grande $12.000. El cliente elige al pedir.' :
+               'Cada combinación lleva su propio stock. "Remera talle M" y "Remera talle L" se agotan por separado.';
+
+  // El aviso largo de abajo habla de actualizar el stock de cada variante a
+  // mano. En gastronomía no se pide stock por tamaño, así que ahí diría lo
+  // contrario de lo que muestra la grilla.
+  // Solo se esconde: el texto queda intacto por si la tienda cambia de
+  // rubro mas adelante, para no dejarlo vacio para siempre.
+  const aviso = byId('variAvisoStock');
+  if (aviso) aviso.classList.toggle('hidden', esComida);
 }
 
 function cargarVariantesEnFormulario(p) {
@@ -5199,7 +5291,28 @@ const OPCIONES_SUGERIDAS = {
     titulo: 'Agregados y opciones',
     ayuda: 'Lo que el cliente puede sumar o sacar: cheddar, panceta, sin cebolla.',
     lista: [['Cheddar',500],['Panceta',700],['Huevo',400],['Lechuga',0],['Tomate',0],
-            ['Cebolla caramelizada',300],['Sin cebolla',0],['Extra carne',1500]] },
+            ['Cebolla caramelizada',300],['Sin cebolla',0],['Extra carne',1500]],
+    // Una pizzería no le suma panceta a la pizza y una parrilla no cobra
+    // cheddar: dentro de gastronomía el agregado típico cambia según la
+    // casa. La lista de arriba sigue siendo la de por defecto — una
+    // hamburguesería ve exactamente lo mismo que veía antes.
+    sublistas: [
+      { claves: ['pizz','fugaz','muzza','calzon'],
+        titulo: 'Agregados de la pizza',
+        ayuda: 'Lo que el cliente puede sumar o sacar: extra muzzarella, sin aceitunas.',
+        lista: [['Extra muzzarella',1500],['Jamón',1200],['Morrón',600],['Aceitunas',500],
+                ['Huevo',700],['Rúcula',700],['Doble queso',2000],['Sin aceitunas',0],['Sin cebolla',0]] },
+      { claves: ['parrilla','asado','achura'],
+        titulo: 'Guarnición y punto de cocción',
+        ayuda: 'Cómo lo quiere el cliente y con qué lo acompaña.',
+        lista: [['Jugoso',0],['A punto',0],['Bien cocido',0],['Papas fritas',2500],
+                ['Ensalada mixta',2000],['Chimichurri',0],['Salsa criolla',0]] },
+      { claves: ['rotiser','empanada','viandas'],
+        titulo: 'Opciones del pedido',
+        ayuda: 'Cómo lo preparás y con qué lo mandás.',
+        lista: [['Al horno',0],['Fritas',0],['Chimichurri',0],['Salsa criolla',0],
+                ['Sin picante',0],['Cubiertos descartables',0]] }
+    ] },
   bebidas: {
     claves: ['bar','cerve','bebida','cafe','cafeteria','heladeria'],
     titulo: 'Opciones',
@@ -5248,8 +5361,19 @@ function grupoDeOpciones() {
   return (cat && OPCIONES_SUGERIDAS[cat]) ? OPCIONES_SUGERIDAS[cat] : null;
 }
 
+// Dentro de un mismo rubro, la sublista que le corresponde a esta tienda.
+// Si ninguna coincide, devuelve el grupo entero (o sea, la lista de por
+// defecto): nunca se queda sin sugerencias por no matchear una palabra.
+function subgrupoDeOpciones() {
+  const grupo = grupoDeOpciones();
+  if (!grupo || !Array.isArray(grupo.sublistas)) return grupo;
+  // Mismo texto que mira categoriaDeRubro() para decidir el rubro.
+  const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
+  return grupo.sublistas.find(sub => sub.claves.some(k => texto.includes(k))) || grupo;
+}
+
 function sugerenciasDeOpciones() {
-  return grupoDeOpciones()?.lista || [];
+  return subgrupoDeOpciones()?.lista || [];
 }
 
 function renderOpciones() {
@@ -5269,8 +5393,11 @@ function renderOpciones() {
 
   // Titulo neutral cuando no hay grupo: llegamos acá porque el producto ya
   // tenía opciones cargadas, y dejar el texto del rubro anterior confundiria.
-  const titulo = grupo ? grupo.titulo : 'Opciones y agregados';
-  const ayuda  = grupo ? grupo.ayuda  : 'Poné 0 en el precio si la opción no cuesta nada.';
+  // El titulo y la ayuda salen de la sublista cuando hay una (ej.
+  // "Agregados de la pizza"), y del grupo cuando no.
+  const sub = subgrupoDeOpciones();
+  const titulo = sub ? sub.titulo : 'Opciones y agregados';
+  const ayuda  = sub ? sub.ayuda  : 'Poné 0 en el precio si la opción no cuesta nada.';
   byId('opcTitulo').innerHTML = escapeHtml(titulo) +
     ' <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>';
   byId('opcAyuda').textContent = ayuda;
@@ -12697,6 +12824,209 @@ byId('turnosActivo').addEventListener('change', (e) => {
   renderResumenTurnos();
 });
 
+// ---- Horario de atención del local (gastronomía, kioscos, comercios) ----
+//
+// OJO: esto NO es store_profiles.turnos. Turnos es la agenda de una
+// peluquería (qué horarios puede reservar un cliente). Esto responde otra
+// pregunta, mucho más simple: ¿el local está abierto AHORA? Por eso vive
+// en su propia columna (horario_local) y en sus propias funciones: son dos
+// cosas que un mismo negocio puede tener a la vez y con horarios distintos.
+//
+// Forma: { activo, bloquearCerrado, dias: { 0..6: { activo, franjas:[{desde,hasta}] } } }
+// Domingo = 0 ... Sábado = 6, igual que Date.getDay() en todo el resto.
+
+let hlEnEdicion = {};
+
+const hlAMin = (hhmm) => {
+  const [h, m] = String(hhmm || '00:00').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+function hlVacio() {
+  const o = {};
+  for (let i = 0; i < 7; i++) o[i] = { activo: true, franjas: [{ desde: '09:00', hasta: '18:00' }] };
+  return o;
+}
+
+function hlCargar(guardado) {
+  const base = hlVacio();
+  hlEnEdicion = {};
+  const dias = guardado && guardado.dias;
+  for (let i = 0; i < 7; i++) {
+    const d = dias && dias[i];
+    hlEnEdicion[i] = (d && Array.isArray(d.franjas))
+      ? { activo: !!d.activo, franjas: d.franjas.length ? d.franjas.map(f => ({ ...f })) : [{ desde: '09:00', hasta: '18:00' }] }
+      : base[i];
+  }
+  if (byId('hlActivo')) byId('hlActivo').checked = !!(guardado && guardado.activo);
+  if (byId('hlBloquear')) byId('hlBloquear').checked = !!(guardado && guardado.bloquearCerrado);
+  if (byId('hlConfig')) byId('hlConfig').classList.toggle('hidden', !(guardado && guardado.activo));
+  hlRender();
+}
+
+function hlRender() {
+  const cont = byId('hlDias');
+  if (!cont) return;
+
+  cont.innerHTML = DIAS_SEMANA_LARGO.map((nombre, i) => {
+    const d = hlEnEdicion[i] || { activo: false, franjas: [] };
+    const titulo = nombre.charAt(0).toUpperCase() + nombre.slice(1);
+    return '<div style="padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:8px;">' +
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:13px;">' +
+        '<input type="checkbox" data-hl-activo="' + i + '" ' + (d.activo ? 'checked' : '') + ' style="margin:0;cursor:pointer;width:auto;"> ' + titulo +
+      '</label>' +
+      (d.activo
+        ? '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">' +
+            d.franjas.map((f, j) =>
+              '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+                '<input type="time" data-hl-desde="' + i + '-' + j + '" value="' + (f.desde || '09:00') + '" style="width:auto;flex:1;min-width:104px;padding:8px;">' +
+                '<span style="font-size:12.5px;color:var(--text-mute);">a</span>' +
+                '<input type="time" data-hl-hasta="' + i + '-' + j + '" value="' + (f.hasta || '18:00') + '" style="width:auto;flex:1;min-width:104px;padding:8px;">' +
+                (d.franjas.length > 1
+                  ? '<button type="button" data-hl-quitar="' + i + '-' + j + '" title="Quitar" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:15px;">✕</button>'
+                  : '') +
+              '</div>').join('') +
+            '<button type="button" data-hl-sumar="' + i + '" style="align-self:flex-start;background:none;border:none;color:var(--celeste);cursor:pointer;font-size:12.5px;font-weight:600;padding:2px 0;">+ Agregar otro turno (corte del mediodía)</button>' +
+          '</div>'
+        : '<div style="margin-top:6px;font-size:12.5px;color:var(--text-mute);">Cerrado</div>') +
+    '</div>';
+  }).join('');
+
+  cont.querySelectorAll('[data-hl-activo]').forEach(el => el.addEventListener('change', (e) => {
+    const i = Number(e.target.dataset.hlActivo);
+    hlEnEdicion[i].activo = e.target.checked;
+    if (e.target.checked && !hlEnEdicion[i].franjas.length) hlEnEdicion[i].franjas = [{ desde: '09:00', hasta: '18:00' }];
+    hlRender();
+  }));
+
+  // Las horas se guardan con 'input' pero NO se vuelve a dibujar: redibujar
+  // en cada tecla le sacaba el foco al campo mientras se estaba escribiendo.
+  cont.querySelectorAll('[data-hl-desde]').forEach(el => el.addEventListener('input', (e) => {
+    const [i, j] = e.target.dataset.hlDesde.split('-').map(Number);
+    hlEnEdicion[i].franjas[j].desde = e.target.value;
+    hlRenderResumen();
+  }));
+  cont.querySelectorAll('[data-hl-hasta]').forEach(el => el.addEventListener('input', (e) => {
+    const [i, j] = e.target.dataset.hlHasta.split('-').map(Number);
+    hlEnEdicion[i].franjas[j].hasta = e.target.value;
+    hlRenderResumen();
+  }));
+  cont.querySelectorAll('[data-hl-sumar]').forEach(el => el.addEventListener('click', (e) => {
+    const i = Number(e.target.dataset.hlSumar);
+    hlEnEdicion[i].franjas.push({ desde: '20:00', hasta: '23:59' });
+    hlRender();
+  }));
+  cont.querySelectorAll('[data-hl-quitar]').forEach(el => el.addEventListener('click', (e) => {
+    const [i, j] = e.target.dataset.hlQuitar.split('-').map(Number);
+    hlEnEdicion[i].franjas.splice(j, 1);
+    hlRender();
+  }));
+
+  hlRenderResumen();
+}
+
+// ¿Está abierto en este momento? Devuelve true/false, o null si la tienda
+// no configuró horario (en ese caso no se opina y no se muestra nada).
+//
+// Una franja con "hasta" menor o igual que "desde" cruza la medianoche
+// (19:00 a 00:30). Eso obliga a mirar también las franjas de AYER: a las
+// 00:15 del sábado el local sigue abierto por la franja del viernes.
+function hlAbiertoAhora(horario, ahora) {
+  if (!horario || !horario.activo || !horario.dias) return null;
+  const t = ahora || new Date();
+  const min = t.getHours() * 60 + t.getMinutes();
+  const hoy = t.getDay();
+  const ayer = (hoy + 6) % 7;
+
+  const franjasDe = (i) => {
+    const d = horario.dias[i] || horario.dias[String(i)];
+    return (d && d.activo && Array.isArray(d.franjas)) ? d.franjas : [];
+  };
+
+  for (const f of franjasDe(hoy)) {
+    const desde = hlAMin(f.desde), hasta = hlAMin(f.hasta);
+    if (hasta > desde ? (min >= desde && min < hasta) : (min >= desde)) return true;
+  }
+  for (const f of franjasDe(ayer)) {
+    const desde = hlAMin(f.desde), hasta = hlAMin(f.hasta);
+    if (hasta <= desde && min < hasta) return true;
+  }
+  return false;
+}
+
+// Cuándo vuelve a abrir, mirando hasta 8 días para adelante.
+function hlProximaApertura(horario, ahora) {
+  if (!horario || !horario.dias) return null;
+  const t = ahora || new Date();
+  const min = t.getHours() * 60 + t.getMinutes();
+
+  for (let salto = 0; salto < 8; salto++) {
+    const i = (t.getDay() + salto) % 7;
+    const d = horario.dias[i] || horario.dias[String(i)];
+    if (!d || !d.activo || !Array.isArray(d.franjas)) continue;
+    const candidatas = d.franjas
+      .map(f => hlAMin(f.desde))
+      .filter(desde => salto > 0 || desde > min)
+      .sort((a, b) => a - b);
+    if (candidatas.length) {
+      const h = String(Math.floor(candidatas[0] / 60)).padStart(2, '0') + ':' + String(candidatas[0] % 60).padStart(2, '0');
+      return { cuando: salto === 0 ? 'hoy' : (salto === 1 ? 'mañana' : 'el ' + DIAS_SEMANA_LARGO[i]), hora: h };
+    }
+  }
+  return null;
+}
+
+function hlRenderResumen() {
+  const cont = byId('hlResumen');
+  if (!cont) return;
+  const h = hlLeer();
+  const abierto = hlAbiertoAhora(h);
+  const prox = hlProximaApertura(h);
+
+  const hoy = h.dias[new Date().getDay()];
+  const textoHoy = (hoy && hoy.activo && hoy.franjas.length)
+    ? hoy.franjas.map(f => f.desde + ' a ' + f.hasta).join(' y ')
+    : 'cerrado';
+
+  cont.innerHTML =
+    '<div style="font-weight:700;color:var(--navy);margin-bottom:3px;">Así te ve tu cliente ahora mismo</div>' +
+    '<div>' + (abierto
+      ? '<span style="color:#1FA088;font-weight:700;">● Abierto</span>'
+      : '<span style="color:#DC2626;font-weight:700;">● Cerrado</span>' +
+        (prox ? ' — abre ' + prox.cuando + ' ' + prox.hora : '')) +
+    '</div>' +
+    '<div style="color:var(--text-mute);margin-top:3px;">Hoy: ' + escapeHtml(textoHoy) + '</div>';
+}
+
+// Lo que se guarda en la columna horario_local.
+function hlLeer() {
+  return {
+    activo: !!byId('hlActivo')?.checked,
+    bloquearCerrado: !!byId('hlBloquear')?.checked,
+    dias: hlEnEdicion
+  };
+}
+
+if (byId('hlActivo')) {
+  byId('hlActivo').addEventListener('change', (e) => {
+    byId('hlConfig').classList.toggle('hidden', !e.target.checked);
+    hlRenderResumen();
+  });
+}
+
+if (byId('hlBloquear')) byId('hlBloquear').addEventListener('change', hlRenderResumen);
+
+if (byId('hlCopiarBtn')) {
+  byId('hlCopiarBtn').addEventListener('click', () => {
+    const lunes = hlEnEdicion[1];
+    if (!lunes) return;
+    for (let i = 0; i < 7; i++) {
+      hlEnEdicion[i] = { activo: lunes.activo, franjas: lunes.franjas.map(f => ({ ...f })) };
+    }
+    hlRender();
+  });
+}
+
 // Medios de pago que puede aceptar una tienda
 const MEDIOS_DE_PAGO = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
 
@@ -12928,6 +13258,7 @@ async function cargarConfiguracion() {
       probarCodigoDeBalanza();
     }
     renderMediosDePago(store.medios_pago);
+    hlCargar(store.horario_local);
 
     const t = store.turnos || {};
     byId('turnosActivo').checked = !!t.activo;
@@ -13098,6 +13429,7 @@ async function guardarConfiguracion() {
     medios_pago: mediosDePagoElegidos(),
     costo_envio: byId('configCostoEnvio').value === '' ? null : Math.max(0, Number(byId('configCostoEnvio').value) || 0),
     turnos: configuracionDeTurnos(),
+    horario_local: hlLeer(),
     tema: temaElegido(),
     rubro_manual: byId('configRubroManual').value || null,
     hace_reparaciones: byId('configHaceReparaciones').checked,
