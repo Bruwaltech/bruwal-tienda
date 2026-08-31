@@ -598,6 +598,78 @@
     .video-seccion h2 { font-size: 27px; }
   }
 
+  /* ============ Carga por factura ============ */
+  /* Reusa .video-marco y .video-play tal cual: es el mismo reproductor
+     perezoso de la seccion de arriba, no una copia. Lo unico propio es el
+     marco de la seccion -- fondo tenue para despegarla de la seccion
+     blanca anterior, y el video a la izquierda para que las dos no queden
+     espejadas una arriba de la otra. */
+  .factura-seccion { background: #F4F7FB; padding: 64px 24px; }
+
+  .factura-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+
+  .factura-seccion h2 {
+    font-size: 34px;
+    font-weight: 700;
+    color: #15294D;
+    line-height: 1.15;
+    margin-bottom: 14px;
+  }
+
+  .factura-seccion .bajada {
+    font-size: 16px;
+    color: #5C6B82;
+    line-height: 1.65;
+    margin-bottom: 22px;
+  }
+
+  .factura-pasos {
+    list-style: none;
+    margin: 0 0 26px;
+    padding: 0;
+    display: grid;
+    gap: 11px;
+  }
+  .factura-pasos li {
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    font-size: 15px;
+    color: #15294D;
+    line-height: 1.5;
+  }
+  .factura-pasos .num {
+    flex-shrink: 0;
+    width: 23px; height: 23px;
+    border-radius: 50%;
+    background: #2F8FE0;
+    color: #fff;
+    font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 1px;
+  }
+
+  .factura-nota {
+    font-size: 13px;
+    color: #5C6B82;
+    margin-top: 14px;
+  }
+
+  @media (max-width: 900px) {
+    /* El video queda arriba en una sola columna porque va primero en el
+       HTML: es el gancho de la seccion, no un adorno del costado. */
+    .factura-inner { grid-template-columns: 1fr; gap: 30px; }
+    .factura-seccion { padding: 46px 20px; }
+    .factura-seccion h2 { font-size: 27px; }
+  }
+
   /* ============ FOOTER ============ */
   .site-footer {
     background: #fff;
@@ -1012,6 +1084,37 @@
       <button type="button" class="video-play" id="videoPlay" aria-label="Reproducir el video">
         <span></span>
       </button>
+    </div>
+  </div>
+</section>
+
+<section class="factura-seccion">
+  <div class="factura-inner">
+    <!-- Portada con boton de play, igual que la seccion de arriba: el video
+         se carga recien al tocarlo. -->
+    <div class="video-marco revelar" id="facturaMarco">
+      <img id="facturaPortada"
+           src="https://img.youtube.com/vi/Dfp6iA6ZTww/hqdefault.jpg"
+           alt="Cómo cargar un producto desde la factura del proveedor" loading="lazy">
+      <button type="button" class="video-play" aria-label="Reproducir el video">
+        <span></span>
+      </button>
+    </div>
+
+    <div class="revelar">
+      <div class="video-eyebrow">Carga rápida</div>
+      <h2>Cargá el stock con una foto de la factura</h2>
+      <p class="bajada">
+        Subí la factura de tu proveedor y los productos se suman solos a tu
+        catálogo, con el costo de mercadería ya cargado. Sin tipear uno por uno.
+      </p>
+      <ul class="factura-pasos">
+        <li><span class="num">1</span><span>Sacale una foto a la factura o subí el archivo.</span></li>
+        <li><span class="num">2</span><span>Revisás lo que reconoció y corregís si hace falta.</span></li>
+        <li><span class="num">3</span><span>Queda en tu catálogo y el gasto en tu caja.</span></li>
+      </ul>
+      <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
+      <div class="factura-nota">Incluido en el plan Pro.</div>
     </div>
   </div>
 </section>
@@ -1440,6 +1543,31 @@ function configurarVideo() {
   }, { once: true });
 }
 
+// El video de la carga por factura, con el mismo criterio que el de arriba:
+// el iframe se incrusta recien cuando el visitante toca la portada, asi la
+// home no arrastra el peso de YouTube en cada visita.
+function configurarVideoFactura() {
+  const marco = document.getElementById('facturaMarco');
+  if (!marco) return;
+
+  const portada = document.getElementById('facturaPortada');
+  if (portada) {
+    portada.addEventListener('error', () => {
+      portada.remove();
+      marco.style.background = 'linear-gradient(135deg,#15294D,#2F8FE0)';
+    });
+  }
+
+  marco.addEventListener('click', () => {
+    marco.innerHTML =
+      '<iframe src="https://www.youtube.com/embed/Dfp6iA6ZTww?autoplay=1&rel=0" ' +
+      'style="position:absolute;inset:0;width:100%;height:100%;border:0;" ' +
+      'allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" ' +
+      'allowfullscreen title="Cargar un producto desde la factura en BRUWAL"></iframe>';
+    marco.style.cursor = 'default';
+  }, { once: true });
+}
+
 function configurarAtajos() {
   const cont = document.getElementById('atajosRubro');
   if (!cont) return;
@@ -1634,6 +1762,7 @@ configurarAvisoIA();
 configurarInstalacion();
 configurarAtajos();
 configurarVideo();
+configurarVideoFactura();
 
 // El service worker es lo que habilita la instalación. Si falla, la web
 // sigue funcionando igual: solo se pierde el poder bajarla como app.
