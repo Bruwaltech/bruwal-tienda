@@ -2731,18 +2731,20 @@ tr:last-child td { border-bottom: none; }
 
     <div class="field">
       <label>¿Cuánto dura?</label>
-      <select id="turnoDuracion" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
-        <option value="">Un lugar de la grilla (lo mínimo)</option>
-        <option value="15">15 minutos</option>
-        <option value="30">30 minutos</option>
-        <option value="45">45 minutos</option>
-        <option value="60">1 hora</option>
-        <option value="90">1 hora y media</option>
-        <option value="120">2 horas</option>
-        <option value="180">3 horas</option>
-      </select>
+      <!-- Se escribe, igual que la duración del servicio: con la lista fija
+           un corte de 18 minutos no se podía cargar a mano y había que
+           redondear a 15 o a 30. Los atajos salen de los servicios que el
+           negocio ya tiene cargados, así que son los números que de verdad
+           usa. -->
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="number" id="turnoDuracion" min="1" max="600" step="1" inputmode="numeric"
+               style="flex:1;">
+        <span style="font-size:13.5px;color:var(--text-mute);flex-shrink:0;">minutos</span>
+      </div>
+      <div id="turnoDuracionChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
       <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
         Los horarios que ocupa quedan tapados en la agenda: si arranca 8:45 y dura una hora, no vas a poder cargar otro turno hasta las 9:45.
+        Vacío ocupa un solo lugar de la grilla.
       </small>
     </div>
 
@@ -6707,6 +6709,35 @@ async function enviarRecordatorio(turno) {
   await renderRecordatorios();
 }
 
+// Los atajos de duración del turno no son una lista fija: son las
+// duraciones de los servicios que el negocio ya cargó. Una barbería que
+// trabaja con cortes de 18 y de 45 ve 18 y 45, no "15 o 30".
+function renderChipsDuracionTurno() {
+  const cont = byId('turnoDuracionChips');
+  if (!cont) return;
+
+  const propias = [...new Set((products || [])
+    .filter(p => !esProductoFisico(p))
+    .map(p => Number(p.duracion_minutos))
+    .filter(d => d > 0))].sort((a, b) => a - b).slice(0, 6);
+
+  // Sin servicios con duración cargada no hay de dónde sacarlos: se
+  // ofrecen los de siempre para no dejar el campo pelado.
+  const valores = propias.length ? propias : [15, 30, 45, 60];
+
+  cont.innerHTML = valores.map(v =>
+    '<button type="button" class="chip-sug" data-dur-turno="' + v + '">' +
+    (v >= 60 && v % 60 === 0 ? (v / 60) + (v === 60 ? ' hora' : ' horas') : v + ' min') +
+    '</button>').join('');
+
+  cont.querySelectorAll('[data-dur-turno]').forEach(b => {
+    b.addEventListener('click', () => {
+      byId('turnoDuracion').value = b.dataset.durTurno;
+      byId('turnoDuracion').focus();
+    });
+  });
+}
+
 function abrirModalTurno(fecha, hora) {
   if (!puedeOperar()) return;
   byId('turnoFechaCampo').value = fecha;
@@ -6717,6 +6748,8 @@ function abrirModalTurno(fecha, hora) {
   byId('turnoServicio').value = '';
   byId('turnoMotivoBloqueo').value = '';
   byId('turnoDuracion').value = '';
+  byId('turnoDuracion').placeholder = 'Ej: ' + pasoDeTurnos();
+  renderChipsDuracionTurno();
   actualizarModalTurno();
   show(byId('turnoModal'));
 }
