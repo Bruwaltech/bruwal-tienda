@@ -2118,7 +2118,7 @@ tr:last-child td { border-bottom: none; }
         <div class="field hidden" id="campoInsumos">
           <label>¿Qué gasta del stock? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <div id="insumosLista" style="display:flex;flex-direction:column;gap:7px;margin-bottom:9px;"></div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <div id="insumosControles" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <select id="insumoProducto" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;"></select>
             <input type="number" id="insumoCantidad" min="0" step="0.01" value="1" style="width:78px;padding:9px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
             <button type="button" id="agregarInsumoBtn" class="btn" style="width:auto;padding:9px 13px;font-size:12.5px;">+ Sumar</button>
@@ -2137,7 +2137,7 @@ tr:last-child td { border-bottom: none; }
         <div class="field hidden" id="campoUsadoEnServicios">
           <label>¿En qué servicios se gasta? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <div id="usadoEnLista" style="display:flex;flex-direction:column;gap:7px;margin-bottom:9px;"></div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <div id="usadoEnControles" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <select id="usadoEnServicio" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;"></select>
             <input type="number" id="usadoEnCantidad" min="0" step="0.01" value="1" style="width:78px;padding:9px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
             <button type="button" id="agregarUsadoEnBtn" class="btn" style="width:auto;padding:9px 13px;font-size:12.5px;">+ Sumar</button>
@@ -5778,10 +5778,36 @@ const SPECS_SUGERIDOS = ['Batería', 'Almacenamiento', 'RAM', 'Estado', 'Color']
 // aplicarInsumosDeItem).
 let insumosEnEdicion = [];
 
+// Pinta el estado bloqueado de un bloque de insumos: esconde los controles
+// y deja a la vista QUE hace la funcion, que es lo que se esta vendiendo.
+// No toca los datos ya cargados: un negocio que uso esto cuando estaba
+// abierto los sigue teniendo, se siguen descontando y se siguen guardando
+// (el payload lee el array en memoria, no estos inputs).
+function pintarInsumosBloqueado(idLista, idControles, textoOferta) {
+  const lista = byId(idLista);
+  const controles = byId(idControles);
+  if (controles) controles.classList.add('hidden');
+  if (!lista) return;
+
+  lista.innerHTML =
+    '<button type="button" data-upgrade-insumos="1" class="btn-ghost" ' +
+    'style="width:auto;padding:9px 14px;font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:8px;cursor:pointer;text-align:left;">' +
+    '\uD83D\uDD12 Es parte del plan Pro — tocá para verlo</button>';
+
+  const b = lista.querySelector('[data-upgrade-insumos]');
+  if (b) b.addEventListener('click', () => ofrecerUpgradePro(textoOferta));
+}
+
 function renderInsumos() {
   const lista = byId('insumosLista');
   const selector = byId('insumoProducto');
   if (!lista || !selector) return;
+
+  if (!tienePlanPro()) {
+    pintarInsumosBloqueado('insumosLista', 'insumosControles', 'Los insumos de tus servicios');
+    return;
+  }
+  if (byId('insumosControles')) byId('insumosControles').classList.remove('hidden');
 
   const idEditando = byId('productForm')?.dataset.id;
 
@@ -5838,6 +5864,12 @@ function renderUsadoEn() {
   const lista = byId('usadoEnLista');
   const selector = byId('usadoEnServicio');
   if (!lista || !selector) return;
+
+  if (!tienePlanPro()) {
+    pintarInsumosBloqueado('usadoEnLista', 'usadoEnControles', 'Los insumos de tus servicios');
+    return;
+  }
+  if (byId('usadoEnControles')) byId('usadoEnControles').classList.remove('hidden');
 
   const servicios = (products || []).filter(p => !esProductoFisico(p));
   const yaCargados = usadoEnEnEdicion.map(u => String(u.servicio_id));
