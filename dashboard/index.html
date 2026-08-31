@@ -661,6 +661,37 @@ h1, h2, h3 {
 .plan-card .btn { margin-top: auto; }
 .plan-card .plan-nota { font-size: 11.5px; color: var(--text-mute); margin-top: 10px; text-align: center; line-height: 1.5; }
 
+/* Para quien es el plan, abajo del nombre. Fidel y Tiendanube lo ponen los
+   dos ("Para emprendedores", "Para quienes empiezan"): con tres escalones
+   arriba de la mesa, la duda no es que hace cada uno sino cual me toca. */
+.plan-card .para-quien {
+  font-size: 12px; color: var(--text-mute); line-height: 1.45; margin-top: 4px;
+}
+
+/* Los limites, en cajita. La idea es de Fidel, dada vuelta: ellos usan el
+   recuadro para confesar un techo ("Limite de 20.000 productos", "1
+   Usuario"), aca el mismo recurso visual dice lo contrario. */
+.plan-card .plan-limites { display: grid; gap: 5px; margin-bottom: 14px; }
+.plan-card .plan-limite {
+  font-size: 11.5px; font-weight: 700; color: var(--navy);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+  padding: 6px 9px; line-height: 1.35;
+}
+
+/* Selector mensual / anual, arriba de las tarjetas. */
+.planes-periodo {
+  display: flex; justify-content: center; gap: 4px; margin-top: 16px;
+  background: var(--bg); border-radius: 999px; padding: 4px; width: fit-content;
+  margin-left: auto; margin-right: auto;
+}
+.planes-periodo button {
+  border: none; background: none; font-family: inherit; cursor: pointer;
+  font-size: 13px; font-weight: 700; color: var(--text-mute);
+  padding: 7px 16px; border-radius: 999px; transition: background .2s, color .2s;
+}
+.planes-periodo button.activo { background: var(--surface); color: var(--navy); box-shadow: 0 1px 3px rgba(21,41,77,.12); }
+.planes-periodo .ahorro { font-size: 11px; font-weight: 800; color: var(--stock); margin-left: 5px; }
+
 /* Lista de videos de la guia. Con un video suelto alcanzaba un iframe; con
    varios hace falta poder elegir, y la miniatura de YouTube ya existe para
    cada uno (img.youtube.com/vi/ID/mqdefault.jpg), asi que no hay que subir
@@ -3214,6 +3245,15 @@ const WHATSAPP_BRUWAL = '5493413005232';
 // precio y se le cobra otro.
 // Mientras el link de un plan 'pago' no empiece con https, el modal muestra
 // "planes en preparacion" en vez de un boton de pago roto.
+// Lo que en la competencia es la letra chica del techo, acá se muestra al
+// derecho. Son los mismos en Basic y en Pro porque son límites de la
+// plataforma, no del escalón: no hay ninguno.
+const LIMITES_DE_LA_PLATAFORMA = [
+  'Productos ilimitados',
+  'Ventas y pedidos ilimitados',
+  'El precio que ves es el que pagás'
+];
+
 const PLANES = {
   basic: {
     nombre: 'Stock y Pedidos',
@@ -3221,6 +3261,8 @@ const PLANES = {
     precioAnterior: '$35.000',
     precio: '$25.900',
     periodo: 'por mes',
+    paraQuien: 'Para el negocio que quiere dejar de anotar en un cuaderno y empezar a vender online.',
+    limites: LIMITES_DE_LA_PLATAFORMA,
     resumen: 'Todo el negocio ordenado en un solo lugar: stock, ventas, clientes y tu tienda online.',
     // Plan "Bruwalstock Basic" en Mercado Pago. Usamos la URL larga a
     // proposito: el link corto (mpago.la/28KDgwc) descarta los parametros
@@ -3272,6 +3314,8 @@ const PLANES = {
     precioAnterior: '$87.500',
     precio: '$70.000',
     periodo: 'por mes',
+    paraQuien: 'Para el que ya vende todos los días y necesita ver la plata y los números, no solo el stock.',
+    limites: LIMITES_DE_LA_PLATAFORMA,
     resumen: 'Todo lo del plan Stock y Pedidos, más el control de la plata y los números del negocio:',
     // Plan de Mercado Pago -- cobra $70.000 de verdad, coincide con lo que
     // se muestra. URL larga a proposito, igual que Basic: el acortador
@@ -3308,6 +3352,72 @@ const PLANES = {
   }
 };
 
+// ---- Plan anual --------------------------------------------------------
+// Se paga un año de una y sale menos. El descuento es UN solo número: el
+// precio anual sale de multiplicar el mensual por 12 y aplicarlo, así que
+// el precio mensual sigue siendo la única fuente de verdad y no hay dos
+// numeros para mantener sincronizados (que es justo lo que ya nos pasó
+// con el monto del link de Mercado Pago).
+const ANUAL_DESCUENTO = 0.20;
+
+// Mientras esto esté vacío, el botón del plan anual abre WhatsApp en vez
+// de un checkout: NO se puede cobrar un precio que Mercado Pago no tiene
+// cargado. Cuando crees la suscripción anual en MP, pegá acá su link (el
+// largo, no el de mpago.la — el corto descarta el external_reference).
+//
+// TIENE QUE SER UNA SUSCRIPCIÓN CON FRECUENCIA ANUAL, no un pago único:
+// api/mercadopago-webhook.js solo escucha el topic subscription_preapproval
+// y a un pago suelto ni lo mira, así que el plan nunca se activaría solo.
+//
+// Y ANTES DE PUBLICARLO, sumá el preapproval_plan_id del plan anual al mapa
+// PLAN_POR_PREAPPROVAL_ID de api/mercadopago-webhook.js. Si no está ahí, el
+// webhook loguea "Preapproval sin slug o plan reconocido" y corta: el
+// cliente paga el año entero y no se le activa nada.
+const LINKS_ANUALES = {
+  basic: '',
+  pro: ''
+};
+
+let planesPeriodo = 'mensual';   // 'mensual' | 'anual'
+
+// El precio mensual vive escrito como texto ('$25.900') porque es lo que se
+// muestra; para calcular el anual hace falta el número.
+const precioANumero = (txt) => Number(String(txt || '').replace(/\D/g, '')) || 0;
+const aPesos = (n) => '$' + Math.round(n).toLocaleString('es-AR');
+
+// Redondeado a los $100 de arriba: un precio anual con centavos arrastrados
+// de un descuento se ve calculado por una máquina, no puesto por alguien.
+const precioAnualDe = (p) => Math.ceil(precioANumero(p.precio) * 12 * (1 - ANUAL_DESCUENTO) / 100) * 100;
+
+// Que muestra la tarjeta segun el periodo elegido.
+function precioMostrado(p) {
+  if (planesPeriodo !== 'anual' || !precioANumero(p.precio)) {
+    return { anterior: p.precioAnterior, precio: p.precio, periodo: p.periodo };
+  }
+  const anual = precioAnualDe(p);
+  return {
+    anterior: aPesos(precioANumero(p.precio) * 12),
+    precio: aPesos(anual),
+    periodo: 'por año · te queda en ' + aPesos(anual / 12) + ' por mes'
+  };
+}
+
+function selectorDePeriodo() {
+  const off = Math.round(ANUAL_DESCUENTO * 100);
+  return `
+    <div class="planes-periodo">
+      <button type="button" data-periodo="mensual" class="${planesPeriodo === 'mensual' ? 'activo' : ''}">Mensual</button>
+      <button type="button" data-periodo="anual" class="${planesPeriodo === 'anual' ? 'activo' : ''}">Anual<span class="ahorro">-${off}%</span></button>
+    </div>`;
+}
+
+function limitesDelPlan(p) {
+  if (!p.limites) return '';
+  return '<div class="plan-limites">' +
+    p.limites.map(l => `<div class="plan-limite">${escapeHtml(l)}</div>`).join('') +
+    '</div>';
+}
+
 // El Bot de pedidos con IA no es un escalón de plan: es un adicional a
 // medida que se suma sobre Basic o Pro, se cotiza por WhatsApp y se
 // factura aparte. Vive fuera de PLANES a propósito, para no mezclarlo
@@ -3317,6 +3427,7 @@ const BOT_PEDIDOS = {
   nombre: 'Bot de pedidos con IA',
   precio: 'A medida',
   periodo: 'lo armamos con vos',
+  paraQuien: 'Para el que no da abasto contestando el WhatsApp y pierde pedidos por no llegar.',
   resumen: 'Un adicional que se suma sobre cualquier plan: atiende el WhatsApp por vos.',
   grupos: [
     { t: 'Qué hace', items: [
@@ -3506,7 +3617,8 @@ function abrirPlanes() {
     return;
   }
 
-  cont.innerHTML = '<div class="planes-grid">' + Object.entries(PLANES).map(([id, p]) => {
+  cont.innerHTML = selectorDePeriodo() + '<div class="planes-grid">' + Object.entries(PLANES).map(([id, p]) => {
+    const vista = precioMostrado(p);
     let accion;
     if (p.tipo === 'consulta') {
       // El mensaje ya viene escrito para que el cliente solo apriete enviar
@@ -3516,10 +3628,19 @@ function abrirPlanes() {
                    target="_blank" rel="noopener">Hablar con un asesor</a>`;
     } else if (currentStore?.plan === id) {
       accion = `<div class="btn" style="text-align:center;background:var(--bg);color:var(--text-mute);cursor:default;">Tu plan actual</div>`;
-    } else {
-      const sep = p.link.includes('?') ? '&' : '?';
+    } else if (planesPeriodo === 'anual' && !LINKS_ANUALES[id]) {
+      // Todavía no hay suscripción anual cargada en Mercado Pago. Antes de
+      // mandar a alguien a un checkout que le cobraría el precio mensual,
+      // se cierra por WhatsApp: el precio que ve es el que se le cobra.
+      const msg = `Hola! Soy de ${currentStore?.business_name || 'mi tienda'} y quiero el plan ${p.nombre} ANUAL (${precioMostrado(p).precio} por año).`;
       accion = `<a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
-                   href="${p.link}${sep}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
+                   href="https://wa.me/${WHATSAPP_BRUWAL}?text=${encodeURIComponent(msg)}"
+                   target="_blank" rel="noopener">Quiero el plan anual</a>`;
+    } else {
+      const link = planesPeriodo === 'anual' ? LINKS_ANUALES[id] : p.link;
+      const sep = link.includes('?') ? '&' : '?';
+      accion = `<a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
+                   href="${link}${sep}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
                    target="_blank" rel="noopener">Suscribirme</a>`;
     }
 
@@ -3527,13 +3648,24 @@ function abrirPlanes() {
     <div class="plan-card${p.destacado ? ' destacada' : ''}">
       ${p.destacado ? '<div class="plan-badge">MÁS ELEGIDO</div>' : ''}
       <div class="nombre">${escapeHtml(p.nombre)}</div>
-      <div class="precio">${p.precioAnterior ? `<span style="text-decoration:line-through;color:var(--text-mute);font-weight:500;font-size:16px;margin-right:7px;">${escapeHtml(p.precioAnterior)}</span>` : ''}${escapeHtml(p.precio)}</div>
-      <div class="periodo">${escapeHtml(p.periodo)}</div>
+      ${p.paraQuien ? `<div class="para-quien">${escapeHtml(p.paraQuien)}</div>` : ''}
+      <div class="precio">${vista.anterior ? `<span style="text-decoration:line-through;color:var(--text-mute);font-weight:500;font-size:16px;margin-right:7px;">${escapeHtml(vista.anterior)}</span>` : ''}${escapeHtml(vista.precio)}</div>
+      <div class="periodo">${escapeHtml(vista.periodo)}</div>
+      ${limitesDelPlan(p)}
       ${detalleDelPlan(p)}
       ${accion}
       ${p.nota ? `<div class="plan-nota">${escapeHtml(p.nota)}</div>` : ''}
     </div>`;
   }).join('') + tarjetaBotPedidos() + '</div>';
+
+  // El selector se cablea despues de escribir el HTML, igual que el resto
+  // de los botones que se arman por string en este archivo.
+  cont.querySelectorAll('[data-periodo]').forEach(b => {
+    b.addEventListener('click', () => {
+      planesPeriodo = b.dataset.periodo;
+      abrirPlanes();   // se vuelve a dibujar con el otro precio
+    });
+  });
 
   show(byId('planesModal'));
 }
@@ -3559,6 +3691,7 @@ function tarjetaBotPedidos() {
   return `
     <div class="plan-card">
       <div class="nombre">${escapeHtml(BOT_PEDIDOS.nombre)}</div>
+      ${BOT_PEDIDOS.paraQuien ? `<div class="para-quien">${escapeHtml(BOT_PEDIDOS.paraQuien)}</div>` : ''}
       <div class="precio">${escapeHtml(BOT_PEDIDOS.precio)}</div>
       <div class="periodo">${escapeHtml(BOT_PEDIDOS.periodo)}</div>
       ${detalleDelPlan(BOT_PEDIDOS)}
