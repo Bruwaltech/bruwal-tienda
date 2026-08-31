@@ -13559,7 +13559,22 @@ function renderResumenTurnos() {
   if (!cont) return;
 
   const paso = pasoDeTurnos();
-  const desde = byId('turnosDesde').value || '09:00';
+
+  // De donde arranca el ejemplo. Con "horarios distintos segun el dia"
+  // prendido, turnosDesde es el campo del modo simple y esta escondido con
+  // su default de las 09:00: el ejemplo decia 09:00 mientras el negocio
+  // abria 08:00. La hora real es la primera franja del primer dia que
+  // atiende.
+  const porDia = !!byId('turnosPorDia')?.checked;
+  let desde = byId('turnosDesde').value || '09:00';
+
+  if (porDia) {
+    const dias = Object.keys(turnosPorDiaEnEdicion || {}).map(Number).sort((a, b) => a - b);
+    const primero = dias
+      .map(i => turnosPorDiaEnEdicion[i])
+      .find(d => d && d.activo && Array.isArray(d.franjas) && d.franjas.length);
+    if (primero) desde = primero.franjas[0].desde || desde;
+  }
 
   // Ejemplo corto de la grilla, arrancando en el horario real de la tienda.
   const inicio = aMinutosAgenda(desde);
