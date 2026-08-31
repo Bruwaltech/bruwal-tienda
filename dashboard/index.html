@@ -2993,7 +2993,7 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
-        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+        <div class="field" id="campoConfigBalanza" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="configBalanzaActiva" style="margin:0;cursor:pointer;width:auto;">
             ⚖️ Uso balanza etiquetadora (Systel, Kretz...)
@@ -6780,6 +6780,19 @@ function aplicarVisibilidadPorRubro() {
   if (cotizacionBanner) {
     cotizacionBanner.classList.toggle('hidden', !esElectronica);
     if (esElectronica) actualizarCotizacionBanner();
+  }
+
+  // La balanza etiquetadora no existe en una peluqueria: nadie pesa un
+  // corte de pelo. Se esconde por el rubro y tambien por tener la agenda
+  // activa, para no depender de que haya elegido bien el rubro.
+  //
+  // Si la tienda YA la tiene configurada se sigue viendo: seria la unica
+  // forma de apagarla, y nadie configura una balanza por accidente.
+  const campoBalanza = byId('campoConfigBalanza');
+  if (campoBalanza) {
+    const esDeServicios = categoriaDeRubro() === 'servicios' || !!currentStore?.turnos?.activo;
+    const yaLaUsa = !!(currentStore?.balanza && currentStore.balanza.formato);
+    campoBalanza.classList.toggle('hidden', esDeServicios && !yaLaUsa);
   }
 }
 
@@ -13454,40 +13467,21 @@ function renderResumenTurnos() {
   const inicio = aMinutosAgenda(desde);
   const ejemplo = [0, 1, 2, 3].map(i => aHoraAgenda(inicio + paso * i)).join(' · ') + ' …';
 
-  const servicios = (products || []).filter(p => !esProductoFisico(p));
-  const conDuracion = servicios.filter(s => Number(s.duracion_minutos) > 0);
-  const sinDuracion = servicios.filter(s => !Number(s.duracion_minutos));
+  const conDuracion = (products || []).filter(p => !esProductoFisico(p) && Number(p.duracion_minutos) > 0);
 
-  let html =
+  // Acá abajo iba una lista con la duración de cada servicio y un aviso
+  // por los que no la tenían cargada. Se saco: es el mismo dato que ya se
+  // ve y se edita en cada servicio, y tenerlo en dos lados obliga a mirar
+  // los dos para saber cual esta bien. La grilla se adapta sola a lo que
+  // el dueño cargo en cada uno.
+  cont.innerHTML =
     '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">Horarios que va a ver tu cliente</div>' +
     '<div style="font-size:12.5px;color:var(--text-mute);margin-bottom:5px;"><strong style="color:var(--text-dark);">' + ejemplo + '</strong></div>' +
-    '<div style="font-size:11.5px;color:var(--text-mute);margin-bottom:11px;line-height:1.5;">' +
+    '<div style="font-size:11.5px;color:var(--text-mute);line-height:1.5;">' +
       'Se arma solo, cada ' + paso + ' minutos' +
       (conDuracion.length ? ' (lo que dura tu servicio más corto)' : '') +
-      '. No hay que configurarlo: cargá la duración en cada servicio y listo.' +
-    '</div>' +
-    '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">Cuánto ocupa cada servicio</div>';
-
-  if (!servicios.length) {
-    html += '<div style="font-size:12.5px;color:var(--text-mute);">Todavía no cargaste servicios. Cargalos en <strong>Productos</strong> con su duración y la agenda se bloquea sola.</div>';
-  } else {
-    html += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">' +
-      conDuracion.map(s =>
-        '<span style="background:#EAF4FD;color:var(--navy);padding:3px 9px;border-radius:12px;font-size:11.5px;font-weight:600;">' +
-        escapeHtml(s.name) + ': ' + Number(s.duracion_minutos) + ' min</span>').join('') +
-      sinDuracion.map(s =>
-        '<span style="background:#FEF3E2;color:#8A5200;padding:3px 9px;border-radius:12px;font-size:11.5px;">' +
-        escapeHtml(s.name) + ': sin cargar</span>').join('') +
-      '</div>';
-
-    html += sinDuracion.length
-      ? '<div style="font-size:12px;color:#8A5200;line-height:1.5;">Los que están en naranja ocupan un solo lugar de la grilla (' + paso + ' min). ' +
-        'Si alguno lleva más, cargale la duración en <strong>Productos → editar el servicio</strong> para que no te tomen otro turno encima.</div>'
-      : '<div style="font-size:12px;color:var(--text-mute);line-height:1.5;">Eso es lo que tapa la agenda. Un turno de ' +
-        Math.max(...conDuracion.map(s => Number(s.duracion_minutos))) + ' min bloquea todos los horarios que pisa, no solo el de inicio.</div>';
-  }
-
-  cont.innerHTML = html;
+      '. La duración se carga en cada servicio, en <strong>Productos</strong>, y la agenda se acomoda sola.' +
+    '</div>';
 }
 
 byId('turnosDesde').addEventListener('change', renderResumenTurnos);
