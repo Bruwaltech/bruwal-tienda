@@ -4512,6 +4512,13 @@ function textoSugiereIndumentaria(texto) {
   return RUBROS_CON_VARIANTES.some(k => normalizarTexto(texto).includes(k));
 }
 
+// El espejo del de arriba, para el otro lado del veto: la casilla de
+// reparaciones se muestra SOLO en electrónica, así que hace falta poder
+// reconocerla desde el texto suelto igual que se reconoce indumentaria.
+function textoSugiereElectronica(texto) {
+  return RUBROS_ELECTRONICA.some(k => normalizarTexto(texto).includes(k));
+}
+
 function actualizarVisibilidadReparacionesConfig() {
   const campo = byId('campoConfigHaceReparaciones');
   if (!campo) return;
@@ -4520,12 +4527,27 @@ function actualizarVisibilidadReparacionesConfig() {
   // "Indumentaria" para probarlo, no tiene sentido seguir mirando palabras
   // clave del nombre real de la tienda.
   const manual = byId('configRubroManual')?.value;
-  const esIndumentaria = manual
-    ? manual === 'indumentaria'
-    : textoSugiereIndumentaria((byId('configNombre')?.value || '') + ' ' + (byId('configDesc')?.value || ''));
+  const texto = (byId('configNombre')?.value || '') + ' ' + (byId('configDesc')?.value || '');
+  const esIndumentaria = manual ? manual === 'indumentaria' : textoSugiereIndumentaria(texto);
+  const esElectronica  = manual ? manual === 'electronica'  : textoSugiereElectronica(texto);
 
-  campo.classList.toggle('hidden', esIndumentaria);
+  // Indumentaria sigue siendo un veto duro: además de esconder la casilla,
+  // la destilda. Va primero, para que el chequeo de "ya tildado" de abajo
+  // no la vuelva a mostrar por un dato que se acaba de invalidar.
   if (esIndumentaria) byId('configHaceReparaciones').checked = false;
+
+  // Antes esto se escondía SOLO para indumentaria, o sea que una peluquería,
+  // una pizzería o un kiosco veían "Hago reparaciones de celulares". Ahora
+  // se muestra únicamente donde tiene sentido: electrónica/tecnología.
+  //
+  // La excepción es la de siempre en este panel: si la tienda YA lo tiene
+  // tildado, se sigue viendo aunque el rubro no lo justifique — nunca le
+  // escondemos al dueño un dato que él mismo cargó, y además sería la
+  // única forma de volver a apagarlo. Para prenderlo en una tienda cuyo
+  // nombre no dice nada de lo que vende (el caso Wabi Import), está el
+  // selector de rubro a mano de arriba.
+  const yaTildado = !!byId('configHaceReparaciones')?.checked;
+  campo.classList.toggle('hidden', !(esElectronica || yaTildado));
 }
 
 // [{nombre:'Talle', valores:['S','M','L']}, {nombre:'Color', valores:['Azul','Rojo']}]
@@ -5701,11 +5723,24 @@ byId('loginForm').addEventListener('submit', async (e) => {
 function actualizarVisibilidadReparacionesRegistro() {
   const campo = byId('campoRegReparaciones');
   if (!campo) return;
-  const esIndumentaria = textoSugiereIndumentaria(
-    (byId('regBusiness')?.value || '') + ' ' + (byId('regDesc')?.value || '')
-  );
-  campo.classList.toggle('hidden', esIndumentaria);
-  if (esIndumentaria) byId('regReparaciones').checked = false;
+
+  // Si ya eligió rubro, manda el rubro. Sin esto, elegir "Peluquería"
+  // escondía la casilla (lo hace el click de renderRubrosRegistro) pero la
+  // siguiente tecla en el nombre del negocio la volvía a mostrar, porque
+  // acá solo se miraba si el texto sonaba a ropa.
+  if (rubroElegidoRegistro) {
+    const esElectronica = rubroElegidoRegistro === 'electronica';
+    campo.classList.toggle('hidden', !esElectronica);
+    if (!esElectronica) byId('regReparaciones').checked = false;
+    return;
+  }
+
+  // Todavía sin rubro elegido: se deduce del texto, mismo criterio que
+  // Configuración — solo electrónica.
+  const texto = (byId('regBusiness')?.value || '') + ' ' + (byId('regDesc')?.value || '');
+  const esElectronica = textoSugiereElectronica(texto);
+  campo.classList.toggle('hidden', !esElectronica);
+  if (!esElectronica) byId('regReparaciones').checked = false;
 }
 byId('regBusiness').addEventListener('input', actualizarVisibilidadReparacionesRegistro);
 byId('regDesc').addEventListener('input', actualizarVisibilidadReparacionesRegistro);
@@ -5781,6 +5816,7 @@ function renderRubrosRegistro() {
   });
 }
 renderRubrosRegistro();
+actualizarVisibilidadReparacionesRegistro();
 
 byId('registerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
