@@ -1973,7 +1973,7 @@ tr:last-child td { border-bottom: none; }
         <div id="wizardProgreso" class="hidden" style="font-size:12px;font-weight:700;color:var(--celeste);letter-spacing:.03em;text-transform:uppercase;margin-bottom:10px;"></div>
 
         <div class="wizard-step" data-step="1">
-          <div class="field">
+          <div class="field" id="campoCategoria">
             <label>Categoría</label>
             <input type="text" id="pCategory" placeholder="Elegí una abajo o escribí la tuya" autocomplete="off">
             <!-- Sugerencias con chips en vez de <datalist>: en iPhone, un input
@@ -2157,17 +2157,22 @@ tr:last-child td { border-bottom: none; }
         <!-- Insumos: qué se gasta cada vez que se hace este servicio. Se
              muestra junto con la duración, o sea solo cuando es un servicio. -->
         <div class="field hidden" id="campoInsumos">
-          <label>¿Qué gasta del stock? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <label id="insumosLabel">¿Qué gasta del stock? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <div id="insumosLista" style="display:flex;flex-direction:column;gap:7px;margin-bottom:9px;"></div>
           <div id="insumosControles" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <select id="insumoProducto" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;"></select>
             <input type="number" id="insumoCantidad" min="0" step="0.01" value="1" style="width:78px;padding:9px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
             <button type="button" id="agregarInsumoBtn" class="btn" style="width:auto;padding:9px 13px;font-size:12.5px;">+ Sumar</button>
           </div>
-          <small style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+          <small id="insumosAyudaServicio" style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Cada vez que vendas este servicio se descuenta solo. Ej: un corte con barba gasta <strong>1</strong> hoja de afeitar
             y <strong>1</strong> tira de cuello. Si una hoja te rinde dos cortes, poné <strong>0,5</strong>.
             Cargá los insumos como productos de <strong>uso interno</strong> (el rollo de 100 tiras entra como stock 100).
+          </small>
+          <small id="insumosAyudaPlato" class="hidden" style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Cada vez que vendas este plato se descuenta solo. Ej: una muzzarella se lleva <strong>0,2</strong> kg de queso
+            y <strong>0,1</strong> de salsa. Cargá el queso como producto de <strong>uso interno</strong> y marcalo
+            por kilo: la horma de 4 kg entra como stock 4, y cada pizza le descuenta 0,2.
           </small>
         </div>
 
@@ -4652,6 +4657,11 @@ function rubroPuedeVenderPorMedida() {
   // Veto duro: en estos rubros no se fracciona nada.
   if (cat === 'electronica' || cat === 'indumentaria' || cat === 'servicios') return false;
 
+  // El insumo de una cocina si se fracciona: la horma de queso entra en
+  // kilos y cada pizza se lleva 200 gramos. Lo que no se fracciona en
+  // gastronomia es lo que sale al menu (nadie vende media pizza por peso).
+  if (esInsumoDeCocina()) return true;
+
   // Una peluqueria que no eligio rubro a mano igual se reconoce por la
   // agenda: si trabaja con turnos, no vende nada por metro.
   if (currentStore?.turnos?.activo) return false;
@@ -4687,8 +4697,18 @@ function alCambiarTipoProducto() {
   byId('campoDuracionServicio').classList.toggle('hidden', !esServicio);
   // Los insumos son lo que gasta un servicio al prestarse: mismo criterio
   // de visibilidad que la duración.
-  if (byId('campoInsumos')) byId('campoInsumos').classList.toggle('hidden', !esServicio);
-  if (esServicio) renderInsumos();
+  // Un plato del menu tambien gasta stock: la pizza se lleva 200 g de
+  // queso y 100 de salsa, igual que el corte se lleva media hoja. El motor
+  // (aplicarInsumosDeItem) nunca miro si el item era un servicio; era el
+  // formulario el que solo lo ofrecia ahi.
+  if (byId('campoInsumos')) byId('campoInsumos').classList.toggle('hidden', !esServicio && !esPlatoDelMenu());
+  if (esServicio || esPlatoDelMenu()) renderInsumos();
+
+  // El ejemplo de la ayuda cambia: media hoja de afeitar no le dice nada a
+  // una pizzeria, y 200 g de queso no le dice nada a una peluqueria.
+  const plato = esPlatoDelMenu();
+  if (byId('insumosAyudaServicio')) byId('insumosAyudaServicio').classList.toggle('hidden', plato);
+  if (byId('insumosAyudaPlato')) byId('insumosAyudaPlato').classList.toggle('hidden', !plato);
   // Un servicio no se mide en metros ni en kilos.
   //
   // Se le pasa la unidad que tiene el formulario en este momento, no nada:
@@ -4801,6 +4821,12 @@ function seleccionarTipoTab(tab) {
   renderCampoProveedor();   // el proveedor depende de si es servicio o no
   // Tamaños y agregados son del menu, no del stock interno: se recalculan
   // al cambiar de destino, no solo al abrir el formulario.
+  // Las categorias ordenan el menu que ve el cliente. Un insumo no esta en
+  // el menu: preguntarle en que categoria va la horma de queso es pedir un
+  // dato que no se usa en ningun lado.
+  const campoCat = byId('campoCategoria');
+  if (campoCat) campoCat.classList.toggle('hidden', esInsumoDeCocina());
+
   if (typeof aplicarVisibilidadVariantes === 'function') aplicarVisibilidadVariantes();
   if (typeof renderOpciones === 'function') renderOpciones();
   if (typeof aplicarUsadoEnVisibilidad === 'function') aplicarUsadoEnVisibilidad();
@@ -12578,7 +12604,10 @@ byId('productForm').addEventListener('submit', async (e) => {
     specs: specsEnEdicion,
     // Solo se guardan en un servicio: si lo pasó a producto, se limpian en
     // vez de quedar colgados descontando stock sin que se vea el campo.
-    insumos: byId('pTipoServicio').checked ? insumosEnEdicion : [],
+    // Se guardan en un servicio y en un plato del menu. En un producto
+    // comun se limpian, para no dejar insumos colgados descontando stock
+    // sin que el campo se vea.
+    insumos: (byId('pTipoServicio').checked || esPlatoDelMenu()) ? insumosEnEdicion : [],
     tipo: byId('pTipoServicio').checked ? 'servicio' : 'producto',
     duracion_minutos: byId('pTipoServicio').checked && byId('pDuracion').value ? Number(byId('pDuracion').value) : null,
     solo_interno: byId('pDestinoInterno').checked,
