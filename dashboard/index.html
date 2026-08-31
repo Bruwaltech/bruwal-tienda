@@ -4121,9 +4121,11 @@ function renderCampoProveedor() {
   // que nadie pueda verlo ni borrarlo.
   const campo = byId('campoProveedor');
   if (campo) {
+    // A un corte de pelo no se le compra nada, y a una pizza tampoco: se
+    // hace. El proveedor es de los insumos, no de lo que sale al menu.
     const esServicio = !!byId('pTipoServicio')?.checked;
     const yaTiene = !!(proveedorEnEdicion.nombre || proveedorEnEdicion.telefono || proveedorEnEdicion.email);
-    campo.classList.toggle('hidden', esServicio && !yaTiene);
+    campo.classList.toggle('hidden', (esServicio || esPlatoDelMenu()) && !yaTiene);
   }
 
   const bloqueado = requiereDesbloqueoCostos();
@@ -4177,8 +4179,11 @@ function aplicarVisibilidadCosto() {
 
   // La calculadora vive adentro del mismo candado que el costo, y en un
   // servicio no aplica: no se compra por caja.
+  // Una pizza no se compra por caja: la calculadora es para lo que entra
+  // por bulto (las cajas, la harina, las hojas de afeitar).
   const desdeTotal = byId('pCostoDesdeTotal');
-  if (desdeTotal) desdeTotal.classList.toggle('hidden', requiereDesbloqueoCostos() || esServicio);
+  if (desdeTotal) desdeTotal.classList.toggle('hidden',
+    requiereDesbloqueoCostos() || esServicio || esPlatoDelMenu());
 
   actualizarEtiquetaCosto();
 }
@@ -4677,7 +4682,8 @@ function alCambiarTipoProducto() {
   const esServicio = byId('pTipoServicio').checked;
   // El campo de stock se oculta si es servicio O si tiene variantes: los dos
   // reemplazan al stock simple por otra cosa.
-  byId('campoStock').classList.toggle('hidden', esServicio || byId('pTieneVariantes')?.checked);
+  byId('campoStock').classList.toggle('hidden',
+    esServicio || byId('pTieneVariantes')?.checked || esPlatoDelMenu());
   byId('campoDuracionServicio').classList.toggle('hidden', !esServicio);
   // Los insumos son lo que gasta un servicio al prestarse: mismo criterio
   // de visibilidad que la duración.
@@ -4793,6 +4799,10 @@ function seleccionarTipoTab(tab) {
 
   byId('pTipoProducto').dispatchEvent(new Event('change'));
   renderCampoProveedor();   // el proveedor depende de si es servicio o no
+  // Tamaños y agregados son del menu, no del stock interno: se recalculan
+  // al cambiar de destino, no solo al abrir el formulario.
+  if (typeof aplicarVisibilidadVariantes === 'function') aplicarVisibilidadVariantes();
+  if (typeof renderOpciones === 'function') renderOpciones();
   if (typeof aplicarUsadoEnVisibilidad === 'function') aplicarUsadoEnVisibilidad();
   if (typeof aplicarVisibilidadCosto === 'function') aplicarVisibilidadCosto();
 }
@@ -4935,6 +4945,27 @@ function rubroUsaVariantes() {
 // agregados), asi que el chequeo vive en un solo lado.
 // Comida y bebidas. Se repetia en media docena de lugares como
 // (cat === 'comida' || cat === 'bebidas'); ahora vive en un solo lado.
+// Adentro de gastronomia hay dos cosas que no se parecen en nada:
+//
+//   - el PLATO del menu (la pizza): tiene tamaños, agregados y foto. No
+//     tiene stock (nadie cuenta pizzas), no tiene proveedor (no se le
+//     compra a nadie: se hace) y no se compra por caja.
+//
+//   - el INSUMO de la cocina (la harina, las cajas): tiene stock,
+//     proveedor y se compra por bulto. No tiene tamaños ni agregados
+//     porque no se muestra en el menu.
+//
+// Antes el formulario preguntaba las dos cosas a la vez, siempre.
+function esPlatoDelMenu() {
+  return esGastronomia() &&
+    !byId('pDestinoInterno')?.checked &&
+    !byId('pTipoServicio')?.checked;
+}
+
+function esInsumoDeCocina() {
+  return esGastronomia() && !!byId('pDestinoInterno')?.checked;
+}
+
 function esGastronomia() {
   const cat = categoriaDeRubro();
   return cat === 'comida' || cat === 'bebidas';
@@ -5713,7 +5744,8 @@ function cargarVariantesEnFormulario(p) {
   const tiene = !!p?.tiene_variantes;
   byId('pTieneVariantes').checked = tiene;
   byId('campoVariantes').classList.toggle('hidden', !tiene);
-  byId('campoStock').classList.toggle('hidden', tiene || byId('pTipoServicio')?.checked);
+  byId('campoStock').classList.toggle('hidden',
+    tiene || byId('pTipoServicio')?.checked || esPlatoDelMenu());
   // Con variantes, el IMEI/estado se cargan por unidad adentro de cada
   // combinación — este campo suelto (pensado para un equipo único sin
   // variantes) queda redundante y confundía: parecía que solo se podía
@@ -5728,16 +5760,29 @@ function cargarVariantesEnFormulario(p) {
   renderAtributosVariante();
   renderGrillaVariantes();
 
-  // El bloque se muestra si el rubro lo amerita o si el producto ya tiene
-  // variantes cargadas: no escondemos datos que el vendedor ya cargó.
-  const mostrar = rubroUsaVariantes() || tiene || variAtributosEnEdicion.length > 0;
-  byId('campoVariantesToggle').classList.toggle('hidden', !mostrar);
+  aplicarVisibilidadVariantes();
+}
+
+// Aparte de cargarVariantesEnFormulario porque hay que poder recalcularla
+// sola: al cambiar de destino (menu / stock interno) cambia si corresponde
+// mostrarla, y llamar a cargarVariantesEnFormulario ahi resetearia lo que
+// se esta editando.
+function aplicarVisibilidadVariantes() {
+  const campo = byId('campoVariantesToggle');
+  if (!campo) return;
+  // Se muestra si el rubro lo amerita o si el producto ya tiene variantes
+  // cargadas: no escondemos datos que el vendedor ya cargó. Las cajas de
+  // pizza no se venden por tamaño: los tamaños son del menu.
+  const tiene = !!byId('pTieneVariantes')?.checked;
+  const mostrar = (rubroUsaVariantes() && !esInsumoDeCocina()) || tiene || variAtributosEnEdicion.length > 0;
+  campo.classList.toggle('hidden', !mostrar);
 }
 
 byId('pTieneVariantes').addEventListener('change', (e) => {
   const tiene = e.target.checked;
   byId('campoVariantes').classList.toggle('hidden', !tiene);
-  byId('campoStock').classList.toggle('hidden', tiene || byId('pTipoServicio')?.checked);
+  byId('campoStock').classList.toggle('hidden',
+    tiene || byId('pTipoServicio')?.checked || esPlatoDelMenu());
   if (byId('camposEquipoUnico')) byId('camposEquipoUnico').classList.toggle('hidden', tiene);
 
   if (tiene && !variAtributosEnEdicion.length) {
@@ -5873,7 +5918,8 @@ function renderOpciones() {
 
   // Se muestra si el rubro lo amerita, o si el producto YA tiene opciones
   // cargadas: nunca escondemos datos que el vendedor cargó antes.
-  if (!grupo && opcionesEnEdicion.length === 0) {
+  // Un agregado ("con cheddar") es del plato, no del insumo.
+  if ((!grupo || esInsumoDeCocina()) && opcionesEnEdicion.length === 0) {
     hide(campo);
     return;
   }
@@ -12055,7 +12101,7 @@ function abrirFormularioNuevo(tipo) {
     seleccionarTipoTab(esServicio ? 'servicio' : 'producto');
     byId('pDuracion').value = '';
     byId('pPendienteRestauracion').checked = false;
-    byId('campoStock').classList.remove('hidden');
+    byId('campoStock').classList.toggle('hidden', esPlatoDelMenu());
     cargarVariantesEnFormulario(null);   // arranca limpio, sin heredar del anterior
     opcionesEnEdicion = [];
     renderOpciones();
@@ -12486,9 +12532,13 @@ byId('productForm').addEventListener('submit', async (e) => {
   // estadísticas del panel y el badge de "agotado" cuando no hay una
   // combinación elegida. Tener dos números de stock que se contradicen
   // sería peor que este atajo.
-  const stockGeneral = redondearMedida(tieneVariantes
-    ? variantesEnEdicion.reduce((s, v) => s + Number(v.stock || 0), 0)
-    : Number(byId('pStock').value));
+  // Un plato del menu no muestra el campo de stock, asi que leerlo daria 0
+  // y la tienda lo mostraria "Agotado" apenas se guarda. Va con stock de
+  // sobra, el mismo criterio que las variantes de comida: lo que saca un
+  // plato del menu es el tilde de "Hoy no hay", no el stock.
+  const stockGeneral = redondearMedida(
+    tieneVariantes ? variantesEnEdicion.reduce((s, v) => s + Number(v.stock || 0), 0)
+    : (esPlatoDelMenu() ? STOCK_SIN_CONTROL : Number(byId('pStock').value)));
 
   // Se guarda solo si el tilde quedó puesto: destildarlo devuelve el
   // producto a venderse por unidad, sin dejar la unidad vieja colgada.
@@ -13241,7 +13291,7 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   tipoDeEntrada = null;   // se entró escaneando, no por los botones de carga
   seleccionarTipoTab('producto');
   byId('pDuracion').value = '';
-  byId('campoStock').classList.remove('hidden');
+  byId('campoStock').classList.toggle('hidden', esPlatoDelMenu());
   if (byId('pImei')) byId('pImei').value = '';
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
   proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
