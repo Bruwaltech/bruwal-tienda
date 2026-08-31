@@ -2130,6 +2130,25 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
+        <!-- La vuelta del circulo: desde la caja de hojas de afeitar se dice
+             en que servicios se gasta. Es la MISMA relacion que se carga
+             adentro del servicio en "¿Qué gasta del stock?" — el dato vive
+             en el servicio y al guardar se sincroniza para alla. -->
+        <div class="field hidden" id="campoUsadoEnServicios">
+          <label>¿En qué servicios se gasta? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <div id="usadoEnLista" style="display:flex;flex-direction:column;gap:7px;margin-bottom:9px;"></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <select id="usadoEnServicio" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;"></select>
+            <input type="number" id="usadoEnCantidad" min="0" step="0.01" value="1" style="width:78px;padding:9px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+            <button type="button" id="agregarUsadoEnBtn" class="btn" style="width:auto;padding:9px 13px;font-size:12.5px;">+ Sumar</button>
+          </div>
+          <small style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Cuánto se lleva cada vez que se presta ese servicio. Una caja de 12 hojas
+            con <strong>1</strong> por corte dura 12 cortes; con <strong>0,5</strong>, dura 24.
+            Es lo mismo que cargarlo adentro del servicio: se guarda en un solo lugar.
+          </small>
+        </div>
+
         <div id="camposEquipoUnico">
           <div class="field campo-electronica hidden">
             <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
@@ -4568,6 +4587,7 @@ function seleccionarTipoTab(tab) {
 
   byId('pTipoProducto').dispatchEvent(new Event('change'));
   renderCampoProveedor();   // el proveedor depende de si es servicio o no
+  if (typeof aplicarUsadoEnVisibilidad === 'function') aplicarUsadoEnVisibilidad();
 }
 
 // Un insumo de uso interno no se vende: el rollo de tiras o la hoja de
@@ -5735,6 +5755,111 @@ function renderInsumos() {
       renderInsumos();
     });
   });
+}
+
+// [{ servicio_id, cantidad }] — se arma leyendo los insumos de cada
+// servicio, no de una columna propia del producto.
+let usadoEnEnEdicion = [];
+
+function cargarUsadoEnDesdeServicios(productoId) {
+  usadoEnEnEdicion = !productoId ? [] : (products || [])
+    .filter(p => !esProductoFisico(p) && Array.isArray(p.insumos))
+    .map(p => {
+      const ins = p.insumos.find(i => String(i.producto_id) === String(productoId));
+      return ins ? { servicio_id: p.id, cantidad: Number(ins.cantidad) || 0 } : null;
+    })
+    .filter(Boolean);
+}
+
+function renderUsadoEn() {
+  const lista = byId('usadoEnLista');
+  const selector = byId('usadoEnServicio');
+  if (!lista || !selector) return;
+
+  const servicios = (products || []).filter(p => !esProductoFisico(p));
+  const yaCargados = usadoEnEnEdicion.map(u => String(u.servicio_id));
+  const pendientes = servicios.filter(sv => !yaCargados.includes(String(sv.id)));
+
+  selector.innerHTML = servicios.length
+    ? (pendientes.length
+        ? '<option value="">Eleg\u00ed el servicio...</option>' + pendientes.map(sv =>
+            '<option value="' + escapeHtml(sv.id) + '">' + escapeHtml(sv.name) + '</option>').join('')
+        : '<option value="">Ya est\u00e1n todos cargados</option>')
+    : '<option value="">Todav\u00eda no cargaste servicios</option>';
+
+  const unidad = unidadDe((products || []).find(p => String(p.id) === String(byId('productForm')?.dataset.id)));
+
+  lista.innerHTML = usadoEnEnEdicion.length ? usadoEnEnEdicion.map((u, i) => {
+    const sv = servicios.find(x => String(x.id) === String(u.servicio_id));
+    return '<div style="display:flex;align-items:center;gap:8px;background:var(--bg);padding:8px 11px;border-radius:7px;">' +
+      '<span style="flex:1;font-size:13px;">' + escapeHtml(sv ? sv.name : 'Servicio borrado') + '</span>' +
+      '<span style="font-weight:700;font-size:13px;color:var(--navy);">' +
+        Number(u.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 3 }) +
+        (unidad ? ' ' + unidad.corto : '') + '</span>' +
+      '<button type="button" data-quitar-usado="' + i + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;">\u2715</button>' +
+    '</div>';
+  }).join('') : '<div style="color:var(--text-mute);font-size:12.5px;">No se gasta en ning\u00fan servicio.</div>';
+
+  lista.querySelectorAll('[data-quitar-usado]').forEach(b => {
+    b.addEventListener('click', () => {
+      usadoEnEnEdicion.splice(Number(b.dataset.quitarUsado), 1);
+      renderUsadoEn();
+    });
+  });
+}
+
+// Se ofrece solo donde tiene sentido: un producto (no un servicio) de un
+// negocio que presta servicios. Y si el producto YA se gasta en alguno, se
+// muestra igual aunque el resto no de — mismo criterio que en todo el panel.
+function aplicarUsadoEnVisibilidad() {
+  const campo = byId('campoUsadoEnServicios');
+  if (!campo) return;
+  const esServicio = !!byId('pTipoServicio')?.checked;
+  const mostrar = !esServicio && (negocioDaServicios() || usadoEnEnEdicion.length > 0);
+  campo.classList.toggle('hidden', !mostrar);
+  if (mostrar) renderUsadoEn();
+}
+
+if (byId('agregarUsadoEnBtn')) {
+  byId('agregarUsadoEnBtn').addEventListener('click', () => {
+    const id = byId('usadoEnServicio').value;
+    const cantidad = Number(String(byId('usadoEnCantidad').value).replace(',', '.'));
+    if (!id) { alert('Eleg\u00ed en qu\u00e9 servicio se gasta.'); return; }
+    if (!Number.isFinite(cantidad) || cantidad <= 0) { alert('La cantidad tiene que ser mayor que 0.'); return; }
+    usadoEnEnEdicion.push({ servicio_id: id, cantidad });
+    byId('usadoEnCantidad').value = '1';
+    renderUsadoEn();
+  });
+}
+
+// Escribe la relacion en los servicios, que es donde vive de verdad. Toca
+// SOLO la entrada de este producto en cada servicio: los demas insumos de
+// ese servicio quedan intactos.
+async function guardarUsadoEnServicios(productoId) {
+  if (!productoId) return;
+
+  const deseado = new Map(usadoEnEnEdicion.map(u => [String(u.servicio_id), Number(u.cantidad)]));
+
+  for (const sv of (products || []).filter(p => !esProductoFisico(p))) {
+    const actuales = Array.isArray(sv.insumos) ? sv.insumos.map(i => ({ ...i })) : [];
+    const idx = actuales.findIndex(i => String(i.producto_id) === String(productoId));
+    const quiere = deseado.get(String(sv.id));
+    let cambio = false;
+
+    if (quiere) {
+      if (idx >= 0) {
+        if (Number(actuales[idx].cantidad) !== quiere) { actuales[idx].cantidad = quiere; cambio = true; }
+      } else {
+        actuales.push({ producto_id: productoId, cantidad: quiere });
+        cambio = true;
+      }
+    } else if (idx >= 0) {
+      actuales.splice(idx, 1);
+      cambio = true;
+    }
+
+    if (cambio) await sb.from('store_products').update({ insumos: actuales }).eq('id', sv.id);
+  }
 }
 
 if (byId('agregarInsumoBtn')) {
@@ -11478,6 +11603,7 @@ function abrirFormularioNuevo(tipo) {
     aplicarVentaPorMedidaVisibilidad();
     insumosEnEdicion = [];
     renderInsumos();
+    usadoEnEnEdicion = [];
     if (byId('pServicioInterno')) byId('pServicioInterno').checked = false;
     tipoDeEntrada = negocioDaServicios() ? (esServicio ? 'servicio' : 'producto') : null;
     seleccionarTipoTab(esServicio ? 'servicio' : 'producto');
@@ -11973,6 +12099,9 @@ byId('productForm').addEventListener('submit', async (e) => {
     return;   // el formulario queda abierto, con todo lo que cargaste
   }
 
+  // Se hace despues de guardar porque un producto nuevo recien acá tiene id.
+  await guardarUsadoEnServicios(id || dataGuardado?.[0]?.id);
+
   if (payload.imei) {
     await registrarEventoImei(payload.imei, 'ingreso', payload.name + ' — ' + money(payload.price));
   }
@@ -12064,6 +12193,9 @@ async function editProduct(id) {
   byId('pDuracion').value = p.duracion_minutos || '';
   byId('pPendienteRestauracion').checked = !!p.pendiente_restauracion;
   cargarVariantesEnFormulario(p);   // decide por sí mismo si el stock queda oculto
+
+  cargarUsadoEnDesdeServicios(p.id);
+  aplicarUsadoEnVisibilidad();
 
   opcionesEnEdicion = Array.isArray(p.opciones) ? p.opciones.map(o => ({ ...o })) : [];
   renderOpciones();
