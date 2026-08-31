@@ -1572,6 +1572,14 @@ const carritoTieneFisico = () => Object.values(cart).some(l => {
   return p && esProductoFisico(p);
 });
 
+// El espejo del de arriba. El turno lo pide el SERVICIO, no el negocio:
+// comprarle un perfume a la peluquería no necesita día ni hora, y pedirlo
+// obligaba a reservar una hora de agenda para llevarse un frasco.
+const carritoTieneServicios = () => Object.values(cart).some(l => {
+  const p = productoDe(l);
+  return p && !esProductoFisico(p);
+});
+
 // Recargo por ir hasta el cliente. Es el MISMO campo para los dos casos
 // (store_profiles.costo_envio) porque la plata se comporta igual, pero se
 // llama distinto según qué se lleve: enviar una manguera es un envío;
@@ -1594,6 +1602,11 @@ function configurarEntrega() {
 
   const soloServicios = !carritoTieneFisico();
   const ofreceDomicilio = configRecargoDomicilio != null;
+
+  // armarTurnos() lo muestra al cargar la pagina porque el negocio trabaja
+  // con agenda; aca se decide de verdad, segun lo que haya en el carrito.
+  const campoTurno = byId('campoTurno');
+  if (campoTurno && configTurnos) campoTurno.classList.toggle('hidden', !carritoTieneServicios());
 
   if (soloServicios && !ofreceDomicilio) {
     campo.classList.add('hidden');
@@ -2072,7 +2085,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
   // Turno, si el negocio trabaja con agenda
   let turnoTexto = null;
-  if (configTurnos) {
+  if (configTurnos && carritoTieneServicios()) {
     const f = byId('turnoFecha').value;
     const h = byId('turnoHora').value;
     if (!f || !h){

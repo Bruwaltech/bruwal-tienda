@@ -4490,14 +4490,32 @@ function sufijoPrecioPorMedida(p) {
 // ruido en un formulario que ya es largo. En el resto (ferretería,
 // forrajería, fiambrería, dietética, o una tienda sin rubro definido) se
 // ofrece siempre, porque casi cualquiera puede sumar un producto a granel.
+// Rubros donde vender por metro o por kilo es el negocio, no una rareza.
+// Antes esto era al reves (lo veian todos menos electronica e
+// indumentaria), y una peluqueria cargando perfumes o un kiosco cargando
+// alfajores se comian una casilla que no iban a usar nunca.
+const RUBROS_QUE_FRACCIONAN = [
+  'fiambr', 'rotiser', 'carnic', 'verdul', 'fruter', 'granja', 'granel',
+  'forraj', 'veterinar', 'dietet', 'semill', 'almacen', 'despensa',
+  'ferret', 'corralon', 'pinturer', 'vivero', 'tela', 'merceria', 'panader'
+];
+
 function rubroPuedeVenderPorMedida() {
   const cat = categoriaDeRubro();
-  // 'servicios' tambien queda afuera: una peluqueria carga productos, pero
-  // los carga por unidad (una caja de 12 hojas de afeitar entra como stock
-  // 12). Lo que gasta cada corte se descuenta solo por los insumos del
-  // servicio, que es otro mecanismo — preguntarle ademas si vende por metro
-  // o por kilo es una casilla que no va a usar nunca.
-  return cat !== 'electronica' && cat !== 'indumentaria' && cat !== 'servicios';
+
+  // Veto duro: en estos rubros no se fracciona nada.
+  if (cat === 'electronica' || cat === 'indumentaria' || cat === 'servicios') return false;
+
+  // Una peluqueria que no eligio rubro a mano igual se reconoce por la
+  // agenda: si trabaja con turnos, no vende nada por metro.
+  if (currentStore?.turnos?.activo) return false;
+
+  // Si carga la balanza etiquetadora, fracciona seguro: es la puerta para
+  // el negocio que fracciona y cuyo nombre no dice de que rubro es.
+  if (currentStore?.balanza?.formato) return true;
+
+  const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
+  return RUBROS_QUE_FRACCIONAN.some(k => texto.includes(k));
 }
 
 // El nombre del producto en un ítem de pedido. La tienda pública guardaba
@@ -5865,8 +5883,14 @@ function renderUsadoEn() {
 function aplicarUsadoEnVisibilidad() {
   const campo = byId('campoUsadoEnServicios');
   if (!campo) return;
+  // Solo en el stock interno. Un perfume que la peluqueria vende en el
+  // mostrador no lo gasta ningun corte: preguntarselo en cada producto de
+  // la tienda es ruido. Si el producto YA se gasta en algun servicio se
+  // muestra igual, para poder sacarlo.
   const esServicio = !!byId('pTipoServicio')?.checked;
-  const mostrar = !esServicio && (negocioDaServicios() || usadoEnEnEdicion.length > 0);
+  const esInterno = !!byId('pDestinoInterno')?.checked;
+  const mostrar = !esServicio &&
+    ((negocioDaServicios() && esInterno) || usadoEnEnEdicion.length > 0);
   campo.classList.toggle('hidden', !mostrar);
   if (mostrar) renderUsadoEn();
 }
