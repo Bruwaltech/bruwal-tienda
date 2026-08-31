@@ -993,10 +993,18 @@ function htmlTarjetaProducto(p){
       // Lo fraccionado también manda a la ficha: sumar manguera de a un
       // metro con el + no tiene sentido, el cliente quiere escribir "12,5".
       : (tieneOpciones || tieneVariantes || seVendePorMedida(p))
-      ? '<button class="btn-elegir" data-elegir="' + p.id + '">' +
-          (qty ? 'Agregar otra (' + qty + ')'
-               : (tieneVariantes ? 'Elegir ' + nombresVariante
-                                 : (seVendePorMedida(p) ? 'Elegir cantidad' : 'Elegir'))) + '</button>'
+      // Con algo ya en el carrito va un − al lado: hasta ahora estos
+      // productos solo tenian "Agregar otra", asi que se podia sumar pero
+      // no sacar. El − saca la ultima linea agregada (la ultima variante o
+      // la ultima combinacion de agregados), que es la que acaba de tocar.
+      ? (qty
+          ? '<div class="qty-controls" style="gap:8px;">' +
+              '<button data-minus="' + p.id + '">−</button>' +
+              '<button class="btn-elegir" data-elegir="' + p.id + '" style="flex:1;">Agregar otra (' + qty + ')</button>' +
+            '</div>'
+          : '<button class="btn-elegir" data-elegir="' + p.id + '">' +
+              (tieneVariantes ? 'Elegir ' + nombresVariante
+                              : (seVendePorMedida(p) ? 'Elegir cantidad' : 'Elegir')) + '</button>')
       : '<div class="qty-controls"><button data-minus="' + p.id + '">−</button><span class="qty-badge">' + qty + '</span><button data-plus="' + p.id + '">+</button></div>';
 
     return '<div class="product-card" data-id="' + p.id + '">' +
@@ -1979,6 +1987,29 @@ let horarioLocal = null;
 // habia donde decirlo. Texto libre, se muestra junto al cartel de abierto.
 let demoraTexto = '';
 
+// La hora del NEGOCIO, no la del telefono del que mira. Sin esto, un
+// cliente en otro huso -- o el dueño probando desde afuera del pais -- veia
+// la pizzeria cerrada a las 21 de Buenos Aires porque su reloj marcaba
+// otra cosa. Un horario de atencion es del local, no de quien lo mira.
+//
+// Se arma una fecha con los numeros de Buenos Aires y se lee con getDay()
+// y getHours(): de esta fecha solo se usan esos componentes, nunca el
+// instante absoluto, asi que alcanza con que las partes sean las correctas.
+function ahoraEnArgentina() {
+  try {
+    const p = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(new Date()).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+    return new Date(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute));
+  } catch (e) {
+    // Navegador viejo sin soporte de timeZone: mejor la hora del aparato
+    // que no mostrar nada.
+    return new Date();
+  }
+}
+
 const hlAMin = (hhmm) => {
   const [h, m] = String(hhmm || '00:00').split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -1986,7 +2017,7 @@ const hlAMin = (hhmm) => {
 
 function hlAbiertoAhora(horario, ahora) {
   if (!horario || !horario.activo || !horario.dias) return null;
-  const t = ahora || new Date();
+  const t = ahora || ahoraEnArgentina();
   const min = t.getHours() * 60 + t.getMinutes();
   const hoy = t.getDay();
   const ayer = (hoy + 6) % 7;
@@ -2009,7 +2040,7 @@ function hlAbiertoAhora(horario, ahora) {
 
 function hlProximaApertura(horario, ahora) {
   if (!horario || !horario.dias) return null;
-  const t = ahora || new Date();
+  const t = ahora || ahoraEnArgentina();
   const min = t.getHours() * 60 + t.getMinutes();
 
   for (let salto = 0; salto < 8; salto++) {

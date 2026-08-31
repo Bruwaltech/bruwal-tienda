@@ -13834,6 +13834,22 @@ byId('turnosActivo').addEventListener('change', (e) => {
 
 let hlEnEdicion = {};
 
+// Copia de la de tienda.html (las dos paginas son HTML sueltos). El
+// horario del local es del LOCAL, no del reloj de quien mira: el dueño
+// probando desde otro huso veia su propia tienda cerrada.
+function ahoraEnArgentina() {
+  try {
+    const p = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(new Date()).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+    return new Date(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute));
+  } catch (e) {
+    return new Date();
+  }
+}
+
 const hlAMin = (hhmm) => {
   const [h, m] = String(hhmm || '00:00').split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -13930,7 +13946,7 @@ function hlRender() {
 // 00:15 del sábado el local sigue abierto por la franja del viernes.
 function hlAbiertoAhora(horario, ahora) {
   if (!horario || !horario.activo || !horario.dias) return null;
-  const t = ahora || new Date();
+  const t = ahora || ahoraEnArgentina();
   const min = t.getHours() * 60 + t.getMinutes();
   const hoy = t.getDay();
   const ayer = (hoy + 6) % 7;
@@ -13954,7 +13970,7 @@ function hlAbiertoAhora(horario, ahora) {
 // Cuándo vuelve a abrir, mirando hasta 8 días para adelante.
 function hlProximaApertura(horario, ahora) {
   if (!horario || !horario.dias) return null;
-  const t = ahora || new Date();
+  const t = ahora || ahoraEnArgentina();
   const min = t.getHours() * 60 + t.getMinutes();
 
   for (let salto = 0; salto < 8; salto++) {
@@ -13980,7 +13996,7 @@ function hlRenderResumen() {
   const abierto = hlAbiertoAhora(h);
   const prox = hlProximaApertura(h);
 
-  const hoy = h.dias[new Date().getDay()];
+  const hoy = h.dias[ahoraEnArgentina().getDay()];
   const textoHoy = (hoy && hoy.activo && hoy.franjas.length)
     ? hoy.franjas.map(f => f.desde + ' a ' + f.hasta).join(' y ')
     : 'cerrado';
