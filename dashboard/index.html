@@ -4740,16 +4740,24 @@ function seleccionarTipoTab(tab) {
   // de "interno" lo convertía en producto. Para el caso raro del servicio
   // que ademas es de uso interno esta la casilla de campoServicioInterno,
   // que se sigue mostrando si el servicio ya viene marcado.
+  // En gastronomia todo lo que se carga va al menu: no se pregunta si es
+  // producto o servicio (una pizzeria no vende servicios) ni si va a la
+  // tienda o al stock interno. Si el producto que se esta editando YA es
+  // interno se sigue mostrando, para poder sacarlo de ahi.
+  const gastronomiaSimple = esGastronomia() && !byId('pDestinoInterno')?.checked;
+  if (gastronomiaSimple) byId('subTipoTabs').classList.add('hidden');
+
   const esServicioTab = tab === 'servicio';
-  byId('labelDestinoStock').classList.toggle('hidden', esServicioTab);
-  byId('destinoTabs').classList.toggle('hidden', esServicioTab);
+  byId('labelDestinoStock').classList.toggle('hidden', esServicioTab || gastronomiaSimple);
+  byId('destinoTabs').classList.toggle('hidden', esServicioTab || gastronomiaSimple);
 
   // La ayuda y el bloque entero se esconden solo si adentro no queda nada:
   // en una tienda de boton unico el selector Producto/Servicio sigue ahi, y
   // esconder su contenedor la dejaria sin forma de volver a Producto.
   const subOculto = byId('subTipoTabs').classList.contains('hidden');
-  byId('tipoTabAyuda').classList.toggle('hidden', esServicioTab && subOculto);
-  byId('campoDestinoStock').classList.toggle('hidden', esServicioTab && subOculto);
+  const vacio = subOculto && (esServicioTab || gastronomiaSimple);
+  byId('tipoTabAyuda').classList.toggle('hidden', vacio);
+  byId('campoDestinoStock').classList.toggle('hidden', vacio);
 
   if (tab === 'servicio') {
     byId('pTipoServicio').checked = true;
@@ -4922,6 +4930,13 @@ function rubroUsaVariantes() {
 
 // La comida se comporta distinto en varios lugares (stock, textos,
 // agregados), asi que el chequeo vive en un solo lado.
+// Comida y bebidas. Se repetia en media docena de lugares como
+// (cat === 'comida' || cat === 'bebidas'); ahora vive en un solo lado.
+function esGastronomia() {
+  const cat = categoriaDeRubro();
+  return cat === 'comida' || cat === 'bebidas';
+}
+
 function rubroEsComida() {
   return categoriaDeRubro() === 'comida';
 }
@@ -5088,6 +5103,14 @@ const ATRIBUTOS_SUGERIDOS_COMIDA = [
   { nombre: 'Masa',     valores: ['A la piedra', 'Al molde'] }
 ];
 
+// Una pizzeria no vende "chica, mediana y grande": vende porcion, media y
+// grande. Es el mismo mecanismo de variantes, con las palabras del rubro.
+const ATRIBUTOS_SUGERIDOS_PIZZERIA = [
+  { nombre: 'Tamaño',   valores: ['Porción', 'Media', 'Grande'] },
+  { nombre: 'Masa',     valores: ['A la piedra', 'Al molde'] },
+  { nombre: 'Cantidad', valores: ['Media docena', 'Docena'] }
+];
+
 const ATRIBUTOS_SUGERIDOS_ELECTRONICA = [
   { nombre: 'Modelo', etiqueta: 'Modelo (iPhone)', valores: [
     'iPhone 6', 'iPhone 6 Plus', 'iPhone 6s', 'iPhone 6s Plus', 'iPhone SE (1ª gen)',
@@ -5190,7 +5213,10 @@ byId('pModelo').addEventListener('input', actualizarNombreDesdeMarcaModelo);
 function grupoAtributosSugeridos() {
   if (rubroEsElectronica()) return ATRIBUTOS_SUGERIDOS_ELECTRONICA;
   if (categoriaDeRubro() === 'indumentaria') return ATRIBUTOS_SUGERIDOS_INDUMENTARIA;
-  if (rubroEsComida()) return ATRIBUTOS_SUGERIDOS_COMIDA;
+  if (rubroEsComida()) {
+    const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
+    return texto.includes('pizz') ? ATRIBUTOS_SUGERIDOS_PIZZERIA : ATRIBUTOS_SUGERIDOS_COMIDA;
+  }
   return [];
 }
 
@@ -6906,10 +6932,7 @@ function aplicarVisibilidadPorRubro() {
   // La demora ("30 a 40 minutos") es una respuesta de gastronomia: una
   // tienda de ropa no la usa.
   const campoDemora = byId('campoConfigDemora');
-  if (campoDemora) {
-    const c = categoriaDeRubro();
-    campoDemora.classList.toggle('hidden', !(c === 'comida' || c === 'bebidas'));
-  }
+  if (campoDemora) campoDemora.classList.toggle('hidden', !esGastronomia());
 
   aplicarVisibilidadPausado();
 
@@ -7849,9 +7872,7 @@ const PANELES_PRODUCTOS = {
 function aplicarVisibilidadPausado() {
   const campo = byId('campoPausado');
   if (!campo) return;
-  const cat = categoriaDeRubro();
-  const esGastronomia = cat === 'comida' || cat === 'bebidas';
-  campo.classList.toggle('hidden', !(esGastronomia || byId('pPausado')?.checked));
+  campo.classList.toggle('hidden', !(esGastronomia() || byId('pPausado')?.checked));
 }
 
 // El atajo para pausar desde la lista: a las 22, cuando se acaba algo, no
@@ -7859,9 +7880,7 @@ function aplicarVisibilidadPausado() {
 // casilla. Vive en una funcion porque los paneles (tienda / servicios /
 // insumos) arman su celda de acciones cada uno por su lado.
 function botonPausar(p) {
-  const cat = categoriaDeRubro();
-  const esGastronomia = cat === 'comida' || cat === 'bebidas';
-  if (!esGastronomia && !p.pausado) return '';
+  if (!esGastronomia() && !p.pausado) return '';
 
   return '<button class="icon-btn" data-pausar="' + p.id + '" title="' +
     (p.pausado ? 'Volver a mostrarlo en la tienda' : 'Sacarlo de la tienda por hoy') +
@@ -12058,6 +12077,16 @@ const negocioDaServicios = () =>
   !!(currentStore?.turnos?.activo) ||
   (products || []).some(p => !esProductoFisico(p));
 
+// El boton de cargar, con la cara del negocio. Una pizzeria que ve
+// "+ Nuevo producto" y una que ve "🍕 Nueva pizza" no estan usando el
+// mismo sistema, aunque el codigo sea el mismo.
+function iconoDeCarga() {
+  const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
+  if (texto.includes('pizz')) return '🍕';
+  if (texto.includes('hamburgues') || texto.includes('burger')) return '🍔';
+  return '+';
+}
+
 function aplicarBotonesDeCarga() {
   const btnProducto = byId('newProductBtn');
   const btnServicio = byId('newServiceBtn');
@@ -12065,7 +12094,16 @@ function aplicarBotonesDeCarga() {
 
   const daServicios = negocioDaServicios();
   btnServicio.classList.toggle('hidden', !daServicios);
-  btnProducto.textContent = daServicios ? '+ Nuevo producto' : '+ Nuevo producto o servicio';
+
+  // La tijera es de peluqueria/barberia; en un consultorio o un taller que
+  // tambien trabaja con turnos quedaria raro, asi que va solo con el rubro
+  // 'servicios' elegido.
+  btnServicio.textContent = (categoriaDeRubro() === 'servicios' ? '✂️' : '+') + ' Nuevo servicio';
+
+  // Una pizzeria no vende servicios: ofrecerle "producto o servicio" en el
+  // boton es hacerla elegir entre algo que hace y algo que no.
+  const soloProductos = daServicios || esGastronomia();
+  btnProducto.textContent = iconoDeCarga() + ' Nuevo producto' + (soloProductos ? '' : ' o servicio');
 }
 
 // La solapa "Servicios" solo existe donde hay servicios. Cuando existe, las

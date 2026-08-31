@@ -1013,7 +1013,9 @@ function htmlTarjetaProducto(p){
               ? '<div class="product-price">Desde ' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>'
               : '<div class="product-price">' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>' + precioOriginal(p);
           })()) +
-      '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes ? 'Elegí ' + nombresVariante + ' para ver el stock' : formatearCantidad(p.stock, p) + ' disponibles') : 'Sin stock')) + '</div>' +
+      '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes
+              ? 'Elegí ' + nombresVariante + (variantesSinControlDeStock(p) ? '' : ' para ver el stock')
+              : formatearCantidad(p.stock, p) + ' disponibles') : 'Sin stock')) + '</div>' +
       '<div class="product-controls">' + (ocultaPrecio ? controls : ((servicio || p.stock > 0) ? controls : '')) + '</div>' +
       '</div>' +
       '</div>';
@@ -1204,7 +1206,8 @@ function abrirFicha(id) {
         })()) +
     '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
       (campos.length
-        ? 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' para ver el stock'
+        ? 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') +
+          (variantesSinControlDeStock(p) ? '' : ' para ver el stock')
         : (esProductoFisico(p) ? (p.stock > 0 ? formatearCantidad(p.stock, p) + ' disponibles' : 'Sin stock') : 'Servicio')) +
     '</div>' +
 
@@ -1587,6 +1590,14 @@ const totalDelCarrito   = () => Object.values(cart).reduce((s, l) => s + precioU
 // Si hay al menos un producto físico en el carrito, hace falta preguntar
 // cómo lo recibe (retiro/envío) — un carrito de solo servicios (ej. un
 // corte de pelo) no se retira ni se envía a ningún lado.
+// Las variantes de gastronomia se crean con stock de sobra a proposito
+// (STOCK_SIN_CONTROL en el panel): ahi el tamaño no divide stock, divide
+// precio. Se reconoce por eso, para no mandar al cliente a "ver el stock"
+// de una pizza.
+const variantesSinControlDeStock = (p) =>
+  Array.isArray(p?.variantes) && p.variantes.length > 0 &&
+  p.variantes.every(v => Number(v.stock) >= 9999);
+
 const carritoTieneFisico = () => Object.values(cart).some(l => {
   const p = productoDe(l);
   return p && esProductoFisico(p);
