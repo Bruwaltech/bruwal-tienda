@@ -4485,7 +4485,16 @@ function seleccionarTipoTab(tab) {
 
   if (tab === 'servicio') {
     byId('pTipoServicio').checked = true;
-    show(byId('campoServicioInterno'));
+    // La casilla de "también es de uso interno" ya no se ofrece al cargar:
+    // un servicio se da de alta para venderlo, y la pregunta sobraba en el
+    // 99% de los casos.
+    //
+    // PERO se sigue mostrando si el servicio que se está editando YA viene
+    // marcado. Esta casilla es el único lugar donde se marca un servicio
+    // como interno: si se escondiera siempre, abrir uno interno para
+    // cambiarle el precio lo publicaría en la tienda sin que nadie se
+    // entere, y no habría forma de volver atrás.
+    byId('campoServicioInterno').classList.toggle('hidden', !byId('pServicioInterno').checked);
     // El tilde de "también interno" decide el destino en este caso — si no
     // está tildado, un servicio nuevo arranca visible en la tienda.
     byId('pDestinoTienda').checked = !byId('pServicioInterno').checked;
@@ -11357,6 +11366,7 @@ function abrirFormularioNuevo(tipo) {
     aplicarVentaPorMedidaVisibilidad();
     insumosEnEdicion = [];
     renderInsumos();
+    if (byId('pServicioInterno')) byId('pServicioInterno').checked = false;
     tipoDeEntrada = negocioDaServicios() ? (esServicio ? 'servicio' : 'producto') : null;
     seleccionarTipoTab(esServicio ? 'servicio' : 'producto');
     byId('pDuracion').value = '';
