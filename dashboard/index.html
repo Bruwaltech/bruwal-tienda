@@ -4432,7 +4432,12 @@ function sufijoPrecioPorMedida(p) {
 // ofrece siempre, porque casi cualquiera puede sumar un producto a granel.
 function rubroPuedeVenderPorMedida() {
   const cat = categoriaDeRubro();
-  return cat !== 'electronica' && cat !== 'indumentaria';
+  // 'servicios' tambien queda afuera: una peluqueria carga productos, pero
+  // los carga por unidad (una caja de 12 hojas de afeitar entra como stock
+  // 12). Lo que gasta cada corte se descuenta solo por los insumos del
+  // servicio, que es otro mecanismo — preguntarle ademas si vende por metro
+  // o por kilo es una casilla que no va a usar nunca.
+  return cat !== 'electronica' && cat !== 'indumentaria' && cat !== 'servicios';
 }
 
 // El nombre del producto en un ítem de pedido. La tienda pública guardaba
@@ -4460,7 +4465,16 @@ function alCambiarTipoProducto() {
   if (byId('campoInsumos')) byId('campoInsumos').classList.toggle('hidden', !esServicio);
   if (esServicio) renderInsumos();
   // Un servicio no se mide en metros ni en kilos.
-  if (typeof aplicarVentaPorMedidaVisibilidad === 'function') aplicarVentaPorMedidaVisibilidad();
+  //
+  // Se le pasa la unidad que tiene el formulario en este momento, no nada:
+  // en editProduct esta funcion corre DESPUES de aplicarVentaPorMedidaVisibilidad(p)
+  // (la dispara seleccionarTipoTab, que va mas abajo), asi que llamarla sin
+  // dato pisaba la decision anterior y escondia un producto que SI se vende
+  // por medida. Con el rubro servicios eso dejaba la casilla invisible y sin
+  // forma de desmarcarla.
+  if (typeof aplicarVentaPorMedidaVisibilidad === 'function') {
+    aplicarVentaPorMedidaVisibilidad({ unidad_medida: unidadMedidaEnEdicion });
+  }
 }
 byId('pTipoProducto').addEventListener('change', alCambiarTipoProducto);
 byId('pTipoServicio').addEventListener('change', alCambiarTipoProducto);
