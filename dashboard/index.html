@@ -2052,6 +2052,21 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
+        <!-- "Hoy no hay". Se acaba la fugazzeta a las 22 y hasta ahora la
+             unica forma de sacarla del menu era borrar el producto. No se
+             usa el stock para esto: en gastronomia nadie lleva stock de
+             pizzas (las variantes de comida arrancan en 9999). -->
+        <div class="field hidden" id="campoPausado">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="pPausado" style="margin:0;width:auto;cursor:pointer;">
+            🚫 Hoy no hay — no lo muestres en la tienda
+          </label>
+          <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Sigue cargado con su precio y su foto: el cliente lo ve en gris, como
+            <strong>No disponible</strong>, y no lo puede pedir. Lo destildás mañana y vuelve.
+          </small>
+        </div>
+
         <div class="field hidden" id="campoServicioInterno">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="pServicioInterno" style="margin:0;width:auto;cursor:pointer;">
@@ -3180,6 +3195,15 @@ tr:last-child td { border-bottom: none; }
           <label id="configCostoEnvioLabel">Costo de envío <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <input type="number" id="configCostoEnvio" min="0" step="0.01" placeholder="Ej: 2000">
           <small id="configCostoEnvioAyuda" style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;"></small>
+        </div>
+
+        <div class="field hidden" id="campoConfigDemora">
+          <label>⏱ Demora aproximada <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <input type="text" id="configDemora" maxlength="60" autocomplete="off" placeholder="Ej: 30 a 40 minutos">
+          <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Es lo primero que pregunta el cliente. Se muestra en tu tienda al lado del cartel de abierto.
+            Texto libre, porque la respuesta real suele ser "30 a 40, los viernes una hora".
+          </small>
         </div>
 
         <div class="field">
@@ -6879,6 +6903,16 @@ function aplicarVisibilidadPorRubro() {
   // "pendiente de restauracion", y restaurar un equipo es un concepto de
   // electronica. Una peluqueria no restaura nada, y ver un panel con la
   // mitad siempre en cero no informa: confunde.
+  // La demora ("30 a 40 minutos") es una respuesta de gastronomia: una
+  // tienda de ropa no la usa.
+  const campoDemora = byId('campoConfigDemora');
+  if (campoDemora) {
+    const c = categoriaDeRubro();
+    campoDemora.classList.toggle('hidden', !(c === 'comida' || c === 'bebidas'));
+  }
+
+  aplicarVisibilidadPausado();
+
   const panelValoracion = byId('panelValoracionStock');
   if (panelValoracion) panelValoracion.classList.toggle('hidden', !esElectronica);
 
@@ -7807,6 +7841,34 @@ const PANELES_PRODUCTOS = {
   }
 };
 
+// "Hoy no hay" es de gastronomia: una tienda de ropa que se queda sin
+// talle usa el stock, que para eso lo lleva. Si el producto que se esta
+// editando YA esta pausado se muestra igual, para poder volver a
+// prenderlo: por eso se recalcula al abrir cada producto y no solo cuando
+// cambia el rubro.
+function aplicarVisibilidadPausado() {
+  const campo = byId('campoPausado');
+  if (!campo) return;
+  const cat = categoriaDeRubro();
+  const esGastronomia = cat === 'comida' || cat === 'bebidas';
+  campo.classList.toggle('hidden', !(esGastronomia || byId('pPausado')?.checked));
+}
+
+// El atajo para pausar desde la lista: a las 22, cuando se acaba algo, no
+// se le puede pedir al negocio que abra el formulario entero y busque una
+// casilla. Vive en una funcion porque los paneles (tienda / servicios /
+// insumos) arman su celda de acciones cada uno por su lado.
+function botonPausar(p) {
+  const cat = categoriaDeRubro();
+  const esGastronomia = cat === 'comida' || cat === 'bebidas';
+  if (!esGastronomia && !p.pausado) return '';
+
+  return '<button class="icon-btn" data-pausar="' + p.id + '" title="' +
+    (p.pausado ? 'Volver a mostrarlo en la tienda' : 'Sacarlo de la tienda por hoy') +
+    '" style="color:' + (p.pausado ? 'var(--stock)' : '#8A5200') + ';">' +
+    (p.pausado ? '▶ Activar' : '⏸ Pausar') + '</button>';
+}
+
 function renderProducts() {
   const panel = PANELES_PRODUCTOS[filtroProductosDestino] || PANELES_PRODUCTOS.tienda;
   const lista = products.filter(panel.filtro);
@@ -7842,6 +7904,7 @@ function renderProducts() {
       '</td>';
 
     const celdaAcciones = '<td><div class="row-actions">' +
+      botonPausar(p) +
       (esProductoFisico(p)
         ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
         : '') +
@@ -7934,6 +7997,7 @@ function renderProducts() {
         ) + '</td>' +
       '<td>' + (p.ean || '—') + '</td>' +
       '<td><div class="row-actions">' +
+        botonPausar(p) +
         (esProductoFisico(p)
           ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
           : '') +
@@ -7944,6 +8008,7 @@ function renderProducts() {
 
   byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
   byId('productsBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(b.getAttribute('data-del'))));
+  byId('productsBody').querySelectorAll('[data-pausar]').forEach(b => b.addEventListener('click', () => alternarPausado(b.getAttribute('data-pausar'))));
   // Con variantes hay que elegir talle/color antes de sumar stock; sin
   // variantes es directo, como siempre.
   byId('productsBody').querySelectorAll('[data-reponer]').forEach(b => b.addEventListener('click', () => {
@@ -7972,6 +8037,22 @@ document.querySelectorAll('.productos-destino-tab').forEach(b => {
     renderProducts();
   });
 });
+
+// Pausar / activar desde la lista, sin abrir el producto.
+async function alternarPausado(id) {
+  if (!puedeOperar()) return;
+  const p = (products || []).find(x => String(x.id) === String(id));
+  if (!p) return;
+
+  const nuevo = !p.pausado;
+  const { error } = await sb.from('store_products').update({ pausado: nuevo }).eq('id', id);
+  if (error) {
+    alert('No se pudo cambiar: ' + error.message);
+    return;
+  }
+  p.pausado = nuevo;   // se refleja al toque, sin esperar el refresh entero
+  renderProducts();
+}
 
 function renderOrders() {
   const cuerpo = byId('ordersBody');
@@ -8016,6 +8097,10 @@ function renderOrders() {
           : '') +
       '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(items) +
+        (o.aclaraciones
+          ? '<div style="margin-top:5px;padding:5px 8px;background:#FEF6E7;border-radius:6px;color:#8A5200;font-size:12px;line-height:1.45;">' +
+            '✎ ' + escapeHtml(o.aclaraciones) + '</div>'
+          : '') +
         (o.trade_in_descripcion
           ? '<div style="margin-top:4px;color:var(--celeste);font-weight:600;">📱 Toma: ' +
               escapeHtml(o.trade_in_descripcion) + ' (' + money(o.trade_in_valor) + ')</div>'
@@ -11933,6 +12018,8 @@ function abrirFormularioNuevo(tipo) {
     if (byId('pVentaPorMedida')) byId('pVentaPorMedida').checked = false;
     if (byId('pPluBalanza')) byId('pPluBalanza').value = '';
     if (byId('pUnidadNombre')) byId('pUnidadNombre').value = '';
+    if (byId('pPausado')) byId('pPausado').checked = false;
+    if (typeof aplicarVisibilidadPausado === 'function') aplicarVisibilidadPausado();
     if (byId('pMedidaBultos')) byId('pMedidaBultos').value = '1';
     if (byId('pMedidaPorBulto')) byId('pMedidaPorBulto').value = '';
     renderUnidadMedidaChips();
@@ -12398,6 +12485,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     tipo: byId('pTipoServicio').checked ? 'servicio' : 'producto',
     duracion_minutos: byId('pTipoServicio').checked && byId('pDuracion').value ? Number(byId('pDuracion').value) : null,
     solo_interno: byId('pDestinoInterno').checked,
+    pausado: !!byId('pPausado')?.checked,
     mostrar_precio: byId('pMostrarPrecio').checked,
     pendiente_restauracion: byId('pPendienteRestauracion').checked,
     tiene_variantes: tieneVariantes,
@@ -12529,6 +12617,8 @@ async function editProduct(id) {
   byId('pServicioInterno').checked = servicio && !!p.solo_interno;
   seleccionarTipoTab(servicio ? 'servicio' : (p.solo_interno ? 'interno' : 'producto'));
   if (byId('pUnidadNombre')) byId('pUnidadNombre').value = p.unidad_nombre || '';
+  if (byId('pPausado')) byId('pPausado').checked = !!p.pausado;
+  if (typeof aplicarVisibilidadPausado === 'function') aplicarVisibilidadPausado();
   // Se carga DESPUES de seleccionarTipoTab, asi que la etiqueta del costo
   // ("por hoja") se calculo sin este dato: hay que repintarla.
   if (typeof aplicarVisibilidadCosto === 'function') aplicarVisibilidadCosto();
@@ -14027,6 +14117,7 @@ async function cargarConfiguracion() {
     aplicarPosicionPortadaPreview();
 
     if (byId('configCostoEnvio')) byId('configCostoEnvio').value = store.costo_envio != null ? store.costo_envio : '';
+    if (byId('configDemora')) byId('configDemora').value = store.demora_texto || '';
 
     const bal = store.balanza || {};
     if (byId('configBalanzaActiva')) {
@@ -14209,6 +14300,7 @@ async function guardarConfiguracion() {
     google_url: byId('configGoogle').value.trim() || null,
     medios_pago: mediosDePagoElegidos(),
     costo_envio: byId('configCostoEnvio').value === '' ? null : Math.max(0, Number(byId('configCostoEnvio').value) || 0),
+    demora_texto: (byId('configDemora')?.value || '').trim() || null,
     turnos: configuracionDeTurnos(),
     horario_local: hlLeer(),
     tema: temaElegido(),

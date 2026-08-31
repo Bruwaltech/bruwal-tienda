@@ -484,6 +484,12 @@
     </div>
 
     <div id="hlAvisoCheckout" class="hidden" style="padding:11px 13px;border-radius:9px;margin-bottom:12px;font-size:13px;line-height:1.5;"></div>
+    <div class="field">
+      <label>Aclaraciones <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+      <textarea id="custAclaraciones" rows="2" maxlength="300" placeholder="Ej: sin sal, cortada en 8, el timbre no anda"
+                style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;"></textarea>
+    </div>
+
     <button class="btn-primary" id="confirmOrderBtn">Confirmar pedido</button>
   </div>
 </div>
@@ -664,6 +670,7 @@ async function init(){
   // aviso del checkout. Si la tienda no lo configuró, queda en null y no
   // se muestra nada (una tienda sin horario funciona igual que siempre).
   horarioLocal = store.horario_local || null;
+  demoraTexto = (store.demora_texto || '').trim();
   pintarEstadoLocal();
   // El cartel se repinta solo: si alguien deja la tienda abierta desde las
   // 18:50, a las 19:00 pasa a "Abierto" sin recargar.
@@ -961,6 +968,19 @@ function htmlTarjetaProducto(p){
             ).join('') + '</div>'
           : '')
       : '<div class="product-photo-placeholder">🛒</div>';
+
+    // "Hoy no hay": manda sobre cualquier otro estado, y va DESPUES de armar
+    // la foto porque la usa. La tarjeta no lleva onclick ni boton, asi que
+    // no se puede abrir la ficha ni sumarlo al carrito.
+    if (p.pausado) {
+      return '<div class="product-card" style="opacity:.55;cursor:default;">' +
+        photo +
+        '<div class="product-info">' +
+          '<div class="product-badge" style="background:#6B7280;color:#fff;">No disponible hoy</div>' +
+          '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
+          '<div class="product-price">' + money(p.price) + '</div>' +
+        '</div></div>';
+    }
     // Si el producto lleva agregados, el + no alcanza: el cliente tiene que
     // elegir qué le pone. Por eso mostramos "Elegir", que abre la ficha.
     // Si el vendedor optó por no mostrar el precio, no tiene sentido dejar
@@ -1944,6 +1964,10 @@ function armarOpcionesDeCheckout(store) {
 
 let horarioLocal = null;
 
+// "30 a 40 minutos". Es lo primero que pregunta el cliente y hasta ahora no
+// habia donde decirlo. Texto libre, se muestra junto al cartel de abierto.
+let demoraTexto = '';
+
 const hlAMin = (hhmm) => {
   const [h, m] = String(hhmm || '00:00').split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -2008,10 +2032,13 @@ function pintarEstadoLocal() {
   if (abierto === null) { el.classList.add('hidden'); return; }   // sin horario cargado: no se opina
 
   el.classList.remove('hidden');
+  // La demora solo tiene sentido con el local abierto: si esta cerrado, lo
+  // que importa es a que hora abre, no cuanto tarda en salir un pedido.
+  const demora = demoraTexto ? '   ·   ⏱ ' + demoraTexto : '';
   if (abierto) {
     el.style.background = '#E7F6F1';
     el.style.color = '#12705E';
-    el.textContent = '● Abierto ahora';
+    el.textContent = '● Abierto ahora' + demora;
   } else {
     el.style.background = '#FDECEC';
     el.style.color = '#A81E1E';
@@ -2112,6 +2139,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   const timbre = byId('custTimbre').value.trim();
   const aNombre = byId('custAnombre').value.trim();
   const referencias = byId('custReferencias').value.trim();
+  const aclaraciones = (byId('custAclaraciones')?.value || '').trim();
 
   if (esOpcionADomicilio(entrega)){
     if (!calle){
@@ -2245,6 +2273,10 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     }
     detalles += '\n💳 *Paga con:* ' + medioDePago;
 
+    // Va al final y con su propio titulo: en un mensaje largo es lo que mas
+    // se pasa por alto, y es justo lo que no hay que pasar por alto.
+    if (aclaraciones) detalles += '\n\n✎ *Aclaraciones:* ' + aclaraciones;
+
     if (store.mensaje_envio) detalles += '\n\n📝 ' + store.mensaje_envio;
 
     // Se reserva ANTES de mandar el WhatsApp: no le confirmamos al cliente
@@ -2296,6 +2328,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
         customer_phone: phone,
         items: items,
         total: total,
+        aclaraciones: aclaraciones || null,
         estado: 'pendiente'
       });
     } catch (e) {
