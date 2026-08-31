@@ -2239,7 +2239,9 @@ tr:last-child td { border-bottom: none; }
                 <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;" id="pMedidaPorBultoLabel">Medida c/u</label>
                 <input type="number" id="pMedidaPorBulto" min="0" step="0.001" placeholder="Ej: 50" style="width:100%;padding:7px;font-size:13px;">
               </div>
-              <button type="button" id="pMedidaCalcularBtn" class="btn" style="width:auto;padding:8px 12px;font-size:12.5px;">= Total</button>
+              <div style="padding-bottom:7px;font-size:13px;color:var(--text-mute);white-space:nowrap;">
+                = <strong id="pMedidaTotal" style="color:var(--navy);font-size:14px;">0</strong>
+              </div>
             </div>
           </div>
 
@@ -6592,6 +6594,12 @@ function aplicarVentaPorMedida() {
     ayuda.classList.toggle('hidden', !u);
     if (u) ayuda.textContent = 'Ojo: el Precio que cargaste arriba se cobra por ' + u.singular + '.';
   }
+
+  // Repinta el "= total" de la calculadora. Va aca porque esta funcion es la
+  // que corre cada vez que se abre el formulario (alta y edicion) y cada vez
+  // que cambia la unidad: sin esto, al abrir un producto nuevo el total
+  // quedaba con el numero del producto anterior.
+  if (typeof calcularTotalDeCajas === 'function') calcularTotalDeCajas();
 }
 
 function aplicarVentaPorMedidaVisibilidad(productoEnEdicion) {
@@ -6616,14 +6624,36 @@ if (byId('pVentaPorMedida')) {
   });
 }
 
-if (byId('pMedidaCalcularBtn')) {
-  byId('pMedidaCalcularBtn').addEventListener('click', () => {
-    const bultos = Number(byId('pMedidaBultos').value) || 0;
-    const porBulto = Number(byId('pMedidaPorBulto').value) || 0;
-    if (bultos <= 0 || porBulto <= 0) return;
-    byId('pStock').value = redondearMedida(bultos * porBulto);
-  });
+// La cuenta se hace sola mientras se tipea. Antes habia un boton "= Total"
+// y se podia guardar el producto sin apretarlo: quedaba el stock viejo y la
+// cuenta a la vista decia otra cosa.
+//
+// Solo escribe en el Stock si las DOS casillas tienen algo. Asi, el que no
+// usa la calculadora y escribe el numero derecho en Stock no se lo ve
+// pisado por un 0.
+function calcularTotalDeCajas() {
+  const bultos = Number(byId('pMedidaBultos')?.value) || 0;
+  const porBulto = Number(byId('pMedidaPorBulto')?.value) || 0;
+  const total = (bultos > 0 && porBulto > 0) ? redondearMedida(bultos * porBulto) : 0;
+
+  const cartel = byId('pMedidaTotal');
+  if (cartel) {
+    const u = unidadDe({ unidad_medida: unidadMedidaEnEdicion });
+    const propia = nombreUnidadDe({ unidad_nombre: byId('pUnidadNombre')?.value });
+    const sufijo = u ? ' ' + u.corto
+      : (propia ? ' ' + (total === 1 ? propia.singular : propia.plural) : '');
+    cartel.textContent = total.toLocaleString('es-AR', { maximumFractionDigits: 3 }) + sufijo;
+  }
+
+  if (total > 0 && byId('pStock')) byId('pStock').value = total;
 }
+
+['pMedidaBultos', 'pMedidaPorBulto'].forEach(id => {
+  if (byId(id)) byId(id).addEventListener('input', calcularTotalDeCajas);
+});
+
+// El nombre de la unidad cambia como se lee el total ("240 hojas").
+if (byId('pUnidadNombre')) byId('pUnidadNombre').addEventListener('input', calcularTotalDeCajas);
 
 function aplicarVisibilidadPorRubro() {
   const esElectronica = rubroEsElectronica();
