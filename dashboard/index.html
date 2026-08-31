@@ -2231,7 +2231,7 @@ tr:last-child td { border-bottom: none; }
           <div id="calculadoraMedida" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-bottom:9px;">
             <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;">
               <div style="width:78px;">
-                <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;">Bultos</label>
+                <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;" id="pMedidaBultosLabel">Bultos</label>
                 <input type="number" id="pMedidaBultos" min="1" step="1" value="1" style="width:100%;padding:7px;font-size:13px;">
               </div>
               <div style="font-size:15px;color:var(--text-mute);padding-bottom:9px;">×</div>
@@ -6495,7 +6495,22 @@ function aplicarVentaPorMedida() {
   const u = activo ? UNIDADES_MEDIDA[unidadMedidaEnEdicion] : null;
 
   if (byId('campoUnidadMedida')) byId('campoUnidadMedida').classList.toggle('hidden', !activo);
-  if (byId('calculadoraMedida')) byId('calculadoraMedida').classList.toggle('hidden', !u);
+
+  // La calculadora ya no es solo de venta por medida. "Una caja de 12 hojas
+  // de afeitar" es la misma cuenta que "un rollo de 50 metros": el negocio
+  // no compra 12 unidades sueltas, compra una caja. Se muestra siempre que
+  // haya un stock que cargar, y cambian las palabras segun el caso.
+  if (byId('calculadoraMedida')) byId('calculadoraMedida').classList.remove('hidden');
+
+  const etiquetaBultos = byId('pMedidaBultosLabel');
+  if (etiquetaBultos) etiquetaBultos.textContent = u ? 'Bultos' : 'Cajas';
+
+  const inputPorBulto = byId('pMedidaPorBulto');
+  if (inputPorBulto) {
+    // step entero por unidad: media hoja de afeitar no entra en una caja.
+    inputPorBulto.step = u ? '0.001' : '1';
+    inputPorBulto.placeholder = u ? 'Ej: 50' : 'Ej: 12';
+  }
 
   const stockInput = byId('pStock');
   if (stockInput) {
@@ -6509,7 +6524,7 @@ function aplicarVentaPorMedida() {
   if (label) label.textContent = u ? 'Stock en ' + u.plural : 'Stock';
 
   const porBulto = byId('pMedidaPorBultoLabel');
-  if (porBulto && u) porBulto.textContent = u.plural + ' por bulto';
+  if (porBulto) porBulto.textContent = u ? (u.plural + ' por bulto') : 'Unidades por caja';
 
   // El precio pasa a leerse "por metro" — es el cambio que más confunde si
   // no se dice en pantalla, porque el campo Precio no se mueve de lugar.
