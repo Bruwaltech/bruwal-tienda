@@ -1825,6 +1825,10 @@ tr:last-child td { border-bottom: none; }
           <div class="label">Saldo del día</div>
           <div class="value" id="cajaSaldo">$0</div>
         </div>
+        <div class="stat-card" title="Lo vendido en el día menos lo que costo. Un servicio cuenta lo que gasta en insumos.">
+          <div class="label">🔒 Ganancia estimada</div>
+          <div class="value" id="cajaGanancia">$0</div>
+        </div>
       </div>
 
       <div class="panel">
@@ -4441,6 +4445,28 @@ function cantidadDesdeBalanza(leido, producto) {
     return redondearMedida(leido.importe / Number(producto.price));
   }
   return 1;
+}
+
+// Lo que le cuesta al negocio UNA unidad de esto.
+//
+// Un producto tiene su costo cargado a mano. Un servicio no: nadie carga
+// "cuanto me cuesta un corte", y ese numero ademas cambia solo cuando
+// cambia el precio de lo que gasta. Sale de sus insumos: media hoja de
+// afeitar a $1.600 la hoja son $800 de costo.
+//
+// El costo cargado a mano gana siempre que exista: puede incluir cosas que
+// no son stock (el alquiler del sillon, la comision del que atiende).
+function costoDeInsumos(p) {
+  const insumos = Array.isArray(p?.insumos) ? p.insumos : [];
+  return insumos.reduce((suma, i) => {
+    const ins = (products || []).find(x => String(x.id) === String(i.producto_id));
+    return suma + (Number(ins?.costo || 0) * (Number(i.cantidad) || 0));
+  }, 0);
+}
+
+function costoDeProducto(p) {
+  const propio = Number(p?.costo || 0);
+  return propio > 0 ? propio : costoDeInsumos(p);
 }
 
 const seVendePorMedida = (p) => !!(p && p.unidad_medida && UNIDADES_MEDIDA[p.unidad_medida]);
@@ -10148,6 +10174,41 @@ function renderCaja() {
   byId('cajaEgresos').textContent = money(egresos);
   byId('cajaSaldo').textContent = money(ingresos - egresos);
 
+  // Ganancia del dia. OJO: no es "ingresos menos egresos", que es otra cosa
+  // (eso es el saldo de caja, y ahi entran los cobros de fiado de ventas
+  // viejas y los movimientos a mano). Esto es margen: lo que se vendio HOY
+  // menos lo que costo, item por item.
+  let ventaDelDia = 0, costoDelDia = 0, hayCosto = false;
+  orders.filter(o => cuentaComoVenta(o) && esDelDia(o.created_at)).forEach(o => {
+    (Array.isArray(o.items) ? o.items : []).forEach(it => {
+      const p = (products || []).find(x => String(x.id) === String(it.product_id));
+      const qty = Number(it.qty || 1);
+      ventaDelDia += Number(it.price ?? p?.price ?? 0) * qty;
+      const c = costoDeProducto(p);
+      if (c > 0) hayCosto = true;
+      costoDelDia += c * qty;
+    });
+  });
+
+  const elGanancia = byId('cajaGanancia');
+  if (elGanancia) {
+    if (requiereDesbloqueoCostos()) {
+      // La ganancia deja ver los costos por la ventana: se tapa con el
+      // mismo PIN que Costos y Proveedor.
+      elGanancia.textContent = '🔒';
+      elGanancia.style.color = 'var(--text-mute)';
+    } else if (!hayCosto) {
+      elGanancia.textContent = '—';
+      elGanancia.style.color = 'var(--text-mute)';
+      elGanancia.title = 'Cargá el costo de los productos, o los insumos de tus servicios, para ver la ganancia.';
+    } else {
+      const ganancia = ventaDelDia - costoDelDia;
+      elGanancia.textContent = money(ganancia);
+      elGanancia.style.color = ganancia >= 0 ? '#1FA088' : '#DC2626';
+      elGanancia.title = 'Vendido ' + money(ventaDelDia) + ' − costo ' + money(costoDelDia);
+    }
+  }
+
   const porMedio = {};
   movimientos.forEach(m => {
     const signo = m.tipo === 'ingreso' ? 1 : -1;
@@ -10406,12 +10467,16 @@ function statsProductosYClientes(periodoDias) {
       const precioUnitario = Number(item.price ?? p?.price ?? 0);
       const qty = item.qty || 1;
       const key = item.product_id || item.name;
+      // costoDeProducto y no p.costo: asi un servicio saca su costo de los
+      // insumos que gasta y deja de aparecer como "sin costo" para siempre.
+      const costoUnitario = costoDeProducto(p);
       if (!porProducto[key]) {
-        porProducto[key] = { name: item.name, qty: 0, ingresos: 0, costoTotal: 0, tieneCosto: !!(p && p.costo), product: p || null };
+        porProducto[key] = { name: item.name, qty: 0, ingresos: 0, costoTotal: 0, tieneCosto: costoUnitario > 0, product: p || null };
       }
+      if (costoUnitario > 0) porProducto[key].tieneCosto = true;
       porProducto[key].qty += qty;
       porProducto[key].ingresos += precioUnitario * qty;
-      porProducto[key].costoTotal += Number((p && p.costo) || 0) * qty;
+      porProducto[key].costoTotal += costoUnitario * qty;
     });
   });
 
