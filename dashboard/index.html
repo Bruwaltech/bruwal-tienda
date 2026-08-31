@@ -2084,11 +2084,33 @@ tr:last-child td { border-bottom: none; }
           <small id="pPriceHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
         </div>
         <div class="field">
-          <label>🔒 Costo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <!-- El costo SIEMPRE es por unidad: la valoracion de stock hace
+               costo x stock y el margen hace costo x cantidad vendida. Poner
+               ahi el total de la factura multiplica todo por el stock, asi
+               que la etiqueta lo dice y abajo esta la calculadora para
+               sacarlo del total, que es el numero que el negocio tiene. -->
+          <label id="pCostoLabel">🔒 Costo por unidad <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <button type="button" id="pCostoVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar costo</button>
           <input type="number" id="pCosto" min="0" step="0.01" class="hidden" placeholder="0">
+
+          <div id="pCostoDesdeTotal" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-top:9px;">
+            <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;">
+              <div style="flex:1;min-width:130px;">
+                <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;">¿Cuánto pagaste en total?</label>
+                <input type="number" id="pCostoTotal" min="0" step="0.01" placeholder="Ej: 38400" style="width:100%;padding:7px;font-size:13px;">
+              </div>
+              <div style="padding-bottom:7px;font-size:13px;color:var(--text-mute);white-space:nowrap;">
+                = <strong id="pCostoUnitarioPreview" style="color:var(--navy);font-size:14px;">$0</strong>
+              </div>
+            </div>
+            <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
+              Poné lo que te salió <strong>toda la compra</strong> y lo divide por el stock que cargaste arriba.
+              20 cajas de 12 hojas a $38.400 el total son $160 la hoja.
+            </small>
+          </div>
+
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
-            Para calcular el margen en Estadísticas. Protegido con el mismo PIN que Costos, si lo configuraste.
+            Para calcular el margen en Estadísticas y la valoración de tu stock. Protegido con el mismo PIN que Costos, si lo configuraste.
           </small>
         </div>
         <div class="field hidden" id="campoDuracionServicio">
@@ -4117,7 +4139,71 @@ function renderCampoCosto() {
   byId('pCostoVerBtn').classList.toggle('hidden', !bloqueado);
   byId('pCosto').classList.toggle('hidden', bloqueado);
   if (!bloqueado) byId('pCosto').value = costoEnEdicion || '';
+
+  aplicarVisibilidadCosto();
+  calcularCostoUnitario();
 }
+
+// Separada de renderCampoCosto a proposito: esta NO toca el valor del
+// campo, solo decide que se ve. Asi la puede llamar seleccionarTipoTab sin
+// riesgo de pisar el costo cargado, que en un camino (el alta escaneando un
+// EAN) se asigna DESPUES de elegir el tipo.
+function aplicarVisibilidadCosto() {
+  const esServicio = !!byId('pTipoServicio')?.checked;
+
+  // La calculadora vive adentro del mismo candado que el costo, y en un
+  // servicio no aplica: no se compra por caja.
+  const desdeTotal = byId('pCostoDesdeTotal');
+  if (desdeTotal) desdeTotal.classList.toggle('hidden', requiereDesbloqueoCostos() || esServicio);
+
+  actualizarEtiquetaCosto();
+}
+
+// "Costo por hoja" en vez de "Costo por unidad" cuando el producto dice
+// como se cuenta: es el mismo dato, pero deja de haber dudas de si el
+// numero es por hoja o por caja.
+function actualizarEtiquetaCosto() {
+  const label = byId('pCostoLabel');
+  if (!label) return;
+
+  const u = unidadDe({ unidad_medida: unidadMedidaEnEdicion });
+  const propia = nombreUnidadDe({ unidad_nombre: byId('pUnidadNombre')?.value });
+  const porQue = u ? ('por ' + u.singular) : (propia ? ('por ' + propia.singular) : 'por unidad');
+
+  label.innerHTML = '\uD83D\uDD12 Costo ' + escapeHtml(byId('pTipoServicio')?.checked ? '' : porQue) +
+    ' <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>';
+}
+
+// Del total de la compra al costo unitario, dividiendo por el stock que se
+// acaba de cargar arriba. Es el numero que el negocio TIENE (la factura),
+// contra el que el sistema NECESITA (el unitario).
+function calcularCostoUnitario() {
+  const preview = byId('pCostoUnitarioPreview');
+  if (!preview) return;
+
+  const total = Number(byId('pCostoTotal')?.value) || 0;
+  const stock = Number(byId('pStock')?.value) || 0;
+  const unitario = (total > 0 && stock > 0) ? total / stock : 0;
+
+  const propia = nombreUnidadDe({ unidad_nombre: byId('pUnidadNombre')?.value });
+  const u = unidadDe({ unidad_medida: unidadMedidaEnEdicion });
+  const sufijo = u ? (' / ' + u.corto) : (propia ? (' / ' + propia.singular) : '');
+  preview.textContent = money(Math.round(unitario * 100) / 100) + (unitario > 0 ? sufijo : '');
+
+  if (unitario > 0 && byId('pCosto') && !byId('pCosto').classList.contains('hidden')) {
+    byId('pCosto').value = Math.round(unitario * 100) / 100;
+    costoEnEdicion = Number(byId('pCosto').value);
+  }
+}
+
+['pCostoTotal', 'pStock', 'pUnidadNombre'].forEach(id => {
+  if (byId(id)) byId(id).addEventListener('input', () => {
+    // La etiqueta tambien: escribir "hoja" tiene que pasar el campo de
+    // "Costo por unidad" a "Costo por hoja" sin cerrar y abrir el form.
+    actualizarEtiquetaCosto();
+    calcularCostoUnitario();
+  });
+});
 
 // Mismo criterio que valoresProveedorParaGuardar: si el campo sigue tapado
 // (nunca se desbloqueó en esta carga), se manda lo que el producto ya
@@ -4673,6 +4759,7 @@ function seleccionarTipoTab(tab) {
   byId('pTipoProducto').dispatchEvent(new Event('change'));
   renderCampoProveedor();   // el proveedor depende de si es servicio o no
   if (typeof aplicarUsadoEnVisibilidad === 'function') aplicarUsadoEnVisibilidad();
+  if (typeof aplicarVisibilidadCosto === 'function') aplicarVisibilidadCosto();
 }
 
 // Un insumo de uso interno no se vende: el rollo de tiras o la hoja de
@@ -6788,6 +6875,13 @@ function aplicarVisibilidadPorRubro() {
   //
   // Si la tienda YA la tiene configurada se sigue viendo: seria la unica
   // forma de apagarla, y nadie configura una balanza por accidente.
+  // Valoracion de stock: las dos cifras son "disponible para vender" y
+  // "pendiente de restauracion", y restaurar un equipo es un concepto de
+  // electronica. Una peluqueria no restaura nada, y ver un panel con la
+  // mitad siempre en cero no informa: confunde.
+  const panelValoracion = byId('panelValoracionStock');
+  if (panelValoracion) panelValoracion.classList.toggle('hidden', !esElectronica);
+
   const campoBalanza = byId('campoConfigBalanza');
   if (campoBalanza) {
     const esDeServicios = categoriaDeRubro() === 'servicios' || !!currentStore?.turnos?.activo;
@@ -11827,6 +11921,7 @@ function abrirFormularioNuevo(tipo) {
     proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
     renderCampoProveedor();
     costoEnEdicion = 0;
+    if (byId('pCostoTotal')) byId('pCostoTotal').value = '';
     renderCampoCosto();
     if (byId('pImageFile')) byId('pImageFile').value = '';
     fotosEnEdicion = [];
@@ -12434,6 +12529,9 @@ async function editProduct(id) {
   byId('pServicioInterno').checked = servicio && !!p.solo_interno;
   seleccionarTipoTab(servicio ? 'servicio' : (p.solo_interno ? 'interno' : 'producto'));
   if (byId('pUnidadNombre')) byId('pUnidadNombre').value = p.unidad_nombre || '';
+  // Se carga DESPUES de seleccionarTipoTab, asi que la etiqueta del costo
+  // ("por hoja") se calculo sin este dato: hay que repintarla.
+  if (typeof aplicarVisibilidadCosto === 'function') aplicarVisibilidadCosto();
   byId('pDuracion').value = p.duracion_minutos || '';
   byId('pPendienteRestauracion').checked = !!p.pendiente_restauracion;
   cargarVariantesEnFormulario(p);   // decide por sí mismo si el stock queda oculto
