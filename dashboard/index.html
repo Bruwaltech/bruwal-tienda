@@ -2245,6 +2245,28 @@ tr:last-child td { border-bottom: none; }
 
           <input type="number" id="pStock" min="0" value="0">
           <small id="pStockAyuda" class="hidden" style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;"></small>
+
+          <!-- Como se cuenta. No cambia ningun calculo: es el nombre con el
+               que se lee el numero de arriba, y sobre todo el que aparece en
+               los insumos del servicio ("el corte lleva 1 hoja"). -->
+          <div id="campoUnidadNombre" style="margin-top:10px;">
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">
+              ¿Cómo se cuenta? <span style="font-weight:400;text-transform:none;letter-spacing:0;">(opcional)</span>
+            </label>
+            <input type="text" id="pUnidadNombre" maxlength="20" autocomplete="off" placeholder="Ej: hoja, tira, sobre"
+                   style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+            <div id="pUnidadNombreChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+              <button type="button" class="chip-sug" data-unidad-nombre="hoja">hoja</button>
+              <button type="button" class="chip-sug" data-unidad-nombre="tira">tira</button>
+              <button type="button" class="chip-sug" data-unidad-nombre="sobre">sobre</button>
+              <button type="button" class="chip-sug" data-unidad-nombre="par">par</button>
+              <button type="button" class="chip-sug" data-unidad-nombre="rollo">rollo</button>
+            </div>
+            <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+              En singular. Con esto el stock se lee <strong>"12 hojas"</strong> y el servicio que la gasta
+              dice <strong>"1 hoja"</strong> en vez de un número suelto. Vacío se sigue leyendo "unidades".
+            </small>
+          </div>
         </div>
 
         <div class="field hidden" id="campoVariantesToggle">
@@ -4429,11 +4451,28 @@ const redondearMedida = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
 
 // Cómo se escribe una cantidad en pantalla: "12,5 m" para lo fraccionado,
 // "3 unidades" para todo lo demás (que es el 99% del catálogo).
+// "hoja" -> "hojas", "papel" -> "papeles". Regla corta de castellano:
+// termina en vocal, se le suma s; si no, es.
+function pluralDe(palabra) {
+  const p = String(palabra || '').trim();
+  if (!p) return '';
+  if (/s$/i.test(p)) return p;                       // ya viene en plural
+  return /[aeiouáéíóú]$/i.test(p) ? p + 's' : p + 'es';
+}
+
+// Como se cuenta este producto, en singular y plural. null = "unidad".
+function nombreUnidadDe(producto) {
+  const n = String(producto?.unidad_nombre || '').trim();
+  return n ? { singular: n, plural: pluralDe(n) } : null;
+}
+
 function formatearCantidad(valor, producto) {
   const n = redondearMedida(valor);
   const u = unidadDe(producto);
   const texto = n.toLocaleString('es-AR', { maximumFractionDigits: 3 });
   if (u) return texto + ' ' + u.corto;
+  const propia = nombreUnidadDe(producto);
+  if (propia) return texto + ' ' + (n === 1 ? propia.singular : propia.plural);
   return texto + ' ' + (n === 1 ? 'unidad' : 'unidades');
 }
 
@@ -5740,7 +5779,11 @@ function renderInsumos() {
   lista.innerHTML = insumosEnEdicion.length ? insumosEnEdicion.map((ins, i) => {
     const p = (products || []).find(x => String(x.id) === String(ins.producto_id));
     const nombre = p ? p.name : 'Producto borrado';
-    const unidad = p && unidadDe(p) ? ' ' + unidadDe(p).corto : '';
+    const cant = Number(ins.cantidad);
+    const propia = nombreUnidadDe(p);
+    const unidad = p && unidadDe(p)
+      ? ' ' + unidadDe(p).corto
+      : (propia ? ' ' + (cant === 1 ? propia.singular : propia.plural) : '');
     return '<div style="display:flex;align-items:center;gap:8px;background:var(--bg);padding:8px 11px;border-radius:7px;">' +
       '<span style="flex:1;font-size:13px;">' + escapeHtml(nombre) + '</span>' +
       '<span style="font-weight:700;font-size:13px;color:var(--navy);">' +
@@ -5787,7 +5830,11 @@ function renderUsadoEn() {
         : '<option value="">Ya est\u00e1n todos cargados</option>')
     : '<option value="">Todav\u00eda no cargaste servicios</option>';
 
-  const unidad = unidadDe((products || []).find(p => String(p.id) === String(byId('productForm')?.dataset.id)));
+  // La unidad sale de lo que se esta tipeando ahora, no de lo guardado: si
+  // acaba de escribir "hoja", la lista de abajo tiene que decir "1 hoja".
+  const enEdicion = { unidad_medida: unidadMedidaEnEdicion, unidad_nombre: byId('pUnidadNombre')?.value };
+  const unidad = unidadDe(enEdicion);
+  const propiaUnidad = nombreUnidadDe(enEdicion);
 
   lista.innerHTML = usadoEnEnEdicion.length ? usadoEnEnEdicion.map((u, i) => {
     const sv = servicios.find(x => String(x.id) === String(u.servicio_id));
@@ -5795,7 +5842,9 @@ function renderUsadoEn() {
       '<span style="flex:1;font-size:13px;">' + escapeHtml(sv ? sv.name : 'Servicio borrado') + '</span>' +
       '<span style="font-weight:700;font-size:13px;color:var(--navy);">' +
         Number(u.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 3 }) +
-        (unidad ? ' ' + unidad.corto : '') + '</span>' +
+        (unidad ? ' ' + unidad.corto
+                : (propiaUnidad ? ' ' + (Number(u.cantidad) === 1 ? propiaUnidad.singular : propiaUnidad.plural) : '')) +
+        '</span>' +
       '<button type="button" data-quitar-usado="' + i + '" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;">\u2715</button>' +
     '</div>';
   }).join('') : '<div style="color:var(--text-mute);font-size:12.5px;">No se gasta en ning\u00fan servicio.</div>';
@@ -5818,6 +5867,16 @@ function aplicarUsadoEnVisibilidad() {
   const mostrar = !esServicio && (negocioDaServicios() || usadoEnEnEdicion.length > 0);
   campo.classList.toggle('hidden', !mostrar);
   if (mostrar) renderUsadoEn();
+}
+
+if (byId('pUnidadNombreChips')) {
+  byId('pUnidadNombreChips').querySelectorAll('[data-unidad-nombre]').forEach(b => {
+    b.addEventListener('click', () => {
+      byId('pUnidadNombre').value = b.dataset.unidadNombre;
+      byId('pUnidadNombre').focus();
+      if (typeof renderInsumos === 'function') renderInsumos();
+    });
+  });
 }
 
 if (byId('agregarUsadoEnBtn')) {
@@ -7612,10 +7671,13 @@ function renderProducts() {
                 .find(i => String(i.producto_id) === String(p.id));
               const cantidad = Number(ins?.cantidad) || 0;
               const u = unidadDe(p);
+              const propia = nombreUnidadDe(p);
+              const sufijo = u ? ' ' + u.corto
+                : (propia ? ' ' + (cantidad === 1 ? propia.singular : propia.plural) : '');
               const cuanto = cantidad
                 ? ' · <strong style="color:var(--navy);">' +
                   cantidad.toLocaleString('es-AR', { maximumFractionDigits: 3 }) +
-                  (u ? ' ' + u.corto : '') + '</strong>'
+                  sufijo + '</strong>'
                 : '';
               return '<div style="font-size:11.5px;">' + escapeHtml(s.name) + cuanto + '</div>';
             }).join('')
@@ -11611,6 +11673,7 @@ function abrirFormularioNuevo(tipo) {
     unidadMedidaEnEdicion = null;
     if (byId('pVentaPorMedida')) byId('pVentaPorMedida').checked = false;
     if (byId('pPluBalanza')) byId('pPluBalanza').value = '';
+    if (byId('pUnidadNombre')) byId('pUnidadNombre').value = '';
     if (byId('pMedidaBultos')) byId('pMedidaBultos').value = '1';
     if (byId('pMedidaPorBulto')) byId('pMedidaPorBulto').value = '';
     renderUnidadMedidaChips();
@@ -12057,6 +12120,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     costo: valorCostoParaGuardar(),
     stock: stockGeneral,
     unidad_medida: unidadAGuardar,
+    unidad_nombre: (byId('pUnidadNombre')?.value || '').trim() || null,
     // Solo tiene sentido en un producto por medida: si lo pasan a venderse por
     // unidad, el PLU queda colgado apuntando a una balanza que ya no se usa.
     plu_balanza: unidadAGuardar ? ((byId('pPluBalanza')?.value || '').trim() || null) : null,
@@ -12205,6 +12269,7 @@ async function editProduct(id) {
   const servicio = !esProductoFisico(p);
   byId('pServicioInterno').checked = servicio && !!p.solo_interno;
   seleccionarTipoTab(servicio ? 'servicio' : (p.solo_interno ? 'interno' : 'producto'));
+  if (byId('pUnidadNombre')) byId('pUnidadNombre').value = p.unidad_nombre || '';
   byId('pDuracion').value = p.duracion_minutos || '';
   byId('pPendienteRestauracion').checked = !!p.pendiente_restauracion;
   cargarVariantesEnFormulario(p);   // decide por sí mismo si el stock queda oculto
