@@ -2014,8 +2014,8 @@ tr:last-child td { border-bottom: none; }
              Modelo se arma solo combinándolos, para no tocar el resto del
              código que ya lee byId('pName').value en todos lados. -->
 
-        <div class="field">
-          <label>¿Para dónde estás cargando este stock?</label>
+        <div class="field" id="campoDestinoStock">
+          <label id="labelDestinoStock">¿Para dónde estás cargando este stock?</label>
           <div style="display:flex;gap:8px;margin-top:6px;" id="destinoTabs">
             <button type="button" class="destino-tab" data-destino-tab="tienda" style="flex:1;padding:11px 8px;border:1.5px solid var(--celeste);border-radius:8px;cursor:pointer;font-weight:700;font-size:13.5px;background:#EAF4FD;color:var(--text-dark);font-family:inherit;">
               🏪 Para tu tienda
@@ -2161,7 +2161,7 @@ tr:last-child td { border-bottom: none; }
           </div>
         </div>
 
-        <div class="field">
+        <div class="field" id="campoProveedor">
           <label>🔒 Proveedor <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <button type="button" id="pProveedorVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar proveedor</button>
           <div id="pProveedorCampos" class="hidden" style="margin-top:8px;">
@@ -4021,6 +4021,18 @@ async function verificarHuellaCostos() {
 let proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
 
 function renderCampoProveedor() {
+  // A un corte de pelo no se le compra nada a nadie: el proveedor es un dato
+  // de producto. Se sigue mostrando si el servicio YA tiene uno cargado (por
+  // ejemplo, algo que primero se cargo como producto y despues se paso a
+  // servicio), para no esconder un dato que despues se guardaria igual y sin
+  // que nadie pueda verlo ni borrarlo.
+  const campo = byId('campoProveedor');
+  if (campo) {
+    const esServicio = !!byId('pTipoServicio')?.checked;
+    const yaTiene = !!(proveedorEnEdicion.nombre || proveedorEnEdicion.telefono || proveedorEnEdicion.email);
+    campo.classList.toggle('hidden', esServicio && !yaTiene);
+  }
+
   const bloqueado = requiereDesbloqueoCostos();
   byId('pProveedorVerBtn').classList.toggle('hidden', !bloqueado);
   byId('pProveedorCampos').classList.toggle('hidden', bloqueado);
@@ -4495,6 +4507,22 @@ function seleccionarTipoTab(tab) {
   byId('subTipoTabs').classList.toggle('hidden', esInterno || !!tipoDeEntrada);
   byId('campoMostrarPrecio').classList.toggle('hidden', esInterno);
 
+  // Un servicio va a la tienda y punto: preguntarle "¿para tu tienda o
+  // stock interno?" a un corte de pelo no tiene sentido, y encima el botón
+  // de "interno" lo convertía en producto. Para el caso raro del servicio
+  // que ademas es de uso interno esta la casilla de campoServicioInterno,
+  // que se sigue mostrando si el servicio ya viene marcado.
+  const esServicioTab = tab === 'servicio';
+  byId('labelDestinoStock').classList.toggle('hidden', esServicioTab);
+  byId('destinoTabs').classList.toggle('hidden', esServicioTab);
+
+  // La ayuda y el bloque entero se esconden solo si adentro no queda nada:
+  // en una tienda de boton unico el selector Producto/Servicio sigue ahi, y
+  // esconder su contenedor la dejaria sin forma de volver a Producto.
+  const subOculto = byId('subTipoTabs').classList.contains('hidden');
+  byId('tipoTabAyuda').classList.toggle('hidden', esServicioTab && subOculto);
+  byId('campoDestinoStock').classList.toggle('hidden', esServicioTab && subOculto);
+
   if (tab === 'servicio') {
     byId('pTipoServicio').checked = true;
     // La casilla de "también es de uso interno" ya no se ofrece al cargar:
@@ -4525,6 +4553,7 @@ function seleccionarTipoTab(tab) {
   aplicarVisibilidadPrecio();
 
   byId('pTipoProducto').dispatchEvent(new Event('change'));
+  renderCampoProveedor();   // el proveedor depende de si es servicio o no
 }
 
 // Un insumo de uso interno no se vende: el rollo de tiras o la hoja de
