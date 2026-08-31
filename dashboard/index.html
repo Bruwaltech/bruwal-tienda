@@ -4459,6 +4459,13 @@ const TIPO_TAB_AYUDA = {
 // Producto o Servicio (los tipo-tab). El "interno" no tiene sub-elección:
 // siempre es tipo=producto — sigue siendo exactamente lo mismo de antes,
 // solo cambió cómo se agrupa visualmente.
+// Por cual de los dos botones de carga se entro: 'producto', 'servicio' o
+// null cuando no aplica (tienda con un solo boton, o edicion de algo que ya
+// existe). Cuando tiene valor, el tipo ya quedo decidido AFUERA del
+// formulario y el selector de adentro no se muestra: es la misma pregunta
+// dos veces seguidas.
+let tipoDeEntrada = null;
+
 function seleccionarTipoTab(tab) {
   document.querySelectorAll('.tipo-tab').forEach(b => {
     const activo = b.dataset.tipoTab === tab;
@@ -4473,7 +4480,7 @@ function seleccionarTipoTab(tab) {
     b.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
     b.style.background = activo ? '#EAF4FD' : '#fff';
   });
-  byId('subTipoTabs').classList.toggle('hidden', esInterno);
+  byId('subTipoTabs').classList.toggle('hidden', esInterno || !!tipoDeEntrada);
   byId('campoMostrarPrecio').classList.toggle('hidden', esInterno);
 
   if (tab === 'servicio') {
@@ -4534,7 +4541,13 @@ document.querySelectorAll('.destino-tab').forEach(b => {
     if (b.dataset.destinoTab === 'interno') { seleccionarTipoTab('interno'); return; }
     // Al volver a "tienda" desde "interno", si ya había un servicio elegido
     // antes se respeta; si no, arranca en Producto por default.
-    seleccionarTipoTab(byId('pTipoServicio').checked ? 'servicio' : 'producto');
+    //
+    // tipoDeEntrada también cuenta: cuando se entró por "+ Nuevo servicio",
+    // pasar por "Stock interno" pone pTipoServicio en false, y sin mirar por
+    // dónde entró la vuelta era siempre a Producto — con el selector
+    // escondido, sin manera de corregirlo.
+    const vuelveAServicio = byId('pTipoServicio').checked || tipoDeEntrada === 'servicio';
+    seleccionarTipoTab(vuelveAServicio ? 'servicio' : 'producto');
   });
 });
 
@@ -11344,6 +11357,7 @@ function abrirFormularioNuevo(tipo) {
     aplicarVentaPorMedidaVisibilidad();
     insumosEnEdicion = [];
     renderInsumos();
+    tipoDeEntrada = negocioDaServicios() ? (esServicio ? 'servicio' : 'producto') : null;
     seleccionarTipoTab(esServicio ? 'servicio' : 'producto');
     byId('pDuracion').value = '';
     byId('pPendienteRestauracion').checked = false;
@@ -11873,6 +11887,11 @@ async function editProduct(id) {
   if (!puedeOperar()) return;
   const p = products.find(x => x.id === id);
   if (!p) return;
+
+  // Editando algo que ya existe no se entró por ningún botón de carga: el
+  // selector vuelve a mostrarse, por si lo que hay que corregir es
+  // justamente el tipo.
+  tipoDeEntrada = null;
 
   if (byId('modalTitle')) byId('modalTitle').textContent = 'Editar producto';
   if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = p.mostrar_precio !== false;
@@ -12486,6 +12505,7 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   byId('pCategory').value = '';
   byId('pEan').value = ean;
   byId('productForm').dataset.id = '';
+  tipoDeEntrada = null;   // se entró escaneando, no por los botones de carga
   seleccionarTipoTab('producto');
   byId('pDuracion').value = '';
   byId('campoStock').classList.remove('hidden');
