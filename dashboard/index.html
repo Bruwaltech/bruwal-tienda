@@ -4745,22 +4745,20 @@ function seleccionarTipoTab(tab) {
   // de "interno" lo convertía en producto. Para el caso raro del servicio
   // que ademas es de uso interno esta la casilla de campoServicioInterno,
   // que se sigue mostrando si el servicio ya viene marcado.
-  // En gastronomia todo lo que se carga va al menu: no se pregunta si es
-  // producto o servicio (una pizzeria no vende servicios) ni si va a la
-  // tienda o al stock interno. Si el producto que se esta editando YA es
-  // interno se sigue mostrando, para poder sacarlo de ahi.
-  const gastronomiaSimple = esGastronomia() && !byId('pDestinoInterno')?.checked;
-  if (gastronomiaSimple) byId('subTipoTabs').classList.add('hidden');
+  // Una pizzeria no vende servicios: ese selector no se le pregunta. El
+  // destino SI se sigue preguntando -- las cajas, la harina y la bebida que
+  // no esta en el menu son stock interno como en cualquier otro rubro.
+  if (esGastronomia()) byId('subTipoTabs').classList.add('hidden');
 
   const esServicioTab = tab === 'servicio';
-  byId('labelDestinoStock').classList.toggle('hidden', esServicioTab || gastronomiaSimple);
-  byId('destinoTabs').classList.toggle('hidden', esServicioTab || gastronomiaSimple);
+  byId('labelDestinoStock').classList.toggle('hidden', esServicioTab);
+  byId('destinoTabs').classList.toggle('hidden', esServicioTab);
 
   // La ayuda y el bloque entero se esconden solo si adentro no queda nada:
   // en una tienda de boton unico el selector Producto/Servicio sigue ahi, y
   // esconder su contenedor la dejaria sin forma de volver a Producto.
   const subOculto = byId('subTipoTabs').classList.contains('hidden');
-  const vacio = subOculto && (esServicioTab || gastronomiaSimple);
+  const vacio = subOculto && esServicioTab;
   byId('tipoTabAyuda').classList.toggle('hidden', vacio);
   byId('campoDestinoStock').classList.toggle('hidden', vacio);
 
@@ -12125,31 +12123,11 @@ function aplicarSolapasDeProductos() {
   byId('tabTiendaTexto').textContent = daServicios ? '🏪 Productos' : '🏪 Tienda';
   byId('tabInternoTexto').textContent = daServicios ? '🔒 Insumos' : '🔒 Stock interno';
 
-  // Una pizzeria carga productos y los ordena por categoria (Pizzas,
-  // Bebidas, Empanadas): el stock interno no es parte de como piensa el
-  // negocio, y desde que el formulario ya no lo ofrece, esa solapa lleva a
-  // una lista que nunca se va a llenar. Se sigue mostrando si TIENE algo
-  // adentro, para no dejar productos escondidos sin forma de llegar.
-  const solapaInterno = document.querySelector('[data-productos-destino="interno"]');
-  const hayInternos = (products || []).some(p => p.solo_interno);
-  const escondeInterno = esGastronomia() && !daServicios && !hayInternos;
-  if (solapaInterno) solapaInterno.classList.toggle('hidden', escondeInterno);
-
   // Con una sola solapa visible no hay nada que elegir: la fila entera
   // sobra y es ruido arriba de la lista.
   const visibles = [...document.querySelectorAll('.productos-destino-tab')]
     .filter(t => !t.classList.contains('hidden')).length;
   if (byId('productosDestinoTabs')) byId('productosDestinoTabs').classList.toggle('hidden', visibles <= 1);
-
-  // Si quedo parado en Insumos y la solapa desaparecio, vuelve a la lista.
-  if (escondeInterno && filtroProductosDestino === 'interno') {
-    filtroProductosDestino = 'tienda';
-    document.querySelectorAll('.productos-destino-tab').forEach(o => {
-      const activo = o.dataset.productosDestino === 'tienda';
-      o.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
-      o.style.background = activo ? '#EAF4FD' : '#fff';
-    });
-  }
 
   // Si estaba parado en Servicios y el negocio dejó de tenerlos, no lo
   // dejamos varado en una solapa que ya no se ve.
