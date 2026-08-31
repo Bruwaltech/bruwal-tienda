@@ -7462,8 +7462,23 @@ function renderProducts() {
         '<td>' + imgHtml + '</td>' + celdaNombre +
         '<td>' + formatearCantidad(p.stock, p) +
           ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span></td>' +
+        // Con el nombre del servicio no alcanzaba: parado en la caja de hojas
+        // se veia QUIEN se la come pero no CUANTO, que es el dato con el que
+        // se calcula cuanto dura la caja. La cantidad sale del mismo insumo
+        // cargado en el servicio, no es un dato nuevo ni se edita acá.
         '<td>' + (usadoEn.length
-          ? usadoEn.map(s => '<div style="font-size:11.5px;">' + escapeHtml(s.name) + '</div>').join('')
+          ? usadoEn.map(s => {
+              const ins = (Array.isArray(s.insumos) ? s.insumos : [])
+                .find(i => String(i.producto_id) === String(p.id));
+              const cantidad = Number(ins?.cantidad) || 0;
+              const u = unidadDe(p);
+              const cuanto = cantidad
+                ? ' · <strong style="color:var(--navy);">' +
+                  cantidad.toLocaleString('es-AR', { maximumFractionDigits: 3 }) +
+                  (u ? ' ' + u.corto : '') + '</strong>'
+                : '';
+              return '<div style="font-size:11.5px;">' + escapeHtml(s.name) + cuanto + '</div>';
+            }).join('')
           : '<span style="color:var(--text-mute);font-size:12px;">Ningún servicio</span>') + '</td>' +
         celdaAcciones +
       '</tr>';
