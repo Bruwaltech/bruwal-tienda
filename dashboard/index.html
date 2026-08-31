@@ -2089,17 +2089,27 @@ tr:last-child td { border-bottom: none; }
         </div>
         <div class="field hidden" id="campoDuracionServicio">
           <label>Duración de este servicio</label>
-          <select id="pDuracion" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
-            <option value="">Usar la duración general de turnos de la tienda</option>
-            <option value="15">15 minutos</option>
-            <option value="30">30 minutos</option>
-            <option value="45">45 minutos</option>
-            <option value="60">1 hora</option>
-            <option value="90">1 hora y media</option>
-            <option value="120">2 horas</option>
-          </select>
-          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
-            Es lo que tapa la agenda: si el corte dura una hora y alguien saca turno a las 8:45, nadie más puede reservar hasta las 9:45.
+          <!-- Se escribe a mano en vez de elegirse de una lista: un corte
+               dura 18 minutos, no "15 o 30". La lista fija obligaba a
+               redondear, y ese redondeo después se paga en la agenda. -->
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="number" id="pDuracion" min="1" max="600" step="1" inputmode="numeric"
+                   placeholder="Ej: 18" style="flex:1;">
+            <span style="font-size:13.5px;color:var(--text-mute);flex-shrink:0;">minutos</span>
+          </div>
+          <div id="pDuracionChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+            <button type="button" class="chip-sug" data-duracion="15">15</button>
+            <button type="button" class="chip-sug" data-duracion="20">20</button>
+            <button type="button" class="chip-sug" data-duracion="30">30</button>
+            <button type="button" class="chip-sug" data-duracion="45">45</button>
+            <button type="button" class="chip-sug" data-duracion="60">1 hora</button>
+            <button type="button" class="chip-sug" data-duracion="90">1 h 30</button>
+          </div>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Es lo que tapa la agenda: si cargás <strong>18</strong> y alguien saca turno a las 9:00,
+            queda bloqueado hasta las 9:18 y el siguiente arranca ahí.
+            Los horarios que ve tu cliente se arman solos con esto — no hay que configurarlo en ningún otro lado.
+            Si lo dejás vacío, ese servicio ocupa un turno como los demás.
           </small>
         </div>
 
@@ -4603,6 +4613,17 @@ byId('wizardSiguienteBtn').addEventListener('click', () => {
 byId('wizardAtrasBtn').addEventListener('click', () => {
   if (wizardModoGuiado && wizardPasoActual > 1) mostrarPasoWizard(wizardPasoActual - 1);
 });
+
+// Atajos de la duración: llenan el campo, no lo reemplazan. El que dura 18
+// lo escribe; el que dura media hora lo toca y sigue.
+if (byId('pDuracionChips')) {
+  byId('pDuracionChips').querySelectorAll('[data-duracion]').forEach(b => {
+    b.addEventListener('click', () => {
+      byId('pDuracion').value = b.dataset.duracion;
+      byId('pDuracion').focus();
+    });
+  });
+}
 
 byId('pServicioInterno').addEventListener('change', (e) => {
   byId('pDestinoInterno').checked = e.target.checked;
