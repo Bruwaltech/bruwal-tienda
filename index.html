@@ -15,6 +15,9 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Los mismos planes que muestra el panel. Un solo archivo: si el precio
+     cambia, cambia en un lado. -->
+<script src="planes.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -1202,6 +1205,75 @@
   .celu-inner { grid-template-columns: 1fr; gap: 32px; }
   .celu-seccion h2 { font-size: 27px; }
 }
+
+/* ============ Planes en la home ============ */
+.planes-seccion { background: #F4F7FB; padding: 66px 24px; }
+
+.planes-seccion .cabecera { max-width: 720px; margin: 0 auto 36px; text-align: center; }
+.planes-seccion .cabecera h2 { font-size: 34px; font-weight: 800; color: #15294D; line-height: 1.15; margin-bottom: 12px; }
+.planes-seccion .cabecera p { font-size: 16px; line-height: 1.65; color: #5C6B82; }
+
+.planes-home {
+  max-width: 1100px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px; align-items: stretch;
+}
+
+.plan-home {
+  position: relative;
+  background: #fff;
+  border: 2px solid #E3EBF3;
+  border-radius: 14px;
+  padding: 24px 22px;
+  display: flex; flex-direction: column;
+}
+.plan-home.destacada { border-color: #2F8FE0; box-shadow: 0 12px 32px -10px rgba(47,143,224,.28); }
+
+.plan-home .insignia {
+  position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+  background: #2F8FE0; color: #fff; font-size: 10px; font-weight: 800;
+  letter-spacing: .7px; padding: 4px 12px; border-radius: 999px; white-space: nowrap;
+}
+
+.plan-home .nombre { font-size: 18px; font-weight: 700; color: #15294D; }
+.plan-home .para-quien { font-size: 12.5px; color: #5C6B82; line-height: 1.45; margin-top: 4px; }
+.plan-home .precio { font-size: 28px; font-weight: 800; color: #15294D; margin: 12px 0 2px; }
+.plan-home .precio .antes { text-decoration: line-through; color: #8A97A8; font-weight: 500; font-size: 16px; margin-right: 7px; }
+.plan-home .periodo { font-size: 12px; color: #5C6B82; margin-bottom: 14px; }
+
+.plan-home .limites { display: grid; gap: 5px; margin-bottom: 14px; }
+.plan-home .limites div {
+  font-size: 11.5px; font-weight: 700; color: #15294D;
+  background: #F4F7FB; border: 1px solid #E3EBF3; border-radius: 7px; padding: 6px 9px;
+}
+
+.plan-home .resumen {
+  font-size: 12.5px; color: #15294D; background: #F4F7FB;
+  border-radius: 8px; padding: 9px 11px; line-height: 1.5; margin-bottom: 6px;
+}
+
+.plan-home .grupo {
+  font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase;
+  color: #15294D; margin: 14px 0 7px;
+}
+.plan-home ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12.5px; color: #5C6B82; line-height: 1.5; }
+.plan-home ul li { padding-left: 16px; text-indent: -16px; }
+.plan-home ul li::before { content: '\2713 '; color: #1FA088; font-weight: 700; }
+.plan-home ul:last-of-type { margin-bottom: 20px; }
+
+.plan-home .accion {
+  margin-top: auto; display: block; text-align: center; text-decoration: none;
+  background: #15294D; color: #fff; font-weight: 700; font-size: 14.5px;
+  padding: 13px; border-radius: 9px; transition: transform .2s;
+}
+.plan-home.destacada .accion { background: #2F8FE0; }
+.plan-home .accion:hover { transform: translateY(-2px); }
+.plan-home .nota { font-size: 11.5px; color: #5C6B82; text-align: center; margin-top: 10px; line-height: 1.5; }
+
+@media (max-width: 700px) {
+  .planes-seccion { padding: 48px 18px; }
+  .planes-seccion .cabecera h2 { font-size: 27px; }
+}
 </style>
 </head>
 <body>
@@ -1210,6 +1282,7 @@
   <div class="logo">🛍️ BRUWAL</div>
   <div class="auth-buttons">
     <button class="btn-auth btn-instalar hidden" id="instalarTiendasBtn">📲 Descargar app</button>
+    <a class="btn-auth btn-login" href="#planes" style="text-decoration:none;">💲 Planes</a>
     <button class="btn-auth btn-login" onclick="goToDashboard()">👤 Panel Admin</button>
     <button class="btn-auth btn-register" onclick="goToRegister()">Registrarse</button>
   </div>
@@ -1523,6 +1596,19 @@
     </div>
 
   </div>
+</section>
+
+<section class="planes-seccion" id="planes">
+  <div class="cabecera">
+    <h2>Precios claros, sin letra chica</h2>
+    <p>
+      Empezás con 15 días gratis, sin tarjeta. Después elegís el plan que te sirve
+      y lo cancelás cuando quieras desde tu panel.
+    </p>
+  </div>
+  <!-- Las tarjetas las dibuja pintarPlanes() leyendo planes.js, el mismo
+       archivo que usa el panel: los precios no pueden quedar distintos. -->
+  <div class="planes-home" id="planesHome"></div>
 </section>
 
 <footer class="site-footer">
@@ -1982,6 +2068,45 @@ const WHATSAPP_BRUWAL = '5493413005232';
 
 // Parte el titulo en palabras para que entren escalonadas.
 // Si esto no corre, el titulo queda tal cual esta en el HTML: visible.
+
+// Los planes de la home salen del MISMO planes.js que usa el panel. Si
+// algun dia no se puede cargar, la seccion queda vacia en vez de mostrar
+// precios inventados a mano.
+function pintarPlanes() {
+  const cont = document.getElementById('planesHome');
+  if (!cont || typeof PLANES === 'undefined') return;
+
+  const detalle = (p) =>
+    (p.resumen ? '<div class="resumen">' + escapeHtml(p.resumen) + '</div>' : '') +
+    (p.limites ? '<div class="limites">' + p.limites.map(l => '<div>' + escapeHtml(l) + '</div>').join('') + '</div>' : '') +
+    (p.grupos || []).map(g =>
+      '<div class="grupo">' + escapeHtml(g.t) + '</div><ul>' +
+      g.items.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>').join('');
+
+  const tarjeta = (p, accion) =>
+    '<div class="plan-home' + (p.destacado ? ' destacada' : '') + '">' +
+      (p.destacado ? '<div class="insignia">MÁS ELEGIDO</div>' : '') +
+      '<div class="nombre">' + escapeHtml(p.nombre) + '</div>' +
+      (p.paraQuien ? '<div class="para-quien">' + escapeHtml(p.paraQuien) + '</div>' : '') +
+      '<div class="precio">' +
+        (p.precioAnterior ? '<span class="antes">' + escapeHtml(p.precioAnterior) + '</span>' : '') +
+        escapeHtml(p.precio) + '</div>' +
+      '<div class="periodo">' + escapeHtml(p.periodo) + '</div>' +
+      detalle(p) + accion +
+      (p.nota ? '<div class="nota">' + escapeHtml(p.nota) + '</div>' : '') +
+    '</div>';
+
+  const irAlPanel = '<a class="accion" href="/dashboard">Crear mi tienda gratis</a>';
+
+  const msgBot = 'Hola! Me interesa el Bot de pedidos con IA para mi negocio.';
+  const accionBot = '<a class="accion" target="_blank" rel="noopener" ' +
+    'href="https://wa.me/' + WHATSAPP_BRUWAL + '?text=' + encodeURIComponent(msgBot) + '">Hablar con un asesor</a>';
+
+  cont.innerHTML =
+    Object.values(PLANES).map(p => tarjeta(p, irAlPanel)).join('') +
+    (typeof BOT_PEDIDOS !== 'undefined' ? tarjeta(BOT_PEDIDOS, accionBot) : '');
+}
+
 function animarTitulo() {
   const h1 = document.querySelector('.hero h1');
   if (!h1) return;
@@ -2053,6 +2178,7 @@ function configurarAvisoIA() {
 }
 
 animarTitulo();
+pintarPlanes();
 configurarAvisoIA();
 configurarInstalacion();
 configurarAtajos();
