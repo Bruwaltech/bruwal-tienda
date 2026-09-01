@@ -3686,11 +3686,28 @@ const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
 // guardaba con fecha de mañana. Las fechas de turnos, caja y gastos son
 // días del calendario del negocio, no instantes: se arman con la hora local.
 function fechaLocalISO(fecha) {
-  const f = fecha || new Date();
+  // Sin fecha, "hoy" es hoy EN EL NEGOCIO. Antes era el dia del aparato:
+  // un dueño mirando desde Europa a las 20:00 de Buenos Aires ya estaba en
+  // el dia siguiente, y la Caja le abria en el dia equivocado.
+  const f = fecha || ahoraEnArgentina();
   return f.getFullYear() + '-' +
          String(f.getMonth() + 1).padStart(2, '0') + '-' +
          String(f.getDate()).padStart(2, '0');
 }
+
+// La hora de una venta es la hora a la que se vendio EN EL LOCAL. created_at
+// se guarda en UTC y el navegador lo pasa a la zona del aparato: mirando
+// desde otro huso, una venta de las 13:33 aparecia a las 18:33.
+const TZ_AR = 'America/Argentina/Buenos_Aires';
+
+const fechaHoraAR = (v, opts) =>
+  new Date(v).toLocaleString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
+
+const fechaAR = (v, opts) =>
+  new Date(v).toLocaleDateString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
+
+const horaAR = (v, opts) =>
+  new Date(v).toLocaleTimeString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
 const escapeHtml = (str) => {
   const d = document.createElement('div');
   d.textContent = str == null ? '' : String(str);
@@ -7422,7 +7439,7 @@ function renderPulsoSemanal() {
       orders
         .filter(o => new Date(o.created_at).getTime() >= ahora - 14 * DIA)
         .forEach(o => {
-          const d = new Date(o.created_at).toLocaleDateString('es-AR', { weekday: 'long' });
+          const d = fechaAR(o.created_at, { weekday: 'long' });
           porDia[d] = (porDia[d] || 0) + Number(o.total || 0);
         });
       const mejor = Object.entries(porDia).sort((a, b) => b[1] - a[1])[0];
@@ -7631,7 +7648,7 @@ function renderTopProducts() {
 function renderRecentOrders() {
   byId('recentOrdersBody').innerHTML = orders.slice(0, 5).map(o => {
     const items = (Array.isArray(o.items) ? o.items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it)).join(', ') : '');
-    return '<tr><td>' + escapeHtml(o.customer_name) + '</td><td>' + money(o.total) + '</td><td>' + new Date(o.created_at).toLocaleDateString('es-AR') + '</td></tr>';
+    return '<tr><td>' + escapeHtml(o.customer_name) + '</td><td>' + money(o.total) + '</td><td>' + fechaAR(o.created_at) + '</td></tr>';
   }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos</td></tr>';
 }
 
@@ -8109,7 +8126,7 @@ function renderOrders() {
           : '') +
       '</td>' +
       '<td style="font-weight:600;">' + money(o.total) + '</td>' +
-      '<td style="font-size:12.5px;">' + new Date(o.created_at).toLocaleString('es-AR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
+      '<td style="font-size:12.5px;">' + fechaHoraAR(o.created_at, {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
       '<td>' + acciones + '</td>' +
       '</tr>';
@@ -8510,7 +8527,7 @@ function renderFiado() {
     return '<tr>' +
       '<td><strong>' + escapeHtml(o.customer_name || '—') + '</strong>' + lineaTel + '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(detalle) + '</td>' +
-      '<td style="font-size:12.5px;">' + new Date(o.created_at).toLocaleDateString('es-AR') + '</td>' +
+      '<td style="font-size:12.5px;">' + fechaAR(o.created_at) + '</td>' +
       '<td style="font-weight:700;color:var(--danger);text-align:right;">' + money(o.saldo_pendiente) + '</td>' +
       '<td><div class="row-actions">' +
         '<button class="icon-btn" data-ver-pagos="' + o.id + '" title="Ver pagos anteriores">Historial</button>' +
@@ -9616,7 +9633,7 @@ function renderReparaciones() {
         (r.problema ? '<div' + (r.tipo_servicio?.length ? ' style="color:var(--text-mute);margin-top:2px;"' : '') + '>' + escapeHtml(r.problema) + '</div>' : (r.tipo_servicio?.length ? '' : '—')) +
       '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
-      '<td style="font-size:12.5px;white-space:nowrap;">' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit'}) + '</td>' +
+      '<td style="font-size:12.5px;white-space:nowrap;">' + fechaAR(r.fecha_recibido || r.created_at, {day:'2-digit',month:'2-digit',year:'2-digit'}) + '</td>' +
       '<td style="text-align:right;">' + (verCostos ? money(r.costo) + etiquetaMonedaOriginal(r.costo_original, r.costo_moneda) : '🔒') + '</td>' +
       '<td style="text-align:right;">' + money(r.precio) + etiquetaMonedaOriginal(r.precio_original, r.precio_moneda) + '</td>' +
       '<td style="text-align:right;font-weight:700;color:' + (margen >= 0 ? 'var(--stock)' : 'var(--danger)') + ';">' + (verCostos ? money(margen) : '🔒') + '</td>' +
@@ -9754,7 +9771,7 @@ function imprimirEtiquetaReparacion(id) {
     (r.problema ? '<div class="fila"><b>Falla:</b>' + escapeHtml(r.problema) + '</div>' : '') +
     (r.notas ? '<div class="fila"><b>Obs:</b>' + escapeHtml(r.notas) + '</div>' : '') +
     '<div class="fila"><b>Estado:</b> <span class="estado" style="background:' + et.fondo + ';color:' + et.color + ';">' + et.texto + '</span></div>' +
-    '<div class="fila"><b>Recibido:</b>' + new Date(r.fecha_recibido || r.created_at).toLocaleDateString('es-AR') + '</div>' +
+    '<div class="fila"><b>Recibido:</b>' + fechaAR(r.fecha_recibido || r.created_at) + '</div>' +
     '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>';
 
   const contenido = '<div class="etiqueta"><div class="col-codigo">' + columnaCodigo + '</div><div class="col-info">' + columnaInfo + '</div></div>';
@@ -10418,7 +10435,7 @@ function renderCaja() {
 
   cuerpo.innerHTML = movimientos.length ? movimientos.map(m => {
     const hora = m.hora && m.hora.length > 10
-      ? new Date(m.hora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+      ? horaAR(m.hora, { hour: '2-digit', minute: '2-digit' })
       : '—';
     return '<tr>' +
       '<td style="font-size:12.5px;white-space:nowrap;">' + hora + '</td>' +
@@ -10916,7 +10933,7 @@ async function verHistorialPagos(orderId) {
   }
 
   const texto = data.map(p =>
-    '• ' + new Date(p.created_at).toLocaleDateString('es-AR') + ': ' + money(p.monto) +
+    '• ' + fechaAR(p.created_at) + ': ' + money(p.monto) +
     (p.nota ? ' (' + p.nota + ')' : '')
   ).join('\n');
 
@@ -13176,7 +13193,7 @@ function imprimirEtiquetaProducto(id, variante, unidad, precioVariante) {
       (p.moneda && precioVariante == null ? ' <span style="font-size:6.5px;font-weight:400;color:#5C6B82;">(' +
         (p.moneda === 'USD' ? 'US$' : '€') + Number(p.precio_original).toLocaleString('es-AR') + ')</span>' : '') +
     '</div>' +
-    '<div class="fila"><b>Ingreso:</b>' + new Date(p.created_at).toLocaleDateString('es-AR') + '</div>' +
+    '<div class="fila"><b>Ingreso:</b>' + fechaAR(p.created_at) + '</div>' +
     '<div class="pie">' + escapeHtml(currentStore?.business_name || 'BRUWAL') + '</div>';
 
   const contenido = '<div class="etiqueta"><div class="col-codigo">' + columnaCodigo + '</div><div class="col-info">' + columnaInfo + '</div></div>';
