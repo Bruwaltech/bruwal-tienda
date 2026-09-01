@@ -2270,11 +2270,13 @@ tr:last-child td { border-bottom: none; }
         <div class="field" id="campoStock">
           <label id="pStockLabel">Stock</label>
 
+          <input type="number" id="pStock" min="0" value="0">
+
           <!-- Calculadora de entrada: el negocio no compra "50 metros", compra
                "un rollo de 50 metros". Con dos rollos son 100, y esa cuenta la
                hace acá en vez de a mano. Es solo un atajo para llenar el campo
-               de abajo: lo que se guarda siempre es el total. -->
-          <div id="calculadoraMedida" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-bottom:9px;">
+               de arriba: lo que se guarda siempre es el total. -->
+          <div id="calculadoraMedida" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-top:9px;">
             <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;">
               <div style="width:78px;">
                 <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;" id="pMedidaBultosLabel">Bultos</label>
@@ -2290,8 +2292,6 @@ tr:last-child td { border-bottom: none; }
               </div>
             </div>
           </div>
-
-          <input type="number" id="pStock" min="0" value="0">
           <small id="pStockAyuda" class="hidden" style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;"></small>
 
           <!-- Como se cuenta. No cambia ningun calculo: es el nombre con el
@@ -4982,10 +4982,21 @@ function rubroUsaVariantes() {
 //     porque no se muestra en el menu.
 //
 // Antes el formulario preguntaba las dos cosas a la vez, siempre.
+// Una bebida se compra hecha y se termina: entran 24 aguas y se venden
+// una por una. Eso es stock del de toda la vida, asi que NO entra en la
+// regla del plato (la pizza, que no se cuenta porque se hace al momento).
+function esBebida() {
+  const texto = normalizarTexto(
+    (byId('pCategory')?.value || '') + ' ' + (byId('pName')?.value || ''));
+  return ['bebida', 'agua', 'gaseosa', 'cerveza', 'vino', 'jugo', 'refresco', 'coca', 'soda']
+    .some(k => texto.includes(k));
+}
+
 function esPlatoDelMenu() {
   return esGastronomia() &&
     !byId('pDestinoInterno')?.checked &&
-    !byId('pTipoServicio')?.checked;
+    !byId('pTipoServicio')?.checked &&
+    !esBebida();
 }
 
 function esInsumoDeCocina() {
@@ -5165,6 +5176,13 @@ const ATRIBUTOS_SUGERIDOS_COMIDA = [
 
 // Una pizzeria no vende "chica, mediana y grande": vende porcion, media y
 // grande. Es el mismo mecanismo de variantes, con las palabras del rubro.
+// Una bebida no viene en "chica y grande": viene en 500 ml, litro y medio
+// o dos y cuarto, y se compra suelta o por pack.
+const ATRIBUTOS_SUGERIDOS_BEBIDA = [
+  { nombre: 'Tamaño', valores: ['473 ml', '500 ml', '1 L', '1,5 L', '2,25 L'] },
+  { nombre: 'Formato', valores: ['Botella', 'Lata', 'Pack x6'] }
+];
+
 const ATRIBUTOS_SUGERIDOS_PIZZERIA = [
   { nombre: 'Tamaño',   valores: ['Porción', 'Media', 'Grande'] },
   { nombre: 'Masa',     valores: ['A la piedra', 'Al molde'] },
@@ -5273,6 +5291,10 @@ byId('pModelo').addEventListener('input', actualizarNombreDesdeMarcaModelo);
 function grupoAtributosSugeridos() {
   if (rubroEsElectronica()) return ATRIBUTOS_SUGERIDOS_ELECTRONICA;
   if (categoriaDeRubro() === 'indumentaria') return ATRIBUTOS_SUGERIDOS_INDUMENTARIA;
+  // La bebida manda sobre el rubro: una gaseosa se carga igual en una
+  // pizzeria que en un kiosco.
+  if (esBebida()) return ATRIBUTOS_SUGERIDOS_BEBIDA;
+
   if (rubroEsComida()) {
     const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
     return texto.includes('pizz') ? ATRIBUTOS_SUGERIDOS_PIZZERIA : ATRIBUTOS_SUGERIDOS_COMIDA;
@@ -6165,6 +6187,17 @@ function aplicarUsadoEnVisibilidad() {
   if (mostrar) renderUsadoEn();
 }
 
+// La categoria decide si esto es una bebida, y se escribe en el paso 1
+// mientras el resto del formulario ya esta armado: sin esto, escribir
+// "Bebidas" no cambiaba nada hasta cerrar y volver a abrir.
+['pCategory', 'pName'].forEach(id => {
+  if (byId(id)) byId(id).addEventListener('input', () => {
+    if (typeof alCambiarTipoProducto === 'function') alCambiarTipoProducto();
+    if (typeof aplicarVentaPorMedida === 'function') aplicarVentaPorMedida();
+    if (typeof renderSugeridosVariante === 'function') renderSugeridosVariante();
+  });
+});
+
 if (byId('pUnidadNombreChips')) {
   byId('pUnidadNombreChips').querySelectorAll('[data-unidad-nombre]').forEach(b => {
     b.addEventListener('click', () => {
@@ -6857,14 +6890,15 @@ function aplicarVentaPorMedida() {
   // haya un stock que cargar, y cambian las palabras segun el caso.
   if (byId('calculadoraMedida')) byId('calculadoraMedida').classList.remove('hidden');
 
+  const bebida = esBebida();
   const etiquetaBultos = byId('pMedidaBultosLabel');
-  if (etiquetaBultos) etiquetaBultos.textContent = u ? 'Bultos' : 'Cajas';
+  if (etiquetaBultos) etiquetaBultos.textContent = u ? 'Bultos' : (bebida ? 'Packs' : 'Cajas');
 
   const inputPorBulto = byId('pMedidaPorBulto');
   if (inputPorBulto) {
     // step entero por unidad: media hoja de afeitar no entra en una caja.
     inputPorBulto.step = u ? '0.001' : '1';
-    inputPorBulto.placeholder = u ? 'Ej: 50' : 'Ej: 12';
+    inputPorBulto.placeholder = u ? 'Ej: 50' : (esBebida() ? 'Ej: 6' : 'Ej: 12');
   }
 
   const stockInput = byId('pStock');
@@ -6879,7 +6913,8 @@ function aplicarVentaPorMedida() {
   if (label) label.textContent = u ? 'Stock en ' + u.plural : 'Stock';
 
   const porBulto = byId('pMedidaPorBultoLabel');
-  if (porBulto) porBulto.textContent = u ? (u.plural + ' por bulto') : 'Unidades por caja';
+  if (porBulto) porBulto.textContent = u ? (u.plural + ' por bulto')
+    : (bebida ? 'Unidades por pack' : 'Unidades por caja');
 
   // El precio pasa a leerse "por metro" — es el cambio que más confunde si
   // no se dice en pantalla, porque el campo Precio no se mueve de lugar.
