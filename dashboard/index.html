@@ -6727,6 +6727,44 @@ async function refreshData() {
   await renderAgendaDia();
 }
 
+// ---- Refresco automatico ----------------------------------------------
+// Un pedido que entra por la tienda no avisa: hasta ahora habia que
+// recargar a mano para verlo. Y con el panel abierto todo el dia, los
+// numeros de la Caja y los pedidos quedaban viejos sin que nada lo diga.
+//
+// No es tiempo real (eso seria Supabase Realtime, que este proyecto no usa
+// en ningun lado todavia): es una consulta cada minuto, que para un
+// mostrador alcanza y no gasta de mas.
+const REFRESCO_MS = 60000;
+let refrescando = false;
+
+// Mientras haya un modal abierto no se toca nada: seria moverle la mesa al
+// que esta cargando un producto o cobrando una venta.
+function hayModalAbierto() {
+  return [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
+}
+
+async function refrescoAutomatico() {
+  if (!currentStore || refrescando) return;
+  if (document.hidden) return;      // pestaña en segundo plano: no gastamos consultas
+  if (hayModalAbierto()) return;
+
+  refrescando = true;
+  try { await refreshData(); }
+  catch (e) { /* si falla, se reintenta en el proximo ciclo */ }
+  refrescando = false;
+}
+
+setInterval(refrescoAutomatico, REFRESCO_MS);
+
+// Al volver a la pestaña o a la app, refresca de una: es justo cuando mas
+// probable es que haya entrado algo mientras no estabas mirando. Ademas
+// corrige la vista de una pagina que quedo abierta desde una version
+// anterior.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refrescoAutomatico();
+});
+
 // Reparaciones y "toma equipo usado" solo sirven para tiendas de
 // electrónica/celulares — para el resto son ruido que no van a usar nunca.
 // ---- Venta por medida: estado del formulario de producto ----
