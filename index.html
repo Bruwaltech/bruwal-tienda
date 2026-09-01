@@ -995,6 +995,147 @@
     .js-anim .revelar,
     .js-anim .revelar.visible { opacity: 1 !important; transform: none !important; }
   }
+
+/* ============ Banner "en 2 pasos" ============ */
+/* La foto va de fondo con un degrade encima: sin el, el texto blanco se
+   pierde contra la vidriera iluminada del local. */
+.dos-pasos {
+  position: relative;
+  padding: 72px 24px;
+  background-image:
+    linear-gradient(100deg, rgba(21,41,77,.94) 0%, rgba(21,41,77,.80) 45%, rgba(21,41,77,.45) 100%),
+    url('banner-cafeteria.jpg');
+  background-size: cover;
+  background-position: center 38%;
+  color: #fff;
+  overflow: hidden;
+}
+
+.dos-pasos-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.2fr auto;
+  gap: 56px;
+  align-items: center;
+}
+
+.dos-pasos .eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #9EC9F0;
+  margin-bottom: 14px;
+}
+
+.dos-pasos h2 {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+.dos-pasos h2 span { color: #7FC4FF; }
+
+.dos-pasos .bajada {
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: rgba(255,255,255,.85);
+  max-width: 460px;
+  margin-bottom: 26px;
+}
+
+.paso {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  max-width: 480px;
+}
+
+.paso .num {
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: #2F8FE0;
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.paso b { display: block; font-size: 16px; margin-bottom: 2px; }
+.paso p { font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,.78); }
+
+.dos-pasos .cta {
+  display: inline-block;
+  margin-top: 12px;
+  background: #2F8FE0;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 15.5px;
+  padding: 14px 28px;
+  border-radius: 10px;
+  box-shadow: 0 10px 26px rgba(0,0,0,.28);
+  transition: transform .2s;
+}
+.dos-pasos .cta:hover { transform: translateY(-2px); }
+
+/* El telefono. Es CSS puro: un marco redondeado con el video adentro, sin
+   imagen de mockup que despues haya que mantener. */
+.telefono {
+  width: 252px;
+  flex-shrink: 0;
+  background: #10182B;
+  border-radius: 34px;
+  padding: 10px;
+  box-shadow: 0 26px 60px -12px rgba(0,0,0,.6), 0 0 0 2px rgba(255,255,255,.08) inset;
+}
+
+.telefono-pantalla {
+  position: relative;
+  border-radius: 26px;
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 576 / 1280;   /* el mismo del video, para que no recorte */
+}
+
+.telefono-pantalla video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* La muesca de arriba, para que se lea como telefono y no como un rectangulo */
+.telefono-muesca {
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 96px; height: 20px;
+  background: #10182B;
+  border-radius: 0 0 12px 12px;
+  z-index: 2;
+}
+
+.telefono-pie {
+  text-align: center;
+  font-size: 12.5px;
+  color: rgba(255,255,255,.6);
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .dos-pasos { padding: 52px 20px; }
+  .dos-pasos-inner { grid-template-columns: 1fr; gap: 34px; justify-items: center; text-align: center; }
+  .dos-pasos h2 { font-size: 30px; }
+  .dos-pasos .bajada { margin-left: auto; margin-right: auto; }
+  .paso { text-align: left; margin-left: auto; margin-right: auto; }
+  .telefono { width: 228px; }
+}
 </style>
 </head>
 <body>
@@ -1025,6 +1166,51 @@
 
   <div class="hero-prueba" id="heroPrueba"></div>
 </div>
+
+<section class="dos-pasos">
+  <div class="dos-pasos-inner">
+    <div>
+      <div class="eyebrow">Sin diseñador, sin programador</div>
+      <h2>Hacé tu tienda online<br><span>en 2 pasos</span></h2>
+      <p class="bajada">
+        La misma tienda que usan una panadería, una pizzería y una peluquería del barrio.
+        La armás hoy y esta tarde ya estás recibiendo pedidos.
+      </p>
+
+      <div class="paso">
+        <div class="num">1</div>
+        <div>
+          <b>Cargá lo que vendés</b>
+          <p>Una foto, un nombre y un precio. Nada más que eso.</p>
+        </div>
+      </div>
+
+      <div class="paso">
+        <div class="num">2</div>
+        <div>
+          <b>Compartí tu link</b>
+          <p>Lo mandás por WhatsApp o lo ponés en tu Instagram, y los pedidos te llegan solos.</p>
+        </div>
+      </div>
+
+      <a href="/dashboard" class="cta">Crear mi tienda gratis</a>
+    </div>
+
+    <div>
+      <!-- autoplay + muted + playsinline: sin los tres, iPhone no lo
+           reproduce solo y se ve un cuadro negro. El poster cubre el rato
+           que tarda en cargar y el caso del que navega con datos apagados. -->
+      <div class="telefono">
+        <div class="telefono-pantalla">
+          <div class="telefono-muesca"></div>
+          <video src="demo-tienda.mp4" poster="demo-tienda-poster.jpg"
+                 autoplay muted loop playsinline preload="metadata"></video>
+        </div>
+      </div>
+      <div class="telefono-pie">Así la ve tu cliente</div>
+    </div>
+  </div>
+</section>
 
 <div class="search-section" id="buscador">
   <div class="search-box">
