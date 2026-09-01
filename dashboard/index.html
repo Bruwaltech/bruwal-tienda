@@ -1957,7 +1957,12 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
           <span>🧾 Gastos</span>
-          <button type="button" id="nuevoGastoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nuevo gasto</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <!-- Mismo modal que en Productos: la factura del proveedor es un
+                 gasto, y este es el lugar donde uno la tiene en la mano. -->
+            <button type="button" id="facturaIaGastosBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-invoice"></i> Cargar factura (IA) <span class="lock-pro hidden" id="lockFacturaIaGastos">🔒</span></button>
+            <button type="button" id="nuevoGastoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nuevo gasto</button>
+          </div>
         </div>
         <table>
           <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th style="text-align:right;">Monto</th><th></th></tr></thead>
@@ -2484,7 +2489,8 @@ tr:last-child td { border-bottom: none; }
     <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.6;">
       Sacale una foto a la factura del proveedor (o subí el PDF) y la IA detecta los productos, cantidades, costo e IVA
       — también talle/color en indumentaria y calzado, e IMEI en electrónica si la factura los lista.
-      Después revisás y confirmás vos — no se carga nada solo.
+      Después revisás línea por línea y elegís cuáles van al catálogo: el flete, las percepciones o los envases
+      se pueden marcar como <em>“No cargar”</em> y siguen contando en el gasto. No se carga nada solo.
     </p>
 
     <div class="field" id="facturaIaCampoArchivo">
@@ -3436,7 +3442,7 @@ function ofrecerUpgradePro(nombreFuncion) {
 
 function aplicarVisibilidadPorPlan() {
   const pro = tienePlanPro();
-  ['lockCaja', 'lockEstadisticas', 'lockImei', 'lockFacturaIa'].forEach(id => {
+  ['lockCaja', 'lockEstadisticas', 'lockImei', 'lockFacturaIa', 'lockFacturaIaGastos'].forEach(id => {
     const el = byId(id);
     if (el) el.classList.toggle('hidden', pro);
   });
@@ -9188,15 +9194,22 @@ function renderFacturaIaItems() {
   const estInput = 'width:100%;padding:6px;border:1px solid var(--line);border-radius:5px;font-size:12.5px;';
 
   byId('facturaIaItemsBody').innerHTML = facturaIaItems.map((it, i) => {
-    const p = it.destino !== 'nuevo' ? products.find(x => String(x.id) === it.destino) : null;
+    const omitida = it.destino === 'omitir';
+    const p = (it.destino !== 'nuevo' && !omitida) ? products.find(x => String(x.id) === it.destino) : null;
     const esVarianteImei = !!(p && productoTieneImeis(p));
     const esVarianteSimple = !!(p && p.tiene_variantes && !esVarianteImei);
-    const finalizado = it.cargadoAparte;
-    const soloCantidadCosto = finalizado || esVarianteImei;
+    const finalizado = it.cargadoAparte || omitida;
+    // Una linea ya cargada aparte (IMEI) queda congelada. Una omitida solo
+    // se pinta apagada: su cantidad y su costo se siguen pudiendo corregir,
+    // porque ese flete igual se pago y tiene que cerrar contra el total
+    // impreso en la factura.
+    const congelado = it.cargadoAparte;
+    const soloCantidadCosto = congelado || esVarianteImei;
 
     let celdaDestino = `
-      <select data-fi="destino" data-i="${i}" style="${estInput}" ${finalizado ? 'disabled' : ''}>
+      <select data-fi="destino" data-i="${i}" style="${estInput}" ${(finalizado && !omitida) ? 'disabled' : ''}>
         <option value="nuevo" ${it.destino === 'nuevo' ? 'selected' : ''}>+ Crear nuevo</option>
+        <option value="omitir" ${it.destino === 'omitir' ? 'selected' : ''}>✕ No cargar (solo gasto)</option>
         ${productosDisponibles.map(op => {
           const etiqueta = productoTieneImeis(op) ? 'Sumar a (revisar IMEI): ' : (op.tiene_variantes ? 'Sumar a (elegir talle/color): ' : 'Sumar a: ');
           return '<option value="' + op.id + '" ' + (it.destino === String(op.id) ? 'selected' : '') + '>' + etiqueta + escapeHtml(op.name) + '</option>';
@@ -9223,13 +9236,13 @@ function renderFacturaIaItems() {
 
     return `
       <tr style="${finalizado ? 'opacity:0.55;' : ''}">
-        <td><input type="text" data-fi="descripcion" data-i="${i}" value="${escapeHtml(it.descripcion)}" style="${estInput}" ${finalizado ? 'disabled' : ''}></td>
+        <td><input type="text" data-fi="descripcion" data-i="${i}" value="${escapeHtml(it.descripcion)}" style="${estInput}" ${congelado ? 'disabled' : ''}></td>
         <td><input type="number" min="0" step="1" data-fi="cantidad" data-i="${i}" value="${it.cantidad}" style="${estInput}" ${soloCantidadCosto ? 'disabled' : ''}></td>
-        <td><input type="number" min="0" step="0.01" data-fi="precio_unitario" data-i="${i}" value="${it.precio_unitario}" style="${estInput}" ${finalizado ? 'disabled' : ''}></td>
-        <td><input type="number" min="0" step="0.1" data-fi="iva_porcentaje" data-i="${i}" value="${it.iva_porcentaje ?? ''}" style="${estInput}" ${finalizado ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.01" data-fi="precio_unitario" data-i="${i}" value="${it.precio_unitario}" style="${estInput}" ${congelado ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.1" data-fi="iva_porcentaje" data-i="${i}" value="${it.iva_porcentaje ?? ''}" style="${estInput}" ${congelado ? 'disabled' : ''}></td>
         <td>${it.destino === 'nuevo'
           ? '<input type="number" min="0" step="0.01" data-fi="precio_venta" data-i="' + i + '" value="' + it.precio_venta + '" placeholder="$" style="' + estInput + 'border-color:var(--celeste);">'
-          : '<span style="font-size:11.5px;color:var(--text-mute);">— (ya tiene precio)</span>'}</td>
+          : '<span style="font-size:11.5px;color:var(--text-mute);">' + (omitida ? '—' : '— (ya tiene precio)') + '</span>'}</td>
         <td>${celdaDestino}</td>
       </tr>`;
   }).join('');
@@ -9263,17 +9276,39 @@ function renderFacturaIaItems() {
   actualizarAvisoTotalFactura();
 }
 
+function lineasQueSeCargan() {
+  return facturaIaItems.filter(it => it.destino !== 'omitir');
+}
+
 function actualizarAvisoTotalFactura() {
+  // La suma es de TODAS las líneas, incluidas las que no van al catálogo:
+  // el flete también se pagó, y este número es el que tiene que dar igual
+  // que el total impreso en la factura.
   const suma = facturaIaItems.reduce((s, it) => s + (Number(it.cantidad) || 0) * (Number(it.precio_unitario) || 0), 0);
+  const van = lineasQueSeCargan().length;
+  const fuera = facturaIaItems.length - van;
+
   byId('facturaIaAvisoTotal').textContent =
-    'Suma de las líneas: ' + money(suma) + ' — revisá que coincida con el total de la factura antes de confirmar.';
+    'Suma de las líneas: ' + money(suma) + ' — revisá que coincida con el total de la factura antes de confirmar.' +
+    (fuera > 0
+      ? ' ' + fuera + ' línea' + (fuera === 1 ? '' : 's') + ' no se carga' + (fuera === 1 ? '' : 'n') +
+        ' al catálogo (siguen contando en el gasto).'
+      : '');
+
+  // El botón dice lo que realmente va a pasar: con todas las líneas
+  // omitidas, esto es solo anotar el gasto.
+  const boton = byId('confirmarFacturaIaBtn');
+  if (boton && !boton.disabled) {
+    boton.textContent = van ? 'Cargar productos al stock' : 'Registrar solo el gasto';
+  }
 }
 
 async function confirmarFacturaIa() {
   if (!puedeOperar()) return;
   if (!facturaIaItems.length) return;
 
-  const sinPrecio = facturaIaItems.filter(it => it.destino === 'nuevo' && (!it.precio_venta || it.precio_venta <= 0));
+  const aCargar = lineasQueSeCargan();
+  const sinPrecio = aCargar.filter(it => it.destino === 'nuevo' && (!it.precio_venta || it.precio_venta <= 0));
   if (sinPrecio.length) {
     alert('Faltó cargar el precio de venta de ' + sinPrecio.length +
       ' producto' + (sinPrecio.length === 1 ? '' : 's') + ' nuevo' + (sinPrecio.length === 1 ? '' : 's') + '.');
@@ -9282,7 +9317,7 @@ async function confirmarFacturaIa() {
 
   // Líneas que suman a un producto ya existente y que todavía no se
   // resolvieron del todo (falta elegir combinación, o falta revisar IMEI).
-  const pendientes = facturaIaItems
+  const pendientes = aCargar
     .filter(it => it.destino !== 'nuevo' && !it.cargadoAparte)
     .map(it => ({ it, p: products.find(x => String(x.id) === it.destino) }))
     .filter(({ p }) => p);
@@ -9309,11 +9344,18 @@ async function confirmarFacturaIa() {
     return;
   }
 
+  // Sin líneas para el catálogo y sin gasto tildado no hay nada que hacer:
+  // mejor decirlo que dejar que el botón parezca que funcionó.
+  if (!aCargar.length && !registrarGasto) {
+    alert('No quedó nada para cargar: o elegís al menos una línea para el catálogo, o tildás registrar el gasto.');
+    return;
+  }
+
   const boton = byId('confirmarFacturaIaBtn');
   boton.disabled = true;
   boton.textContent = 'Cargando...';
 
-  const nuevos = facturaIaItems.filter(it => it.destino === 'nuevo').map(it => ({
+  const nuevos = aCargar.filter(it => it.destino === 'nuevo').map(it => ({
     store_slug: currentStore.slug,
     name: it.descripcion || 'Producto sin nombre',
     description: it.iva_porcentaje != null ? ('IVA ' + it.iva_porcentaje + '% — cargado desde factura') : 'Cargado desde factura',
@@ -9416,11 +9458,13 @@ async function confirmarFacturaIa() {
   boton.disabled = false;
   boton.textContent = 'Cargar productos al stock';
 
-  const cantidad = facturaIaItems.length;
+  const cantidad = aCargar.length;
   limpiarFacturaIa();
   hide(byId('facturaIaModal'));
   await refreshData();
-  alert('¡Listo! Se cargaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + ' desde la factura.' + avisoGasto);
+  alert(cantidad
+    ? '¡Listo! Se cargaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + ' desde la factura.' + avisoGasto
+    : '¡Listo! Se registró el gasto de la factura. No se cargó ningún producto al catálogo.' + avisoGasto);
 }
 
 function descargarPlantillaImportacion() {
@@ -10370,11 +10414,29 @@ function renderCaja() {
     const equipo = Number(o.trade_in_valor || 0);
     const cobradoDinero = Number(o.total || 0) - Number(o.saldo_pendiente || 0) - equipo;
     if (cobradoDinero > 0) {
+      // Lo que costo lo vendido en ESTA venta, item por item. Vender una
+      // botella a $2.500 que costo $1.000 deja $1.500, y eso es lo que el
+      // negocio quiere ver al lado del precio -- no solo cuanto entro.
+      const costo = (Array.isArray(o.items) ? o.items : []).reduce((suma, it) => {
+        const p = (products || []).find(x => String(x.id) === String(it.product_id));
+        return suma + costoDeProducto(p) * Number(it.qty || 1);
+      }, 0);
+
       movimientos.push({
         origen: 'venta', hora: o.created_at, tipo: 'ingreso',
         concepto: 'Venta — ' + (o.customer_name || 'Mostrador'),
         medio: o.medio_pago || 'Sin especificar',
-        monto: cobradoDinero
+        monto: cobradoDinero,
+        costo: costo,
+        // Si quedo fiado o entro un equipo en parte de pago, lo que entro en
+        // efectivo NO es toda la venta: restarle el costo entero daria una
+        // ganancia falsa (hasta negativa). En ese caso se muestra el costo,
+        // pero la ganancia queda para cuando la venta este cobrada.
+        gananciaConfiable: Number(o.saldo_pendiente || 0) === 0 && equipo === 0,
+        // El detalle de lo vendido, para que "Venta — Juan" diga QUE se
+        // vendio sin tener que ir a buscarlo a otra pestaña.
+        detalle: (Array.isArray(o.items) ? o.items : [])
+          .map(it => (it.qty || 1) + '× ' + (it.name || 'Producto')).join(', ')
       });
     }
     if (equipo > 0) {
@@ -10480,9 +10542,22 @@ function renderCaja() {
       '<td>' + (m.tipo === 'ingreso'
         ? '<span style="color:#1FA088;font-weight:600;">Ingreso</span>'
         : '<span style="color:#DC2626;font-weight:600;">Egreso</span>') + '</td>' +
-      '<td>' + escapeHtml(m.concepto) + '</td>' +
+      '<td>' + escapeHtml(m.concepto) +
+        (m.detalle ? '<div style="font-size:11.5px;color:var(--text-mute);margin-top:2px;">' + escapeHtml(m.detalle) + '</div>' : '') +
+      '</td>' +
       '<td style="font-size:12.5px;color:var(--text-mute);">' + escapeHtml(m.medio) + '</td>' +
-      '<td style="text-align:right;font-weight:600;">' + (m.tipo === 'egreso' ? '-' : '') + money(m.monto) + '</td>' +
+      '<td style="text-align:right;font-weight:600;">' + (m.tipo === 'egreso' ? '-' : '') + money(m.monto) +
+        // Debajo del precio, lo que costo y lo que dejo. Tapado con el
+        // mismo PIN que el resto de los costos: en el mostrador esta fila
+        // la ve cualquiera que pase.
+        (m.costo > 0 && !requiereDesbloqueoCostos()
+          ? '<div style="font-size:11px;font-weight:600;color:var(--text-mute);margin-top:2px;white-space:nowrap;">' +
+            'costo ' + money(m.costo) +
+            (m.gananciaConfiable
+              ? ' · <span style="color:#1FA088;">deja ' + money(m.monto - m.costo) + '</span>'
+              : '') + '</div>'
+          : '') +
+      '</td>' +
       '<td>' + (m.origen === 'manual'
         ? '<button class="icon-btn danger" data-eliminar-mov-caja="' + m.id + '" title="Eliminar">🗑</button>'
         : '') + '</td>' +
@@ -13568,13 +13643,19 @@ byId('importarExcelInput').addEventListener('change', (e) => {
 });
 byId('confirmarImportacionBtn').addEventListener('click', confirmarImportacionExcel);
 
-byId('facturaIaBtn').addEventListener('click', () => {
+// Se entra por Productos ("cargo el stock que llego") o por Gastos ("anoto
+// la factura que pague"). Es la misma pantalla: una compra al proveedor es
+// las dos cosas a la vez.
+function abrirFacturaIa() {
   if (!puedeOperar()) return;
   if (!tienePlanPro()) { ofrecerUpgradePro('Cargar por factura (IA)'); return; }
   const abrir = () => { limpiarFacturaIa(); show(byId('facturaIaModal')); };
   if (requiereDesbloqueoCostos()) { abrirPinCostosModal(abrir); return; }
   abrir();
-});
+}
+
+byId('facturaIaBtn').addEventListener('click', abrirFacturaIa);
+byId('facturaIaGastosBtn').addEventListener('click', abrirFacturaIa);
 byId('closeFacturaIaModal').addEventListener('click', () => hide(byId('facturaIaModal')));
 byId('facturaIaCamaraBtn').addEventListener('click', () => byId('facturaIaCamaraInput').click());
 byId('facturaIaArchivoBtn').addEventListener('click', () => byId('facturaIaArchivoInput').click());
