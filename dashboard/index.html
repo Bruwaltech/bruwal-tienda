@@ -3109,7 +3109,7 @@ tr:last-child td { border-bottom: none; }
           </div>
         </div>
 
-        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+        <div class="field" id="campoConfigTurnos" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="turnosActivo" style="margin:0;cursor:pointer;width:auto;">
             Mi negocio trabaja con turnos
@@ -7008,6 +7008,19 @@ function aplicarVisibilidadPorRubro() {
   // tienda de ropa no la usa.
   const campoDemora = byId('campoConfigDemora');
   if (campoDemora) campoDemora.classList.toggle('hidden', !esGastronomia());
+
+  // Los turnos son de una peluqueria o un consultorio: en una pizzeria el
+  // cliente pide y espera, no reserva un horario. Ofrecerlo ahi ademas
+  // arrastra consecuencias -- con la agenda activa, el fraccionado se
+  // esconde y el checkout pide dia y hora.
+  //
+  // Si la tienda YA los tiene activos se sigue viendo: seria la unica forma
+  // de apagarlos, y justo el caso de una peluqueria que se pasa a pizzeria.
+  const campoTurnos = byId('campoConfigTurnos');
+  if (campoTurnos) {
+    const yaLosUsa = !!byId('turnosActivo')?.checked;
+    campoTurnos.classList.toggle('hidden', esGastronomia() && !yaLosUsa);
+  }
 
   aplicarVisibilidadPausado();
 
