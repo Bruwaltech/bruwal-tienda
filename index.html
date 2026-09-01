@@ -1283,7 +1283,7 @@
   <div class="auth-buttons">
     <button class="btn-auth btn-instalar hidden" id="instalarTiendasBtn">📲 Descargar app</button>
     <a class="btn-auth btn-login" href="#planes" style="text-decoration:none;">💲 Planes</a>
-    <button class="btn-auth btn-login" onclick="goToDashboard()">👤 Panel Admin</button>
+    <button class="btn-auth btn-login" id="panelAdminBtn" onclick="goToDashboard()">👤 Panel Admin</button>
     <button class="btn-auth btn-register" onclick="goToRegister()">Registrarse</button>
   </div>
 </header>
@@ -1690,7 +1690,10 @@ async function init() {
     // solo le cambiamos el texto del boton para que vuelva a su panel.
     const { data: { user } } = await sb.auth.getUser();
     if (user) {
-      const btn = document.querySelector('.btn-login');
+      // Por id y no por .btn-login: esa clase la comparte con el link de
+      // Planes, que va antes en el header. querySelector devolvia ese, le
+      // pisaba el texto y el visitante logueado se quedaba sin ver Planes.
+      const btn = document.getElementById('panelAdminBtn');
       if (btn) btn.textContent = '👤 Mi panel';
     }
   } catch (err) {
