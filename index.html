@@ -1136,6 +1136,90 @@
   .paso { text-align: left; margin-left: auto; margin-right: auto; }
   .telefono { width: 228px; }
 }
+
+/* ============ Celulares y reparaciones ============ */
+/* Fondo oscuro para despegarla de la seccion clara de arriba, y porque la
+   ficha de equipo se lee mejor sobre oscuro. */
+.celu-seccion { background: #101B33; color: #fff; padding: 64px 24px; }
+
+.celu-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.celu-seccion .etiqueta {
+  display: inline-block;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: #7FC4FF; margin-bottom: 12px;
+}
+
+.celu-seccion h2 { font-size: 34px; font-weight: 800; line-height: 1.15; margin-bottom: 14px; }
+.celu-seccion h2 span { color: #7FC4FF; }
+
+.celu-seccion .bajada {
+  font-size: 16px; line-height: 1.65; color: rgba(255,255,255,.78); margin-bottom: 22px;
+}
+
+.celu-lista { display: grid; gap: 11px; margin-bottom: 24px; }
+.celu-lista div {
+  font-size: 14.5px; line-height: 1.5; color: rgba(255,255,255,.88);
+  padding-left: 26px; position: relative;
+}
+.celu-lista div::before {
+  content: '\2713'; position: absolute; left: 0; top: -1px;
+  color: #1FA088; font-weight: 800; font-size: 15px;
+}
+
+/* La ficha del equipo: es lo que el negocio ve adentro del panel, no un
+   dibujo generico. Se entiende mas rapido que tres parrafos. */
+.equipo-ficha {
+  background: #17233D;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 24px 60px -18px rgba(0,0,0,.7);
+}
+
+.equipo-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.equipo-top b { font-size: 17px; font-weight: 700; }
+.equipo-top .estado {
+  flex-shrink: 0; font-size: 11px; font-weight: 800; letter-spacing: .04em;
+  background: rgba(31,160,136,.18); color: #4FD0B4;
+  padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+}
+
+.equipo-imei {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px; color: rgba(255,255,255,.55);
+  background: rgba(0,0,0,.25); border-radius: 7px;
+  padding: 7px 10px; margin-bottom: 16px;
+}
+
+.equipo-fila { display: flex; justify-content: space-between; font-size: 14px; padding: 7px 0; }
+.equipo-fila span:first-child { color: rgba(255,255,255,.6); }
+.equipo-fila.margen {
+  border-top: 1px solid rgba(255,255,255,.10);
+  margin-top: 6px; padding-top: 12px; font-weight: 700; font-size: 15.5px;
+}
+.equipo-fila.margen span:last-child { color: #4FD0B4; }
+
+.equipo-linea {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.10);
+  display: grid; gap: 9px;
+}
+.equipo-linea div { font-size: 12.5px; color: rgba(255,255,255,.6); display: flex; gap: 9px; }
+.equipo-linea .fecha { color: rgba(255,255,255,.4); flex-shrink: 0; width: 52px; }
+
+@media (max-width: 900px) {
+  .celu-seccion { padding: 48px 20px; }
+  .celu-inner { grid-template-columns: 1fr; gap: 32px; }
+  .celu-seccion h2 { font-size: 27px; }
+}
 </style>
 </head>
 <body>
@@ -1301,6 +1385,55 @@
       </ul>
       <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
       <div class="factura-nota">Incluido en el plan Pro.</div>
+    </div>
+  </div>
+</section>
+
+<section class="celu-seccion">
+  <div class="celu-inner">
+    <div class="revelar">
+      <div class="etiqueta">Celulares y servicio tecnico</div>
+      <h2>¿Vendés celulares y <span>hacés reparaciones</span>?</h2>
+      <p class="bajada">
+        Cada equipo lleva su propia cuenta. No es "tengo 6 iPhone": es este iPhone,
+        con su IMEI, lo que te costó, lo que gastaste en repararlo y lo que te dejó.
+      </p>
+
+      <div class="celu-lista">
+        <div>Cada equipo con su <strong>marca, modelo, estado e IMEI</strong>, uno por uno</div>
+        <div><strong>Historial por IMEI</strong>: cuándo entró, cuándo se reparó y cuándo se vendió, en una sola línea de tiempo</div>
+        <div><strong>Costo y precio por equipo</strong> — el margen real de cada venta, no un promedio</div>
+        <div><strong>Reparaciones de punta a punta</strong>, con estados y repuestos descontados del stock</div>
+        <div>Tomás un <strong>usado en parte de pago</strong> y entra al stock como equipo a restaurar</div>
+        <div>Precios en <strong>dólares</strong>, con la cotización del día</div>
+      </div>
+
+      <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
+      <div class="factura-nota">El historial por IMEI y las estadísticas van en el plan Pro.</div>
+    </div>
+
+    <div class="revelar">
+      <!-- La ficha de un equipo real, como se ve adentro del panel: se
+           entiende mas rapido que explicarlo en tres parrafos. -->
+      <div class="equipo-ficha">
+        <div class="equipo-top">
+          <b>iPhone 13 · 128 GB · Negro</b>
+          <div class="estado">Listo para vender</div>
+        </div>
+
+        <div class="equipo-imei">IMEI 356938035643809</div>
+
+        <div class="equipo-fila"><span>Lo pagué</span><span>US$ 320</span></div>
+        <div class="equipo-fila"><span>Pantalla nueva</span><span>US$ 55</span></div>
+        <div class="equipo-fila"><span>Lo vendí</span><span>US$ 520</span></div>
+        <div class="equipo-fila margen"><span>Me dejó</span><span>US$ 145</span></div>
+
+        <div class="equipo-linea">
+          <div><span class="fecha">12/07</span><span>Entró en parte de pago de un iPhone 15</span></div>
+          <div><span class="fecha">14/07</span><span>Cambio de pantalla — repuesto descontado del stock</span></div>
+          <div><span class="fecha">21/07</span><span>Vendido a Martín G. — cobrado en dólares</span></div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
