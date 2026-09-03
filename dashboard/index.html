@@ -1428,6 +1428,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabClientes"><i class="fa-solid fa-users"></i> Clientes</button>
       <button class="app-tab" id="tabVentas"><i class="fa-solid fa-cash-register"></i> Ventas</button>
       <button class="app-tab" id="tabCaja"><i class="fa-solid fa-sack-dollar"></i> Caja <span class="lock-pro hidden" id="lockCaja">🔒</span></button>
+      <button class="app-tab" id="tabEmpleados"><i class="fa-solid fa-user-clock"></i> Empleados <span class="lock-pro hidden" id="lockEmpleados">🔒</span></button>
       <button class="app-tab" id="tabEstadisticas"><i class="fa-solid fa-chart-line"></i> Estadísticas <span class="lock-pro hidden" id="lockEstadisticas">🔒</span></button>
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
@@ -1970,6 +1971,79 @@ tr:last-child td { border-bottom: none; }
         </table>
       </div>
     </div>
+
+    <!-- EMPLEADOS -->
+    <div id="empleadosView" class="hidden">
+      <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+        <div class="stat-card">
+          <div class="label">Trabajando ahora</div>
+          <div class="value" id="empleadosTrabajando">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Horas del período</div>
+          <div class="value" id="empleadosHorasPeriodo">0h</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">A pagar del período</div>
+          <div class="value" id="empleadosAPagar">$0</div>
+        </div>
+      </div>
+
+      <div id="fichadasPendientesAviso" class="hidden" style="background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:13px;line-height:1.55;"></div>
+
+      <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>🕐 Reloj de entrada y salida</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="copiarLinkRelojBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">🔗 Copiar link del reloj</button>
+            <button type="button" id="abrirRelojBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">Abrir el reloj</button>
+          </div>
+        </div>
+        <div style="padding:12px 14px;font-size:13px;color:var(--text-mute);line-height:1.6;">
+          Dejá esta pantalla abierta en la tablet o la compu de la entrada. El empleado marca apoyando la tarjeta
+          o tocando su nombre. Sirve cualquier lector NFC o RFID <strong>USB “modo teclado”</strong> — el que
+          escribe el número de la tarjeta solo, igual que el lector de códigos de barras — y también un QR impreso
+          en el carnet leído con el lector que ya tenés.
+        </div>
+        <div style="padding:0 14px 14px;font-size:13px;color:var(--text-mute);line-height:1.6;">
+          El modo reloj queda anotado en la dirección de la página, así que <strong>si la tablet se apaga o
+          alguien recarga, vuelve al reloj y no al panel</strong>. Con “Copiar link del reloj” tenés la
+          dirección para dejar de arranque en el navegador de la entrada.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>👥 Empleados y horas</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="date" id="empleadosDesde" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <span style="font-size:12.5px;color:var(--text-mute);">al</span>
+            <input type="date" id="empleadosHasta" style="padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <button type="button" id="nuevoEmpleadoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nuevo empleado</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Empleado</th><th>Tarjeta</th><th style="text-align:right;">Valor hora</th>
+              <th style="text-align:right;">Horas</th><th style="text-align:right;">A pagar</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="empleadosBody"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>📋 Marcas del período</span>
+          <button type="button" id="marcaManualBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">+ Marca manual</button>
+        </div>
+        <table>
+          <thead><tr><th>Día</th><th>Hora</th><th>Empleado</th><th>Marca</th><th>Origen</th><th></th></tr></thead>
+          <tbody id="fichadasBody"></tbody>
+        </table>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -2470,8 +2544,64 @@ tr:last-child td { border-bottom: none; }
     </button>
 
     <div class="field">
-      <label>Archivo (.xlsx o .csv)</label>
-      <input type="file" id="importarExcelInput" accept=".xlsx,.xls,.csv">
+      <label>Archivo (.xlsx, .csv, .ods)</label>
+      <input type="file" id="importarExcelInput" accept=".xlsx,.xls,.xlsm,.csv,.ods,.txt,.tsv">
+    </div>
+
+    <!-- Todo esto aparece recien cuando hay un archivo leido: elegir hoja,
+         elegir cual de las tablas de la hoja, decir si son productos para
+         vender o insumos, y sobre todo DECIR QUE ES CADA COLUMNA. Ese
+         ultimo selector es el que hace entrar una planilla cualquiera sin
+         tener que renombrarle los encabezados. -->
+    <div id="importarOpciones" class="hidden">
+      <div class="field hidden" id="importarHojaWrap">
+        <label>Hoja del archivo</label>
+        <select id="importarHojaSelect"></select>
+      </div>
+
+      <div class="field hidden" id="importarBloqueWrap">
+        <label>Tabla a importar</label>
+        <select id="importarBloqueSelect"></select>
+        <p style="color:var(--text-mute);font-size:12px;margin:5px 0 0;line-height:1.5;">
+          Tu planilla tiene más de una tabla. Se carga la elegida; después podés volver a importar las otras.
+        </p>
+      </div>
+
+      <div class="field">
+        <label>Qué son estos productos</label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:13px;margin-bottom:6px;text-transform:none;letter-spacing:0;color:var(--text-dark);">
+          <input type="radio" name="importarDestino" value="tienda" checked style="width:auto;margin-top:3px;">
+          <span>Los <strong>vendo</strong> — el número es el precio de venta y van al catálogo.</span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text-dark);">
+          <input type="radio" name="importarDestino" value="interno" style="width:auto;margin-top:3px;">
+          <span>Son <strong>insumos o mercadería</strong> — el número es el costo de compra y van a Stock interno, sin publicarse.</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label>Qué es cada columna</label>
+        <div id="importarMapeo"></div>
+      </div>
+
+      <div class="field">
+        <label>Categoría para todo el archivo <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+        <input type="text" id="importarCategoriaFija" placeholder="Ej: Almacén">
+      </div>
+
+      <div class="field">
+        <label>Los que ya tengo cargados</label>
+        <select id="importarRepetidos">
+          <option value="omitir">No los toco — solo cargo los que faltan</option>
+          <option value="actualizar">Actualizar el precio y el stock con los del archivo</option>
+          <option value="sumar">Actualizar el precio y SUMAR el stock del archivo</option>
+          <option value="duplicar">Cargarlos igual (van a quedar repetidos)</option>
+        </select>
+        <p style="color:var(--text-mute);font-size:12px;margin:5px 0 0;line-height:1.5;">
+          Se reconocen por código de barras y, si el archivo no lo trae, por nombre.
+          Lo que el archivo no diga no se toca: si no hay columna de stock, el stock queda como estaba.
+        </p>
+      </div>
     </div>
 
     <div id="importarExcelResumen" style="margin:12px 0;font-size:13.5px;line-height:1.5;"></div>
@@ -2742,6 +2872,111 @@ tr:last-child td { border-bottom: none; }
 </div>
 
 <!-- MODAL GASTO -->
+<!-- MODAL EMPLEADO -->
+<div class="modal-overlay hidden" id="empleadoModal">
+  <div class="modal" style="max-width:460px;">
+    <button class="modal-close" id="closeEmpleadoModal">✕</button>
+    <h3 id="empleadoModalTitulo"><i class="fa-solid fa-user-clock" style="color:var(--celeste);"></i> Nuevo empleado</h3>
+
+    <div class="field">
+      <label>Nombre</label>
+      <input type="text" id="empleadoNombre" placeholder="Ej: Juan Pérez">
+    </div>
+
+    <div class="field">
+      <label>Puesto <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+      <input type="text" id="empleadoRol" placeholder="Ej: Peluquero, Cocinero, Cajero">
+    </div>
+
+    <div class="field">
+      <label>Tarjeta <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="empleadoTarjeta" placeholder="Apoyá la tarjeta en el lector…" style="flex:1;min-width:150px;">
+        <button type="button" id="empleadoTarjetaNfcBtn" class="btn hidden" style="width:auto;padding:9px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">📱 Leer NFC</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:5px;line-height:1.5;">
+        Con el cursor en este campo, apoyá la tarjeta: el lector escribe el número solo. Sin tarjeta también
+        funciona — el empleado marca tocando su nombre en el reloj.
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Valor por hora</label>
+      <input type="number" id="empleadoValorHora" min="0" step="0.01" placeholder="$ por hora trabajada">
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:5px;">
+        Con esto se calcula lo que hay que pagarle según las horas que marcó. Se puede dejar vacío.
+      </div>
+    </div>
+
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+        <input type="checkbox" id="empleadoActivo" checked style="width:auto;">
+        Trabaja actualmente
+      </label>
+      <div style="font-size:11.5px;color:var(--text-mute);margin-top:5px;">
+        Si se va, destildalo en vez de borrarlo: las horas que ya marcó se siguen viendo en los períodos viejos.
+      </div>
+    </div>
+
+    <button type="button" id="guardarEmpleadoBtn" class="btn btn-primary" style="width:100%;">Guardar</button>
+    <button type="button" id="eliminarEmpleadoBtn" class="btn hidden" style="width:100%;margin-top:8px;background:#fff;color:var(--danger);border:1px solid var(--danger);">Eliminar empleado</button>
+  </div>
+</div>
+
+<!-- MODAL MARCA MANUAL -->
+<div class="modal-overlay hidden" id="marcaManualModal">
+  <div class="modal" style="max-width:400px;">
+    <button class="modal-close" id="closeMarcaManualModal">✕</button>
+    <h3><i class="fa-solid fa-pen-to-square" style="color:var(--celeste);"></i> Marca manual</h3>
+    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;line-height:1.6;">
+      Para cuando alguien se olvidó de marcar. Queda anotada como <em>manual</em>, así después se sabe cuál puso
+      el sistema y cuál cargaste vos.
+    </p>
+
+    <div class="field">
+      <label>Empleado</label>
+      <select id="marcaManualEmpleado"></select>
+    </div>
+
+    <div class="field">
+      <label>Marca</label>
+      <select id="marcaManualTipo">
+        <option value="entrada">Entrada</option>
+        <option value="salida">Salida</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Día y hora</label>
+      <input type="datetime-local" id="marcaManualMomento">
+    </div>
+
+    <button type="button" id="guardarMarcaManualBtn" class="btn btn-primary" style="width:100%;">Guardar marca</button>
+  </div>
+</div>
+
+<!-- MODO RELOJ (pantalla de entrada) -->
+<div class="modal-overlay hidden" id="relojModal">
+  <div class="modal" style="max-width:620px;width:100%;text-align:center;">
+    <div id="relojHora" style="font-size:44px;font-weight:800;color:var(--navy);line-height:1;letter-spacing:-1px;">--:--</div>
+    <div id="relojDia" style="font-size:13px;color:var(--text-mute);margin-top:6px;text-transform:capitalize;"></div>
+
+    <div id="relojMensaje" style="margin:18px 0;min-height:82px;display:flex;flex-direction:column;justify-content:center;"></div>
+
+    <input type="text" id="relojInput" placeholder="Apoyá tu tarjeta…" autocomplete="off"
+           style="width:100%;padding:13px;border:2px solid var(--line);border-radius:9px;font-size:15px;text-align:center;font-family:inherit;">
+
+    <div id="relojBotones" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:14px;"></div>
+
+    <p id="relojAvisoPin" class="hidden" style="margin:16px 0 0;font-size:12px;color:#92400E;background:#FEF3C7;border:1px solid #FCD34D;border-radius:9px;padding:9px 11px;line-height:1.5;">
+      No tenés PIN configurado: cualquiera puede tocar “Salir del modo reloj” y entrar al panel.
+      Se configura en Configuración → PIN de costos.
+    </p>
+
+    <button type="button" id="salirRelojBtn" class="btn" style="width:100%;margin-top:18px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Salir del modo reloj</button>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="gastoModal">
   <div class="modal" style="max-width:460px;">
     <button class="modal-close" id="closeGastoModal">✕</button>
@@ -3316,6 +3551,7 @@ sb.auth.onAuthStateChange((evento) => {
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
 let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [], gastos = [], pagos = [], movimientosCaja = [];
+let empleados = [], fichadas = [];
 
 // Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
 // confirmados porque de ahí salen las estadísticas de venta.
@@ -3442,7 +3678,7 @@ function ofrecerUpgradePro(nombreFuncion) {
 
 function aplicarVisibilidadPorPlan() {
   const pro = tienePlanPro();
-  ['lockCaja', 'lockEstadisticas', 'lockImei', 'lockFacturaIa', 'lockFacturaIaGastos'].forEach(id => {
+  ['lockCaja', 'lockEstadisticas', 'lockImei', 'lockFacturaIa', 'lockFacturaIaGastos', 'lockEmpleados'].forEach(id => {
     const el = byId(id);
     if (el) el.classList.toggle('hidden', pro);
   });
@@ -6674,8 +6910,31 @@ async function onLoggedIn() {
 
   show(byId('ayudaBotBtn'));
 
+  // El reloj gana: si la tablet arranca en modo reloj no hay que abrirle
+  // ninguna otra pantalla arriba.
+  if (await arranqueDirectoAlReloj()) return;
+
   // Si entro desde el icono del celular, va derecho a vender
   await arranqueDirectoAVentas();
+}
+
+// La tablet de la entrada abre el panel con ?reloj=1 y tiene que quedar en
+// el reloj, no en el dashboard. Devuelve true si se quedó en el reloj, para
+// que el arranque no siga con otra pantalla encima.
+async function arranqueDirectoAlReloj() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('reloj') !== '1') return false;
+
+  // Si el plan ya no alcanza, no hay empleados cargados o la prueba
+  // venció, se limpia la URL: si no, cada refresh reintenta abrir algo
+  // que no se puede abrir y no se ve por qué.
+  if (!tienePlanPro() || !puedeOperar() || !empleadosActivos().length) {
+    marcarRelojEnLaUrl(false);
+    return false;
+  }
+
+  abrirReloj();
+  return true;
 }
 
 // Cuando la app se abre desde el icono instalado (start_url lleva ?app=1),
@@ -6713,6 +6972,17 @@ async function refreshData() {
   const { data: movs } = await sb.from('store_movimientos_caja').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
   movimientosCaja = movs || [];
 
+  // Si todavía no se corrió la migración 40, estas dos vuelven con error y
+  // quedan vacías: la solapa se ve sin datos en vez de romper el panel.
+  const { data: emps } = await sb.from('store_empleados').select('*').eq('store_slug', currentStore.slug).order('nombre');
+  empleados = emps || [];
+
+  const { data: fchs } = await sb.from('store_fichadas').select('*').eq('store_slug', currentStore.slug).order('momento', { ascending: false });
+  // Las que todavía no se pudieron subir viven en el aparato. Si no se
+  // sumaran acá, cada refresco las haría desaparecer de la pantalla y el
+  // empleado creería que su marca se perdió.
+  fichadas = mezclarFichadasPendientes(fchs || []);
+
   renderDashboard();
   // Los dos dependen de si la tienda tiene servicios cargados, así que van
   // antes de pintar la lista.
@@ -6726,6 +6996,8 @@ async function refreshData() {
   renderReparaciones();
   renderGastos();
   renderCaja();
+  await sincronizarFichadasPendientes();
+  renderEmpleados();
   aplicarVisibilidadPorRubro();
   aplicarVisibilidadPorTurnos();
   aplicarVisibilidadPorPlan();
@@ -8839,40 +9111,269 @@ async function copiarTexto(texto, avisoOk) {
 }
 
 // ===================== IMPORTAR PRODUCTOS DESDE EXCEL =====================
-// Columnas aceptadas, buscadas por nombre sin importar mayusculas/acentos/
-// espacios (asi "Código de Barras" matchea igual que "codigo_barras").
-// Nombre y Precio son obligatorias; el resto es opcional.
+// Cada campo lista los encabezados exactos que ya se vieron en planillas
+// reales y, ademas, trozos que alcanza con que APAREZCAN en el encabezado:
+// asi "PRECIO XKG" o "Precio de venta" entran por "precio", que antes
+// quedaban afuera porque la comparacion era por igualdad exacta.
+// El orden importa: se prueba costo antes que precio, si no "precio de
+// costo" se mapearia como precio de venta.
 const COLUMNAS_IMPORTACION = {
-  name:        ['nombre', 'producto', 'articulo'],
-  description: ['descripcion', 'detalle'],
-  price:       ['precio'],
-  stock:       ['stock', 'cantidad', 'existencias'],
-  category:    ['categoria', 'rubro'],
-  ean:         ['ean', 'codigodebarras', 'codigobarras', 'codigo', 'barcode']
+  ean:         { etiqueta: 'Código de barras',
+                 exactos: ['ean', 'codigodebarras', 'codigobarras', 'codbarra', 'codbarras', 'barcode', 'sku', 'codigo', 'cod', 'codigointerno'],
+                 contiene: ['barra', 'barcode', 'ean', 'sku'] },
+  costo:       { etiqueta: 'Costo',
+                 exactos: ['costo', 'preciodecosto', 'costounitario', 'preciodecompra', 'compra', 'costoxkg', 'costoconiva'],
+                 contiene: ['costo', 'compra'] },
+  price:       { etiqueta: 'Precio de venta',
+                 exactos: ['precio', 'precioventa', 'preciodeventa', 'pventa', 'venta', 'preciounitario', 'punitario', 'importe', 'precioxkg', 'preciolista', 'pvp', 'preciofinal', 'preciopublico'],
+                 contiene: ['precio', 'venta', 'importe', 'pvp', 'lista', 'unitario', 'final'] },
+  stock:       { etiqueta: 'Stock',
+                 exactos: ['stock', 'cantidad', 'cant', 'existencias', 'existencia', 'disponible', 'saldo', 'unidades', 'stockactual'],
+                 contiene: ['stock', 'cantidad', 'existenc', 'disponible', 'saldo'] },
+  category:    { etiqueta: 'Categoría',
+                 exactos: ['categoria', 'rubro', 'familia', 'grupo', 'seccion', 'linea'],
+                 contiene: ['categoria', 'rubro', 'familia', 'grupo', 'seccion'] },
+  proveedor:   { etiqueta: 'Proveedor',
+                 exactos: ['proveedor', 'provedor'],
+                 contiene: ['proveedor', 'provedor'] },
+  name:        { etiqueta: 'Nombre',
+                 exactos: ['nombre', 'producto', 'articulo', 'item', 'insumo', 'mercaderia', 'productoservicio', 'denominacion'],
+                 contiene: ['nombre', 'producto', 'articulo', 'insumo', 'denominacion'] },
+  description: { etiqueta: 'Descripción',
+                 exactos: ['descripcion', 'detalle', 'observaciones', 'obs', 'notas'],
+                 contiene: ['descripcion', 'detalle', 'observ'] }
 };
 
 const clavePlana = (s) => normalizarTexto(s).replace(/[^a-z0-9]/g, '');
 
-function mapearColumnasImportacion(encabezados) {
-  const mapa = {};
-  encabezados.forEach((encabezado) => {
-    const plano = clavePlana(encabezado);
-    for (const [campo, sinonimos] of Object.entries(COLUMNAS_IMPORTACION)) {
-      if (!mapa[campo] && sinonimos.some((s) => clavePlana(s) === plano)) {
-        mapa[campo] = encabezado;
+const celdaVacia = (v) => String(v === null || v === undefined ? '' : v).trim() === '';
+
+function letraColumna(indice) {
+  let n = indice, letras = '';
+  do { letras = String.fromCharCode(65 + (n % 26)) + letras; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return letras;
+}
+
+// Numeros como los escribe una planilla argentina: "$ 1.695,00", "1.234,56",
+// "8500 ARS", con tabs adentro y espacios finos. Antes se usaba Number() a
+// secas y todo eso daba NaN, asi que una lista de proveedor entera se
+// descartaba con "precio invalido".
+//
+// Criterio de separadores, pensado para AR: si hay coma y punto, el ULTIMO
+// es el decimal ("1.695,00" y "1,695.00" salen los dos bien). Si hay una
+// sola coma, es el decimal. Si hay un solo punto con 3 decimales ("1.695")
+// es separador de miles; con 1 o 2 ("1.5") es decimal.
+//
+// Devuelve null cuando no hay dato — incluido "$ -", que es como Excel
+// muestra el cero de una celda vacia. Eso es a proposito: null hace que la
+// fila se descarte por "sin precio" en vez de entrar como $0.
+function aNumeroImportacion(valor) {
+  if (valor === null || valor === undefined) return null;
+  if (typeof valor === 'number') return Number.isFinite(valor) ? valor : null;
+
+  let s = String(valor).replace(/[\s\u00a0\u202f\u2009]/g, '');
+  if (!s) return null;
+  s = s.replace(/ars|usd|u\$s|eur|pesos/gi, '');
+  s = s.replace(/[^0-9.,\-]/g, '');
+  if (!/[0-9]/.test(s)) return null;
+
+  const negativo = s.trim().startsWith('-');
+  s = s.replace(/-/g, '');
+
+  const coma = s.lastIndexOf(',');
+  const punto = s.lastIndexOf('.');
+  if (coma > -1 && punto > -1) {
+    if (coma > punto) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (coma > -1) {
+    s = s.replace(/,/g, (m, i) => (i === coma ? '.' : ''));
+  } else if (punto > -1) {
+    const decimales = s.length - punto - 1;
+    if ((s.match(/\./g) || []).length > 1 || decimales === 3) s = s.replace(/\./g, '');
+  }
+
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  return negativo ? -n : n;
+}
+
+function detectarCampoDeEncabezado(encabezado, yaUsados) {
+  const plano = clavePlana(encabezado);
+  if (!plano) return '';
+  for (const [campo, def] of Object.entries(COLUMNAS_IMPORTACION)) {
+    if (yaUsados.has(campo)) continue;
+    if (def.exactos.some((s) => clavePlana(s) === plano)) return campo;
+  }
+  for (const [campo, def] of Object.entries(COLUMNAS_IMPORTACION)) {
+    if (yaUsados.has(campo)) continue;
+    if (def.contiene.some((s) => plano.includes(clavePlana(s)))) return campo;
+  }
+  return '';
+}
+
+function puntajeEncabezado(celdas) {
+  const usados = new Set();
+  let puntos = 0;
+  celdas.forEach((c) => {
+    const campo = detectarCampoDeEncabezado(c, usados);
+    if (campo) { usados.add(campo); puntos++; }
+  });
+  return puntos;
+}
+
+// Una hoja puede tener VARIAS tablas: al lado (separadas por una columna
+// vacia) y apiladas (separadas por una fila vacia). Es como estan hechas
+// las planillas de verdad — la del almacen tiene el rubro a la izquierda y
+// cajas/bebidas/sueldos a la derecha. Leer solo la primera fila y la
+// primera columna se perdia la mitad del archivo.
+function detectarBloquesImportacion(matriz) {
+  const ancho = matriz.reduce((m, f) => Math.max(m, f.length), 0);
+  const bloques = [];
+  let colIni = null;
+
+  for (let c = 0; c <= ancho; c++) {
+    const columnaVacia = c === ancho || matriz.every((f) => celdaVacia((f || [])[c]));
+    if (!columnaVacia) { if (colIni === null) colIni = c; continue; }
+    if (colIni === null) continue;
+
+    const ci = colIni, cf = c - 1;
+    const filaVaciaEn = [];
+    for (let f = 0; f < matriz.length; f++) {
+      filaVaciaEn[f] = (matriz[f] || []).slice(ci, cf + 1).every(celdaVacia);
+    }
+
+    let filaIni = null, vaciasSeguidas = 0;
+    for (let f = 0; f <= matriz.length; f++) {
+      const vacia = f === matriz.length || filaVaciaEn[f];
+      if (!vacia) { if (filaIni === null) filaIni = f; vaciasSeguidas = 0; continue; }
+      vaciasSeguidas++;
+      // Un renglon suelto en medio de la lista es normal en una planilla
+      // hecha a mano: recien con dos filas vacias seguidas se considera
+      // que empezo otra tabla.
+      if (filaIni !== null && (vaciasSeguidas >= 2 || f === matriz.length)) {
+        const filaFin = f - vaciasSeguidas;
+        if (filaFin - filaIni >= 1) bloques.push({ colIni: ci, colFin: cf, filaIni, filaFin });
+        filaIni = null;
       }
     }
+    colIni = null;
+  }
+  return bloques;
+}
+
+function armarTablaImportacion(matriz, bloque) {
+  const filas = [];
+  for (let f = bloque.filaIni; f <= bloque.filaFin; f++) {
+    filas.push({ n: f + 1, celdas: (matriz[f] || []).slice(bloque.colIni, bloque.colFin + 1) });
+  }
+
+  // El encabezado puede no estar en la fila 1: arriba suele haber un logo,
+  // un titulo o filas en blanco. Se toma, entre las 10 primeras, la fila
+  // que reconoce mas columnas.
+  let iEncabezado = -1, mejor = 0;
+  filas.slice(0, 10).forEach((fila, i) => {
+    const p = puntajeEncabezado(fila.celdas);
+    if (p > mejor) { mejor = p; iEncabezado = i; }
   });
+
+  const anchoBloque = bloque.colFin - bloque.colIni + 1;
+  const encabezados = [];
+  for (let i = 0; i < anchoBloque; i++) {
+    const crudo = iEncabezado >= 0 ? String(filas[iEncabezado].celdas[i] ?? '').trim() : '';
+    encabezados.push(crudo || 'Columna ' + letraColumna(bloque.colIni + i));
+  }
+
+  const datos = filas
+    .slice(iEncabezado + 1)
+    .filter((fila) => !fila.celdas.every(celdaVacia));
+
+  return Object.assign({}, bloque, {
+    encabezados,
+    datos,
+    conEncabezado: iEncabezado >= 0,
+    // Cuando el encabezado de la primera columna no es "Producto" sino el
+    // nombre del rubro ("ALMACEN", "BEBIDAS"), sirve de categoria.
+    titulo: iEncabezado >= 0 ? String(filas[iEncabezado].celdas[0] ?? '').trim() : ''
+  });
+}
+
+function columnaMayormente(tabla, columna, quiero) {
+  let conDato = 0, cumplen = 0;
+  tabla.datos.slice(0, 40).forEach((fila) => {
+    const v = fila.celdas[columna];
+    if (celdaVacia(v)) return;
+    conDato++;
+    const esNumero = aNumeroImportacion(v) !== null;
+    if (quiero === 'numero' ? esNumero : !esNumero) cumplen++;
+  });
+  return conDato >= 2 && cumplen / conDato >= 0.6;
+}
+
+const columnaEsTexto = (tabla, c) => columnaMayormente(tabla, c, 'texto');
+const columnaEsNumero = (tabla, c) => columnaMayormente(tabla, c, 'numero');
+
+let libroImportacion = null;
+let bloquesImportacion = [];
+let bloqueImportacionActivo = 0;
+let mapeoImportacion = {};
+let nombreImportacionPorDescarte = false;
+let filasImportacionValidas = [];
+let filasImportacionActualizar = [];
+
+function mapeoAutomaticoImportacion(tabla) {
+  const mapa = {};
+  const usados = new Set();
+  tabla.encabezados.forEach((enc, i) => {
+    const campo = detectarCampoDeEncabezado(enc, usados);
+    if (campo) { mapa[campo] = i; usados.add(campo); }
+  });
+
+  const libre = (c) => !Object.values(mapa).includes(c);
+
+  // Si ninguna columna se llama "nombre" se toma la primera de texto, y si
+  // ninguna se llama "precio" la primera de numeros. Es lo que hace entrar
+  // una lista de proveedor cuyo encabezado es el titulo del rubro
+  // ("ALMACEN") en vez de "Producto".
+  nombreImportacionPorDescarte = false;
+  if (mapa.name === undefined) {
+    for (let c = 0; c < tabla.encabezados.length; c++) {
+      if (libre(c) && columnaEsTexto(tabla, c)) { mapa.name = c; nombreImportacionPorDescarte = true; break; }
+    }
+  }
+  if (mapa.price === undefined && mapa.costo === undefined) {
+    for (let c = 0; c < tabla.encabezados.length; c++) {
+      if (libre(c) && columnaEsNumero(tabla, c)) { mapa.price = c; break; }
+    }
+  }
+  // "DESCRIPCION" como unica columna de texto es el nombre del producto,
+  // no un detalle aparte.
+  if (mapa.name === undefined && mapa.description !== undefined) {
+    mapa.name = mapa.description;
+    delete mapa.description;
+  }
   return mapa;
 }
 
-let filasImportacionValidas = [];
+const destinoImportacion = () =>
+  (document.querySelector('input[name="importarDestino"]:checked') || {}).value || 'tienda';
 
 function limpiarImportacionExcel() {
   filasImportacionValidas = [];
+  filasImportacionActualizar = [];
+  libroImportacion = null;
+  bloquesImportacion = [];
+  bloqueImportacionActivo = 0;
+  mapeoImportacion = {};
+  nombreImportacionPorDescarte = false;
   byId('importarExcelInput').value = '';
   byId('importarExcelResumen').textContent = '';
   byId('importarExcelPreview').innerHTML = '';
+  byId('importarMapeo').innerHTML = '';
+  byId('importarCategoriaFija').value = '';
+  byId('importarRepetidos').value = 'omitir';
+  hide(byId('importarOpciones'));
+  hide(byId('importarHojaWrap'));
+  hide(byId('importarBloqueWrap'));
   byId('confirmarImportacionBtn').classList.add('hidden');
 }
 
@@ -8881,51 +9382,267 @@ async function procesarArchivoImportacion(file) {
   filasImportacionValidas = [];
   byId('importarExcelPreview').innerHTML = '';
   byId('importarExcelResumen').textContent = 'Leyendo archivo...';
+  hide(byId('importarOpciones'));
 
-  let filas;
   try {
     const buffer = await file.arrayBuffer();
-    const libro = XLSX.read(buffer, { type: 'array' });
-    const hoja = libro.Sheets[libro.SheetNames[0]];
-    filas = XLSX.utils.sheet_to_json(hoja, { defval: '' });
+    libroImportacion = XLSX.read(buffer, { type: 'array', raw: true });
   } catch (err) {
+    libroImportacion = null;
     byId('importarExcelResumen').textContent =
       'No se pudo leer el archivo. Probá exportarlo de nuevo como .xlsx o .csv.';
     return;
   }
 
-  if (!filas.length) {
-    byId('importarExcelResumen').textContent = 'El archivo no tiene filas con datos.';
+  const hojas = libroImportacion.SheetNames || [];
+  if (!hojas.length) {
+    byId('importarExcelResumen').textContent = 'El archivo no tiene ninguna hoja con datos.';
     return;
   }
 
-  const mapa = mapearColumnasImportacion(Object.keys(filas[0]));
-  if (!mapa.name || !mapa.price) {
-    byId('importarExcelResumen').innerHTML =
-      '⚠️ No encontré las columnas <strong>Nombre</strong> y/o <strong>Precio</strong>. ' +
-      'Revisá los encabezados del archivo (usá la plantilla de ejemplo si no estás seguro).';
+  const selectHoja = byId('importarHojaSelect');
+  selectHoja.innerHTML = hojas.map((h, i) => '<option value="' + i + '">' + escapeHtml(h) + '</option>').join('');
+  selectHoja.value = '0';
+  byId('importarHojaWrap').classList.toggle('hidden', hojas.length < 2);
+
+  elegirHojaImportacion();
+}
+
+function elegirHojaImportacion() {
+  if (!libroImportacion) return;
+  const nombreHoja = libroImportacion.SheetNames[Number(byId('importarHojaSelect').value) || 0];
+  const hoja = libroImportacion.Sheets[nombreHoja];
+
+  // header:1 => matriz de filas, sin asumir que la 1 es el encabezado.
+  // blankrows:true a proposito: las filas vacias son las que separan dos
+  // tablas apiladas, y detectarBloquesImportacion las necesita.
+  const matriz = XLSX.utils.sheet_to_json(hoja, { header: 1, raw: true, defval: '', blankrows: true });
+
+  bloquesImportacion = detectarBloquesImportacion(matriz)
+    .map((b) => armarTablaImportacion(matriz, b))
+    .filter((t) => t.datos.length);
+
+  if (!bloquesImportacion.length) {
+    hide(byId('importarOpciones'));
+    byId('importarExcelResumen').textContent = 'Esa hoja no tiene filas con datos.';
     return;
   }
 
-  const validas = [];
-  const invalidas = [];
+  // Se abre en la tabla mas grande: en una planilla con varias, la de mas
+  // filas es casi siempre el catalogo y el resto son totales o notas.
+  let elegido = 0;
+  bloquesImportacion.forEach((t, i) => { if (t.datos.length > bloquesImportacion[elegido].datos.length) elegido = i; });
 
-  filas.forEach((fila, i) => {
-    const nombre = String(fila[mapa.name] || '').trim();
-    const precio = Number(fila[mapa.price]);
-    const stockCrudo = mapa.stock ? Number(fila[mapa.stock]) : 0;
+  byId('importarBloqueSelect').innerHTML = bloquesImportacion.map((t, i) =>
+    '<option value="' + i + '"' + (i === elegido ? ' selected' : '') + '>' +
+    escapeHtml('Columnas ' + letraColumna(t.colIni) + '–' + letraColumna(t.colFin) + ': ' +
+      t.encabezados.slice(0, 3).join(' / ') + ' (' + t.datos.length + ' filas)') +
+    '</option>').join('');
+  byId('importarBloqueWrap').classList.toggle('hidden', bloquesImportacion.length < 2);
 
-    if (!nombre) { invalidas.push({ fila: i + 2, motivo: 'sin nombre' }); return; }
-    if (!Number.isFinite(precio) || precio < 0) { invalidas.push({ fila: i + 2, motivo: 'precio inválido' }); return; }
+  bloqueImportacionActivo = elegido;
+  elegirBloqueImportacion();
+}
 
-    validas.push({
+function elegirBloqueImportacion() {
+  bloqueImportacionActivo = Number(byId('importarBloqueSelect').value) || 0;
+  const tabla = bloquesImportacion[bloqueImportacionActivo];
+  if (!tabla) return;
+
+  mapeoImportacion = mapeoAutomaticoImportacion(tabla);
+  byId('importarCategoriaFija').value =
+    (nombreImportacionPorDescarte && tabla.titulo) ? tabla.titulo : '';
+
+  show(byId('importarOpciones'));
+  renderMapeoImportacion();
+  previsualizarImportacion();
+}
+
+function cambiarDestinoImportacion() {
+  // En una lista de insumos el numero es un COSTO de compra, no un precio
+  // de venta: al elegir "uso interno" se mueve solo el mapeo, que es el
+  // error que dejaba la harina publicada a $1.695 en la tienda.
+  if (destinoImportacion() === 'interno' && mapeoImportacion.costo === undefined && mapeoImportacion.price !== undefined) {
+    mapeoImportacion.costo = mapeoImportacion.price;
+    delete mapeoImportacion.price;
+  } else if (destinoImportacion() === 'tienda' && mapeoImportacion.price === undefined && mapeoImportacion.costo !== undefined) {
+    mapeoImportacion.price = mapeoImportacion.costo;
+    delete mapeoImportacion.costo;
+  }
+  renderMapeoImportacion();
+  previsualizarImportacion();
+}
+
+function renderMapeoImportacion() {
+  const tabla = bloquesImportacion[bloqueImportacionActivo];
+  if (!tabla) return;
+  const campos = Object.entries(COLUMNAS_IMPORTACION);
+
+  byId('importarMapeo').innerHTML = tabla.encabezados.map((enc, i) => {
+    const asignado = Object.keys(mapeoImportacion).find((k) => mapeoImportacion[k] === i) || '';
+    const muestra = (tabla.datos.find((f) => !celdaVacia(f.celdas[i])) || { celdas: [] }).celdas[i];
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;flex-wrap:wrap;">' +
+      '<span style="flex:1;min-width:130px;font-size:12.5px;line-height:1.35;">' +
+        '<strong>' + escapeHtml(enc) + '</strong>' +
+        (celdaVacia(muestra) ? '' : '<br><span style="color:var(--text-mute);">ej: ' + escapeHtml(String(muestra).trim()) + '</span>') +
+      '</span>' +
+      '<select data-columna="' + i + '" style="flex:0 0 175px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;font-family:inherit;background:#fff;">' +
+        '<option value="">— no cargar —</option>' +
+        campos.map(([campo, def]) =>
+          '<option value="' + campo + '"' + (asignado === campo ? ' selected' : '') + '>' + escapeHtml(def.etiqueta) + '</option>'
+        ).join('') +
+      '</select>' +
+    '</div>';
+  }).join('');
+}
+
+function cambiarColumnaImportacion(columna, campo) {
+  Object.keys(mapeoImportacion).forEach((k) => {
+    if (mapeoImportacion[k] === columna) delete mapeoImportacion[k];
+  });
+  if (campo) mapeoImportacion[campo] = columna;
+  renderMapeoImportacion();
+  previsualizarImportacion();
+}
+
+// Un producto que ya esta cargado no se toca a lo bruto: se arma el
+// cambio, se compara con lo que tenia y solo se manda si algo cambia de
+// verdad. La regla de oro es que lo que el archivo NO dice no se pisa —
+// una lista de precios sin columna de stock no puede dejar el stock en 0.
+function armarActualizacionImportacion(p, v, destino, modo, catFija) {
+  const conservar = (nuevo, viejo) => (nuevo === null || nuevo === undefined || nuevo === '' ? viejo : nuevo);
+  const num = (x) => (x === null || x === undefined || x === '' ? null : Number(x));
+
+  const precioViejo = num(p.price) || 0;
+  const precioNuevo = (destino !== 'interno' && v.precio !== null) ? v.precio : precioViejo;
+
+  const costoViejo = num(p.costo);
+  const costoDelArchivo = v.costo !== null ? v.costo : (destino === 'interno' ? v.clave : null);
+  const costoNuevo = costoDelArchivo !== null ? costoDelArchivo : costoViejo;
+
+  const stockViejo = num(p.stock) || 0;
+  const stockNuevo = v.stock === null
+    ? stockViejo
+    : (modo === 'sumar' ? stockViejo + v.stock : Math.max(0, v.stock));
+
+  // store_slug, name y price son NOT NULL en store_products. El upsert es
+  // un INSERT ... ON CONFLICT: sin esas tres columnas el insert falla por
+  // NOT NULL antes de detectar el conflicto y nunca llega a actualizar.
+  // Van con el valor que ya tenian, salvo lo que cambia a proposito.
+  const payload = {
+    id: p.id,
+    store_slug: currentStore.slug,
+    name: p.name,
+    price: precioNuevo,
+    stock: stockNuevo,
+    costo: costoNuevo,
+    category: conservar(catFija || v.categoria, p.category === undefined ? null : p.category),
+    description: conservar(v.descripcion, p.description === undefined ? null : p.description),
+    ean: conservar(v.ean, p.ean === undefined ? null : p.ean),
+    proveedor_nombre: conservar(v.proveedor, p.proveedor_nombre === undefined ? null : p.proveedor_nombre)
+  };
+
+  const detalle = [];
+  if (precioNuevo !== precioViejo) detalle.push('precio ' + money(precioViejo) + ' → ' + money(precioNuevo));
+  if (stockNuevo !== stockViejo) detalle.push('stock ' + stockViejo + ' → ' + stockNuevo);
+  if (num(costoNuevo) !== costoViejo) {
+    detalle.push('costo ' + (costoViejo === null ? '—' : money(costoViejo)) +
+                 ' → ' + (costoNuevo === null ? '—' : money(costoNuevo)));
+  }
+  const OTROS = {
+    category: 'categoría nueva',
+    description: 'descripción nueva',
+    ean: 'código de barras nuevo',
+    proveedor_nombre: 'proveedor nuevo'
+  };
+  Object.keys(OTROS).forEach((k) => {
+    const antes = p[k] === undefined ? null : p[k];
+    if ((payload[k] === undefined ? null : payload[k]) !== antes) detalle.push(OTROS[k]);
+  });
+
+  if (!detalle.length) return null;
+  return { id: p.id, nombre: p.name, fila: v.fila, payload, detalle };
+}
+
+function construirFilasImportacion() {
+  const tabla = bloquesImportacion[bloqueImportacionActivo];
+  const destino = destinoImportacion();
+  const catFija = byId('importarCategoriaFija').value.trim();
+  const modoRepetidos = byId('importarRepetidos').value;
+
+  // Indice de lo que ya esta cargado. El codigo de barras manda; el nombre
+  // es el plan B para las listas que no traen codigo (casi todas).
+  const porEan = new Map(), porNombre = new Map();
+  (products || []).forEach((p) => {
+    if (p.ean) {
+      const k = String(p.ean).trim();
+      if (k && !porEan.has(k)) porEan.set(k, p);
+    }
+    const n = normalizarTexto(p.name || '').trim();
+    if (n && !porNombre.has(n)) porNombre.set(n, p);
+  });
+  const nombresDelArchivo = new Set();
+
+  const validas = [], actualizaciones = [], problemas = [];
+  let repetidas = 0, sinCambios = 0, descartadas = 0;
+
+  const dato = (fila, campo) => (mapeoImportacion[campo] === undefined ? '' : fila.celdas[mapeoImportacion[campo]]);
+  const texto = (fila, campo) => String(dato(fila, campo) ?? '').trim();
+
+  tabla.datos.forEach((fila) => {
+    const nombre = texto(fila, 'name');
+    const precio = aNumeroImportacion(dato(fila, 'price'));
+    const costo = aNumeroImportacion(dato(fila, 'costo'));
+    const stock = aNumeroImportacion(dato(fila, 'stock'));
+    const clave = destino === 'interno' ? (costo !== null ? costo : precio) : precio;
+
+    // Filas que no son productos y se cuentan sin listarlas una por una
+    // (antes llenaban el resumen de "fila 37 (sin nombre)"):
+    //  - las vacias del final de la planilla,
+    //  - los titulos de seccion, que se reconocen porque tienen nombre y
+    //    TODAS las demas celdas vacias ("BEBIDAS"),
+    //  - los totales al pie.
+    // Ojo con la diferencia: si alguna otra celda tiene algo, no es un
+    // titulo sino un producto sin precio, y eso SI se avisa.
+    const soloNombre = fila.celdas.every((c, idx) => idx === mapeoImportacion.name || celdaVacia(c));
+    const esTotal = /^(total|totales|subtotal|suma)\b/.test(normalizarTexto(nombre).trim());
+    if (!nombre || esTotal || (clave === null && stock === null && soloNombre)) { descartadas++; return; }
+
+    if (clave === null || clave < 0) {
+      problemas.push({ fila: fila.n, motivo: destino === 'interno' ? 'sin costo' : 'sin precio' });
+      return;
+    }
+
+    const eanCrudo = texto(fila, 'ean').replace(/\.0+$/, '');
+    const nombreNorm = normalizarTexto(nombre).trim();
+
+    // El mismo producto dos veces en el archivo se carga una sola vez,
+    // salvo que se haya pedido duplicar a proposito.
+    if (modoRepetidos !== 'duplicar' && nombresDelArchivo.has(nombreNorm)) { repetidas++; return; }
+    nombresDelArchivo.add(nombreNorm);
+
+    const existente = (eanCrudo && porEan.get(eanCrudo)) || porNombre.get(nombreNorm) || null;
+    if (existente && modoRepetidos !== 'duplicar') {
+      if (modoRepetidos === 'omitir') { repetidas++; return; }
+      const cambio = armarActualizacionImportacion(existente, {
+        precio, costo, stock, clave, fila: fila.n,
+        categoria: texto(fila, 'category'),
+        descripcion: texto(fila, 'description'),
+        ean: eanCrudo,
+        proveedor: texto(fila, 'proveedor')
+      }, destino, modoRepetidos, catFija);
+      if (cambio) actualizaciones.push(cambio); else sinCambios++;
+      return;
+    }
+
+    const registro = {
       store_slug: currentStore.slug,
       name: nombre,
-      description: mapa.description ? String(fila[mapa.description] || '').trim() : '',
-      price: precio,
-      stock: Number.isFinite(stockCrudo) ? Math.max(0, stockCrudo) : 0,
-      category: mapa.category ? (String(fila[mapa.category] || '').trim() || null) : null,
-      ean: mapa.ean ? (String(fila[mapa.ean] || '').trim() || null) : null,
+      description: texto(fila, 'description'),
+      price: destino === 'interno' ? 0 : clave,
+      stock: stock !== null ? Math.max(0, stock) : 0,
+      category: catFija || texto(fila, 'category') || null,
+      ean: eanCrudo || null,
       tipo: 'producto',
       opciones: [],
       tiene_variantes: false,
@@ -8933,57 +9650,185 @@ async function procesarArchivoImportacion(file) {
       variantes: [],
       imagenes: [],
       image_url: null
-    });
+    };
+    if (destino === 'interno') registro.solo_interno = true;
+
+    const costoFinal = costo !== null ? costo : (destino === 'interno' ? clave : null);
+    if (costoFinal !== null && costoFinal > 0) registro.costo = costoFinal;
+    const prov = texto(fila, 'proveedor');
+    if (prov) registro.proveedor_nombre = prov;
+
+    validas.push(registro);
   });
 
-  filasImportacionValidas = validas;
+  return { validas, actualizaciones, problemas, repetidas, sinCambios, descartadas };
+}
 
-  byId('importarExcelResumen').innerHTML =
-    '✅ ' + validas.length + ' producto' + (validas.length === 1 ? '' : 's') + ' listo' +
-    (validas.length === 1 ? '' : 's') + ' para importar' +
-    (invalidas.length
-      ? '.<br>⚠️ ' + invalidas.length + ' fila' + (invalidas.length === 1 ? '' : 's') +
-        ' se van a omitir: ' + invalidas.map((x) => 'fila ' + x.fila + ' (' + x.motivo + ')').join(', ')
-      : '.');
+function previsualizarImportacion() {
+  const tabla = bloquesImportacion[bloqueImportacionActivo];
+  if (!tabla) return;
+  const destino = destinoImportacion();
+  const boton = byId('confirmarImportacionBtn');
+
+  const faltaNombre = mapeoImportacion.name === undefined;
+  const faltaMonto = destino === 'interno'
+    ? (mapeoImportacion.costo === undefined && mapeoImportacion.price === undefined)
+    : (mapeoImportacion.price === undefined);
+
+  if (faltaNombre || faltaMonto) {
+    filasImportacionValidas = [];
+    filasImportacionActualizar = [];
+    boton.classList.add('hidden');
+    byId('importarExcelPreview').innerHTML = '';
+    byId('importarExcelResumen').innerHTML =
+      '⚠️ Falta decir qué columna es <strong>' +
+      [faltaNombre ? 'Nombre' : null, faltaMonto ? (destino === 'interno' ? 'Costo' : 'Precio de venta') : null]
+        .filter(Boolean).join('</strong> y qué columna es <strong>') +
+      '</strong>. Elegilo en la lista de arriba.';
+    return;
+  }
+
+  const { validas, actualizaciones, problemas, repetidas, sinCambios, descartadas } = construirFilasImportacion();
+  filasImportacionValidas = validas;
+  filasImportacionActualizar = actualizaciones;
+
+  const partes = ['✅ <strong>' + validas.length + '</strong> producto' + (validas.length === 1 ? '' : 's') + ' nuevo' + (validas.length === 1 ? '' : 's') + ' para cargar'];
+  if (actualizaciones.length) partes.push('→ <strong>' + actualizaciones.length + '</strong> que ya ' + (actualizaciones.length === 1 ? 'tenías se actualiza' : 'tenías se actualizan'));
+  if (sinCambios) partes.push('• ' + sinCambios + (sinCambios === 1 ? ' ya estaba igual (no se toca)' : ' ya estaban igual (no se tocan)'));
+  if (repetidas) partes.push('• ' + repetidas + (repetidas === 1 ? ' ya está en tu catálogo (no se carga)' : ' ya están en tu catálogo (no se cargan)'));
+  if (descartadas) partes.push('• ' + descartadas + (descartadas === 1 ? ' fila en blanco o de título (se ignora)' : ' filas en blanco o de título (se ignoran)'));
+  if (problemas.length) {
+    const muestra = problemas.slice(0, 6).map((x) => 'fila ' + x.fila + ' (' + x.motivo + ')').join(', ');
+    partes.push('⚠️ ' + problemas.length + (problemas.length === 1 ? ' se omite: ' : ' se omiten: ') + muestra + (problemas.length > 6 ? ' y ' + (problemas.length - 6) + ' más' : ''));
+  }
+  byId('importarExcelResumen').innerHTML = partes.join('.<br>') + '.' +
+    (bloquesImportacion.length > 1
+      ? '<br><span style="color:var(--text-mute);">La hoja tiene ' + bloquesImportacion.length +
+        ' tablas: se importa la elegida arriba, después podés volver por las otras.</span>'
+      : '');
+
+  const mostrarCosto = validas.some((p) => p.costo !== undefined);
+  const encabezados = ['Nombre']
+    .concat(destino === 'interno' ? [] : ['Precio'])
+    .concat(mostrarCosto ? ['Costo'] : [])
+    .concat(['Stock', 'Categoría']);
 
   byId('importarExcelPreview').innerHTML = validas.length
-    ? '<table><thead><tr><th>Nombre</th><th>Precio</th><th>Stock</th><th>Categoría</th></tr></thead><tbody>' +
+    ? '<table><thead><tr>' + encabezados.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' +
       validas.slice(0, 50).map((p) =>
-        '<tr><td>' + escapeHtml(p.name) + '</td><td>' + money(p.price) + '</td><td>' + p.stock +
-        '</td><td>' + escapeHtml(p.category || '—') + '</td></tr>'
+        '<tr><td>' + escapeHtml(p.name) + '</td>' +
+        (destino === 'interno' ? '' : '<td>' + money(p.price) + '</td>') +
+        (mostrarCosto ? '<td>' + (p.costo ? money(p.costo) : '—') + '</td>' : '') +
+        '<td>' + p.stock + '</td><td>' + escapeHtml(p.category || '—') + '</td></tr>'
       ).join('') + '</tbody></table>' +
       (validas.length > 50
         ? '<p style="color:var(--text-mute);font-size:12px;margin-top:6px;">... y ' + (validas.length - 50) + ' más.</p>'
         : '')
     : '';
 
-  if (validas.length) byId('confirmarImportacionBtn').classList.remove('hidden');
+  // Segunda tabla: que le cambia a cada producto que ya estaba. Sin esto
+  // "se actualizan 40" es un salto de fe.
+  byId('importarExcelPreview').innerHTML += actualizaciones.length
+    ? '<p style="font-size:12.5px;font-weight:700;margin:14px 0 4px;">Se actualizan</p>' +
+      '<table><thead><tr><th>Producto</th><th>Qué cambia</th></tr></thead><tbody>' +
+      actualizaciones.slice(0, 50).map((a) =>
+        '<tr><td>' + escapeHtml(a.nombre) + '</td><td>' + escapeHtml(a.detalle.join(' · ')) + '</td></tr>'
+      ).join('') + '</tbody></table>' +
+      (actualizaciones.length > 50
+        ? '<p style="color:var(--text-mute);font-size:12px;margin-top:6px;">... y ' + (actualizaciones.length - 50) + ' más.</p>'
+        : '')
+    : '';
+
+  const rotuloNuevos = destino === 'interno' ? 'Cargar al stock interno' : 'Importar productos';
+  boton.textContent = validas.length && actualizaciones.length
+    ? 'Cargar ' + validas.length + ' y actualizar ' + actualizaciones.length
+    : (validas.length ? rotuloNuevos : 'Actualizar ' + actualizaciones.length + ' producto' + (actualizaciones.length === 1 ? '' : 's'));
+  boton.classList.toggle('hidden', !validas.length && !actualizaciones.length);
 }
 
 async function confirmarImportacionExcel() {
   if (!puedeOperar()) return;
-  if (!filasImportacionValidas.length) return;
+  if (!filasImportacionValidas.length && !filasImportacionActualizar.length) return;
 
   const boton = byId('confirmarImportacionBtn');
   const textoOriginal = boton.textContent;
   boton.disabled = true;
-  boton.textContent = 'Importando...';
 
-  const { error } = await sb.from('store_products').insert(filasImportacionValidas);
+  let cargados = 0, actualizados = 0;
+  const cortar = async (mensaje) => {
+    boton.disabled = false;
+    boton.textContent = textoOriginal;
+    await refreshData();
+    alert(mensaje);
+  };
+
+  // De a 500: una lista de 3.000 filas en un solo insert se corta por
+  // tamaño de request, y sin el contador la pantalla parece colgada.
+  const LOTE = 500;
+  for (let i = 0; i < filasImportacionValidas.length; i += LOTE) {
+    const lote = filasImportacionValidas.slice(i, i + LOTE);
+    boton.textContent = 'Cargando ' + (cargados + lote.length) + ' de ' + filasImportacionValidas.length + '...';
+    const { error } = await sb.from('store_products').insert(lote);
+    if (error) {
+      await cortar(cargados
+        ? 'Se cargaron ' + cargados + ' productos y ahí se cortó:\n\n' + error.message
+        : 'No se pudieron importar los productos:\n\n' + error.message);
+      return;
+    }
+    cargados += lote.length;
+  }
+
+  // Las actualizaciones van por upsert de a 500 (un pedido por lote). El
+  // upsert no se habia usado nunca en este panel, asi que si el primer
+  // lote no pasa se rehace todo de a una con update(), que es mas lento
+  // pero es el camino que el resto del panel ya usa.
+  const payloads = filasImportacionActualizar.map((a) => a.payload);
+  let unaPorUna = false;
+  for (let i = 0; i < payloads.length; i += LOTE) {
+    const lote = payloads.slice(i, i + LOTE);
+    boton.textContent = 'Actualizando ' + (actualizados + lote.length) + ' de ' + payloads.length + '...';
+    const { error } = await sb.from('store_products').upsert(lote, { onConflict: 'id' });
+    if (error) {
+      if (i === 0) { unaPorUna = true; break; }
+      await cortar('Se actualizaron ' + actualizados + ' productos y ahí se cortó:\n\n' + error.message);
+      return;
+    }
+    actualizados += lote.length;
+  }
+
+  if (unaPorUna) {
+    for (const payload of payloads) {
+      const cambios = Object.assign({}, payload);
+      delete cambios.id;
+      boton.textContent = 'Actualizando ' + (actualizados + 1) + ' de ' + payloads.length + '...';
+      const { error } = await sb.from('store_products').update(cambios).eq('id', payload.id);
+      if (error) {
+        await cortar(actualizados
+          ? 'Se actualizaron ' + actualizados + ' productos y ahí se cortó:\n\n' + error.message
+          : 'No se pudieron actualizar los productos:\n\n' + error.message);
+        return;
+      }
+      actualizados++;
+    }
+  }
 
   boton.disabled = false;
   boton.textContent = textoOriginal;
 
-  if (error) {
-    alert('No se pudieron importar los productos:\n\n' + error.message);
-    return;
-  }
-
-  const cantidad = filasImportacionValidas.length;
+  const interno = destinoImportacion() === 'interno';
   limpiarImportacionExcel();
   hide(byId('importarExcelModal'));
   await refreshData();
-  alert('¡Listo! Se importaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + '.');
+
+  const dichos = [];
+  if (cargados) {
+    dichos.push('se ' + (cargados === 1 ? 'cargó 1 producto' : 'cargaron ' + cargados + ' productos') +
+                (interno ? ' al stock interno' : ''));
+  }
+  if (actualizados) {
+    dichos.push('se ' + (actualizados === 1 ? 'actualizó 1 que ya tenías' : 'actualizaron ' + actualizados + ' que ya tenías'));
+  }
+  alert('¡Listo! ' + dichos.join(' y ') + '.');
 }
 
 // ---------- Carga de stock desde una factura, leída con IA (Pro) ----------
@@ -9469,14 +10314,14 @@ async function confirmarFacturaIa() {
 
 function descargarPlantillaImportacion() {
   const datos = [
-    ['Nombre', 'Descripción', 'Precio', 'Stock', 'Categoría', 'Código de barras'],
-    ['Remera básica blanca', 'Remera de algodón manga corta', 8500, 20, 'Remeras', '7791234567890'],
-    ['Buzo con capucha', 'Frisa liviana', 21000, 8, 'Buzos', '']
+    ['Nombre', 'Descripción', 'Precio', 'Costo', 'Stock', 'Categoría', 'Código de barras'],
+    ['Remera básica blanca', 'Remera de algodón manga corta', 8500, 4200, 20, 'Remeras', '7791234567890'],
+    ['Buzo con capucha', 'Frisa liviana', 21000, 11500, 8, 'Buzos', '']
   ];
   const libro = XLSX.utils.book_new();
   // Mismo formato que el catálogo exportado: si las dos planillas se ven
   // igual, se entiende sola que una es la ida y la otra la vuelta.
-  XLSX.utils.book_append_sheet(libro, armarHojaExcel(datos, [2], [0]), 'Productos');
+  XLSX.utils.book_append_sheet(libro, armarHojaExcel(datos, [2, 3], [0]), 'Productos');
   XLSX.writeFile(libro, 'plantilla-productos-bruwal.xlsx');
 }
 
@@ -13526,6 +14371,746 @@ byId('tabReparaciones').addEventListener('click', () => {
   byId('reparacionesView').classList.add('visible');
 });
 
+// ===================== EMPLEADOS Y FICHADAS =====================
+// Para el sistema, un empleado se identifica con UN TEXTO y nada más. Un
+// lector NFC/RFID USB en "modo teclado" apoya la tarjeta y tipea el número
+// como si alguien lo escribiera, igual que el lector de códigos de barras
+// que el panel ya usa. Por eso lo mismo sirve con tarjeta NFC, con llavero
+// RFID, con un QR impreso en el carnet, o tocando el nombre en pantalla:
+// abajo de todo siempre es comparar dos strings.
+//
+// Nada de esto necesita hardware para arrancar. Sin lector, el empleado
+// toca su nombre en el reloj y funciona igual; la tarjeta se agrega después
+// si el negocio la quiere.
+
+// created_at/momento se guardan en UTC. Para saber a qué DÍA del negocio
+// pertenece una marca hay que preguntarlo en hora de Buenos Aires: si no,
+// una salida de las 21:30 cae en el día siguiente y las horas se parten al
+// medio entre dos jornadas.
+const diaARde = (v) => new Date(v).toLocaleDateString('en-CA', { timeZone: TZ_AR });
+
+const normalizarTarjeta = (t) => String(t || '').trim().toUpperCase();
+
+function empleadosActivos() {
+  return empleados.filter(e => e.activo !== false);
+}
+
+function empleadoPorId(id) {
+  return empleados.find(e => String(e.id) === String(id)) || null;
+}
+
+function empleadoPorTarjeta(codigo) {
+  const c = normalizarTarjeta(codigo);
+  if (!c) return null;
+  return empleadosActivos().find(e => normalizarTarjeta(e.tarjeta) === c) || null;
+}
+
+function marcasDe(empleadoId) {
+  return fichadas
+    .filter(f => String(f.empleado_id) === String(empleadoId))
+    .sort((a, b) => new Date(a.momento) - new Date(b.momento));
+}
+
+// La próxima marca es la contraria a la última: si la última fue entrada,
+// ahora toca salida. Así el empleado apoya la tarjeta y listo, sin tener
+// que elegir nada ni acordarse de qué marcó hace ocho horas.
+function proximaMarcaDe(empleadoId) {
+  const ultima = marcasDe(empleadoId).slice(-1)[0];
+  return (ultima && ultima.tipo === 'entrada') ? 'salida' : 'entrada';
+}
+
+const estaTrabajando = (empleadoId) => proximaMarcaDe(empleadoId) === 'salida';
+
+// Arma las jornadas trabajadas juntando cada entrada con la primera salida
+// que le sigue.
+//
+// Si alguien se olvidó de marcar la salida, esa entrada queda ABIERTA y se
+// avisa; no se le inventa una hora de salida. Inventarla sería pagarle o
+// descontarle horas que nadie sabe si trabajó, y este número termina siendo
+// un sueldo.
+function jornadasDeEmpleado(empleadoId, desde, hasta) {
+  const marcas = marcasDe(empleadoId)
+    .filter(f => { const d = diaARde(f.momento); return d >= desde && d <= hasta; });
+
+  const hoy = fechaLocalISO();
+  const jornadas = [];
+  let abierta = null;
+
+  marcas.forEach(m => {
+    if (m.tipo === 'entrada') {
+      if (abierta) jornadas.push({ entrada: abierta, salida: null, olvido: true });
+      abierta = m;
+    } else if (abierta) {
+      jornadas.push({
+        entrada: abierta, salida: m,
+        ms: new Date(m.momento) - new Date(abierta.momento)
+      });
+      abierta = null;
+    } else {
+      jornadas.push({ entrada: null, salida: m, olvido: true });
+    }
+  });
+
+  // La última entrada sin cerrar es "está trabajando" si es de hoy, y un
+  // olvido si quedó colgada de un día anterior.
+  if (abierta) {
+    jornadas.push(diaARde(abierta.momento) === hoy
+      ? { entrada: abierta, salida: null, enCurso: true }
+      : { entrada: abierta, salida: null, olvido: true });
+  }
+
+  return jornadas;
+}
+
+function resumenDeEmpleado(e, desde, hasta) {
+  const jornadas = jornadasDeEmpleado(e.id, desde, hasta);
+  const ms = jornadas.reduce((s, j) => s + (j.ms || 0), 0);
+  const horas = ms / 3600000;
+  const valorHora = Number(e.valor_hora || 0);
+  return {
+    jornadas, ms, horas, valorHora,
+    olvidos: jornadas.filter(j => j.olvido).length,
+    enCurso: jornadas.some(j => j.enCurso),
+    // Al peso: 8h 45m por hora quebrada da centavos infinitos, y money()
+    // los mostraba tal cual ("$116.958,333"). Un sueldo se paga redondo.
+    aPagar: valorHora > 0 ? Math.round(horas * valorHora) : 0
+  };
+}
+
+function duracionBonita(ms) {
+  const minutos = Math.max(0, Math.round((ms || 0) / 60000));
+  return Math.floor(minutos / 60) + 'h ' + String(minutos % 60).padStart(2, '0') + 'm';
+}
+
+function periodoEmpleados() {
+  const hoy = fechaLocalISO();
+  const inputDesde = byId('empleadosDesde');
+  const inputHasta = byId('empleadosHasta');
+  // Por defecto, el mes en curso: es el período con el que se paga.
+  if (inputDesde && !inputDesde.value) inputDesde.value = hoy.slice(0, 8) + '01';
+  if (inputHasta && !inputHasta.value) inputHasta.value = hoy;
+  return { desde: inputDesde ? inputDesde.value : hoy, hasta: inputHasta ? inputHasta.value : hoy };
+}
+
+function renderEmpleados() {
+  const cuerpo = byId('empleadosBody');
+  if (!cuerpo) return;
+
+  const { desde, hasta } = periodoEmpleados();
+  const lista = [...empleados].sort((a, b) => {
+    if ((a.activo !== false) !== (b.activo !== false)) return a.activo === false ? 1 : -1;
+    return String(a.nombre || '').localeCompare(String(b.nombre || ''));
+  });
+
+  let horasTotal = 0, aPagarTotal = 0, trabajando = 0;
+
+  cuerpo.innerHTML = lista.length ? lista.map(e => {
+    const r = resumenDeEmpleado(e, desde, hasta);
+    horasTotal += r.horas;
+    aPagarTotal += r.aPagar;
+    if (e.activo !== false && estaTrabajando(e.id)) trabajando++;
+
+    const inactivo = e.activo === false;
+    const chip = (texto, color, fondo) =>
+      '<span style="font-size:10.5px;font-weight:700;color:' + color + ';background:' + fondo +
+      ';padding:2px 7px;border-radius:999px;white-space:nowrap;">' + texto + '</span>';
+
+    const marcas = [];
+    if (inactivo) marcas.push(chip('Ya no trabaja', '#8A97A8', 'var(--bg)'));
+    else if (estaTrabajando(e.id)) marcas.push(chip('● Trabajando', '#1FA088', '#E8F6F2'));
+    if (r.olvidos) marcas.push(chip('⚠ ' + r.olvidos + ' sin cerrar', '#B45309', '#FEF3C7'));
+
+    return '<tr' + (inactivo ? ' style="opacity:0.55;"' : '') + '>' +
+      '<td>' +
+        '<div style="font-weight:600;">' + escapeHtml(e.nombre || '') + '</div>' +
+        (e.rol ? '<div style="font-size:11.5px;color:var(--text-mute);">' + escapeHtml(e.rol) + '</div>' : '') +
+        (marcas.length ? '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">' + marcas.join('') + '</div>' : '') +
+      '</td>' +
+      '<td style="font-size:12px;color:var(--text-mute);font-family:monospace;">' +
+        (e.tarjeta ? escapeHtml(e.tarjeta) : '<span style="font-family:inherit;">Sin tarjeta</span>') + '</td>' +
+      '<td style="text-align:right;">' + (r.valorHora > 0 ? money(r.valorHora) : '<span style="color:var(--text-mute);">—</span>') + '</td>' +
+      '<td style="text-align:right;font-weight:600;">' + duracionBonita(r.ms) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:var(--navy);">' +
+        (r.valorHora > 0 ? money(r.aPagar) : '<span style="font-weight:400;color:var(--text-mute);font-size:11.5px;">falta el valor hora</span>') + '</td>' +
+      '<td style="white-space:nowrap;">' +
+        (r.aPagar > 0 ? '<button class="icon-btn" data-pagar-empleado="' + e.id + '" title="Registrar como gasto de sueldo">💸</button>' : '') +
+        '<button class="icon-btn" data-editar-empleado="' + e.id + '" title="Editar">✏️</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ningún empleado.</td></tr>';
+
+  byId('empleadosTrabajando').textContent = trabajando;
+  byId('empleadosHorasPeriodo').textContent = duracionBonita(horasTotal * 3600000);
+  byId('empleadosAPagar').textContent = money(aPagarTotal);
+
+  cuerpo.querySelectorAll('[data-editar-empleado]').forEach(b =>
+    b.addEventListener('click', () => abrirModalEmpleado(b.dataset.editarEmpleado)));
+  cuerpo.querySelectorAll('[data-pagar-empleado]').forEach(b =>
+    b.addEventListener('click', () => registrarSueldoComoGasto(b.dataset.pagarEmpleado)));
+
+  renderFichadas(desde, hasta);
+}
+
+function renderFichadas(desde, hasta) {
+  const cuerpo = byId('fichadasBody');
+  if (!cuerpo) return;
+
+  const delPeriodo = fichadas
+    .filter(f => { const d = diaARde(f.momento); return d >= desde && d <= hasta; })
+    .sort((a, b) => new Date(b.momento) - new Date(a.momento));
+
+  cuerpo.innerHTML = delPeriodo.length ? delPeriodo.map(f => {
+    const e = empleadoPorId(f.empleado_id);
+    const entrada = f.tipo === 'entrada';
+    return '<tr>' +
+      '<td style="font-size:12.5px;white-space:nowrap;">' + fechaAR(f.momento, { day: '2-digit', month: '2-digit' }) + '</td>' +
+      '<td style="font-size:12.5px;white-space:nowrap;">' + horaAR(f.momento, { hour: '2-digit', minute: '2-digit' }) + '</td>' +
+      '<td>' + escapeHtml(e ? (e.nombre || '') : 'Empleado eliminado') + '</td>' +
+      '<td><span style="color:' + (entrada ? '#1FA088' : '#DC2626') + ';font-weight:600;">' +
+        (entrada ? 'Entrada' : 'Salida') + '</span></td>' +
+      '<td style="font-size:12px;color:var(--text-mute);">' + escapeHtml(f.origen || 'tarjeta') + '</td>' +
+      '<td><button class="icon-btn danger" data-borrar-fichada="' + f.id + '" title="Borrar marca">🗑</button></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin marcas en este período.</td></tr>';
+
+  cuerpo.querySelectorAll('[data-borrar-fichada]').forEach(b =>
+    b.addEventListener('click', () => borrarFichada(b.dataset.borrarFichada)));
+
+  renderAvisoPendientes();
+}
+
+// ---- Alta y edición ----
+function abrirModalEmpleado(id) {
+  const e = id ? empleadoPorId(id) : null;
+
+  byId('empleadoModal').dataset.id = e ? e.id : '';
+  byId('empleadoModalTitulo').innerHTML =
+    '<i class="fa-solid fa-user-clock" style="color:var(--celeste);"></i> ' + (e ? 'Editar empleado' : 'Nuevo empleado');
+  byId('empleadoNombre').value = e ? (e.nombre || '') : '';
+  byId('empleadoRol').value = e ? (e.rol || '') : '';
+  byId('empleadoTarjeta').value = e ? (e.tarjeta || '') : '';
+  byId('empleadoValorHora').value = e && e.valor_hora != null ? e.valor_hora : '';
+  byId('empleadoActivo').checked = e ? e.activo !== false : true;
+  byId('eliminarEmpleadoBtn').classList.toggle('hidden', !e);
+  byId('empleadoTarjetaNfcBtn').classList.toggle('hidden', !('NDEFReader' in window));
+
+  show(byId('empleadoModal'));
+  setTimeout(() => byId('empleadoNombre').focus(), 100);
+}
+
+async function guardarEmpleado() {
+  if (!puedeOperar()) return;
+
+  const nombre = byId('empleadoNombre').value.trim();
+  if (!nombre) { alert('Falta el nombre del empleado.'); return; }
+
+  const tarjeta = normalizarTarjeta(byId('empleadoTarjeta').value);
+  const id = byId('empleadoModal').dataset.id;
+
+  // Dos empleados con la misma tarjeta harían que una marca no sepa de
+  // quién es. La base también lo frena, pero acá se explica de quién es.
+  const repetida = tarjeta && empleados.find(x => normalizarTarjeta(x.tarjeta) === tarjeta && String(x.id) !== String(id));
+  if (repetida) { alert('Esa tarjeta ya es de ' + (repetida.nombre || 'otro empleado') + '.'); return; }
+
+  const datos = {
+    store_slug: currentStore.slug,
+    nombre,
+    rol: byId('empleadoRol').value.trim() || null,
+    tarjeta: tarjeta || null,
+    valor_hora: byId('empleadoValorHora').value === '' ? null : Number(byId('empleadoValorHora').value),
+    activo: byId('empleadoActivo').checked
+  };
+
+  const { error } = id
+    ? await sb.from('store_empleados').update(datos).eq('id', id)
+    : await sb.from('store_empleados').insert([datos]);
+
+  if (error) { alert('No se pudo guardar:\n\n' + error.message); return; }
+
+  hide(byId('empleadoModal'));
+  await refreshData();
+}
+
+async function eliminarEmpleado() {
+  if (!puedeOperar()) return;
+  const id = byId('empleadoModal').dataset.id;
+  if (!id) return;
+
+  if (!confirm('¿Eliminar este empleado? Se borran también todas sus marcas de entrada y salida.\n\n' +
+               'Si simplemente dejó de trabajar, mejor destildá "Trabaja actualmente": así las horas viejas se siguen viendo.')) return;
+
+  const { error } = await sb.from('store_empleados').delete().eq('id', id);
+  if (error) { alert('No se pudo eliminar:\n\n' + error.message); return; }
+
+  hide(byId('empleadoModal'));
+  await refreshData();
+}
+
+async function borrarFichada(id) {
+  if (!puedeOperar()) return;
+  if (!confirm('¿Borrar esta marca?')) return;
+  const { error } = await sb.from('store_fichadas').delete().eq('id', id);
+  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  await refreshData();
+}
+
+// ---- Marcar, con o sin internet ----
+// El reloj vive en la puerta de un negocio de barrio: el wifi se corta, el
+// módem se reinicia, alguien desenchufa algo. Una venta que no entra se
+// vuelve a cargar; una marca de las 9:03 no se reconstruye después, porque
+// nadie se acuerda del minuto exacto y de ahí sale un sueldo.
+//
+// Por eso la marca se guarda SIEMPRE en el aparato primero y se sube
+// cuando se puede. La hora que queda es la del momento en que se marcó, no
+// la de cuando volvió internet.
+const COLA_FICHADAS = 'bruwal_fichadas_pendientes';
+
+function colaFichadas() {
+  try { return JSON.parse(localStorage.getItem(COLA_FICHADAS) || '[]'); }
+  catch (e) { return []; }
+}
+
+function guardarColaFichadas(cola) {
+  try { localStorage.setItem(COLA_FICHADAS, JSON.stringify(cola)); }
+  catch (e) { /* sin espacio: la marca ya está en pantalla, no se pierde la sesión */ }
+}
+
+// Las pendientes son de ESTA tienda y de este aparato. Se agregan a lo que
+// vino de la base sin repetir: el id lo genera el navegador, así que
+// alcanza con comparar por id.
+function mezclarFichadasPendientes(deLaBase) {
+  const ids = new Set(deLaBase.map(f => String(f.id)));
+  const pendientes = colaFichadas()
+    .filter(f => f.store_slug === currentStore?.slug && !ids.has(String(f.id)));
+  return [...pendientes, ...deLaBase];
+}
+
+// Un corte de internet no es un error: es "todavía no". Un rechazo de la
+// base (datos mal, permisos) sí lo es, y ese hay que mostrarlo.
+function esFallaDeRed(error) {
+  if (!navigator.onLine) return true;
+  if (!error) return false;
+  if (error.code) return false;                 // error real de Postgres
+  const m = String(error.message || '').toLowerCase();
+  return m.includes('fetch') || m.includes('network') || m.includes('timeout') || m.includes('load failed');
+}
+
+async function subirFichada(fila) {
+  try {
+    const { error } = await sb.from('store_fichadas').insert([fila]);
+    // 23505 = clave repetida. Pasa cuando la marca SÍ había entrado y la
+    // respuesta nunca llegó: reintentarla no la duplica, la confirma.
+    if (error && error.code !== '23505') return { error };
+    return { ok: true };
+  } catch (err) {
+    return { error: err };
+  }
+}
+
+async function sincronizarFichadasPendientes() {
+  const cola = colaFichadas();
+  if (!cola.length || !navigator.onLine) return;
+
+  const quedan = [];
+  for (const fila of cola) {
+    const r = await subirFichada(fila);
+    // Si falló por red, se deja para la próxima. Si la base la rechazó de
+    // verdad, insistir para siempre no la va a arreglar: se descarta y la
+    // marca igual quedó a la vista para corregirla a mano.
+    if (r.error && esFallaDeRed(r.error)) quedan.push(fila);
+  }
+
+  guardarColaFichadas(quedan);
+}
+
+function renderAvisoPendientes() {
+  const aviso = byId('fichadasPendientesAviso');
+  if (!aviso) return;
+
+  const n = colaFichadas().filter(f => f.store_slug === currentStore?.slug).length;
+  aviso.classList.toggle('hidden', n === 0);
+  if (!n) return;
+
+  aviso.innerHTML = '⏳ <strong>' + n + ' marca' + (n === 1 ? '' : 's') + ' sin subir.</strong> ' +
+    'Quedaron guardadas en este aparato con su hora real y se van a subir solas cuando vuelva internet. ' +
+    'Mientras tanto ya cuentan en las horas de acá abajo.';
+}
+
+// Una sola puerta para todas las formas de marcar (tarjeta, nombre tocado
+// en pantalla): si mañana se agrega otra, entra por acá.
+async function ficharEmpleado(empleadoId, origen) {
+  const e = empleadoPorId(empleadoId);
+  if (!e) return null;
+
+  const tipo = proximaMarcaDe(empleadoId);
+  const momento = new Date().toISOString();
+
+  // El id lo genera el navegador, no la base. Así una marca que se sube
+  // dos veces (porque no se supo si la primera llegó) es la MISMA fila y
+  // no dos entradas a la misma hora.
+  const fila = {
+    id: (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'f-' + Date.now() + '-' + Math.random().toString(16).slice(2),
+    store_slug: currentStore.slug,
+    empleado_id: e.id,
+    tipo,
+    momento,
+    origen: origen || 'tarjeta'
+  };
+
+  // Primero a la pantalla: con el reloj abierto todo el día no hay refresco
+  // automático (hay un modal abierto), y esperar la respuesta del servidor
+  // para saber si marcó bien es justo lo que hace que alguien apoye la
+  // tarjeta tres veces.
+  fichadas = [fila, ...fichadas];
+
+  const r = await subirFichada(fila);
+  let pendiente = false;
+
+  if (r.error) {
+    if (!esFallaDeRed(r.error)) {
+      fichadas = fichadas.filter(f => f.id !== fila.id);
+      return { error: r.error };
+    }
+    guardarColaFichadas([...colaFichadas(), fila]);
+    pendiente = true;
+  }
+
+  let trabajado = null;
+  if (tipo === 'salida') {
+    const entrada = marcasDe(e.id).filter(f => f.tipo === 'entrada').slice(-1)[0];
+    if (entrada) trabajado = new Date(momento) - new Date(entrada.momento);
+  }
+
+  return { empleado: e, tipo, momento, trabajado, pendiente };
+}
+
+// ---- Modo reloj ----
+let relojTimer = null;
+
+function tickReloj() {
+  const ahora = ahoraEnArgentina();
+  byId('relojHora').textContent =
+    String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0');
+  byId('relojDia').textContent =
+    ahora.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function renderRelojBotones() {
+  const cont = byId('relojBotones');
+  if (!cont) return;
+
+  const activos = empleadosActivos();
+  cont.innerHTML = activos.map(e => {
+    const dentro = estaTrabajando(e.id);
+    return '<button type="button" data-fichar="' + e.id + '" class="btn" ' +
+      'style="width:100%;padding:13px 8px;font-size:13.5px;font-weight:600;' +
+      (dentro ? 'background:#E8F6F2;color:#12705E;border:1.5px solid #1FA088;' : 'background:var(--bg);color:var(--navy);border:1.5px solid var(--line);') + '">' +
+      escapeHtml(e.nombre || '') +
+      '<div style="font-size:10.5px;font-weight:600;margin-top:3px;opacity:.85;">' +
+        (dentro ? 'Marcar salida' : 'Marcar entrada') + '</div>' +
+    '</button>';
+  }).join('');
+
+  cont.querySelectorAll('[data-fichar]').forEach(b =>
+    b.addEventListener('click', () => marcarEnReloj(b.dataset.fichar, 'pantalla')));
+}
+
+function mensajeReloj(html, color) {
+  byId('relojMensaje').innerHTML =
+    '<div style="background:' + (color || 'var(--bg)') + ';border-radius:11px;padding:16px;">' + html + '</div>';
+}
+
+async function marcarEnReloj(empleadoId, origen) {
+  const r = await ficharEmpleado(empleadoId, origen);
+  if (!r) return;
+  if (r.error) { mensajeReloj('<div style="font-size:16px;color:#B91C1C;font-weight:700;">No se pudo registrar la marca.</div>', '#FEE2E2'); return; }
+
+  const hora = horaAR(r.momento, { hour: '2-digit', minute: '2-digit' });
+  const nombre = escapeHtml(r.empleado.nombre || '');
+  // Para el empleado la marca está hecha, porque lo está: quedó guardada
+  // con su hora. Que todavía no haya viajado al servidor es problema del
+  // sistema, no algo que él tenga que resolver parado en la puerta.
+  const nota = r.pendiente
+    ? '<div style="font-size:12px;color:#92400E;margin-top:7px;">⏳ Sin internet: queda guardada y se sube sola.</div>'
+    : '';
+
+  if (r.tipo === 'entrada') {
+    mensajeReloj(
+      '<div style="font-size:21px;font-weight:800;color:#12705E;">👋 Hola, ' + nombre + '</div>' +
+      '<div style="font-size:15px;color:#12705E;margin-top:5px;">Entrada registrada a las ' + hora + '</div>' + nota, '#E8F6F2');
+  } else {
+    mensajeReloj(
+      '<div style="font-size:21px;font-weight:800;color:var(--navy);">✅ Hasta luego, ' + nombre + '</div>' +
+      '<div style="font-size:15px;color:var(--navy);margin-top:5px;">Salida registrada a las ' + hora +
+        (r.trabajado > 0 ? ' · trabajaste ' + duracionBonita(r.trabajado) : '') + '</div>' + nota, '#EAF4FD');
+  }
+
+  renderRelojBotones();
+}
+
+// ?reloj=1 en la direccion es lo que hace que el modo reloj sobreviva a
+// un refresh. history.replaceState y no una recarga: recargar perderia la
+// sesion recien levantada y las fichadas que todavia no subieron.
+function marcarRelojEnLaUrl(activo) {
+  try {
+    const url = new URL(window.location.href);
+    if (activo) url.searchParams.set('reloj', '1');
+    else url.searchParams.delete('reloj');
+    history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
+  } catch (e) { /* si el navegador no deja tocar la URL, el reloj anda igual */ }
+}
+
+function linkDelReloj() {
+  return window.location.origin + window.location.pathname + '?reloj=1';
+}
+
+async function copiarLinkDelReloj() {
+  const link = linkDelReloj();
+  try {
+    await navigator.clipboard.writeText(link);
+    alert('Link del reloj copiado:\n\n' + link +
+          '\n\nAbrilo en la tablet de la entrada y dejalo como página de inicio.');
+  } catch (e) {
+    prompt('Copiá el link del reloj:', link);
+  }
+}
+
+function abrirReloj() {
+  if (!empleadosActivos().length) {
+    alert('Cargá al menos un empleado antes de abrir el reloj.');
+    return;
+  }
+  marcarRelojEnLaUrl(true);
+
+  // Al pasar a modo reloj se vuelve a cerrar el candado de costos: la
+  // tablet queda en la entrada y la toca cualquiera. Para volver al panel
+  // hay que poner el PIN otra vez.
+  if (hayPinConfigurado()) costosDesbloqueados = false;
+
+  // El aviso solo cuando corresponde: si hay PIN, salir ya esta trabado.
+  byId('relojAvisoPin').classList.toggle('hidden', hayPinConfigurado());
+
+  renderRelojBotones();
+  mensajeReloj('<div style="font-size:15px;color:var(--text-mute);">Apoyá tu tarjeta en el lector o tocá tu nombre.</div>');
+  byId('relojInput').value = '';
+  show(byId('relojModal'));
+
+  tickReloj();
+  clearInterval(relojTimer);
+  relojTimer = setInterval(tickReloj, 1000);
+
+  // En el celular no se enfoca solo: saltaría el teclado en pantalla y
+  // taparía los nombres, que es justo como se marca cuando no hay lector.
+  if (!esMobile()) setTimeout(() => byId('relojInput').focus(), 200);
+}
+
+function cerrarReloj() {
+  clearInterval(relojTimer);
+  relojTimer = null;
+  marcarRelojEnLaUrl(false);
+  hide(byId('relojModal'));
+  renderEmpleados();
+}
+
+function salirDelReloj() {
+  if (requiereDesbloqueoCostos()) { abrirPinCostosModal(cerrarReloj); return; }
+  cerrarReloj();
+}
+
+// ---- El sueldo del período, como gasto ----
+function registrarSueldoComoGasto(empleadoId) {
+  const e = empleadoPorId(empleadoId);
+  if (!e) return;
+
+  const { desde, hasta } = periodoEmpleados();
+  const r = resumenDeEmpleado(e, desde, hasta);
+  if (r.aPagar <= 0) return;
+
+  if (r.olvidos && !confirm('Ojo: ' + e.nombre + ' tiene ' + r.olvidos + ' marca(s) sin cerrar en este período, ' +
+      'así que esas horas no están contadas.\n\n¿Registrar igual ' + money(r.aPagar) + '?')) return;
+
+  // Se abre el modal de gastos de siempre, precargado. El gasto no se
+  // guarda solo: el sueldo se paga cuando se paga, y con qué medio lo sabe
+  // el dueño, no el reloj.
+  abrirModalGasto(null);
+  // desde/hasta ya son dias sueltos ("2026-09-01"), no instantes: se
+  // recortan y listo. Pasarlos por una fecha con hora los movería de dia
+  // segun el huso del aparato, que es justo lo que se arreglo antes.
+  const diaCorto = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+  byId('gastoConcepto').value = 'Sueldo — ' + e.nombre +
+    ' (' + diaCorto(desde) + ' al ' + diaCorto(hasta) + ')';
+  byId('gastoMonto').value = Math.round(r.aPagar);
+  byId('gastoNotas').value = duracionBonita(r.ms) + ' trabajadas a ' + money(r.valorHora) + ' la hora.';
+  gastoCategoriaSeleccionada = 'Sueldos';
+  renderGastoCategorias();
+}
+
+// ---- Lectura NFC desde el celular (Chrome en Android) ----
+// Safari no expone NFC a las páginas web, así que en iPhone/iPad el botón
+// ni aparece: ahí se usa el lector USB, que para el aparato es un teclado.
+async function leerTarjetaNfcAlCampo(idCampo, boton) {
+  if (!('NDEFReader' in window)) return;
+  const textoOriginal = boton.textContent;
+  boton.textContent = '📱 Acercá la tarjeta…';
+  boton.disabled = true;
+  try {
+    const lector = new NDEFReader();
+    await lector.scan();
+    lector.onreading = (ev) => {
+      byId(idCampo).value = normalizarTarjeta(ev.serialNumber || '');
+      boton.textContent = textoOriginal;
+      boton.disabled = false;
+    };
+  } catch (err) {
+    alert('No se pudo leer la tarjeta con el celular: ' + err.message +
+      '\n\nSi el teléfono no tiene NFC o el navegador no lo permite, usá un lector USB.');
+    boton.textContent = textoOriginal;
+    boton.disabled = false;
+  }
+}
+
+// ---- Vista y botones ----
+function mostrarVistaEmpleados() {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabEmpleados').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('empleadosView').classList.add('visible');
+  renderEmpleados();
+}
+
+byId('tabEmpleados').addEventListener('click', () => {
+  if (!tienePlanPro()) { ofrecerUpgradePro('Empleados'); return; }
+  // Acá se ve cuánto gana cada uno: mismo candado que Caja y Gastos.
+  if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaEmpleados); return; }
+  mostrarVistaEmpleados();
+});
+
+byId('empleadosDesde').addEventListener('change', renderEmpleados);
+byId('empleadosHasta').addEventListener('change', renderEmpleados);
+
+byId('nuevoEmpleadoBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  abrirModalEmpleado(null);
+});
+byId('closeEmpleadoModal').addEventListener('click', () => hide(byId('empleadoModal')));
+byId('guardarEmpleadoBtn').addEventListener('click', guardarEmpleado);
+byId('eliminarEmpleadoBtn').addEventListener('click', eliminarEmpleado);
+byId('empleadoTarjetaNfcBtn').addEventListener('click', (e) =>
+  leerTarjetaNfcAlCampo('empleadoTarjeta', e.currentTarget));
+
+// Cuando el aparato recupera la conexión, las marcas que quedaron esperando
+// suben solas. Sin esto habría que acordarse de entrar al panel.
+window.addEventListener('online', async () => {
+  await sincronizarFichadasPendientes();
+  renderAvisoPendientes();
+});
+
+byId('abrirRelojBtn').addEventListener('click', abrirReloj);
+byId('copiarLinkRelojBtn').addEventListener('click', copiarLinkDelReloj);
+byId('salirRelojBtn').addEventListener('click', salirDelReloj);
+
+// El lector USB tipea el número y da Enter, igual que el de códigos de
+// barras. Por eso alcanza con escuchar el Enter de este campo.
+byId('relojInput').addEventListener('keypress', async (e) => {
+  if (e.key !== 'Enter') return;
+  const codigo = byId('relojInput').value.trim();
+  byId('relojInput').value = '';
+  if (!codigo) return;
+
+  const empleado = empleadoPorTarjeta(codigo);
+  if (!empleado) {
+    mensajeReloj(
+      '<div style="font-size:18px;font-weight:800;color:#B91C1C;">Tarjeta no reconocida</div>' +
+      '<div style="font-size:13px;color:#B91C1C;margin-top:5px;">Tocá tu nombre en la lista, o avisá para que la carguen.</div>',
+      '#FEE2E2');
+    return;
+  }
+  await marcarEnReloj(empleado.id, 'tarjeta');
+});
+
+// Con el reloj abierto el foco vuelve solo al campo: si alguien lo toca sin
+// querer, el próximo que apoye la tarjeta no marcaría nada.
+byId('relojModal').addEventListener('click', () => {
+  if (esMobile()) return;
+  // Si el reloj ya se cerro, o si arriba esta el modal del PIN, devolverle
+  // el foco al campo le robaria el teclado justo al que esta tipeando.
+  if (byId('relojModal').classList.contains('hidden')) return;
+  if (!byId('pinCostosModal').classList.contains('hidden')) return;
+  byId('relojInput').focus();
+});
+
+byId('marcaManualBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  const activos = empleadosActivos();
+  if (!activos.length) { alert('Primero cargá un empleado.'); return; }
+
+  byId('marcaManualEmpleado').innerHTML = activos
+    .map(e => '<option value="' + e.id + '">' + escapeHtml(e.nombre || '') + '</option>').join('');
+  byId('marcaManualTipo').value = 'entrada';
+
+  const ahora = ahoraEnArgentina();
+  byId('marcaManualMomento').value =
+    ahora.getFullYear() + '-' + String(ahora.getMonth() + 1).padStart(2, '0') + '-' +
+    String(ahora.getDate()).padStart(2, '0') + 'T' +
+    String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0');
+
+  show(byId('marcaManualModal'));
+});
+byId('closeMarcaManualModal').addEventListener('click', () => hide(byId('marcaManualModal')));
+
+byId('guardarMarcaManualBtn').addEventListener('click', async () => {
+  if (!puedeOperar()) return;
+
+  const empleadoId = byId('marcaManualEmpleado').value;
+  const texto = byId('marcaManualMomento').value;
+  if (!empleadoId || !texto) { alert('Faltan el empleado o el día y la hora.'); return; }
+
+  // El datetime-local se tipea en hora de Buenos Aires (es la hora del
+  // local). Se arma con los mismos números y se guarda el instante real.
+  const [dia, hora] = texto.split('T');
+  const momento = momentoARaISO(dia, hora);
+
+  const { error } = await sb.from('store_fichadas').insert([{
+    store_slug: currentStore.slug,
+    empleado_id: empleadoId,
+    tipo: byId('marcaManualTipo').value,
+    momento,
+    origen: 'manual'
+  }]);
+
+  if (error) { alert('No se pudo guardar la marca:\n\n' + error.message); return; }
+
+  hide(byId('marcaManualModal'));
+  await refreshData();
+});
+
+// Convierte un "2026-09-03" + "14:30" escritos en hora de Buenos Aires al
+// instante real (ISO en UTC). Sin esto, una marca cargada a mano quedaría
+// desplazada las horas que separan al aparato de Argentina.
+function desfaseARenMs(instante) {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ_AR, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }).formatToParts(instante).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+  const paredComoUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return paredComoUtc - instante.getTime();   // Buenos Aires hoy: -3 h
+}
+
+function momentoARaISO(dia, hora) {
+  const [a, m, d] = dia.split('-').map(Number);
+  const [hh, mm] = hora.split(':').map(Number);
+  const paredComoUtc = Date.UTC(a, m - 1, d, hh, mm);
+
+  // Se busca el instante cuyo reloj de pared en Buenos Aires marca esos
+  // numeros. Una pasada alcanza porque Argentina no cambia la hora; la
+  // segunda la corrige sola si algun dia vuelve el horario de verano.
+  let t = paredComoUtc - desfaseARenMs(new Date(paredComoUtc));
+  t = paredComoUtc - desfaseARenMs(new Date(t));
+  return new Date(t).toISOString();
+}
+
 function mostrarVistaGastos() {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   byId('tabGastos').classList.add('active');
@@ -13640,6 +15225,23 @@ byId('closeImportarExcelModal').addEventListener('click', () => hide(byId('impor
 byId('descargarPlantillaBtn').addEventListener('click', descargarPlantillaImportacion);
 byId('importarExcelInput').addEventListener('change', (e) => {
   if (e.target.files[0]) procesarArchivoImportacion(e.target.files[0]);
+});
+byId('importarHojaSelect').addEventListener('change', elegirHojaImportacion);
+byId('importarBloqueSelect').addEventListener('change', elegirBloqueImportacion);
+document.querySelectorAll('input[name="importarDestino"]').forEach((r) => {
+  r.addEventListener('change', cambiarDestinoImportacion);
+});
+// Delegado: los select de columnas se vuelven a dibujar en cada cambio, asi
+// que no se les puede colgar el listener de a uno.
+byId('importarMapeo').addEventListener('change', (e) => {
+  const select = e.target.closest('select[data-columna]');
+  if (select) cambiarColumnaImportacion(Number(select.dataset.columna), select.value);
+});
+byId('importarCategoriaFija').addEventListener('input', () => {
+  if (bloquesImportacion.length) previsualizarImportacion();
+});
+byId('importarRepetidos').addEventListener('change', () => {
+  if (bloquesImportacion.length) previsualizarImportacion();
 });
 byId('confirmarImportacionBtn').addEventListener('click', confirmarImportacionExcel);
 
