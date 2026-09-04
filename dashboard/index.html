@@ -3335,6 +3335,20 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label>🛒 Mercado Libre</label>
+          <small style="display:block;margin-bottom:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Conectá tu cuenta para que las ventas de Mercado Libre descuenten el stock acá y
+            aparezcan como pedido. Primero se conecta la cuenta; después se eligen qué
+            publicaciones corresponden a qué productos.
+          </small>
+          <div id="mlEstado" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;">—</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="conectarMlBtn" class="btn" style="width:auto;">Conectar mi cuenta</button>
+            <button type="button" id="desconectarMlBtn" class="btn-ghost hidden" style="width:auto;color:var(--danger);">Desconectar</button>
+          </div>
+        </div>
+
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
           <label>🔒 PIN para ver costos y proveedores <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <small style="display:block;margin-bottom:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Si lo activás, se va a pedir este PIN para entrar a Gastos, ver el Costo/Margen de las
@@ -6910,12 +6924,115 @@ async function onLoggedIn() {
 
   show(byId('ayudaBotBtn'));
 
+  avisarVueltaDeMl();
+
   // El reloj gana: si la tablet arranca en modo reloj no hay que abrirle
   // ninguna otra pantalla arriba.
   if (await arranqueDirectoAlReloj()) return;
 
   // Si entro desde el icono del celular, va derecho a vender
   await arranqueDirectoAVentas();
+}
+
+// ---------- Mercado Libre ----------
+// El panel no ve NUNCA un token de ML: renovar el token exige el secret de
+// la aplicacion, que solo existe en el servidor. Acá solo se pregunta si
+// la cuenta esta conectada y se manda al vendedor a autorizar.
+
+async function llamarApiMl(accion, cuerpoExtra) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('Volvé a iniciar sesión.');
+
+  const r = await fetch('/api/mercadolibre', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + session.access_token
+    },
+    body: JSON.stringify(Object.assign({ accion: accion }, cuerpoExtra || {}))
+  });
+
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(datos.error || ('Error ' + r.status));
+  return datos;
+}
+
+async function cargarEstadoMl() {
+  const cartel = byId('mlEstado');
+  const conectar = byId('conectarMlBtn');
+  const desconectar = byId('desconectarMlBtn');
+  if (!cartel) return;
+
+  cartel.textContent = 'Consultando\u2026';
+  try {
+    const estado = await llamarApiMl('estado');
+    if (estado.conectado) {
+      cartel.innerHTML = '✅ Conectada' +
+        (estado.nickname ? ' como <strong>' + escapeHtml(estado.nickname) + '</strong>' : '') + '.';
+      conectar.textContent = 'Reconectar';
+      desconectar.classList.remove('hidden');
+    } else {
+      cartel.textContent = 'Todavía no conectaste ninguna cuenta.';
+      conectar.textContent = 'Conectar mi cuenta';
+      desconectar.classList.add('hidden');
+    }
+  } catch (err) {
+    // Si el servidor todavia no tiene cargada la aplicacion de ML, esto es
+    // lo unico que se ve: mejor decirlo que dejar el cartel en blanco.
+    cartel.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
+    desconectar.classList.add('hidden');
+  }
+}
+
+async function conectarMl() {
+  const boton = byId('conectarMlBtn');
+  const textoOriginal = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Abriendo Mercado Libre\u2026';
+  try {
+    const { url } = await llamarApiMl('conectar');
+    // Se va a ML en la MISMA pestaña: si se abre uno nuevo, el regreso
+    // deja al vendedor con dos paneles abiertos y no se entiende cual vale.
+    window.location.href = url;
+  } catch (err) {
+    boton.disabled = false;
+    boton.textContent = textoOriginal;
+    alert('No se pudo empezar la conexión con Mercado Libre:\n\n' + err.message);
+  }
+}
+
+async function desconectarMl() {
+  if (!confirm('Se desconecta la cuenta de Mercado Libre.\n\nLas ventas de ML dejan de descontar stock acá hasta que la vuelvas a conectar. Los vínculos con las publicaciones quedan guardados.')) return;
+  try {
+    await llamarApiMl('desconectar');
+    await cargarEstadoMl();
+  } catch (err) {
+    alert('No se pudo desconectar:\n\n' + err.message);
+  }
+}
+
+// Vuelta desde Mercado Libre: el servidor redirige acá con ?ml=conectado
+// o ?ml=error&motivo=... Se avisa y se limpia la URL, para que un refresh
+// no repita el cartel.
+function avisarVueltaDeMl() {
+  const params = new URLSearchParams(location.search);
+  const ml = params.get('ml');
+  if (!ml) return;
+
+  if (ml === 'conectado') {
+    const cuenta = params.get('cuenta');
+    alert('¡Listo! Tu cuenta de Mercado Libre quedó conectada' + (cuenta ? ' (' + cuenta + ')' : '') + '.');
+  } else {
+    alert('No se pudo conectar Mercado Libre.\n\n' + (params.get('motivo') || 'Probá de nuevo.'));
+  }
+
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('ml');
+    url.searchParams.delete('motivo');
+    url.searchParams.delete('cuenta');
+    history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
+  } catch (e) { /* si no se puede tocar la URL, no pasa nada grave */ }
 }
 
 // La tablet de la entrada abre el panel con ?reloj=1 y tiene que quedar en
@@ -13182,7 +13299,13 @@ byId('adherirmeBtn').addEventListener('click', abrirPlanes);
 byId('openConfigBtn').addEventListener('click', async () => {
   await cargarConfiguracion();
   show(byId('configModal'));
+  // Sin await: que el modal abra ya, y el estado de ML se complete solo
+  // cuando conteste el servidor.
+  cargarEstadoMl();
 });
+
+byId('conectarMlBtn').addEventListener('click', conectarMl);
+byId('desconectarMlBtn').addEventListener('click', desconectarMl);
 
 byId('configLogoInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];

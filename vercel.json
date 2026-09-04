@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/ml-callback", "destination": "/api/mercadolibre?accion=callback" },
     { "source": "/:slug", "destination": "/api/tienda?slug=:slug" }
   ],
   "functions": {
