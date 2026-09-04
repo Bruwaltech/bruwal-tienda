@@ -3781,6 +3781,16 @@ function estadoSuscripcion() {
   return Date.now() < fin.getTime() ? 'prueba' : 'vencido';
 }
 
+// Con la politica nueva la tienda nace con trial_ends_at igual a su fecha
+// de alta: nunca tuvo dias. Distinguirlo importa porque "se te termino la
+// prueba" a alguien que se registro hace un minuto es un mensaje equivocado
+// y encima suena a reproche.
+function nuncaTuvoPrueba() {
+  const alta = currentStore?.created_at ? new Date(currentStore.created_at).getTime() : 0;
+  const fin = currentStore?.trial_ends_at ? new Date(currentStore.trial_ends_at).getTime() : 0;
+  return !!alta && !!fin && (fin - alta) < 60000;
+}
+
 function diasRestantesDePrueba() {
   if (!currentStore?.trial_ends_at) return null;
   const fin = new Date(currentStore.trial_ends_at);
@@ -3818,8 +3828,10 @@ function renderTrialBar() {
     const veniaDePlanPago = PLANES_ACTIVOS.includes(currentStore.plan) && currentStore.plan !== 'cortesia';
     texto.textContent = veniaDePlanPago
       ? '🔒 Tu suscripción se canceló y ya venció el período pago. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás reactivar tu plan. Tu tienda pública sigue online.'
-      : '🔒 Tu prueba gratis terminó. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás activar un plan. Tu tienda pública sigue online.';
-    byId('verPlanesBtn').textContent = 'Activar mi plan';
+      : nuncaTuvoPrueba()
+        ? '👋 ¡Bienvenido! Para cargar productos y registrar ventas elegí tu plan. Si querés probarlo primero, pedinos 7 días de prueba.'
+        : '🔒 Tu prueba gratis terminó. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás activar un plan. Tu tienda pública sigue online.';
+    byId('verPlanesBtn').textContent = nuncaTuvoPrueba() ? 'Ver planes' : 'Activar mi plan';
   } else {
     const dias = diasRestantesDePrueba();
     bar.classList.add(dias !== null && dias <= 3 ? 'pronto' : 'ok');
@@ -3862,17 +3874,12 @@ function abrirPlanes() {
   const puedePedirPrueba = estado !== 'activo' && currentStore?.plan !== 'cortesia';
   byId('pedirPruebaBloque').classList.toggle('hidden', !puedePedirPrueba);
 
-  // Nunca tuvo prueba: la tienda nacio con trial_ends_at igual a su fecha de
-  // alta. Distinguirlo importa porque no es lo mismo "se te termino" que
-  // "todavia no empezaste".
-  const alta = currentStore?.created_at ? new Date(currentStore.created_at).getTime() : 0;
-  const fin = currentStore?.trial_ends_at ? new Date(currentStore.trial_ends_at).getTime() : 0;
-  const nuncaTuvoPrueba = !!alta && !!fin && (fin - alta) < 60000;
+  const sinPruebaPrevia = nuncaTuvoPrueba();
 
   byId('planesTitulo').textContent = estado === 'activo' ? 'Tu plan' : 'Elegí tu plan';
   byId('planesSubtitulo').textContent =
     currentStore?.plan === 'cortesia' ? 'Tu cuenta tiene acceso completo sin cargo y sin vencimiento. No necesitás hacer nada.'
-    : (estado === 'vencido' && nuncaTuvoPrueba) ? 'Elegí el plan que te sirva para empezar a usar el panel. Si querés probarlo antes, pedinos 7 días.'
+    : (estado === 'vencido' && sinPruebaPrevia) ? 'Elegí el plan que te sirva para empezar a usar el panel. Si querés probarlo antes, pedinos 7 días.'
     : estado === 'vencido' ? 'Tu prueba gratis terminó. Activá un plan para seguir operando.'
     : estado === 'activo' ? 'Podés gestionar o cancelar tu suscripción desde Mercado Pago.'
     : (() => {
