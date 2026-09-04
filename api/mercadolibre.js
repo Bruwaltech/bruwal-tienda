@@ -16,6 +16,8 @@
 //   conectar      -> { url } para mandar al vendedor a autorizar en ML
 //   desconectar   -> borra la cuenta de la tienda
 //   publicaciones -> las publicaciones activas de la cuenta, con su stock
+//   publicidad    -> campañas de Product Ads y sus métricas, si la cuenta
+//                    las tiene habilitadas
 // Y una por GET, que es la que abre Mercado Libre al volver:
 //   callback     -> /api/ml-callback?code=...&state=...
 
@@ -318,6 +320,84 @@ async function accionPublicaciones(slug) {
 }
 
 
+// ---------- Publicidad (Product Ads) ----------
+//
+// Ojo con dos cosas antes de construir nada encima de esto:
+//  1. La cuenta tiene que tener Publicidad activada desde Mercado Libre
+//     (Gestión de publicaciones → Campaña de publicidad). Si no, la API
+//     contesta que no hay anunciantes aunque los permisos estén bien.
+//  2. La documentación que encontramos lista Product Ads para Brasil,
+//     México y Chile y no menciona Argentina. Puede estar vieja; esta
+//     función existe justamente para salir de la duda con la cuenta real
+//     en vez de suponer.
+//
+// Por eso devuelve el status y el cuerpo tal como vinieron cuando falla: el
+// número exacto es lo que dice si es "no lo tenés activado" (404), "te
+// falta permiso" (403) o "acá no existe".
+
+async function pedirAAds(ruta, token) {
+  const r = await fetch(ML_API + ruta, {
+    headers: { Authorization: 'Bearer ' + token, 'Api-Version': '1' }
+  });
+  const datos = await r.json().catch(() => null);
+  return { ok: r.ok, status: r.status, datos: datos };
+}
+
+async function accionPublicidad(slug) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+  const anunciantes = await pedirAAds('/advertising/advertisers?product_id=PADS', token);
+
+  if (!anunciantes.ok) {
+    return {
+      conectado: true,
+      disponible: false,
+      status: anunciantes.status,
+      motivo: anunciantes.status === 404
+        ? 'La cuenta no tiene Publicidad (Product Ads) habilitada, o no está disponible para Argentina.'
+        : anunciantes.status === 403
+          ? 'Falta el permiso de Publicidad en la aplicación de Mercado Libre.'
+          : 'Mercado Libre contestó ' + anunciantes.status + ' al pedir los anunciantes.',
+      crudo: anunciantes.datos
+    };
+  }
+
+  const lista = (anunciantes.datos && (anunciantes.datos.advertisers || anunciantes.datos.results)) || [];
+  if (!lista.length) {
+    return {
+      conectado: true,
+      disponible: false,
+      motivo: 'La cuenta está conectada pero no figura como anunciante. Se activa desde Mercado Libre → Gestión de publicaciones → Campaña de publicidad.',
+      crudo: anunciantes.datos
+    };
+  }
+
+  const anunciante = lista[0];
+  const idAnunciante = anunciante.advertiser_id || anunciante.id;
+
+  const campanas = await pedirAAds(
+    '/advertising/product_ads/campaigns?advertiser_id=' + encodeURIComponent(idAnunciante) +
+    '&metrics_summary=true&limit=50', token);
+
+  return {
+    conectado: true,
+    disponible: true,
+    anunciante: {
+      id: idAnunciante,
+      nombre: anunciante.account_name || anunciante.site_id || ''
+    },
+    campanas_ok: campanas.ok,
+    campanas_status: campanas.status,
+    // Crudo a propósito: todavía no sabemos con qué nombres vienen las
+    // métricas en esta cuenta, y prefiero mostrarlas tal cual una vez a
+    // inventar una tabla con campos que capaz no existen.
+    campanas: campanas.datos
+  };
+}
+
+
 // ---------- Acciones ----------
 
 async function accionEstado(slug) {
@@ -424,6 +504,7 @@ module.exports = async (req, res) => {
     if (accion === 'conectar') return res.status(200).json(accionConectar(req, tienda.slug));
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
+    if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
     return res.status(400).json({ error: 'Acción desconocida' });
   } catch (err) {
     console.error('mercadolibre.js', accion, err);

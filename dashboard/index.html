@@ -2009,6 +2009,16 @@ tr:last-child td { border-bottom: none; }
       </div>
 
       <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>📢 Publicidad</span>
+          <button type="button" id="mlPublicidadBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Consultar campañas</button>
+        </div>
+        <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+          Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
+        </div>
+      </div>
+
+      <div class="panel">
         <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
         <table>
           <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Total</th><th>Estado</th><th>Stock</th></tr></thead>
@@ -7095,6 +7105,45 @@ function renderMercadoLibre() {
           '<td>' + (o.stock_descontado ? '✅ descontado' : (o.estado === 'paid' ? '⚠️ sin descontar' : '—')) + '</td>' +
         '</tr>').join('')
     : '<tr><td colspan="5" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+}
+
+async function consultarPublicidadMl() {
+  const cuerpo = byId('mlPublicidadCuerpo');
+  const boton = byId('mlPublicidadBtn');
+  boton.disabled = true;
+  cuerpo.textContent = 'Consultando Mercado Libre\u2026';
+
+  try {
+    const r = await llamarApiMl('publicidad');
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conectá tu cuenta en <strong>Configuración → Mercado Libre</strong>.';
+      return;
+    }
+
+    if (!r.disponible) {
+      cuerpo.innerHTML = '<span style="color:var(--danger);">Publicidad no disponible.</span><br>' +
+        escapeHtml(r.motivo || '') +
+        (r.status ? '<br><span style="font-size:12px;">Código de Mercado Libre: ' + r.status + '</span>' : '');
+      return;
+    }
+
+    // Mientras no sepamos con qué nombres vienen las métricas en una cuenta
+    // argentina, se muestra la respuesta tal cual. Es feo a propósito: es
+    // para leerla una vez entre los dos y después armar la tabla de verdad.
+    cuerpo.innerHTML =
+      '✅ Publicidad habilitada. Anunciante: <strong>' + escapeHtml(String(r.anunciante?.nombre || r.anunciante?.id || '')) + '</strong>' +
+      (r.campanas_ok
+        ? ''
+        : '<br><span style="color:var(--danger);">Las campañas devolvieron ' + r.campanas_status + '.</span>') +
+      '<pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11.5px;max-height:280px;overflow:auto;margin-top:10px;white-space:pre-wrap;">' +
+        escapeHtml(JSON.stringify(r.campanas, null, 1)) +
+      '</pre>';
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 function mostrarVistaMercadoLibre() {
@@ -13854,6 +13903,7 @@ byId('openConfigBtn').addEventListener('click', async () => {
 byId('conectarMlBtn').addEventListener('click', conectarMl);
 byId('mlPublicacionesBtn').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicacionesBtn2').addEventListener('click', abrirMlPublicaciones);
+byId('mlPublicidadBtn').addEventListener('click', consultarPublicidadMl);
 byId('tabMercadoLibre').addEventListener('click', () => {
   if (!tienePlanPro()) { ofrecerUpgradePro('Mercado Libre'); return; }
   mostrarVistaMercadoLibre();
