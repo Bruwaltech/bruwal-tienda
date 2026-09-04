@@ -3185,6 +3185,17 @@ tr:last-child td { border-bottom: none; }
     <h3 id="planesTitulo">Elegí tu plan</h3>
     <p id="planesSubtitulo" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;"></p>
     <div id="planesContenido"></div>
+
+    <div id="pedirPruebaBloque" class="hidden" style="margin-top:18px;border-top:1px solid var(--line);padding-top:16px;text-align:center;">
+      <p style="font-size:13.5px;color:var(--text-dark);margin:0 0 10px;line-height:1.6;">
+        ¿Querés probarlo antes de contratar? Escribinos y te habilitamos
+        <strong>7 días de prueba</strong> con todo funcionando.
+      </p>
+      <button type="button" id="pedirPruebaBtn" class="btn" style="width:auto;padding:10px 20px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+        Solicitar 7 días de prueba
+      </button>
+    </div>
+
     <p style="color:var(--text-mute);font-size:11.5px;margin-top:16px;line-height:1.6;">
       El pago se procesa en Mercado Pago. La activación puede demorar unos minutos;
       si pasada una hora tu plan sigue sin activarse, escribinos y lo resolvemos.
@@ -3709,6 +3720,16 @@ function tienePlanPro() {
 
 const WHATSAPP_UPGRADE_PRO = '5493413005232';
 
+// La prueba dejo de regalarse sola: las tiendas nuevas nacen sin dias (el
+// default de trial_ends_at en la base es now()), y quien quiere probar la
+// pide por acá. Se habilita a mano, tienda por tienda.
+function pedirPrueba() {
+  const negocio = (currentStore && (currentStore.business_name || currentStore.slug)) || '';
+  const msg = 'Hola! Quiero probar BRUWAL 7 días' + (negocio ? ' para ' + negocio : '') +
+              (currentStore && currentStore.slug ? ' (tienda: ' + currentStore.slug + ')' : '') + '.';
+  window.open('https://wa.me/' + WHATSAPP_UPGRADE_PRO + '?text=' + encodeURIComponent(msg), '_blank');
+}
+
 function ofrecerUpgradePro(nombreFuncion) {
   const negocio = (currentStore && (currentStore.business_name || currentStore.slug)) || '';
   const msg = 'Hola! Quiero sumar ' + nombreFuncion + ' (plan Pro) a mi tienda' + (negocio ? ' ' + negocio : '') + '.';
@@ -3836,12 +3857,31 @@ function abrirPlanes() {
   const cont = byId('planesContenido');
   const estado = estadoSuscripcion();
 
+  // Solo a quien no esta pagando. Ofrecerle una prueba al que ya contrato
+  // es, ademas de raro, una invitacion a pedir que le devuelvan la plata.
+  const puedePedirPrueba = estado !== 'activo' && currentStore?.plan !== 'cortesia';
+  byId('pedirPruebaBloque').classList.toggle('hidden', !puedePedirPrueba);
+
+  // Nunca tuvo prueba: la tienda nacio con trial_ends_at igual a su fecha de
+  // alta. Distinguirlo importa porque no es lo mismo "se te termino" que
+  // "todavia no empezaste".
+  const alta = currentStore?.created_at ? new Date(currentStore.created_at).getTime() : 0;
+  const fin = currentStore?.trial_ends_at ? new Date(currentStore.trial_ends_at).getTime() : 0;
+  const nuncaTuvoPrueba = !!alta && !!fin && (fin - alta) < 60000;
+
   byId('planesTitulo').textContent = estado === 'activo' ? 'Tu plan' : 'Elegí tu plan';
   byId('planesSubtitulo').textContent =
     currentStore?.plan === 'cortesia' ? 'Tu cuenta tiene acceso completo sin cargo y sin vencimiento. No necesitás hacer nada.'
+    : (estado === 'vencido' && nuncaTuvoPrueba) ? 'Elegí el plan que te sirva para empezar a usar el panel. Si querés probarlo antes, pedinos 7 días.'
     : estado === 'vencido' ? 'Tu prueba gratis terminó. Activá un plan para seguir operando.'
     : estado === 'activo' ? 'Podés gestionar o cancelar tu suscripción desde Mercado Pago.'
-    : `Estás en la prueba gratis de ${DIAS_DE_PRUEBA} días. Podés activar un plan cuando quieras.`;
+    : (() => {
+        const quedan = diasRestantesDePrueba();
+        return quedan === null
+          ? 'Estás en la prueba gratis. Podés activar un plan cuando quieras.'
+          : 'Te queda' + (quedan === 1 ? '' : 'n') + ' ' + quedan + ' día' + (quedan === 1 ? '' : 's') +
+            ' de prueba. Podés activar un plan cuando quieras.';
+      })();
 
   // Una cuenta de cortesia no necesita ver precios ni botones de pago de
   // Basic/Pro — pero el Bot de pedidos es un adicional aparte, así que
@@ -13679,6 +13719,7 @@ byId('guiaModal').addEventListener('click', (e) => {
   if (e.target === byId('guiaModal')) cerrarGuia();
 });
 
+byId('pedirPruebaBtn').addEventListener('click', pedirPrueba);
 byId('closePlanesModal').addEventListener('click', () => hide(byId('planesModal')));
 byId('verPlanesBtn').addEventListener('click', abrirPlanes);
 byId('adherirmeBtn').addEventListener('click', abrirPlanes);
