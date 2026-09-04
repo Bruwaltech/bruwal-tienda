@@ -236,6 +236,29 @@ function nombreDeVariante(variacion) {
   return combos.map((c) => c.value_name).filter(Boolean).join(' / ');
 }
 
+// Los atributos de la variante como { Talle: 'M', Color: 'Rojo' }, que es
+// la misma forma que usa el panel para sus combinaciones. Así el vínculo
+// entre una variante de ML y una de BRUWAL se puede hacer comparando
+// valores en vez de pedirle a alguien que los empareje de a uno.
+function atributosDeVariante(variacion) {
+  const combos = (variacion && variacion.attribute_combinations) || [];
+  const salida = {};
+  combos.forEach((c) => {
+    const nombre = c && (c.name || c.id);
+    const valor = c && (c.value_name || c.value_id);
+    if (nombre && valor) salida[String(nombre)] = String(valor);
+  });
+  return salida;
+}
+
+// secure_url primero: la tienda se sirve por https y una imagen http la
+// bloquea el navegador sin decir nada.
+function fotosDeItem(item) {
+  return ((item && item.pictures) || [])
+    .map((f) => (f && (f.secure_url || f.url)) || '')
+    .filter(Boolean);
+}
+
 async function accionPublicaciones(slug) {
   const cuenta = await cuentaDeTienda(slug);
   if (!cuenta) return { conectado: false, publicaciones: [] };
@@ -259,7 +282,7 @@ async function accionPublicaciones(slug) {
   for (let i = 0; i < ids.length; i += 20) {
     const lote = ids.slice(i, i + 20);
     const detalle = await pedirAMl('/items?ids=' + lote.join(',') +
-      '&attributes=id,title,price,available_quantity,status,permalink,variations,attributes,seller_custom_field', token);
+      '&attributes=id,title,price,available_quantity,status,permalink,variations,attributes,seller_custom_field,pictures', token);
 
     (detalle || []).forEach((fila) => {
       const item = fila && fila.body;
@@ -273,9 +296,11 @@ async function accionPublicaciones(slug) {
         permalink: item.permalink || '',
         sku: item.seller_custom_field || atributo(item, 'SELLER_SKU'),
         gtin: atributo(item, 'GTIN'),
+        fotos: fotosDeItem(item),
         variantes: (item.variations || []).map((v) => ({
           id: String(v.id),
           nombre: nombreDeVariante(v),
+          atributos: atributosDeVariante(v),
           stock: v.available_quantity,
           sku: v.seller_custom_field || '',
           gtin: ''

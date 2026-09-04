@@ -6968,7 +6968,62 @@ async function onLoggedIn() {
 
 let mlPublicaciones = [];
 let mlDecisiones = {};          // id de publicación -> 'nada' | 'nuevo' | id de producto
+let mlVariantes = {};           // 'idPublicacion|idVariante' -> clave de la combinación local
 let mlVinculosPrevios = [];
+
+// Dos variantes son la misma si coinciden sus VALORES, sin importar cómo se
+// llame el atributo: en ML puede decir "Talle" y acá "Tamaño", pero si las
+// dos dicen M y Rojo es la misma combinación. Comparar por nombre de
+// atributo dejaba todo sin emparejar por una diferencia de vocabulario.
+function huellaDeValores(atributos) {
+  return Object.values(atributos || {})
+    .map((v) => normalizarTexto(v).trim())
+    .filter(Boolean)
+    .sort()
+    .join('~');
+}
+
+function variantesDeProducto(producto) {
+  if (!producto || !producto.tiene_variantes || !Array.isArray(producto.variantes)) return [];
+  return producto.variantes.map((v) => ({
+    clave: claveVariante(v.atributos || {}),
+    etiqueta: Object.values(v.atributos || {}).join(' / '),
+    huella: huellaDeValores(v.atributos || {}),
+    stock: v.stock
+  }));
+}
+
+// Arma variante_campos y variantes tal como los guarda el panel cuando se
+// carga un producto con talles a mano, pero a partir de la publicación.
+function variantesDesdeMl(pub) {
+  const campos = [];
+  (pub.variantes || []).forEach((v) => {
+    Object.entries(v.atributos || {}).forEach(([nombre, valor]) => {
+      let campo = campos.find((c) => c.nombre === nombre);
+      if (!campo) { campo = { nombre: nombre, valores: [] }; campos.push(campo); }
+      if (!campo.valores.includes(valor)) campo.valores.push(valor);
+    });
+  });
+
+  const variantes = (pub.variantes || []).map((v) => ({
+    atributos: v.atributos || {},
+    stock: Number(v.stock) || 0,
+    precio: null,
+    imeis: []
+  }));
+
+  return { campos: campos, variantes: variantes };
+}
+
+function emparejarVariantes(pub, producto) {
+  const locales = variantesDeProducto(producto);
+  (pub.variantes || []).forEach((v) => {
+    const clave = pub.id + '|' + v.id;
+    const huella = huellaDeValores(v.atributos);
+    const encontrada = locales.find((l) => l.huella === huella);
+    mlVariantes[clave] = encontrada ? encontrada.clave : '';
+  });
+}
 
 function productoPorClaveMl(publicacion) {
   const porCodigo = (codigo) => {
@@ -6993,12 +7048,13 @@ function proponerDecisionesMl() {
       return;
     }
     const encontrado = productoPorClaveMl(pub);
-    if (encontrado) { mlDecisiones[pub.id] = encontrado.id; return; }
+    if (encontrado) {
+      mlDecisiones[pub.id] = encontrado.id;
+      if (pub.variantes && pub.variantes.length) emparejarVariantes(pub, encontrado);
+      return;
+    }
 
-    // Las publicaciones con variantes no se crean solas: el stock vive en
-    // cada variante y hay que decidir una por una. Quedan para vincular a
-    // mano con un producto que ya exista.
-    mlDecisiones[pub.id] = pub.variantes && pub.variantes.length ? 'nada' : 'nuevo';
+    mlDecisiones[pub.id] = 'nuevo';
   });
 }
 
@@ -7015,34 +7071,78 @@ function renderMlPublicaciones() {
     mlPublicaciones.map((pub) => {
       const elegido = mlDecisiones[pub.id];
       const conVariantes = pub.variantes && pub.variantes.length;
+      const productoElegido = products.find((p) => p.id === elegido) || null;
+      const localesDelProducto = variantesDeProducto(productoElegido);
+
+      // Subfilas solo cuando hace falta decidir: si se vincula con un
+      // producto que ya tiene combinaciones cargadas. Si se crea nuevo, las
+      // variantes salen de la publicación y no hay nada que elegir.
+      const subfilas = (conVariantes && productoElegido && localesDelProducto.length)
+        ? pub.variantes.map((v) => {
+            const clave = pub.id + '|' + v.id;
+            const elegidaLocal = mlVariantes[clave] || '';
+            return '<tr><td style="padding-left:26px;color:var(--text-mute);font-size:12.5px;">' +
+                '↳ ' + escapeHtml(v.nombre || 'sin nombre') + ' · stock ' + v.stock +
+              '</td><td>' +
+                '<select data-ml-variante="' + escapeHtml(clave) + '" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:12px;font-family:inherit;background:#fff;">' +
+                  '<option value="">— sin vincular —</option>' +
+                  localesDelProducto.map((l) =>
+                    '<option value="' + escapeHtml(l.clave) + '"' + (elegidaLocal === l.clave ? ' selected' : '') + '>' +
+                      escapeHtml(l.etiqueta) + ' (stock ' + l.stock + ')</option>'
+                  ).join('') +
+                '</select>' +
+              '</td></tr>';
+          }).join('')
+        : '';
+
+      const avisoVariantes = (conVariantes && elegido === 'nuevo')
+        ? '<div style="color:var(--celeste);font-size:12px;margin-top:3px;">Se va a crear ' + (pub.variantes.length === 1 ? 'con su variante' : 'con sus ' + pub.variantes.length + ' variantes') + '</div>'
+        : '';
+
       return '<tr><td>' +
           '<strong>' + escapeHtml(pub.titulo) + '</strong>' +
           '<div style="color:var(--text-mute);font-size:12px;margin-top:3px;">' +
             money(pub.precio) + ' · stock en ML: ' + pub.stock +
-            (conVariantes ? ' · ' + pub.variantes.length + ' variantes' : '') +
+            (conVariantes ? ' · ' + pub.variantes.length + (pub.variantes.length === 1 ? ' variante' : ' variantes') : '') +
+            (pub.fotos && pub.fotos.length ? ' · ' + pub.fotos.length + (pub.fotos.length === 1 ? ' foto' : ' fotos') : '') +
             (pub.sku ? ' · SKU ' + escapeHtml(pub.sku) : '') +
-          '</div>' +
+          '</div>' + avisoVariantes +
         '</td><td>' +
           '<select data-ml="' + escapeHtml(pub.id) + '" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;font-family:inherit;background:#fff;">' +
             '<option value="nada"' + (elegido === 'nada' ? ' selected' : '') + '>— no hacer nada —</option>' +
-            (conVariantes ? '' : '<option value="nuevo"' + (elegido === 'nuevo' ? ' selected' : '') + '>Crear producto nuevo</option>') +
+            '<option value="nuevo"' + (elegido === 'nuevo' ? ' selected' : '') + '>Crear producto nuevo</option>' +
             opciones.map((p) =>
               '<option value="' + p.id + '"' + (elegido === p.id ? ' selected' : '') + '>' + escapeHtml(p.name || '') + '</option>'
             ).join('') +
           '</select>' +
-        '</td></tr>';
+        '</td></tr>' + subfilas;
     }).join('') + '</tbody></table>';
 
   const nuevos = Object.values(mlDecisiones).filter((d) => d === 'nuevo').length;
   const vinculados = Object.values(mlDecisiones).filter((d) => d !== 'nada' && d !== 'nuevo').length;
 
   const sinTocar = mlPublicaciones.length - nuevos - vinculados;
+
+  // Variantes de publicaciones vinculadas que quedaron sin pareja local.
+  let variantesSueltas = 0;
+  mlPublicaciones.forEach((pub) => {
+    const producto = products.find((p) => p.id === mlDecisiones[pub.id]);
+    if (!producto || !variantesDeProducto(producto).length) return;
+    (pub.variantes || []).forEach((v) => {
+      if (!mlVariantes[pub.id + '|' + v.id]) variantesSueltas++;
+    });
+  });
   byId('mlResumen').innerHTML =
     '✅ <strong>' + vinculados + '</strong> ' +
       (vinculados === 1 ? 'publicación se vincula' : 'publicaciones se vinculan') + ' con productos que ya tenés.<br>' +
     '➕ <strong>' + nuevos + '</strong> ' +
       (nuevos === 1 ? 'se carga como producto nuevo' : 'se cargan como productos nuevos') + '.' +
-    (sinTocar ? '<br>• ' + sinTocar + (sinTocar === 1 ? ' queda' : ' quedan') + ' sin tocar.' : '');
+    (sinTocar ? '<br>• ' + sinTocar + (sinTocar === 1 ? ' queda' : ' quedan') + ' sin tocar.' : '') +
+    (variantesSueltas
+      ? '<br>⚠️ <strong>' + variantesSueltas + '</strong> ' +
+        (variantesSueltas === 1 ? 'variante de ML no tiene' : 'variantes de ML no tienen') +
+        ' con qué combinación emparejarse. Esas ventas no van a descontar stock hasta que las cargues acá.'
+      : '');
 
   byId('mlPreciosWrap').classList.toggle('hidden', !vinculados);
   byId('aplicarMlBtn').classList.toggle('hidden', !(nuevos || vinculados));
@@ -7110,18 +7210,32 @@ async function aplicarMlPublicaciones() {
     //    es el de ML porque es de donde salen; después se corrige acá.
     let creados = [];
     if (aCrear.length) {
-      const filas = aCrear.map((pub) => ({
-        store_slug: currentStore.slug,
-        name: pub.titulo,
-        description: '',
-        price: Number(pub.precio) || 0,
-        stock: Number(pub.stock) || 0,
-        category: null,
-        ean: pub.gtin || null,
-        tipo: 'producto',
-        opciones: [], tiene_variantes: false, variante_campos: [], variantes: [],
-        imagenes: [], image_url: null
-      }));
+      const filas = aCrear.map((pub) => {
+        const conVariantes = pub.variantes && pub.variantes.length;
+        const armado = conVariantes ? variantesDesdeMl(pub) : { campos: [], variantes: [] };
+        const fotos = pub.fotos || [];
+
+        return {
+          store_slug: currentStore.slug,
+          name: pub.titulo,
+          description: '',
+          price: Number(pub.precio) || 0,
+          // Con variantes, el stock del producto no se usa: cada
+          // combinación lleva el suyo, igual que cuando se carga a mano.
+          stock: conVariantes ? 0 : (Number(pub.stock) || 0),
+          category: null,
+          ean: pub.gtin || null,
+          tipo: 'producto',
+          opciones: [],
+          tiene_variantes: !!conVariantes,
+          variante_campos: armado.campos,
+          variantes: armado.variantes,
+          // Las fotos van como URL de Mercado Libre, que es como el panel
+          // guarda cualquier foto: no se copia el archivo a ningún lado.
+          imagenes: fotos,
+          image_url: fotos[0] || null
+        };
+      });
       const { data, error } = await sb.from('store_products').insert(filas).select('id');
       if (error) throw error;
       creados = data || [];
@@ -7129,15 +7243,42 @@ async function aplicarMlPublicaciones() {
 
     // 2) Los vínculos: los nuevos recién creados y los elegidos a mano.
     const vinculos = [];
+
     aCrear.forEach((pub, i) => {
-      if (creados[i]) {
-        vinculos.push({ store_slug: currentStore.slug, product_id: creados[i].id,
-                        ml_item_id: pub.id, ml_variation_id: null, titulo_ml: pub.titulo });
+      if (!creados[i]) return;
+      const base = { store_slug: currentStore.slug, product_id: creados[i].id,
+                     ml_item_id: pub.id, titulo_ml: pub.titulo };
+      if (pub.variantes && pub.variantes.length) {
+        // Recién creado: cada variante de ML se corresponde una a una con
+        // la combinación que acabamos de armar con sus mismos atributos.
+        pub.variantes.forEach((v) => {
+          vinculos.push(Object.assign({}, base, {
+            ml_variation_id: v.id,
+            variante_local: claveVariante(v.atributos || {})
+          }));
+        });
+      } else {
+        vinculos.push(Object.assign({}, base, { ml_variation_id: null, variante_local: null }));
       }
     });
+
     aVincular.forEach((pub) => {
-      vinculos.push({ store_slug: currentStore.slug, product_id: mlDecisiones[pub.id],
-                      ml_item_id: pub.id, ml_variation_id: null, titulo_ml: pub.titulo });
+      const base = { store_slug: currentStore.slug, product_id: mlDecisiones[pub.id],
+                     ml_item_id: pub.id, titulo_ml: pub.titulo };
+      const producto = products.find((p) => p.id === mlDecisiones[pub.id]);
+      const conVariantes = pub.variantes && pub.variantes.length && variantesDeProducto(producto).length;
+
+      if (conVariantes) {
+        // Solo las variantes emparejadas. Una sin vincular no se inventa:
+        // mejor que quede afuera y se vea, a descontarle stock a otra.
+        pub.variantes.forEach((v) => {
+          const local = mlVariantes[pub.id + '|' + v.id];
+          if (!local) return;
+          vinculos.push(Object.assign({}, base, { ml_variation_id: v.id, variante_local: local }));
+        });
+      } else {
+        vinculos.push(Object.assign({}, base, { ml_variation_id: null, variante_local: null }));
+      }
     });
 
     if (vinculos.length) {
@@ -7169,7 +7310,8 @@ async function aplicarMlPublicaciones() {
     await refreshData();
     alert('¡Listo!\n\n' +
           creados.length + ' producto' + (creados.length === 1 ? '' : 's') + ' creado' + (creados.length === 1 ? '' : 's') + '.\n' +
-          vinculos.length + ' publicaci' + (vinculos.length === 1 ? 'ón vinculada' : 'ones vinculadas') + '.' +
+          (aCrear.length + aVincular.length) + ' publicaci' + ((aCrear.length + aVincular.length) === 1 ? 'ón vinculada' : 'ones vinculadas') +
+          (vinculos.length > aCrear.length + aVincular.length ? ' (' + vinculos.length + ' vínculos con variantes)' : '') + '.' +
           (actualizarPrecios ? '\n' + precios + ' precio' + (precios === 1 ? '' : 's') + ' actualizado' + (precios === 1 ? '' : 's') + '.' : ''));
   } catch (err) {
     alert('No se pudo aplicar:\n\n' + (err.message || err));
@@ -13555,9 +13697,22 @@ byId('closeMlPublicacionesModal').addEventListener('click', () => hide(byId('mlP
 byId('aplicarMlBtn').addEventListener('click', aplicarMlPublicaciones);
 // Delegado: la lista se vuelve a dibujar en cada cambio.
 byId('mlLista').addEventListener('change', (e) => {
+  const variante = e.target.closest('select[data-ml-variante]');
+  if (variante) {
+    mlVariantes[variante.dataset.mlVariante] = variante.value;
+    return;   // sin volver a dibujar: se perdería el foco a mitad de la carga
+  }
+
   const select = e.target.closest('select[data-ml]');
   if (!select) return;
+
+  const pub = mlPublicaciones.find((p) => p.id === select.dataset.ml);
   mlDecisiones[select.dataset.ml] = select.value;
+
+  // Al elegir un producto se propone el emparejamiento de sus variantes.
+  const producto = products.find((p) => p.id === select.value);
+  if (pub && producto) emparejarVariantes(pub, producto);
+
   renderMlPublicaciones();
 });
 byId('desconectarMlBtn').addEventListener('click', desconectarMl);
