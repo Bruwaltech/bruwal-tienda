@@ -12,9 +12,10 @@
 // dos tokens juntos.
 //
 // Acciones (POST, con el token de sesión de Supabase en Authorization):
-//   estado       -> { conectado, nickname, ml_user_id, conectado_en }
-//   conectar     -> { url } para mandar al vendedor a autorizar en ML
-//   desconectar  -> borra la cuenta de la tienda
+//   estado        -> { conectado, nickname, ml_user_id, conectado_en }
+//   conectar      -> { url } para mandar al vendedor a autorizar en ML
+//   desconectar   -> borra la cuenta de la tienda
+//   publicaciones -> las publicaciones activas de la cuenta, con su stock
 // Y una por GET, que es la que abre Mercado Libre al volver:
 //   callback     -> /api/ml-callback?code=...&state=...
 
@@ -166,12 +167,16 @@ async function guardarCuenta(slug, datos, ml) {
   });
 }
 
+async function cuentaDeTienda(slug) {
+  const filas = await sb('/rest/v1/store_ml_cuenta?store_slug=eq.' + encodeURIComponent(slug) +
+                         '&select=store_slug,ml_user_id,access_token,refresh_token,expira_en');
+  return (filas && filas[0]) || null;
+}
+
 // Devuelve un access_token usable, renovándolo si hace falta. La exporta el
 // webhook, que necesita hablar con ML sin que haya nadie mirando.
 async function tokenDeTienda(slug) {
-  const filas = await sb('/rest/v1/store_ml_cuenta?store_slug=eq.' + encodeURIComponent(slug) +
-                         '&select=store_slug,ml_user_id,access_token,refresh_token,expira_en');
-  const cuenta = filas && filas[0];
+  const cuenta = await cuentaDeTienda(slug);
   if (!cuenta) return null;
 
   if (new Date(cuenta.expira_en).getTime() > Date.now()) return cuenta.access_token;
@@ -196,6 +201,97 @@ async function tokenDeTienda(slug) {
 
   return datos.access_token;
 }
+
+// ---------- Leer la cuenta ----------
+
+async function pedirAMl(ruta, token) {
+  const r = await fetch(ML_API + ruta, { headers: { Authorization: 'Bearer ' + token } });
+  const datos = await r.json().catch(() => null);
+  if (!r.ok) {
+    const motivo = (datos && (datos.message || datos.error)) || ('HTTP ' + r.status);
+    // El 403 de ML casi siempre es un permiso que no se tildó al crear la
+    // aplicación, no un problema del token. Decirlo ahorra media hora.
+    const ayuda = r.status === 403
+      ? ' (revisá los permisos de la aplicación en el DevCenter de Mercado Libre)'
+      : '';
+    throw new Error('Mercado Libre: ' + motivo + ayuda);
+  }
+  return datos;
+}
+
+// Se traen de a 50 y como mucho 4 páginas. No es capricho: cada página son
+// dos llamadas a ML y la función tiene un tope de tiempo. Si la cuenta tiene
+// más, se avisa en vez de cortar en silencio.
+const PAGINAS_MAXIMAS = 4;
+const POR_PAGINA = 50;
+
+function atributo(item, id) {
+  const lista = (item && item.attributes) || [];
+  const encontrado = lista.find((a) => a && a.id === id);
+  return (encontrado && (encontrado.value_name || encontrado.value_id)) || '';
+}
+
+function nombreDeVariante(variacion) {
+  const combos = (variacion && variacion.attribute_combinations) || [];
+  return combos.map((c) => c.value_name).filter(Boolean).join(' / ');
+}
+
+async function accionPublicaciones(slug) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false, publicaciones: [] };
+
+  const token = await tokenDeTienda(slug);
+  const ids = [];
+  let total = 0;
+
+  for (let pagina = 0; pagina < PAGINAS_MAXIMAS; pagina++) {
+    const busqueda = await pedirAMl(
+      '/users/' + encodeURIComponent(cuenta.ml_user_id) + '/items/search?status=active' +
+      '&limit=' + POR_PAGINA + '&offset=' + (pagina * POR_PAGINA), token);
+
+    total = (busqueda.paging && busqueda.paging.total) || ids.length;
+    (busqueda.results || []).forEach((id) => ids.push(id));
+    if (!busqueda.results || busqueda.results.length < POR_PAGINA) break;
+  }
+
+  // El detalle se pide de a 20, que es el máximo del multiget de ML.
+  const publicaciones = [];
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const detalle = await pedirAMl('/items?ids=' + lote.join(',') +
+      '&attributes=id,title,price,available_quantity,status,permalink,variations,attributes,seller_custom_field', token);
+
+    (detalle || []).forEach((fila) => {
+      const item = fila && fila.body;
+      if (!item) return;
+      publicaciones.push({
+        id: item.id,
+        titulo: item.title || '',
+        precio: item.price,
+        stock: item.available_quantity,
+        estado: item.status,
+        permalink: item.permalink || '',
+        sku: item.seller_custom_field || atributo(item, 'SELLER_SKU'),
+        gtin: atributo(item, 'GTIN'),
+        variantes: (item.variations || []).map((v) => ({
+          id: String(v.id),
+          nombre: nombreDeVariante(v),
+          stock: v.available_quantity,
+          sku: v.seller_custom_field || '',
+          gtin: ''
+        }))
+      });
+    });
+  }
+
+  return {
+    conectado: true,
+    total: total,
+    hay_mas: total > ids.length,
+    publicaciones: publicaciones
+  };
+}
+
 
 // ---------- Acciones ----------
 
@@ -302,6 +398,7 @@ module.exports = async (req, res) => {
     if (accion === 'estado') return res.status(200).json(await accionEstado(tienda.slug));
     if (accion === 'conectar') return res.status(200).json(accionConectar(req, tienda.slug));
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
+    if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     return res.status(400).json({ error: 'Acción desconocida' });
   } catch (err) {
     console.error('mercadolibre.js', accion, err);
