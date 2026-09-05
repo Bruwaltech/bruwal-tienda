@@ -118,6 +118,48 @@ async function descontarUnItem(slug, linea, resumen) {
   return item;
 }
 
+// Mercado Pago acredita el total MENOS lo que se queda Mercado Libre. El
+// vendedor nunca "paga" esa comision: le llega menos plata. Pero la venta
+// entra por el bruto, asi que si la comision no se anota en ningun lado,
+// Caja y Estadisticas muestran mas ganancia de la que hay.
+//
+// Se registra una sola vez, junto con el pedido, porque este bloque solo se
+// ejecuta la primera vez que la orden aparece pagada.
+async function registrarComision(slug, orden) {
+  const lineas = (orden.order_items || []);
+  // sale_fee se asume POR UNIDAD, igual que en el panel. Si con una venta
+  // real resulta ser por linea, hay que sacar el "* cantidad" en los dos
+  // lados: aca y en costosDeOrdenMl() del dashboard.
+  let comision = 0;
+  lineas.forEach((li) => {
+    comision += (Number(li.sale_fee) || 0) * (Number(li.quantity) || 0);
+  });
+  comision = Math.round(comision * 100) / 100;
+  if (comision <= 0) return 0;
+
+  const fecha = (orden.date_created || new Date().toISOString()).slice(0, 10);
+
+  await sb('/rest/v1/store_gastos', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: [{
+      store_slug: slug,
+      concepto: 'Comisi\u00f3n Mercado Libre \u2014 Orden ' + orden.id,
+      categoria: 'Comisiones Mercado Libre',
+      monto: comision,
+      moneda: 'ARS',
+      monto_original: comision,
+      cotizacion: 1,
+      fecha: fecha,
+      medio_pago: 'Descontado por Mercado Libre',
+      notas: 'Registrada sola desde la venta de Mercado Libre. No se paga aparte: ' +
+             'Mercado Pago acredita el total menos esta comisi\u00f3n.'
+    }]
+  });
+
+  return comision;
+}
+
 async function registrarPedido(slug, orden, items, resumen) {
   if (!items.length) return null;
 
@@ -207,7 +249,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, repetida: true, stock_descontado: previa.stock_descontado });
     }
 
-    const resumen = { descontados: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
+    const resumen = { descontados: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
     let items = [];
     let idPedido = null;
 
@@ -217,6 +259,7 @@ module.exports = async (req, res) => {
         if (item) items.push(item);
       }
       idPedido = await registrarPedido(slug, orden, items, resumen);
+      resumen.comision = await registrarComision(slug, orden);
     }
 
     await sb('/rest/v1/store_ml_ordenes', {
@@ -238,6 +281,7 @@ module.exports = async (req, res) => {
       ok: true,
       pagada: pagada,
       descontados: resumen.descontados,
+      comision: resumen.comision,
       sin_vinculo: resumen.sinVinculo.length
     });
   } catch (err) {
