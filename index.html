@@ -607,6 +607,60 @@
      marco de la seccion -- fondo tenue para despegarla de la seccion
      blanca anterior, y el video a la izquierda para que las dos no queden
      espejadas una arriba de la otra. */
+  .ml-seccion { background: #FFFFFF; padding: 64px 24px; }
+
+  .ml-inner { max-width: 1100px; margin: 0 auto; }
+
+  .ml-seccion h2 {
+    font-size: 34px;
+    font-weight: 700;
+    color: #15294D;
+    line-height: 1.15;
+    margin-bottom: 14px;
+  }
+
+  .ml-seccion h2 span { color: #2D7FF9; }
+
+  .ml-seccion .bajada {
+    font-size: 16px;
+    color: #5C6B82;
+    line-height: 1.65;
+    margin: 0 auto 34px;
+    max-width: 640px;
+  }
+
+  .ml-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    margin-bottom: 32px;
+  }
+
+  .ml-card {
+    background: #F4F7FB;
+    border: 1px solid #E4EAF2;
+    border-radius: 14px;
+    padding: 20px;
+    text-align: left;
+  }
+
+  .ml-card .ico { font-size: 24px; line-height: 1; margin-bottom: 10px; display: block; }
+
+  .ml-card h3 {
+    font-size: 15.5px;
+    font-weight: 700;
+    color: #15294D;
+    margin: 0 0 6px;
+    line-height: 1.3;
+  }
+
+  .ml-card p { font-size: 13.5px; color: #5C6B82; line-height: 1.6; margin: 0; }
+
+  @media (max-width: 720px) {
+    .ml-seccion { padding: 48px 18px; }
+    .ml-seccion h2 { font-size: 27px; }
+  }
+
   .factura-seccion { background: #F4F7FB; padding: 64px 24px; }
 
   .factura-inner {
@@ -1432,6 +1486,57 @@
         <li><span class="num">2</span><span>Revisás lo que reconoció y corregís si hace falta.</span></li>
         <li><span class="num">3</span><span>Queda en tu catálogo y el gasto en tu caja.</span></li>
       </ul>
+      <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
+      <div class="factura-nota">Incluido en el plan Pro.</div>
+    </div>
+  </div>
+</section>
+
+<section class="ml-seccion" id="mercadolibre">
+  <div class="ml-inner">
+    <div class="revelar" style="text-align:center;">
+      <div class="etiqueta">Mercado Libre</div>
+      <h2>¿Vendés también en <span>Mercado Libre</span>?</h2>
+      <p class="bajada">
+        Conectás tu cuenta y tus ventas de Mercado Libre entran solas al panel: descuentan stock,
+        anotan la comisión y te muestran <strong>cuánto te quedó de verdad</strong>.
+      </p>
+    </div>
+
+    <div class="ml-grid">
+      <div class="ml-card revelar">
+        <span class="ico">📦</span>
+        <h3>Un solo stock, no dos</h3>
+        <p>Vendés en Mercado Libre y baja acá. Vendés en el mostrador y no lo vendés dos veces. Se termina la cancelación que te arruina la reputación.</p>
+      </div>
+      <div class="ml-card revelar">
+        <span class="ico">💰</span>
+        <h3>Cuánto ganás, no cuánto facturás</h3>
+        <p>Mercado Libre te muestra ingresos. Acá ves lo que te queda: precio menos costo menos comisión. El costo de tus productos ML no lo sabe.</p>
+      </div>
+      <div class="ml-card revelar">
+        <span class="ico">🧾</span>
+        <h3>Las comisiones dejan de ser invisibles</h3>
+        <p>Cada venta anota sola su comisión como gasto. Tu caja deja de mostrarte una ganancia que no existe.</p>
+      </div>
+      <div class="ml-card revelar">
+        <span class="ico">⚡</span>
+        <h3>Tu catálogo, sin tipear nada</h3>
+        <p>Trae tus publicaciones con fotos, precios y variantes. Lo que ya tenés lo reconoce; lo que falta lo crea.</p>
+      </div>
+      <div class="ml-card revelar">
+        <span class="ico">🏭</span>
+        <h3>Full sin romper el stock del local</h3>
+        <p>Lo que sale del depósito de Mercado Libre no te descuenta stock del negocio. Cada cosa en su lugar.</p>
+      </div>
+      <div class="ml-card revelar">
+        <span class="ico">📱</span>
+        <h3>Todo en una pantalla</h3>
+        <p>Las ventas de Mercado Libre, las del mostrador y las de tu tienda online, juntas. Un solo lugar para ver el día.</p>
+      </div>
+    </div>
+
+    <div class="revelar" style="text-align:center;">
       <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
       <div class="factura-nota">Incluido en el plan Pro.</div>
     </div>
