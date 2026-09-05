@@ -1991,6 +1991,22 @@ tr:last-child td { border-bottom: none; }
         </div>
       </div>
 
+      <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+        <div class="stat-card">
+          <div class="label">Comisiones de ML (mes)</div>
+          <div class="value" id="mlComisionMes" style="color:var(--danger);">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Neto después de ML</div>
+          <div class="value" id="mlNetoMes">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Ganancia estimada</div>
+          <div class="value" id="mlGananciaMes">—</div>
+          <div class="sub" id="mlGananciaNota" style="font-size:11.5px;color:var(--text-mute);"></div>
+        </div>
+      </div>
+
       <div id="mlAvisoSinDescontar" class="hidden" style="background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:13px;line-height:1.55;"></div>
 
       <div class="panel">
@@ -2021,7 +2037,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
         <table>
-          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Total</th><th>Estado</th><th>Stock</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión</th><th style="text-align:right;">Neto</th><th>Estado</th><th>Stock</th></tr></thead>
           <tbody id="mlVentasBody"></tbody>
         </table>
       </div>
@@ -7065,6 +7081,53 @@ async function onLoggedIn() {
 
 let mlOrdenes = [];
 
+// Lo que Mercado Libre se queda de cada venta, sacado de la propia orden que
+// guardo el webhook. Tres advertencias que estan en el codigo a proposito:
+//
+//  1. sale_fee: la documentacion no dice si viene por unidad o por linea.
+//     Se asume POR UNIDAD y se multiplica por la cantidad. Con la primera
+//     venta real hay que confirmarlo mirando store_ml_ordenes.detalle: si
+//     estuviera al reves, la comision sale inflada en las ventas de 2 o mas
+//     unidades y hay que sacar el "* cantidad".
+//  2. El envio NO esta incluido todavia. El costo que absorbe el vendedor
+//     vive en el recurso de envio, que es otra llamada. Mientras no este,
+//     el neto es mejor de lo que va a ser en las ventas con envio gratis.
+//  3. Con FULL aparecen almacenamiento y servicio de gestion, que se
+//     facturan aparte por periodo y NO vienen en la orden. Tampoco estan.
+//
+// Por eso la ganancia se muestra como estimada y no como un dato cerrado.
+function costosDeOrdenMl(orden) {
+  const d = orden.detalle || {};
+  const bruto = Number(orden.total) || Number(d.total_amount) || 0;
+  const lineas = Array.isArray(d.order_items) ? d.order_items : [];
+
+  let comision = 0, costo = 0, unidades = 0, lineasSinCosto = 0;
+
+  lineas.forEach((li) => {
+    const cantidad = Number(li.quantity) || 0;
+    unidades += cantidad;
+    comision += (Number(li.sale_fee) || 0) * cantidad;
+
+    // El costo sale del producto vinculado. Es el dato que ML no tiene y
+    // sin el no hay ganancia que calcular, solo facturacion.
+    const itemId = li.item && li.item.id;
+    const variacion = (li.item && li.item.variation_id) ? String(li.item.variation_id) : null;
+    const vinculo = mlVinculosPrevios.find((v) =>
+      v.ml_item_id === String(itemId) &&
+      (variacion ? String(v.ml_variation_id) === variacion : !v.ml_variation_id));
+    const producto = vinculo && products.find((p) => p.id === vinculo.product_id);
+    const unitario = producto ? Number(producto.costo) || 0 : 0;
+    if (unitario > 0) costo += unitario * cantidad; else lineasSinCosto++;
+  });
+
+  // Lo que el vendedor puso de su bolsillo en una promoción con descuento
+  // compartido — el caso de las campañas bonificadas.
+  const descuentoPropio = Number((d.discounts && d.discounts.seller) || 0);
+  const neto = bruto - comision - descuentoPropio;
+
+  return { bruto, comision, descuentoPropio, neto, costo, unidades, lineasSinCosto };
+}
+
 function renderMercadoLibre() {
   const ahora = ahoraEnArgentina();
   const delMes = mlOrdenes.filter((o) => {
@@ -7074,7 +7137,27 @@ function renderMercadoLibre() {
   });
 
   byId('mlVentasMes').textContent = delMes.length;
-  byId('mlFacturadoMes').textContent = money(delMes.reduce((a, o) => a + (Number(o.total) || 0), 0));
+
+  const costos = delMes.map(costosDeOrdenMl);
+  const suma = (campo) => costos.reduce((a, c) => a + c[campo], 0);
+  const sinCosto = costos.filter((c) => c.lineasSinCosto > 0).length;
+
+  byId('mlFacturadoMes').textContent = money(suma('bruto'));
+  byId('mlComisionMes').textContent = suma('comision') ? '− ' + money(suma('comision')) : '$0';
+  byId('mlNetoMes').textContent = money(suma('neto'));
+
+  // La ganancia solo se muestra si TODAS las ventas del mes tienen el costo
+  // cargado. Un numero al que le falta la mitad de los costos miente para
+  // arriba, que es la peor direccion para equivocarse.
+  const hayVentas = delMes.length > 0;
+  byId('mlGananciaMes').textContent = (hayVentas && !sinCosto)
+    ? money(suma('neto') - suma('costo'))
+    : '—';
+  byId('mlGananciaNota').textContent = !hayVentas
+    ? ''
+    : (sinCosto
+        ? 'Falta el costo en ' + sinCosto + ' venta' + (sinCosto === 1 ? '' : 's')
+        : 'Sin contar envío ni costos de Full');
 
   // Se cuentan publicaciones, no filas: una con variantes tiene un vínculo
   // por variante y diría cualquier número.
@@ -7101,10 +7184,13 @@ function renderMercadoLibre() {
           '<td>' + new Date(o.creado_en).toLocaleDateString('es-AR') + '</td>' +
           '<td>' + escapeHtml(o.comprador || '—') + '</td>' +
           '<td style="text-align:right;">' + money(o.total) + '</td>' +
+          '<td style="text-align:right;color:var(--danger);">' +
+            (costosDeOrdenMl(o).comision ? '− ' + money(costosDeOrdenMl(o).comision) : '—') + '</td>' +
+          '<td style="text-align:right;">' + money(costosDeOrdenMl(o).neto) + '</td>' +
           '<td>' + escapeHtml(ESTADOS[o.estado] || o.estado || '—') + '</td>' +
           '<td>' + (o.stock_descontado ? '✅ descontado' : (o.estado === 'paid' ? '⚠️ sin descontar' : '—')) + '</td>' +
         '</tr>').join('')
-    : '<tr><td colspan="5" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+    : '<tr><td colspan="7" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
 }
 
 async function consultarPublicidadMl() {
