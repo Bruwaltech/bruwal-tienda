@@ -2013,6 +2013,7 @@ tr:last-child td { border-bottom: none; }
         <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
           <span>🔗 Tu cuenta</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="mlBeneficiosBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">✨ Beneficios de tenerlo acá</button>
             <button type="button" id="mlPublicacionesBtn2" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Publicaciones y vínculos</button>
           </div>
         </div>
@@ -2678,6 +2679,89 @@ tr:last-child td { border-bottom: none; }
     <div id="importarExcelPreview" style="max-height:280px;overflow:auto;margin-bottom:14px;"></div>
 
     <button type="button" id="confirmarImportacionBtn" class="btn btn-primary hidden" style="width:100%;">Importar productos</button>
+  </div>
+</div>
+
+<!-- MODAL BENEFICIOS DE MERCADO LIBRE -->
+<div class="modal-overlay hidden" id="mlBeneficiosModal">
+  <div class="modal" style="max-width:720px;">
+    <button class="modal-close" id="closeMlBeneficiosModal">✕</button>
+    <h3><i class="fa-solid fa-store" style="color:var(--stock);"></i> Tu panel de Mercado Libre en BRUWALTECH</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 10px;line-height:1.6;">
+      Otros sistemas sincronizan cantidades. Acá además sabés <strong>cuánto te queda de cada venta</strong>,
+      porque el costo de tus productos lo tenés cargado de este lado.
+    </p>
+
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">📦</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">No vender lo que ya no tenés</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Una venta en Mercado Libre descuenta el stock acá al instante. Se termina el "lo vendí en ML y también en el local", que en Mercado Libre no es solo un lío: es una cancelación que te pega en la reputación.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">💰</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">Ver cuánto ganás, no cuánto facturás</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Mercado Libre te muestra ingresos. Acá ves lo que te queda: precio menos costo menos comisión. El costo de tus productos ML no lo sabe y nunca te lo va a decir.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">🧾</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">Las comisiones dejan de ser invisibles</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Cada venta registra sola su comisión como gasto. Tu Caja y tus Estadísticas dejan de mostrarte una ganancia que no existe.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">⚡</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">Cargar el catálogo sin tipear nada</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Trae tus publicaciones con fotos, precios, variantes y códigos. Lo que ya tenés lo reconoce y lo vincula; lo que falta lo crea de una vez.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">👕</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">Talles y colores que se entienden</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Cada combinación descuenta su propio stock. Si se vende un talle M rojo, baja el M rojo — no "una remera".</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">🏭</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">Full sin romper el stock del local</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Las ventas por Full no te descuentan stock del negocio, porque esa unidad está en el depósito de Mercado Libre. Los dos depósitos quedan separados y claros.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">📱</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">Todo el negocio en una pantalla</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Las ventas de Mercado Libre aparecen junto a las del mostrador y las de tu tienda online. Un solo lugar para ver el día, la caja y el stock.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">🔄</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">No hay que acordarse de nada</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Vinculás una vez y funciona solo. La misma venta no descuenta dos veces aunque ML avise cinco veces, y si algo no se pudo resolver el panel te lo dice en vez de fallar en silencio.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:21px;line-height:1.2;">🔒</div>
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px;">Tu cuenta es tuya</div>
+          <div style="font-size:13px;color:var(--text-mute);line-height:1.6;">Conectás tu cuenta de Mercado Libre y la desconectás cuando quieras. Las credenciales nunca pasan por el navegador.</div>
+        </div>
+      </div>
+
+    <div id="mlBeneficiosCta" class="hidden" style="margin-top:18px;text-align:center;">
+      <button type="button" id="mlBeneficiosUpgradeBtn" class="btn btn-primary" style="width:auto;padding:11px 22px;">
+        Quiero sumarlo a mi tienda
+      </button>
+      <p style="color:var(--text-mute);font-size:12px;margin-top:8px;">Es parte del plan Pro.</p>
+    </div>
   </div>
 </div>
 
@@ -7197,6 +7281,13 @@ function renderMercadoLibre() {
           ) + '</td>' +
         '</tr>').join('')
     : '<tr><td colspan="7" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+}
+
+// El que no tiene Pro no ve la solapa, pero sí esta pantalla: es mejor
+// contarle qué gana que mostrarle un cartel diciendo que no puede entrar.
+function abrirBeneficiosMl(ofrecerUpgrade) {
+  byId('mlBeneficiosCta').classList.toggle('hidden', !ofrecerUpgrade);
+  show(byId('mlBeneficiosModal'));
 }
 
 async function consultarPublicidadMl() {
@@ -13998,8 +14089,15 @@ byId('mlPublicacionesBtn').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicacionesBtn2').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicidadBtn').addEventListener('click', consultarPublicidadMl);
 byId('tabMercadoLibre').addEventListener('click', () => {
-  if (!tienePlanPro()) { ofrecerUpgradePro('Mercado Libre'); return; }
+  if (!tienePlanPro()) { abrirBeneficiosMl(true); return; }
   mostrarVistaMercadoLibre();
+});
+
+byId('mlBeneficiosBtn').addEventListener('click', () => abrirBeneficiosMl(false));
+byId('closeMlBeneficiosModal').addEventListener('click', () => hide(byId('mlBeneficiosModal')));
+byId('mlBeneficiosUpgradeBtn').addEventListener('click', () => {
+  hide(byId('mlBeneficiosModal'));
+  ofrecerUpgradePro('Mercado Libre');
 });
 byId('closeMlPublicacionesModal').addEventListener('click', () => hide(byId('mlPublicacionesModal')));
 byId('aplicarMlBtn').addEventListener('click', aplicarMlPublicaciones);
