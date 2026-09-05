@@ -49,11 +49,37 @@ function claveDeAtributos(obj) {
   return Object.keys(obj || {}).sort().map((k) => k + ':' + obj[k]).join('~');
 }
 
+// ---------- Full ----------
+//
+// Con Full la unidad sale del dep\u00f3sito de Mercado Libre, no del local, as\u00ed
+// que descontarle stock al producto de BRUWAL ser\u00eda restar algo que nunca
+// estuvo en el negocio.
+//
+// Se pregunta por el env\u00edo de la orden y no por lo guardado en el v\u00ednculo
+// a prop\u00f3sito: una publicaci\u00f3n puede pasarse a Full cualquier d\u00eda, y el
+// v\u00ednculo quedar\u00eda viejo sin que nadie se entere. Si la consulta falla, se
+// cae al dato del v\u00ednculo, que es mejor que nada.
+async function logisticaDeOrden(orden, token) {
+  const idEnvio = orden.shipping && orden.shipping.id;
+  if (!idEnvio) return null;
+  try {
+    const r = await fetch(ML_API + '/shipments/' + encodeURIComponent(idEnvio), {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!r.ok) return null;
+    const envio = await r.json();
+    return envio.logistic_type || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+
 // ---------- Descontar ----------
 
 // Devuelve el item para el pedido del panel, o null si esa línea de la venta
 // no tiene con qué corresponderse acá.
-async function descontarUnItem(slug, linea, resumen) {
+async function descontarUnItem(slug, linea, resumen, esFull) {
   const itemId = linea.item && linea.item.id;
   const variacionId = linea.item && linea.item.variation_id;
   const cantidad = Number(linea.quantity) || 0;
@@ -65,7 +91,7 @@ async function descontarUnItem(slug, linea, resumen) {
 
   const vinculos = await sb('/rest/v1/store_ml_vinculos?store_slug=eq.' + encodeURIComponent(slug) +
     '&ml_item_id=eq.' + encodeURIComponent(String(itemId)) + filtroVariacion +
-    '&select=product_id,variante_local');
+    '&select=product_id,variante_local,logistica');
 
   const vinculo = vinculos && vinculos[0];
   if (!vinculo) {
@@ -79,6 +105,21 @@ async function descontarUnItem(slug, linea, resumen) {
     '&select=id,name,price,stock,tiene_variantes,variantes');
   const producto = productos && productos[0];
   if (!producto) { resumen.sinProducto.push(vinculo.product_id); return null; }
+
+  // Full (o el v\u00ednculo dice que esa publicaci\u00f3n va por Full): la venta se
+  // registra igual \u2014 ingreso, comisi\u00f3n y pedido \u2014 pero el stock del local
+  // no se toca, porque esa unidad no sali\u00f3 de ac\u00e1.
+  const porFull = esFull || vinculo.logistica === 'fulfillment';
+  if (porFull) {
+    resumen.porFull++;
+    return {
+      product_id: producto.id,
+      qty: cantidad,
+      name: producto.name,
+      price: Number(linea.unit_price) || Number(producto.price) || 0,
+      full: true
+    };
+  }
 
   let variante = null;
 
@@ -178,6 +219,7 @@ async function registrarPedido(slug, orden, items, resumen) {
       items: items,
       total: Number(orden.total_amount) || 0,
       notes: 'Venta de Mercado Libre. Orden ' + orden.id +
+             (resumen.porFull ? '. Enviada por Full: no se descont\u00f3 stock del local.' : '') +
              (resumen.sinVinculo.length ? '. Sin vincular: ' + resumen.sinVinculo.join(', ') : '')
     }]
   });
@@ -249,13 +291,16 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, repetida: true, stock_descontado: previa.stock_descontado });
     }
 
-    const resumen = { descontados: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
+    const resumen = { descontados: 0, porFull: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
     let items = [];
     let idPedido = null;
 
     if (pagada) {
+      const logistica = await logisticaDeOrden(orden, token);
+      const esFull = logistica === 'fulfillment';
+
       for (const linea of (orden.order_items || [])) {
-        const item = await descontarUnItem(slug, linea, resumen);
+        const item = await descontarUnItem(slug, linea, resumen, esFull);
         if (item) items.push(item);
       }
       idPedido = await registrarPedido(slug, orden, items, resumen);
@@ -269,7 +314,10 @@ module.exports = async (req, res) => {
         ml_order_id: String(orden.id),
         store_slug: slug,
         estado: orden.status,
-        stock_descontado: pagada && resumen.descontados > 0,
+        // "se resolvi\u00f3 bien": se descont\u00f3, o no correspond\u00eda porque es Full.
+        stock_descontado: pagada && (resumen.descontados > 0 || resumen.porFull > 0),
+        sin_vincular: resumen.sinVinculo.length > 0,
+        logistica: pagada ? (resumen.porFull ? 'fulfillment' : 'propio') : null,
         order_id: idPedido,
         total: Number(orden.total_amount) || 0,
         comprador: (orden.buyer && orden.buyer.nickname) || null,
@@ -281,6 +329,7 @@ module.exports = async (req, res) => {
       ok: true,
       pagada: pagada,
       descontados: resumen.descontados,
+      por_full: resumen.porFull,
       comision: resumen.comision,
       sin_vinculo: resumen.sinVinculo.length
     });

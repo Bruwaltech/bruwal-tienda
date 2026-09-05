@@ -284,7 +284,7 @@ async function accionPublicaciones(slug) {
   for (let i = 0; i < ids.length; i += 20) {
     const lote = ids.slice(i, i + 20);
     const detalle = await pedirAMl('/items?ids=' + lote.join(',') +
-      '&attributes=id,title,price,available_quantity,status,permalink,variations,attributes,seller_custom_field,pictures', token);
+      '&attributes=id,title,price,available_quantity,status,permalink,variations,attributes,seller_custom_field,pictures,shipping', token);
 
     (detalle || []).forEach((fila) => {
       const item = fila && fila.body;
@@ -299,6 +299,9 @@ async function accionPublicaciones(slug) {
         sku: item.seller_custom_field || atributo(item, 'SELLER_SKU'),
         gtin: atributo(item, 'GTIN'),
         fotos: fotosDeItem(item),
+        // 'fulfillment' = Full: las unidades est\u00e1n en el dep\u00f3sito de ML y
+        // una venta de esa publicaci\u00f3n no toca el stock del local.
+        logistica: (item.shipping && item.shipping.logistic_type) || null,
         variantes: (item.variations || []).map((v) => ({
           id: String(v.id),
           nombre: nombreDeVariante(v),

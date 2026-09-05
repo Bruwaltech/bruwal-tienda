@@ -7166,14 +7166,16 @@ function renderMercadoLibre() {
 
   // Lo que hay que mirar: ventas pagadas a las que no se les pudo descontar
   // nada porque la publicación no estaba vinculada.
-  const sinDescontar = mlOrdenes.filter((o) => o.estado === 'paid' && !o.stock_descontado);
+  // Antes se avisaba por "no descontó stock", pero eso ahora incluye a las
+  // ventas por Full, donde NO descontar es lo correcto. Lo que hay que
+  // mirar es otra cosa: las lineas que no tenian con que corresponderse.
+  const sinDescontar = mlOrdenes.filter((o) => o.estado === 'paid' && o.sin_vincular);
   const aviso = byId('mlAvisoSinDescontar');
   aviso.classList.toggle('hidden', !sinDescontar.length);
   if (sinDescontar.length) {
     aviso.innerHTML = '⚠️ <strong>' + sinDescontar.length + '</strong> venta' +
-      (sinDescontar.length === 1 ? '' : 's') + ' de Mercado Libre no descontó stock, porque la publicación ' +
-      (sinDescontar.length === 1 ? 'no estaba vinculada' : 'no estaba vinculada') +
-      '. Vinculá esas publicaciones y ajustá el stock a mano por esta vez.';
+      (sinDescontar.length === 1 ? '' : 's') + ' de Mercado Libre tenía alguna publicación sin vincular, ' +
+      'así que no se le pudo descontar el stock. Vinculá esas publicaciones y ajustá el stock a mano por esta vez.';
   }
 
   const ESTADOS = { paid: 'Pagada', cancelled: 'Cancelada', payment_required: 'Esperando pago', payment_in_process: 'Pago en proceso' };
@@ -7188,7 +7190,11 @@ function renderMercadoLibre() {
             (costosDeOrdenMl(o).comision ? '− ' + money(costosDeOrdenMl(o).comision) : '—') + '</td>' +
           '<td style="text-align:right;">' + money(costosDeOrdenMl(o).neto) + '</td>' +
           '<td>' + escapeHtml(ESTADOS[o.estado] || o.estado || '—') + '</td>' +
-          '<td>' + (o.stock_descontado ? '✅ descontado' : (o.estado === 'paid' ? '⚠️ sin descontar' : '—')) + '</td>' +
+          '<td>' + (
+            o.logistica === 'fulfillment' ? '🏭 Full' :
+            o.sin_vincular ? '⚠️ sin vincular' :
+            o.stock_descontado ? '✅ descontado' : '—'
+          ) + '</td>' +
         '</tr>').join('')
     : '<tr><td colspan="7" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
 }
@@ -7385,6 +7391,7 @@ function renderMlPublicaciones() {
             money(pub.precio) + ' · stock en ML: ' + pub.stock +
             (conVariantes ? ' · ' + pub.variantes.length + (pub.variantes.length === 1 ? ' variante' : ' variantes') : '') +
             (pub.fotos && pub.fotos.length ? ' · ' + pub.fotos.length + (pub.fotos.length === 1 ? ' foto' : ' fotos') : '') +
+            (pub.logistica === 'fulfillment' ? ' · <strong style="color:var(--celeste);">FULL</strong>' : '') +
             (pub.sku ? ' · SKU ' + escapeHtml(pub.sku) : '') +
           '</div>' + avisoVariantes +
         '</td><td>' +
@@ -7527,7 +7534,7 @@ async function aplicarMlPublicaciones() {
     aCrear.forEach((pub, i) => {
       if (!creados[i]) return;
       const base = { store_slug: currentStore.slug, product_id: creados[i].id,
-                     ml_item_id: pub.id, titulo_ml: pub.titulo };
+                     ml_item_id: pub.id, titulo_ml: pub.titulo, logistica: pub.logistica || null };
       if (pub.variantes && pub.variantes.length) {
         // Recién creado: cada variante de ML se corresponde una a una con
         // la combinación que acabamos de armar con sus mismos atributos.
@@ -7544,7 +7551,7 @@ async function aplicarMlPublicaciones() {
 
     aVincular.forEach((pub) => {
       const base = { store_slug: currentStore.slug, product_id: mlDecisiones[pub.id],
-                     ml_item_id: pub.id, titulo_ml: pub.titulo };
+                     ml_item_id: pub.id, titulo_ml: pub.titulo, logistica: pub.logistica || null };
       const producto = products.find((p) => p.id === mlDecisiones[pub.id]);
       const conVariantes = pub.variantes && pub.variantes.length && variantesDeProducto(producto).length;
 
