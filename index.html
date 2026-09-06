@@ -1329,6 +1329,8 @@
   .planes-seccion .cabecera h2 { font-size: 27px; }
 }
 </style>
+
+<link rel="stylesheet" href="bruwal-motion.css">
 </head>
 <body>
 
@@ -1376,9 +1378,16 @@
       </div>
 
       <div class="hero-acciones">
-        <a href="/dashboard" class="hero-btn principal">Crear mi tienda gratis</a>
+        <a href="/dashboard" class="hero-btn principal">Crear mi tienda</a>
         <a href="#buscador" class="hero-btn secundario">Ver tiendas</a>
       </div>
+
+      <!-- La prueba dejo de regalarse sola: se pide y se habilita a mano,
+           igual que en el panel (funcion pedirPrueba del dashboard). Va como
+           enlace y no como tercer boton para no competir con el principal. -->
+      <a class="bw-prueba" href="https://wa.me/5493413005232?text=Hola%21%20Quiero%20probar%20BRUWAL%207%20d%C3%ADas." target="_blank" rel="noopener">
+        ✨ ¿Preferís probarla antes? Pedí 7 días de prueba
+      </a>
 
       <div class="hero-prueba" id="heroPrueba"></div>
     </div>
@@ -1444,7 +1453,7 @@
         En pocos minutos: cargá tus productos, compartí el link de tu tienda
         y empezá a recibir pedidos por WhatsApp.
       </p>
-      <a href="/dashboard" class="video-cta">Crear mi tienda gratis →</a>
+      <a href="/dashboard" class="video-cta">Crear mi tienda →</a>
     </div>
 
     <!-- Portada con botón de play. El video se carga recién al tocarlo: si
@@ -1486,7 +1495,7 @@
         <li><span class="num">2</span><span>Revisás lo que reconoció y corregís si hace falta.</span></li>
         <li><span class="num">3</span><span>Queda en tu catálogo y el gasto en tu caja.</span></li>
       </ul>
-      <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
+      <a href="/dashboard" class="video-cta">Crear mi tienda &rarr;</a>
       <div class="factura-nota">Incluido en el plan Pro.</div>
     </div>
   </div>
@@ -1494,6 +1503,25 @@
 
 <section class="ml-seccion" id="mercadolibre">
   <div class="ml-inner">
+
+    <!-- Banner de conexion: de un lado el panel, del otro Mercado Libre, y los
+         pulsos viajando por el cable. Se entiende antes de leer una palabra.
+         El logo va en su tamano (la imagen original es de 540px de ancho):
+         estirado a todo lo ancho se veria pixelado. -->
+    <div class="bw-ml-banner revelar">
+      <div class="bw-ml-lado">
+        <div class="bw-ml-chapa">🛍 BRUWAL</div>
+        <p>Tu stock, tu caja y tus costos</p>
+      </div>
+
+      <div class="bw-ml-cable" aria-hidden="true"><i></i><i></i><i></i></div>
+
+      <div class="bw-ml-lado">
+        <img class="bw-ml-logo" src="ml-logo.webp" alt="Mercado Libre"
+             width="540" height="405" loading="lazy" decoding="async">
+        <p>Tus ventas y tus publicaciones</p>
+      </div>
+    </div>
     <div class="revelar" style="text-align:center;">
       <div class="etiqueta">Mercado Libre</div>
       <h2>¿Vendés también en <span>Mercado Libre</span>?</h2>
@@ -1537,7 +1565,7 @@
     </div>
 
     <div class="revelar" style="text-align:center;">
-      <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
+      <a href="/dashboard" class="video-cta">Crear mi tienda &rarr;</a>
       <div class="factura-nota">Incluido en el plan Pro.</div>
     </div>
   </div>
@@ -1562,7 +1590,7 @@
         <div>Precios en <strong>dólares</strong>, con la cotización del día</div>
       </div>
 
-      <a href="/dashboard" class="video-cta">Crear mi tienda gratis &rarr;</a>
+      <a href="/dashboard" class="video-cta">Crear mi tienda &rarr;</a>
       <div class="factura-nota">El historial por IMEI y las estadísticas van en el plan Pro.</div>
     </div>
 
@@ -1608,7 +1636,7 @@
             <i class="fa-brands fa-whatsapp" style="font-size:19px;"></i> Quiero saber más
           </a>
           <a class="ia-btn fantasma" href="/dashboard">
-            <i class="fa-solid fa-store"></i> Crear mi tienda gratis
+            <i class="fa-solid fa-store"></i> Crear mi tienda
           </a>
         </div>
       </div>
@@ -1707,8 +1735,10 @@
   <div class="cabecera">
     <h2>Precios claros, sin letra chica</h2>
     <p>
-      Empezás con 15 días gratis, sin tarjeta. Después elegís el plan que te sirve
-      y lo cancelás cuando quieras desde tu panel.
+      Elegís el plan que te sirve y lo activás desde tu panel con Mercado Pago.
+      Lo cancelás cuando quieras, sin llamar a nadie ni dar explicaciones.
+      ¿Querés verla funcionando primero?
+      <a class="bw-prueba-linea" href="https://wa.me/5493413005232?text=Hola%21%20Quiero%20probar%20BRUWAL%207%20d%C3%ADas." target="_blank" rel="noopener">Pedí 7 días de prueba</a>.
     </p>
   </div>
   <!-- Las tarjetas las dibuja pintarPlanes() leyendo planes.js, el mismo
@@ -2204,7 +2234,7 @@ function pintarPlanes() {
       (p.nota ? '<div class="nota">' + escapeHtml(p.nota) + '</div>' : '') +
     '</div>';
 
-  const irAlPanel = '<a class="accion" href="/dashboard">Crear mi tienda gratis</a>';
+  const irAlPanel = '<a class="accion" href="/dashboard">Crear mi tienda</a>';
 
   const msgBot = 'Hola! Me interesa el Bot de pedidos con IA para mi negocio.';
   const accionBot = '<a class="accion" target="_blank" rel="noopener" ' +
@@ -2304,5 +2334,6 @@ if ('serviceWorker' in navigator) {
 
 init();
 </script>
+<script src="bruwal-motion.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,590 @@
+/* ==========================================================================
+   BRUWAL — capa de movimiento y detalle visual
+   --------------------------------------------------------------------------
+   Archivo APARTE a propósito: no toca ni una regla del <style> de index.html.
+   Todo lo de acá se apoya sobre lo que ya existe (colores, tamaños, grillas
+   quedan intactos). Si algún día molesta, se borra el <link> del head y la
+   página vuelve exactamente a como estaba.
+
+   Reglas que me impuse:
+   - Solo se anima opacity y transform. Nada que provoque reflow ni corrimiento.
+   - Nada se oculta si no hay JS: las clases que esconden viven bajo .bw-motion,
+     que la agrega el script recién cuando confirma que puede revelarlas.
+   - El mapa de Leaflet y la lista de tiendas quedan afuera: un transform sobre
+     el contenedor del mapa le desacomoda los tiles.
+   ========================================================================== */
+
+:root {
+  --bw-navy: #15294D;
+  --bw-blue: #2F8FE0;
+  --bw-sky:  #7DD3FC;
+  --bw-green:#4ADE80;
+  --bw-curva: cubic-bezier(.22, .68, .36, 1);
+}
+
+/* ============ 1. Barra de progreso de lectura ============
+   Da la sensación de "página con vida" y de paso le dice al que scrollea
+   cuánto le falta. Va por encima del header (z-index 1000). */
+.bw-progreso {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--bw-sky), var(--bw-blue) 45%, var(--bw-green));
+  z-index: 1100;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* ============ 2. Header ============
+   No le cambio el alto ni el padding (eso movería todo el contenido al
+   scrollear). Solo gana sombra y una línea de luz abajo cuando te despegás
+   del tope, que es lo que hace que se lea como una barra flotante. */
+header {
+  transition: box-shadow .35s ease;
+}
+header.bw-fijo {
+  box-shadow: 0 10px 30px -8px rgba(21, 41, 77, .45);
+}
+header::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+}
+header.bw-fijo::after { opacity: 1; }
+
+/* El logo respira apenas al pasarle por arriba */
+header .logo {
+  transition: transform .3s var(--bw-curva);
+}
+header .logo:hover { transform: scale(1.04); }
+
+/* ============ 3. Entradas al hacer scroll ============
+   Mismo criterio que la clase .revelar que ya existía, pero aplicada a las
+   partes que no la tenían, con variantes y con retardo en cadena para que
+   una grilla no aparezca toda de golpe. */
+.bw-motion .bw-rev {
+  opacity: 0;
+  transform: translateY(26px);
+  transition:
+    opacity   .7s var(--bw-curva),
+    transform .7s var(--bw-curva);
+  will-change: opacity, transform;
+}
+.bw-motion .bw-rev-izq  { transform: translateX(-32px); }
+.bw-motion .bw-rev-der  { transform: translateX(32px); }
+.bw-motion .bw-rev-zoom { transform: scale(.94); }
+
+.bw-motion .bw-rev.bw-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ============ 4. Botones ============
+   Lo que pidió: botones con más diseño. Tres cosas, todas suaves:
+   un brillo que barre al pasar el mouse, un levante al hover y un hundido
+   real al apretar (feedback táctil, que es lo que hace sentir "sólida" una
+   interfaz en el celular). */
+.bw-btn {
+  overflow: hidden;
+  /* overflow:hidden le cambia la línea base a una caja inline: el navegador
+     pasa a alinearla por el borde de abajo y le suma el hueco del descendente
+     de la línea. Medido: corría 4px hacia abajo todo lo que venía después de
+     cada botón (12px acumulados al llegar al pie). Con vertical-align:top la
+     línea vuelve a medir exactamente lo que mide el botón. En los botones que
+     están dentro de un flex esta propiedad no hace nada, así que no molesta. */
+  vertical-align: top;
+  transition:
+    transform  .25s var(--bw-curva),
+    box-shadow .25s var(--bw-curva),
+    filter     .25s ease;
+}
+/* La onda del clic necesita un ancestro posicionado, pero NO puedo declarar
+   position:relative a lo bruto: el botón de play de los videos está centrado
+   con position:absolute y se me iba de lugar. Esta clase se la pone el script
+   solo a los que hoy están en static. */
+.bw-btn-rel { position: relative; }
+.bw-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%) skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.38), transparent);
+  transition: transform .65s var(--bw-curva);
+  pointer-events: none;
+  z-index: 1;
+}
+.bw-btn:hover::after { transform: translateX(120%) skewX(-18deg); }
+
+.bw-btn:hover  { transform: translateY(-3px); }
+.bw-btn:active { transform: translateY(-1px) scale(.985); transition-duration: .08s; }
+
+/* Los botones claros sobre fondo oscuro no necesitan el barrido blanco:
+   se les nota como una mancha. Les bajo la intensidad. */
+.hero-btn.principal.bw-btn::after,
+.plan-home .accion.bw-btn::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
+}
+
+/* Sombra de color, no gris: es lo que separa un botón "de plantilla" de uno
+   diseñado. Cada uno toma el color de su propio fondo. */
+.video-cta.bw-btn:hover      { box-shadow: 0 14px 32px -8px rgba(47,143,224,.65); }
+.search-btn.bw-btn:hover     { box-shadow: 0 14px 30px -8px rgba(47,143,224,.60); }
+.btn-register.bw-btn:hover   { box-shadow: 0 12px 26px -8px rgba(0,0,0,.35); }
+.plan-home .accion.bw-btn:hover { box-shadow: 0 14px 30px -10px rgba(21,41,77,.55); }
+
+/* El botón principal ("Crear mi tienda gratis") late apenas, para que el ojo
+   caiga ahí. Es un anillo de sombra que se abre y se desvanece: no mueve el
+   botón ni un píxel, así que no empuja nada de alrededor.
+   Va con box-shadow y no con un pseudo-elemento borroso porque el botón tiene
+   overflow:hidden (lo necesita para la onda del clic) y le recortaría el halo.
+   La sombra base del botón se repite en cada paso para no perderla. */
+.bw-cta-halo { animation: bw-latido 3.6s ease-in-out infinite; }
+.bw-cta-halo:hover { animation: none; }   /* al pasar el mouse manda su propia sombra */
+
+@keyframes bw-latido {
+  0%, 100% { box-shadow: 0 8px 24px rgba(0,0,0,.22), 0 0 0 0    rgba(125,211,252,.55); }
+  70%      { box-shadow: 0 8px 24px rgba(0,0,0,.22), 0 0 0 16px rgba(125,211,252,0); }
+}
+
+/* Onda al hacer clic, la que dibuja el script */
+.bw-onda {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  background: rgba(255,255,255,.45);
+  animation: bw-expandir .6s ease-out forwards;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes bw-expandir {
+  to { transform: scale(2.6); opacity: 0; }
+}
+
+/* Los atajos de rubro: pastillas que se levantan de a una */
+.atajos button {
+  transition: transform .2s var(--bw-curva), box-shadow .2s ease, background .2s ease, border-color .2s ease;
+}
+.atajos button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px -4px rgba(21,41,77,.25);
+}
+
+/* ============ 5. Tarjetas ============
+   Levante corto y sombra más profunda. En las secciones oscuras la sombra no
+   se ve, así que ahí lo que cambia es el borde: se enciende. */
+.bw-card {
+  transition:
+    transform    .32s var(--bw-curva),
+    box-shadow   .32s var(--bw-curva),
+    border-color .32s ease;
+}
+.bw-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 22px 44px -20px rgba(21,41,77,.42);
+  border-color: rgba(47,143,224,.55);
+}
+.bw-card-oscura:hover {
+  transform: translateY(-6px);
+  border-color: rgba(125,211,252,.55);
+  box-shadow: 0 26px 60px -22px rgba(0,0,0,.85);
+}
+
+/* El botón de play de los videos NO se toca desde acá: ya tiene su propio
+   hover (escala 1.09) y está centrado con translate(-50%,-50%). Cualquier
+   transform mío se lo pisaría y lo mandaría a una esquina. */
+
+/* ============ 6. Aurora del hero ============
+   Dos manchas de luz que se mueven muy lento por detrás del texto. Es lo que
+   le saca el aspecto de fondo plano sin cambiarle el color a nada.
+   position:relative en el hero no mueve nada: sus hijos ya están en flujo. */
+.hero { position: relative; overflow: hidden; }
+.hero > *:not(.bw-aurora) { position: relative; z-index: 1; }
+
+.bw-aurora {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.bw-aurora i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: .5;
+  will-change: transform;
+}
+.bw-aurora i:nth-child(1) {
+  width: 460px; height: 460px;
+  top: -120px; left: -80px;
+  background: radial-gradient(circle, rgba(125,211,252,.55), transparent 68%);
+  animation: bw-deriva-a 22s ease-in-out infinite;
+}
+.bw-aurora i:nth-child(2) {
+  width: 380px; height: 380px;
+  bottom: -140px; right: -60px;
+  background: radial-gradient(circle, rgba(74,222,128,.34), transparent 68%);
+  animation: bw-deriva-b 27s ease-in-out infinite;
+}
+@keyframes bw-deriva-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(90px, 60px) scale(1.14); }
+}
+@keyframes bw-deriva-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-80px, -50px) scale(1.1); }
+}
+
+/* ============ 7. El celular del hero ============
+   Flota apenas y se inclina siguiendo al mouse (el script calcula el ángulo).
+   Solo si no tenía ya un transform propio, para no pisarle nada. */
+.bw-flota { animation: bw-flotar 7s ease-in-out infinite; }
+@keyframes bw-flotar {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+.bw-tilt {
+  transition: transform .35s var(--bw-curva);
+  transform-style: preserve-3d;
+}
+
+/* ============ 8. Volver arriba ============
+   Aparece recién cuando bajaste. Se esconde solo si está el cartel de
+   instalación de iPhone (.ayuda-ios), que ocupa esa misma esquina. */
+.bw-top {
+  position: fixed;
+  right: 20px; bottom: 20px;
+  width: 46px; height: 46px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--bw-navy), var(--bw-blue));
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 10px 26px -8px rgba(21,41,77,.7);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(14px) scale(.85);
+  transition: opacity .3s ease, transform .3s var(--bw-curva), visibility .3s;
+  z-index: 900;
+}
+.bw-top.bw-visible { opacity: 1; visibility: visible; transform: none; }
+.bw-top:hover { transform: translateY(-3px); box-shadow: 0 16px 34px -10px rgba(47,143,224,.8); }
+
+/* ============ 9. Foco y formularios ============
+   Nada de esto es adorno: es lo que hace que se pueda usar con teclado y que
+   se entienda dónde estás parado al tipear. */
+.bw-btn:focus-visible,
+.atajos button:focus-visible,
+.bw-top:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(125,211,252,.9);
+  outline-offset: 3px;
+}
+.filter-input, #searchInput {
+  transition: border-color .25s ease, box-shadow .25s ease, transform .25s var(--bw-curva);
+}
+.filter-input:focus, #searchInput:focus {
+  border-color: var(--bw-blue);
+  box-shadow: 0 0 0 4px rgba(47,143,224,.16);
+  outline: none;
+}
+
+/* Anclas: sin esto el header pegajoso tapa el título de la sección a la que
+   acabás de saltar desde el menú ("Planes", "Ver tiendas"). */
+#planes, #buscador, #mercadolibre {
+  scroll-margin-top: 84px;
+}
+html { scroll-behavior: smooth; }
+
+/* ============ 10. Respeto por quien pidió menos movimiento ============
+   Si el sistema operativo tiene activado "reducir movimiento", esto apaga
+   TODA la capa. La página queda como estaba, quieta y completa. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .bw-motion .bw-rev,
+  .bw-motion .bw-rev.bw-in {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .bw-aurora, .bw-progreso { display: none; }
+  .bw-flota, .bw-cta-halo::before { animation: none; }
+  .bw-btn::after { display: none; }
+  .bw-btn:hover, .bw-card:hover, .bw-card-oscura:hover, .atajos button:hover { transform: none; }
+}
+
+
+/* ==========================================================================
+   v2 — los cambios que se tienen que NOTAR
+   La primera pasada fue demasiado prudente: movimiento sin rediseño. Esto ya
+   toca la piel de los elementos (header, botones, tarjetas), siempre desde
+   este archivo aparte y sin editar una sola regla del index.html.
+   ========================================================================== */
+
+/* ---- Header de vidrio ----
+   Arriba de todo mantiene el degradé de siempre. Apenas bajás, se convierte
+   en una barra translúcida con el contenido corriendo por debajo: es el
+   recurso que separa una web de 2019 de una de ahora. */
+header.bw-fijo {
+  background: linear-gradient(135deg, rgba(14,29,56,.82) 0%, rgba(29,88,158,.82) 100%);
+  backdrop-filter: blur(16px) saturate(1.45);
+  -webkit-backdrop-filter: blur(16px) saturate(1.45);
+}
+
+/* ---- Botones del header: pastillas ----
+   Eran rectángulos de 6px de radio, todos iguales entre sí. Ahora hay
+   jerarquía: los secundarios son de vidrio con borde, y "Registrarse" es
+   el único sólido, que es donde queremos que hagan clic. */
+.btn-auth {
+  border-radius: 999px;
+  padding: 10px 20px;
+  letter-spacing: .005em;
+}
+.btn-login {
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.30);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.btn-login:hover {
+  background: rgba(255,255,255,.22);
+  border-color: rgba(255,255,255,.65);
+}
+.btn-register {
+  background: linear-gradient(135deg, #ffffff 0%, #D9ECFF 100%);
+  box-shadow: 0 6px 18px -6px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.9);
+}
+.btn-register:hover { box-shadow: 0 12px 26px -8px rgba(125,211,252,.75), inset 0 0 0 1px #fff; }
+.btn-instalar {
+  background: linear-gradient(135deg, #1FA088, #4ADE80);
+  color: #06281f;
+  border: none;
+}
+
+/* ---- El botón principal del hero, más botón ---- */
+.hero-btn.principal {
+  padding: 17px 34px;
+  font-size: 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ffffff 0%, #E3F1FF 100%);
+}
+.hero-btn.secundario {
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ---- La prueba social como chapita con pulso ----
+   El script le pone .bw-pill recién cuando llega el número de Supabase: una
+   pastilla vacía flotando mientras carga quedaría peor que nada. */
+.hero-prueba.bw-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 16px 8px 13px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.24);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 1;
+  font-weight: 400;
+}
+.hero-prueba.bw-pill::before {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--bw-green);
+  flex-shrink: 0;
+  animation: bw-pulso-punto 2.4s ease-out infinite;
+}
+@keyframes bw-pulso-punto {
+  0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.65); }
+  70%  { box-shadow: 0 0 0 9px rgba(74,222,128,0); }
+  100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+}
+
+/* ---- Luz que sigue al cursor ----
+   Una mancha de luz suave nace donde está el mouse dentro de la tarjeta.
+   Es lo que hace que una grilla de cajas se sienta viva y no impresa.
+   Las coordenadas las escribe el script en --bw-x / --bw-y. */
+.bw-luz { position: relative; }
+.bw-luz::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(360px circle at var(--bw-x, 50%) var(--bw-y, 0%),
+                              rgba(47,143,224,.16), transparent 48%);
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.bw-luz:hover::before { opacity: 1; }
+.bw-luz > * { position: relative; z-index: 1; }
+
+/* Sobre fondo oscuro la luz tiene que ser fría y más marcada para verse */
+.bw-luz-fria::before {
+  background: radial-gradient(420px circle at var(--bw-x, 50%) var(--bw-y, 0%),
+                              rgba(125,211,252,.20), transparent 50%);
+}
+
+/* ---- Banner Mercado Libre ----
+   Dos lados y un cable con pulsos viajando: se entiende en un vistazo que
+   las dos puntas están enchufadas, que es exactamente lo que vende la
+   sección. El logo va en su tarjeta amarilla, sin estirar (la imagen es de
+   540px: agrandada se vería pixelada). */
+.bw-ml-banner {
+  max-width: 1100px;
+  margin: 0 auto 34px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 26px;
+  padding: 26px 30px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #0F1D38 0%, #17325C 100%);
+  border: 1px solid rgba(125,211,252,.22);
+  box-shadow: 0 30px 70px -34px rgba(15,29,56,.9);
+  overflow: hidden;
+}
+
+.bw-ml-lado { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.bw-ml-lado p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255,255,255,.62);
+}
+
+.bw-ml-chapa {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 22px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.16);
+  font-size: 19px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -.01em;
+}
+
+.bw-ml-logo {
+  display: block;
+  width: 168px;
+  height: auto;
+  border-radius: 14px;
+  box-shadow: 0 14px 34px -14px rgba(255,225,0,.55);
+}
+
+/* El cable: la línea y tres pulsos que la recorren en loop */
+.bw-ml-cable {
+  position: relative;
+  width: 130px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(125,211,252,.28), rgba(255,225,0,.45));
+}
+.bw-ml-cable i {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 8px; height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #7DD3FC;
+  box-shadow: 0 0 12px 2px rgba(125,211,252,.85);
+  animation: bw-viaja 2.6s linear infinite;
+}
+.bw-ml-cable i:nth-child(2) { animation-delay: .85s; background: #FFE600; box-shadow: 0 0 12px 2px rgba(255,230,0,.8); }
+.bw-ml-cable i:nth-child(3) { animation-delay: 1.7s; }
+@keyframes bw-viaja {
+  0%   { transform: translateX(0);     opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateX(122px); opacity: 0; }
+}
+
+@media (max-width: 760px) {
+  .bw-ml-banner { grid-template-columns: 1fr; gap: 18px; padding: 24px 20px; }
+  .bw-ml-cable {
+    width: 3px; height: 74px;
+    background: linear-gradient(180deg, rgba(125,211,252,.28), rgba(255,225,0,.45));
+    justify-self: center;
+  }
+  .bw-ml-cable i { left: 50%; margin-left: -4px; top: 0; animation-name: bw-viaja-vert; }
+  @keyframes bw-viaja-vert {
+    0%   { transform: translateY(0);    opacity: 0; }
+    12%  { opacity: 1; }
+    88%  { opacity: 1; }
+    100% { transform: translateY(66px); opacity: 0; }
+  }
+}
+
+/* ---- Números que suben al entrar en pantalla ---- */
+.bw-contador { font-variant-numeric: tabular-nums; }
+
+/* ---- Apagado para quien pidió menos movimiento (parte v2) ---- */
+@media (prefers-reduced-motion: reduce) {
+  .bw-ml-cable i,
+  .hero-prueba.bw-pill::before { animation: none; }
+  .bw-luz::before { display: none; }
+}
+
+/* ---- El pedido de prueba de 7 días ----
+   Tiene que verse, pero no competir con "Crear mi tienda": por eso es enlace
+   y no botón. El subrayado se dibuja al pasar por arriba en vez de estar
+   siempre puesto, que es lo que lo hace sentir vivo sin gritar. */
+.bw-prueba {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255,255,255,.88);
+  text-decoration: none;
+  padding-bottom: 3px;
+  background-image: linear-gradient(90deg, var(--bw-sky), var(--bw-green));
+  background-size: 0% 2px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size .35s var(--bw-curva), color .25s ease;
+}
+.bw-prueba:hover {
+  color: #fff;
+  background-size: 100% 2px;
+}
+
+/* El mismo enlace, pero dentro de la bajada de Planes (fondo claro) */
+.bw-prueba-linea {
+  color: var(--bw-blue);
+  font-weight: 700;
+  text-decoration: none;
+  background-image: linear-gradient(90deg, var(--bw-blue), var(--bw-blue));
+  background-size: 100% 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size .3s var(--bw-curva);
+}
+.bw-prueba-linea:hover { background-size: 100% 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-prueba { background-size: 100% 2px; transition: none; }
+}
