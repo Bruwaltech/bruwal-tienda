@@ -1,0 +1,190 @@
+/* ==========================================================================
+   BRUWAL — capa de movimiento del PANEL
+   --------------------------------------------------------------------------
+   Mismo criterio que bruwal-motion.css en la landing: archivo aparte, no se
+   edita ni una regla del <style> de index.html, y se saca borrando el <link>.
+
+   Pero un panel no es una web de venta: acá la gente trabaja ocho horas.
+   Entonces nada de auroras, parallax ni nada que se mueva solo en pantalla.
+   El movimiento tiene que hacer una de dos cosas: dar respuesta a algo que
+   la persona hizo (apretó, abrió, guardó) o marcar dónde está parada.
+
+   Lo que el panel YA tenía y no toco: subrayado de las solapas, franja de
+   las stat-cards, entrada escalonada al cambiar de solapa, hover de filas.
+   ========================================================================== */
+
+:root {
+  --bwd-curva: cubic-bezier(.22, .68, .36, 1);
+}
+
+/* ============ 1. Modales ============
+   Era lo que más se notaba: aparecían de golpe, como un cartel de sistema.
+   Ahora el fondo se funde y desenfoca lo de atrás, y el modal entra desde
+   un poquito abajo. La animación arranca sola: pasar de display:none a
+   visible (que es lo que hace quitar .hidden) reinicia los keyframes. */
+.modal-overlay:not(.hidden) {
+  animation: bwd-fondo .22s ease-out;
+  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+}
+.modal-overlay:not(.hidden) > .modal {
+  animation: bwd-entra-modal .34s var(--bwd-curva);
+}
+@keyframes bwd-fondo {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes bwd-entra-modal {
+  from { opacity: 0; transform: translateY(16px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* La X de cerrar: gira apenas, para que se note que es un control vivo */
+.modal-close {
+  transition: transform .25s var(--bwd-curva), color .2s ease, background .2s ease;
+}
+.modal-close:hover { transform: rotate(90deg); }
+
+/* ============ 2. Botones ============
+   Ya tenían levante al pasar el mouse. Les faltaba lo de abajo:
+   - el hundido al apretar, que es lo que se siente en el dedo en el celular
+   - el brillo que barre en los principales, igual que en la web nueva
+   Ojo con overflow:hidden (lo necesita el brillo y la onda): a una caja
+   inline le corre la línea base. Por eso va el vertical-align, medido en la
+   landing donde corría todo 4px hacia abajo. */
+.btn, .btn-action, .icon-btn, .btn-ghost, .chip-sug {
+  position: relative;
+  overflow: hidden;
+  vertical-align: top;
+}
+.btn:active, .btn-action:active, .icon-btn:active,
+.btn-ghost:active, .chip-sug:active {
+  transform: translateY(0) scale(.975);
+  transition-duration: .07s;
+}
+
+/* Brillo en los que llevan la acción principal */
+.btn-primary::after,
+.btn-action.primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%) skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.30), transparent);
+  transition: transform .6s var(--bwd-curva);
+  pointer-events: none;
+}
+.btn-primary:hover::after,
+.btn-action.primary:hover::after { transform: translateX(120%) skewX(-18deg); }
+
+/* Sombra con color de marca en vez de gris */
+.btn-action.primary:hover, .btn-primary:hover {
+  box-shadow: 0 8px 20px -6px rgba(21,41,77,.45);
+}
+
+/* Los secundarios se llenan apenas al pasar por arriba: hoy solo cambian
+   el borde y quedan un poco muertos. */
+.btn-ghost:hover, .icon-btn:hover {
+  background: #F2F8FE;
+  border-color: var(--celeste);
+  color: var(--celeste);
+}
+.icon-btn.danger:hover {
+  background: #FEF2F2;
+  border-color: #FCA5A5;
+  color: var(--danger);
+}
+
+/* Onda al hacer clic, la dibuja el script */
+.bwd-onda {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  background: currentColor;
+  opacity: .18;
+  animation: bwd-expandir .55s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes bwd-expandir {
+  to { transform: scale(2.4); opacity: 0; }
+}
+
+/* ============ 3. Solapas siempre a mano ============
+   Son trece y las pantallas son largas: si estás abajo en Stock y querés
+   pasar a Ventas, hoy hay que subir todo. Pegadas arriba no. */
+.app-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  transition: box-shadow .3s ease;
+}
+.app-tabs.bwd-pegada {
+  box-shadow: 0 6px 18px -8px rgba(21,41,77,.35);
+}
+
+/* ============ 4. Tarjetas de números ============
+   La luz que sigue al cursor, igual que en las tarjetas de la web nueva:
+   es lo que las hace sentir objetos y no recuadros impresos. */
+.stat-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(260px circle at var(--bwd-x, 50%) var(--bwd-y, 0%),
+                              rgba(47,143,224,.13), transparent 45%);
+  opacity: 0;
+  transition: opacity .3s ease;
+  pointer-events: none;
+}
+.stat-card:hover::after { opacity: 1; }
+
+/* Cuando un número cambia (una venta nueva, un gasto), la tarjeta lo avisa
+   con un destello corto. En un panel que se mira todo el día, enterarse de
+   que algo cambió vale más que cualquier animación de entrada. */
+.stat-card.bwd-cambio .value { animation: bwd-destello .9s ease-out; }
+@keyframes bwd-destello {
+  0%   { color: var(--stock); transform: scale(1.06); }
+  100% { color: var(--navy);  transform: scale(1); }
+}
+.stat-card .value { display: inline-block; transition: color .3s ease; }
+.bwd-contador { font-variant-numeric: tabular-nums; }
+
+/* ============ 5. Filas de tabla ============
+   Ya se pintaban al pasar por arriba. Le sumo la marca al costado: en una
+   tabla de 200 productos, saber en qué renglón estás parado es la mitad
+   del trabajo. */
+tbody tr { transition: background .18s ease, box-shadow .18s ease; }
+tbody tr:hover { box-shadow: inset 3px 0 0 var(--celeste); }
+
+/* ============ 6. Formularios ============ */
+.field input, .field select, .field textarea, input, select, textarea {
+  transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+
+/* Que se vea dónde está el foco al moverse con Tab. No es adorno: es lo
+   que hace usable el panel para quien carga cien productos con el teclado. */
+.btn:focus-visible, .btn-action:focus-visible, .icon-btn:focus-visible,
+.btn-ghost:focus-visible, .app-tab:focus-visible, .chip-sug:focus-visible,
+.modal-close:focus-visible {
+  outline: 3px solid rgba(47,143,224,.45);
+  outline-offset: 2px;
+}
+
+/* ============ 7. Estados vacíos ============
+   Flotan apenas, para que una pantalla sin datos no parezca una pantalla
+   rota. Es el único movimiento continuo de toda la capa. */
+.empty-state { transition: border-color .3s ease; }
+.empty-state:hover { border-color: var(--celeste); }
+.empty-state i, .empty-state .ico { animation: bwd-flota 4.5s ease-in-out infinite; }
+@keyframes bwd-flota {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* ============ 8. Menos movimiento ============
+   El panel ya tenía su propia regla global de prefers-reduced-motion que
+   acorta todas las animaciones. Esto apaga además lo continuo. */
+@media (prefers-reduced-motion: reduce) {
+  .empty-state i, .empty-state .ico { animation: none; }
+  .stat-card::after { display: none; }
+  .btn-primary::after, .btn-action.primary::after { display: none; }
+}
