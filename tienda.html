@@ -108,6 +108,17 @@
   .product-description{font-size:13px;color:var(--text-mute);margin-bottom:12px;line-height:1.4;}
   .product-price{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:var(--celeste);margin-bottom:4px;}
   .precio-original{font-size:13px;font-weight:600;color:var(--text-mute);margin-bottom:8px;}
+
+  /* Oferta: el precio viejo tachado al lado del nuevo, mas el % en un
+     globo. El tachado no es decoracion, es la referencia que hace que el
+     precio nuevo se lea como rebaja y no como el precio de siempre. */
+  .fila-oferta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+  .precio-antes{font-size:14px;font-weight:600;color:var(--text-mute);text-decoration:line-through;}
+  .badge-off{
+    background:#E8F7EE;color:#1B7F4B;font-size:11.5px;font-weight:800;
+    letter-spacing:.03em;padding:3px 8px;border-radius:999px;white-space:nowrap;
+  }
+  .ficha-precio + .fila-oferta{margin-top:-2px;}
   .product-stock{font-size:12px;color:var(--text-mute);margin-bottom:12px;}
   .product-controls{display:flex;gap:8px;margin-top:auto;}
   .qty-controls{display:flex;align-items:center;gap:8px;flex:1;background:var(--bg);border-radius:8px;padding:4px;}
@@ -549,15 +560,46 @@ function precioOriginal(p){
 // variante no tiene precio propio cargado, usa el general del producto.
 // Modelos que se venden como "variante" del mismo producto (13, 13 Pro, 13
 // Pro Max) no valen lo mismo, a diferencia de un talle/color donde sí.
+// ---- Oferta ----
+// `price` es el precio de lista y `precio_oferta` lo que se cobra mientras
+// la oferta este puesta. Una oferta que no sea MENOR al precio de lista se
+// ignora: un valor mal cargado no tiene que poder subirle el precio al
+// cliente ni mostrar un tachado al reves.
+function hayOferta(p){
+  const oferta = Number(p && p.precio_oferta);
+  const lista  = Number((p && p.price) || 0);
+  return !!oferta && oferta > 0 && lista > 0 && oferta < lista;
+}
+
+// El precio que realmente vale hoy. Todo lo que cobra pasa por aca: las
+// tarjetas, la ficha y el carrito. Si se agrega otro lugar que muestre o
+// sume plata, tiene que usar esta funcion y no p.price directo.
+function precioBase(p){
+  return hayOferta(p) ? Number(p.precio_oferta) : Number((p && p.price) || 0);
+}
+
+function porcentajeOff(p){
+  return Math.round((1 - Number(p.precio_oferta) / Number(p.price)) * 100);
+}
+
+// El tachado + el globo, para pegar debajo del precio ya renderizado.
+function etiquetaOferta(p){
+  if (!hayOferta(p)) return '';
+  return '<div class="fila-oferta">' +
+    '<span class="precio-antes">' + money(p.price) + '</span>' +
+    '<span class="badge-off">' + porcentajeOff(p) + '% OFF</span>' +
+  '</div>';
+}
+
 function precioDeVariante(p, v){
-  return (v && v.precio != null) ? Number(v.precio) : Number(p.price || 0);
+  return (v && v.precio != null) ? Number(v.precio) : precioBase(p);
 }
 
 // Rango de precios entre todas las combinaciones — para la tarjeta, antes
 // de que el cliente elija cuál. Si todas valen lo mismo, min === max y se
 // muestra un precio único como siempre; si no, "Desde $X".
 function rangoPrecioVariantes(p){
-  if (!Array.isArray(p.variantes) || !p.variantes.length) return { min: Number(p.price || 0), max: Number(p.price || 0) };
+  if (!Array.isArray(p.variantes) || !p.variantes.length) return { min: precioBase(p), max: precioBase(p) };
   const precios = p.variantes.map(v => precioDeVariante(p, v));
   return { min: Math.min(...precios), max: Math.max(...precios) };
 }
@@ -978,7 +1020,7 @@ function htmlTarjetaProducto(p){
         '<div class="product-info">' +
           '<div class="product-badge" style="background:#6B7280;color:#fff;">No disponible hoy</div>' +
           '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
-          '<div class="product-price">' + money(p.price) + '</div>' +
+          '<div class="product-price">' + money(precioBase(p)) + '</div>' +
         '</div></div>';
     }
     // Si el producto lleva agregados, el + no alcanza: el cliente tiene que
@@ -1016,10 +1058,10 @@ function htmlTarjetaProducto(p){
       (ocultaPrecio
         ? '<div class="product-price">Consultar precio</div>'
         : (() => {
-            const rango = tieneVariantes ? rangoPrecioVariantes(p) : { min: Number(p.price || 0), max: Number(p.price || 0) };
+            const rango = tieneVariantes ? rangoPrecioVariantes(p) : { min: precioBase(p), max: precioBase(p) };
             return rango.min !== rango.max
-              ? '<div class="product-price">Desde ' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>'
-              : '<div class="product-price">' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>' + precioOriginal(p);
+              ? '<div class="product-price">Desde ' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>' + etiquetaOferta(p)
+              : '<div class="product-price">' + money(rango.min) + sufijoPrecioPorMedida(p) + '</div>' + etiquetaOferta(p) + precioOriginal(p);
           })()) +
       '<div class="product-stock">' + (servicio ? 'Servicio' : (p.stock > 0 ? (tieneVariantes
               ? 'Elegí ' + nombresVariante + (variantesSinControlDeStock(p) ? '' : ' para ver el stock')
@@ -1209,8 +1251,8 @@ function abrirFicha(id) {
       : (() => {
           const rango = rangoPrecioVariantes(p);
           return rango.min !== rango.max
-            ? '<div class="ficha-precio" id="fichaPrecio">Desde ' + money(rango.min) + '</div>'
-            : '<div class="ficha-precio" id="fichaPrecio">' + money(rango.min) + '</div>' + precioOriginal(p);
+            ? '<div class="ficha-precio" id="fichaPrecio">Desde ' + money(rango.min) + '</div>' + etiquetaOferta(p)
+            : '<div class="ficha-precio" id="fichaPrecio">' + money(rango.min) + '</div>' + etiquetaOferta(p) + precioOriginal(p);
         })()) +
     '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
       (campos.length
@@ -1327,7 +1369,7 @@ function abrirFicha(id) {
     // vez que ya sabe cuál es exactamente, el precio real de esa unidad.
     const unitario = campos.length
       ? (vSel ? precioDeVariante(p, vSel) : rangoPrecioVariantes(p).min)
-      : Number(p.price || 0);
+      : precioBase(p);
 
     const precioEl = byId('fichaPrecio');
     if (precioEl && p.mostrar_precio !== false) {
@@ -1578,7 +1620,7 @@ const precioUnitario = (linea) => {
   const p = productoDe(linea);
   const extras = (linea.opciones || []).reduce((s, o) => s + Number(o.precio || 0), 0);
   if (!p) return extras;
-  let base = Number(p.price || 0);
+  let base = precioBase(p);
   if (p.tiene_variantes && linea.variante && Array.isArray(p.variantes)) {
     const clave = claveVariante(atributosRealesDe(linea.variante));
     const v = p.variantes.find(x => claveVariante(x.atributos) === clave);

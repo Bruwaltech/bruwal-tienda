@@ -1125,6 +1125,64 @@ tr:last-child td { border-bottom: none; }
   padding-top: 16px;
 }
 
+/* La configuracion pasa a tener una tercera columna con la vista previa.
+   Antes habia que guardar y abrir la tienda en otra pestana para ver si el
+   color habia quedado bien. */
+.modal-grid-config.con-preview { grid-template-columns: 160px minmax(0, 1fr) 290px; }
+
+/* Pegada arriba: el formulario es largo y la muestra tiene que seguir a la
+   vista mientras se baja por los campos. */
+.cfg-preview { position: sticky; top: 0; align-self: start; }
+.cfg-preview-titulo {
+  font-size: 11px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase;
+  color: var(--text-mute); margin-bottom: 9px;
+}
+.cfg-preview-nota { font-size: 11px; color: var(--text-mute); line-height: 1.5; margin-top: 10px; }
+
+.cfg-tel {
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  background: #fff; box-shadow: 0 6px 20px rgba(21,41,77,.10);
+}
+.cfg-tel-header {
+  padding: 16px 14px; background: linear-gradient(135deg,#2F8FE0,#6CB6EC);
+  color: #fff; background-size: cover; background-position: 50% 50%;
+}
+.cfg-tel-logo {
+  width: 44px; height: 44px; border-radius: 10px; background: rgba(255,255,255,.9);
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  overflow: hidden; margin-bottom: 9px;
+}
+.cfg-tel-logo img { width: 100%; height: 100%; object-fit: cover; }
+.cfg-tel-nombre { font-size: 16px; font-weight: 700; line-height: 1.2; word-break: break-word; }
+.cfg-tel-rubro { font-size: 11.5px; opacity: .85; margin-top: 3px; }
+.cfg-tel-eslogan { font-size: 11.5px; opacity: .85; margin-top: 5px; font-style: italic; }
+.cfg-tel-body { padding: 12px; background: #F4F7FB; }
+.cfg-tel-card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+.cfg-tel-foto {
+  height: 82px; display: flex; align-items: center; justify-content: center;
+  font-size: 30px; background: #EAF4FD;
+}
+.cfg-tel-info { padding: 9px 10px 11px; }
+.cfg-tel-pname { font-size: 12.5px; font-weight: 700; color: #15294D; }
+.cfg-tel-pprice { font-size: 15px; font-weight: 700; color: #2F8FE0; margin-top: 3px; }
+
+/* Pestanas de la configuracion */
+.cfg-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.cfg-tab {
+  background: var(--bg); border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 7px 14px; font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--text-mute); cursor: pointer; transition: all .18s ease;
+}
+.cfg-tab:hover { border-color: var(--celeste); }
+.cfg-tab.activo { background: var(--celeste); border-color: var(--celeste); color: #fff; }
+
+@media (max-width: 980px) {
+  /* Apilado, la muestra va arriba del formulario: es la referencia de lo
+     que se esta tocando, no un adorno del costado. */
+  .modal-grid-config.con-preview { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .cfg-preview { position: static; order: -1; }
+}
+
 @media (max-width: 700px) {
   /* Una sola columna: la vista previa se va abajo del formulario y el
      formulario usa todo el ancho de la pantalla. */
@@ -2254,6 +2312,13 @@ tr:last-child td { border-bottom: none; }
           </div>
           <small id="pPriceHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
         </div>
+        <div class="field" id="campoPrecioOferta">
+          <label>🏷️ Precio en oferta <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <input type="number" id="pPrecioOferta" min="0" step="0.01" placeholder="Vacío = sin oferta">
+          <small id="pOfertaHint" style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
+            Si lo cargás, en la tienda se ve el precio de arriba tachado y este como precio nuevo, con el % de descuento. Para sacar la oferta, borrá el campo.
+          </small>
+        </div>
         <div class="field">
           <!-- El costo SIEMPRE es por unidad: la valoracion de stock hace
                costo x stock y el margen hace costo x cantidad vendida. Poner
@@ -3359,10 +3424,10 @@ tr:last-child td { border-bottom: none; }
 
 <!-- MODAL CONFIGURACIÓN DE TIENDA -->
 <div class="modal-overlay hidden" id="configModal">
-  <div class="modal" style="max-width:700px;">
+  <div class="modal" style="max-width:1080px;">
     <button class="modal-close" id="closeConfigModal">✕</button>
     <h3>⚙️ Configuración de tu tienda</h3>
-    <div class="modal-grid-config">
+    <div class="modal-grid-config con-preview">
       <div style="text-align:center;">
         <div id="configLogoPreview" style="width:160px;height:160px;border:2px solid var(--line);border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:48px;overflow:hidden;margin-bottom:12px;object-fit:cover;">
           🏪
@@ -3371,6 +3436,10 @@ tr:last-child td { border-bottom: none; }
         <button type="button" onclick="document.getElementById('configLogoInput').click()" class="btn btn-primary" style="width:100%;padding:10px;font-size:13px;">Cambiar logo</button>
       </div>
       <form id="configForm">
+        <!-- Las pestanas se arman solas a partir de los .cfg-corte de abajo,
+             en armarSeccionesConfig(). Para agregar una seccion nueva
+             alcanza con poner otro separador donde empieza. -->
+        <div class="cfg-tabs" id="cfgTabs"></div>
         <div class="field"><label>Nombre de tu tienda</label><input type="text" id="configNombre" required></div>
         <div class="field"><label>Descripción (rubro)</label><input type="text" id="configDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales"></div>
 
@@ -3398,6 +3467,7 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
+        <div class="cfg-corte" data-seccion="Colores"></div>
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
           <label>🎨 Colores de tu tienda</label>
           <small style="display:block;margin:4px 0 12px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -3434,6 +3504,7 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
+        <div class="cfg-corte" data-seccion="Contacto"></div>
         <div class="field"><label>Teléfono WhatsApp</label><input type="tel" id="configPhone" required></div>
         <div class="field"><label>Ubicación</label><input type="text" id="configLocation" placeholder="Ej: Paraná, Entre Ríos"></div>
         <div class="field"><label>Sitio web</label><input type="url" id="configWeb" placeholder="https://..."></div>
@@ -3447,6 +3518,7 @@ tr:last-child td { border-bottom: none; }
             una búsqueda por tu nombre y ubicación.
           </small>
         </div>
+        <div class="cfg-corte" data-seccion="Tu negocio"></div>
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
           <label>Rubro</label>
           <select id="configRubroManual" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
@@ -3561,6 +3633,7 @@ tr:last-child td { border-bottom: none; }
           </div>
         </div>
 
+        <div class="cfg-corte" data-seccion="Pedidos y pagos"></div>
         <div class="field" id="campoConfigTurnos" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" id="turnosActivo" style="margin:0;cursor:pointer;width:auto;">
@@ -3673,6 +3746,30 @@ tr:last-child td { border-bottom: none; }
         </div>
         <button type="button" onclick="guardarConfiguracion()" class="btn btn-primary" style="width:100%;">Guardar cambios</button>
       </form>
+
+      <aside class="cfg-preview" id="cfgPreview">
+        <div class="cfg-preview-titulo">Así se ve tu tienda</div>
+        <div class="cfg-tel">
+          <div class="cfg-tel-header" id="cfgPvHeader">
+            <div class="cfg-tel-logo" id="cfgPvLogo">🏪</div>
+            <div class="cfg-tel-nombre" id="cfgPvNombre">Tu tienda</div>
+            <div class="cfg-tel-rubro" id="cfgPvRubro"></div>
+            <div class="cfg-tel-eslogan" id="cfgPvEslogan"></div>
+          </div>
+          <div class="cfg-tel-body">
+            <div class="cfg-tel-card">
+              <div class="cfg-tel-foto" id="cfgPvFoto">📦</div>
+              <div class="cfg-tel-info">
+                <div class="cfg-tel-pname" id="cfgPvPName">Producto de ejemplo</div>
+                <div class="cfg-tel-pprice" id="cfgPvPPrice">$9.900</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-preview-nota">
+          Es una muestra: se actualiza mientras escribís, pero tu tienda no cambia hasta que toques Guardar.
+        </div>
+      </aside>
     </div>
   </div>
 </div>
@@ -4161,6 +4258,28 @@ const byId = (id) => document.getElementById(id);
 const show = (el) => el.classList.remove('hidden');
 const hide = (el) => el.classList.add('hidden');
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+
+// ---- Oferta ----
+// `price` es el precio de lista (el que se tacha) y `precio_oferta` lo que
+// se cobra mientras la oferta este puesta. Una oferta que no sea MENOR al
+// precio de lista se ignora, asi un valor mal cargado no puede cobrarle de
+// mas al cliente. Misma regla que en tienda.html: si cambia una, cambian
+// las dos.
+function hayOferta(p) {
+  const oferta = Number(p && p.precio_oferta);
+  const lista  = Number((p && p.price) || 0);
+  return !!oferta && oferta > 0 && lista > 0 && oferta < lista;
+}
+
+// El precio que se cobra hoy. Todo lo que suma plata en el panel tiene que
+// pasar por aca y no leer p.price directo.
+function precioVigente(p) {
+  return hayOferta(p) ? Number(p.precio_oferta) : Number((p && p.price) || 0);
+}
+
+function porcentajeOff(p) {
+  return Math.round((1 - Number(p.precio_oferta) / Number(p.price)) * 100);
+}
 
 // La fecha de un día (YYYY-MM-DD) tal como la vive el usuario, NO en UTC.
 //
@@ -13030,7 +13149,10 @@ function seleccionarProductoVenta(id, cantidad) {
   imeiSeleccionadoVenta = null;
   hide(byId('barcodeMatches'));
   byId('barcodeProductName').textContent = product.name;
-  byId('barcodeProductPrice').textContent = money(product.price) + sufijoPrecioPorMedida(product);
+  // Con oferta puesta, el vendedor tiene que ver el precio que va a cobrar,
+  // no el de lista: si no, canta un precio y el sistema registra otro.
+  byId('barcodeProductPrice').textContent = money(precioVigente(product)) + sufijoPrecioPorMedida(product) +
+    (hayOferta(product) ? '  (antes ' + money(product.price) + ' — ' + porcentajeOff(product) + '% OFF)' : '');
 
   // Con venta por medida el campo cantidad acepta decimales y dice en qué
   // unidad se está vendiendo, así no hay dudas de si "12" son unidades o
@@ -13191,7 +13313,7 @@ function cantidadVendida() {
 function calculateTotal() {
   if (!currentBarcodeProduct) return;
   const qty = cantidadVendida();
-  const total = currentBarcodeProduct.price * qty;
+  const total = precioVigente(currentBarcodeProduct) * qty;
   byId('barcodeTotal').textContent = money(total);
   calculateChange();
 }
@@ -13312,7 +13434,7 @@ async function confirmBarcodeVenta() {
   const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, imei: imeiSeleccionadoVenta });
   if (ok) {
     guardarNombreVendedor(vendedor);
-    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(product.price * qty);
+    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioVigente(product) * qty);
     if (ok.tradeIn) {
       mensaje += ok.equipoTomadoOk
         ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos.'
@@ -13452,7 +13574,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
   const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', imei: imeiElegido = null } = opciones || {};
-  const total = product.price * qty;
+  const total = precioVigente(product) * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
   // El total de la venta sigue siendo el precio de lista (así se calculan
@@ -13473,7 +13595,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // Sin telefono cargado se sigue guardando 'scanner', el centinela que ya
     // entienden Pedidos, Fiado y el estado de cuenta (ver esTelefonoReal).
     customer_phone: String(telefono || '').trim() || 'scanner',
-    items: [{ product_id: product.id, qty, name: nombreItem, price: product.price, variante }],
+    items: [{ product_id: product.id, qty, name: nombreItem, price: precioVigente(product), variante }],
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
     saldo_pendiente: saldoPendiente,
@@ -13514,7 +13636,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // campo IMEI del producto en sí. Se anota en la orden para poder
     // devolverlo exacto si la venta se anula, y arranca su historial.
     await sb.from('orders').update({
-      items: [{ product_id: product.id, qty, name: nombreItem, price: product.price, variante, imei: imeiVendido }]
+      items: [{ product_id: product.id, qty, name: nombreItem, price: precioVigente(product), variante, imei: imeiVendido }]
     }).eq('id', data[0].id);
     await registrarEventoImei(imeiVendido, 'venta', 'Vendido a ' + nombre, total);
   }
@@ -13872,6 +13994,7 @@ function abrirFormularioNuevo(tipo) {
     if (byId('pModelo')) byId('pModelo').value = '';
     if (byId('pModeloSugeridas')) byId('pModeloSugeridas').innerHTML = '';
     if (byId('pPrice')) byId('pPrice').value = '';
+    if (byId('pPrecioOferta')) byId('pPrecioOferta').value = '';
     if (byId('pPriceMoneda')) byId('pPriceMoneda').value = 'ARS';
     if (byId('pPriceHint')) hide(byId('pPriceHint'));
     if (byId('pEan')) byId('pEan').value = '';
@@ -14079,6 +14202,9 @@ byId('adherirmeBtn').addEventListener('click', abrirPlanes);
 
 byId('openConfigBtn').addEventListener('click', async () => {
   await cargarConfiguracion();
+  armarSeccionesConfig();
+  actualizarPreviewConfig();
+  mostrarSeccionConfig(0);
   show(byId('configModal'));
   // Sin await: que el modal abra ya, y el estado de ML se complete solo
   // cuando conteste el servidor.
@@ -14338,6 +14464,20 @@ byId('productForm').addEventListener('submit', async (e) => {
   const precioConv = await valorConvertido('pPrice', 'pPriceMoneda');
   if (!precioConv) return;
 
+  // La oferta se guarda solo si es menor al precio de lista. Un numero
+  // mayor o igual la tienda lo ignora igual, asi que es mejor avisar aca
+  // que dejarlo guardado sin efecto y que despues no se entienda por que
+  // no aparece el tachado.
+  const ofertaEscrita = (byId('pPrecioOferta')?.value || '').trim();
+  const ofertaAGuardar = ofertaEscrita === '' ? null : Number(ofertaEscrita);
+  if (ofertaAGuardar !== null &&
+      (!(ofertaAGuardar > 0) || ofertaAGuardar >= Number(precioConv.monto_ars))) {
+    alert('El precio en oferta tiene que ser mayor a 0 y menor al precio de lista (' +
+          money(precioConv.monto_ars) + ').\n\nSi no querés hacer oferta, dejá el campo vacío.');
+    byId('pPrecioOferta').focus();
+    return;
+  }
+
   // fotosEnEdicion mezcla lo que ya estaba guardado (tipo:'url') con lo
   // nuevo elegido en esta sesión (tipo:'archivo'). Solo hay que subir lo
   // nuevo; lo que ya estaba guardado se mantiene tal cual, en su lugar.
@@ -14406,6 +14546,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     name: byId('pName').value,
     description: byId('pDesc').value,
     price: precioConv.monto_ars,
+    precio_oferta: ofertaAGuardar,
     moneda: precioConv.moneda,
     precio_original: precioConv.monto_original,
     cotizacion: precioConv.cotizacion,
@@ -14534,6 +14675,7 @@ async function editProduct(id) {
   // número ya convertido a pesos — si no, editar "borraría" la moneda.
   if (byId('pPriceMoneda')) byId('pPriceMoneda').value = p.moneda || 'ARS';
   if (byId('pPrice')) byId('pPrice').value = p.moneda ? p.precio_original : p.price;
+  if (byId('pPrecioOferta')) byId('pPrecioOferta').value = (p.precio_oferta != null ? p.precio_oferta : '');
   actualizarHintMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
   if (byId('pStock')) byId('pStock').value = p.stock;
   unidadMedidaEnEdicion = seVendePorMedida(p) ? p.unidad_medida : null;
@@ -15130,6 +15272,7 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
 
   byId('modalTitle').textContent = 'Carga tu stock (escaneado)';
   byId('pName').value = byId('pDesc').value = byId('pPrice').value = '';
+  if (byId('pPrecioOferta')) byId('pPrecioOferta').value = '';
   if (byId('pMarca')) byId('pMarca').value = '';
   if (byId('pModelo')) byId('pModelo').value = '';
   if (byId('pModeloSugeridas')) byId('pModeloSugeridas').innerHTML = '';
@@ -16795,6 +16938,138 @@ function renderPosicionPortada() {
   }, { passive: true });
   caja.addEventListener('touchend', () => { arrastrando = false; renderPosicionPortada(); }, { passive: true });
 })();
+
+// ================= Configuracion en secciones + vista previa =================
+// El formulario tenia ~40 campos en una sola tirada: para cambiar un color
+// habia que bajar por telefono, rubro y envios. Los cortes estan marcados
+// en el HTML con .cfg-corte y aca se convierten en secciones, asi sumar una
+// seccion nueva es poner otro separador y no tocar esta funcion.
+let seccionesConfigArmadas = false;
+
+function armarSeccionesConfig() {
+  if (seccionesConfigArmadas) return;
+  const form = byId('configForm');
+  const barra = byId('cfgTabs');
+  if (!form || !barra) return;
+
+  const secciones = [];
+  let actual = { nombre: 'Identidad', elementos: [] };
+  let botonGuardar = null;
+
+  [...form.children].forEach(el => {
+    if (el === barra) return;
+    if (el.classList.contains('cfg-corte')) {
+      secciones.push(actual);
+      actual = { nombre: el.dataset.seccion || 'Más', elementos: [] };
+      el.remove();
+      return;
+    }
+    // Guardar no entra en ninguna seccion: tiene que estar siempre a mano,
+    // se este viendo la pestana que se este viendo.
+    if (el.tagName === 'BUTTON') { botonGuardar = el; return; }
+    actual.elementos.push(el);
+  });
+  secciones.push(actual);
+
+  secciones.forEach((seccion, i) => {
+    const panel = document.createElement('div');
+    panel.className = 'cfg-panel' + (i === 0 ? '' : ' hidden');
+    panel.dataset.panel = String(i);
+    seccion.elementos.forEach(el => panel.appendChild(el));
+    form.appendChild(panel);
+  });
+  if (botonGuardar) form.appendChild(botonGuardar);
+
+  barra.innerHTML = secciones.map((seccion, i) =>
+    '<button type="button" class="cfg-tab' + (i === 0 ? ' activo' : '') + '" data-tab="' + i + '">' +
+      escapeHtml(seccion.nombre) + '</button>').join('');
+
+  barra.querySelectorAll('[data-tab]').forEach(b =>
+    b.addEventListener('click', () => mostrarSeccionConfig(Number(b.dataset.tab))));
+
+  // Un solo listener en el formulario: agarra cualquier campo, incluso los
+  // que se agreguen despues, sin tener que acordarse de engancharlos.
+  form.addEventListener('input', actualizarPreviewConfig);
+  form.addEventListener('change', actualizarPreviewConfig);
+
+  seccionesConfigArmadas = true;
+}
+
+function mostrarSeccionConfig(indice) {
+  byId('configForm').querySelectorAll('.cfg-panel').forEach(p =>
+    p.classList.toggle('hidden', Number(p.dataset.panel) !== indice));
+  byId('cfgTabs').querySelectorAll('.cfg-tab').forEach(b =>
+    b.classList.toggle('activo', Number(b.dataset.tab) === indice));
+}
+
+// ---- Colores de la muestra ----
+// Copias chicas de lo que hace tienda.html al aplicar el tema. Se repiten a
+// proposito: importar aquella logica obligaria a compartir codigo entre dos
+// archivos que hoy son independientes, y son tres cuentas de tres lineas.
+function pvRgb(hex) {
+  const limpio = String(hex || '').replace('#', '');
+  const completo = limpio.length === 3 ? limpio.split('').map(c => c + c).join('') : limpio;
+  const n = parseInt(completo, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function pvAclarar(hex, pct) {
+  const [r, g, b] = pvRgb(hex);
+  const subir = (v) => Math.round(v + (255 - v) * (pct / 100));
+  return '#' + [subir(r), subir(g), subir(b)]
+    .map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// Mismo criterio que la tienda: sobre un banner claro el texto blanco no se
+// lee, asi que se cambia a navy.
+function pvTextoLegible(hex) {
+  const [r, g, b] = pvRgb(hex);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#15294D' : '#ffffff';
+}
+
+function actualizarPreviewConfig() {
+  const pv = byId('cfgPreview');
+  if (!pv) return;
+
+  const tema = temaElegido();
+  const banner = tema.banner || '#2F8FE0';
+  const textoHeader = pvTextoLegible(banner);
+  const header = byId('cfgPvHeader');
+
+  // La portada vive como background-image del cuadro de arriba; si no hay
+  // ninguna cargada, el header va con el degrade del color elegido, igual
+  // que hace la tienda.
+  const portada = byId('configPortadaPreview')?.style.backgroundImage || '';
+  const tienePortada = portada && portada !== 'none';
+
+  if (tienePortada) {
+    const [r, g, b] = pvRgb(banner);
+    const op = (tema.opacidadPortada != null ? tema.opacidadPortada : 80) / 100;
+    header.style.backgroundImage =
+      'linear-gradient(135deg, rgba(' + r + ',' + g + ',' + b + ',' + op + ') 0%, ' +
+      'rgba(' + r + ',' + g + ',' + b + ',' + (op * 0.75).toFixed(2) + ') 100%), ' + portada;
+    header.style.backgroundPosition = tema.posicionPortada || '50% 50%';
+  } else {
+    header.style.backgroundImage =
+      'linear-gradient(135deg, ' + banner + ' 0%, ' + pvAclarar(banner, 25) + ' 100%)';
+  }
+  header.style.color = textoHeader;
+
+  const logo = byId('configLogoPreview')?.querySelector('img');
+  byId('cfgPvLogo').innerHTML = logo
+    ? '<img src="' + logo.src + '" alt="">'
+    : '🏪';
+
+  byId('cfgPvNombre').textContent = (byId('configNombre')?.value || '').trim() || 'Tu tienda';
+  byId('cfgPvRubro').textContent  = (byId('configDesc')?.value || '').trim();
+  byId('cfgPvEslogan').textContent = (byId('configEslogan')?.value || '').trim();
+
+  // tarjetas pinta el cuadro de la foto; texto, el nombre del producto;
+  // banner es el acento y por eso tambien el precio.
+  byId('cfgPvFoto').style.background = tema.tarjetas || '#EAF4FD';
+  byId('cfgPvPName').style.color = tema.texto || '#15294D';
+  byId('cfgPvPPrice').style.color = banner;
+}
 
 function temaElegido() {
   return {
