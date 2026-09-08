@@ -11895,17 +11895,21 @@ function abrirVentanaEtiquetaTermica(titulo, contenidoHtml) {
 // largo y con alto libre, porque no se sabe de antemano cuantas lineas
 // tiene. Por eso no reusa estilosEtiquetaTermica().
 function estilosTicket58() {
-  return '@page { size: 58mm auto; margin: 2mm; }' +
-    'body{font-family:"Courier New",monospace;color:#000;margin:0;padding:0;width:54mm;font-size:11px;line-height:1.35;}' +
-    '.tk-negocio{text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;line-height:1.2;}' +
-    '.tk-sub{text-align:center;font-size:10px;margin-bottom:4px;}' +
-    '.tk-sep{border-top:1px dashed #000;margin:5px 0;}' +
+  // Tamanos pensados para leerse de una: el ticket se lee parado, con mala
+  // luz y a veces de reojo mientras se arma el pedido. Ocupa TODO el ancho
+  // del rollo (56mm de 58) — antes usaba 54mm con letra de 11px y quedaba
+  // media cinta en blanco.
+  return '@page { size: 58mm auto; margin: 1mm; }' +
+    'body{font-family:"Courier New",monospace;color:#000;margin:0;padding:0;width:56mm;font-size:13px;line-height:1.4;font-weight:600;}' +
+    '.tk-negocio{text-align:center;font-size:19px;font-weight:800;text-transform:uppercase;line-height:1.15;margin-bottom:2px;}' +
+    '.tk-sub{text-align:center;font-size:12px;line-height:1.3;}' +
+    '.tk-sep{border-top:1px dashed #000;margin:6px 0;}' +
     '.tk-fila{display:flex;justify-content:space-between;gap:6px;}' +
     '.tk-fila span:last-child{white-space:nowrap;}' +
-    '.tk-item{margin-bottom:3px;}' +
-    '.tk-item .det{padding-left:8px;font-size:10px;}' +
-    '.tk-total{display:flex;justify-content:space-between;font-size:14px;font-weight:800;margin:4px 0;}' +
-    '.tk-pie{text-align:center;font-size:10px;margin-top:6px;}' +
+    '.tk-item{margin-bottom:5px;}' +
+    '.tk-item .det{padding-left:10px;font-size:12px;}' +
+    '.tk-total{display:flex;justify-content:space-between;font-size:20px;font-weight:800;margin:6px 0;}' +
+    '.tk-pie{text-align:center;font-size:11.5px;margin-top:7px;}' +
     '@media print{ .no-print{display:none;} }';
 }
 
@@ -11962,6 +11966,10 @@ function armarTicketHtml(d) {
 
   return '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
     (currentStore?.description ? '<div class="tk-sub">' + escapeHtml(currentStore.description) + '</div>' : '') +
+    // Direccion y telefono: es lo que tiene el ticket que ya usan en el
+    // mostrador, y es por donde el cliente vuelve a pedir.
+    (currentStore?.location ? '<div class="tk-sub">' + escapeHtml(currentStore.location) + '</div>' : '') +
+    (currentStore?.phone ? '<div class="tk-sub">' + escapeHtml(currentStore.phone) + '</div>' : '') +
     '<div class="tk-sep"></div>' +
     '<div class="tk-fila"><span>' + ahora.toLocaleDateString('es-AR') + '</span><span>' +
       ahora.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span></div>' +
@@ -12004,11 +12012,14 @@ function imprimirTicketDeOrden(id) {
   const items = (Array.isArray(o.items) ? o.items : []).map(it => {
     const qty = Number(it.qty || 1);
     const precio = Number(it.price || 0);
+    // Los pedidos viejos de la tienda se guardaron sin precio por linea.
+    // Imprimir "$0" ahi es peor que no imprimir nada: parece regalado. El
+    // TOTAL de la orden sigue siendo correcto y es lo que se cobra.
     return {
       texto: qty.toLocaleString('es-AR') + ' x ' + escapeHtml(nombreDelItem(it)),
       detalle: '',
-      importe: money(precio * qty),
-      unitario: qty !== 1 ? money(precio) + ' c/u' : ''
+      importe: precio > 0 ? money(precio * qty) : '',
+      unitario: (precio > 0 && qty !== 1) ? money(precio) + ' c/u' : ''
     };
   });
 

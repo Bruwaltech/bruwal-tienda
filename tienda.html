@@ -2258,6 +2258,11 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       // guardan las dos claves: no le como el campo a nada que ya lea 'label'.
       name: nombre,
       label: nombre,
+      // Precio unitario REALMENTE cobrado (variante + oferta + agregados).
+      // Sin esto el pedido queda sin precios por linea y el ticket del
+      // panel imprime $0 en cada renglon. Se guarda el unitario, no el
+      // subtotal: la cantidad ya viaja en qty.
+      price: precioUnitario(l),
       opciones: (l.opciones || []).map(o => o.nombre),
       variante: l.variante || null
     };
