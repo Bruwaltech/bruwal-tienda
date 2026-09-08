@@ -1786,6 +1786,11 @@ tr:last-child td { border-bottom: none; }
                        style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
               </div>
 
+              <label id="filaTicket" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+                <input type="checkbox" id="barcodeTicket" style="margin:0;width:auto;cursor:pointer;">
+                🧾 Imprimir ticket al confirmar
+              </label>
+
               <label id="filaTradeIn" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="barcodeTradeIn" style="margin:0;width:auto;cursor:pointer;">
                 📱 Toma un equipo usado como parte de pago
@@ -11877,6 +11882,121 @@ function abrirVentanaEtiquetaTermica(titulo, contenidoHtml) {
   return ventana;
 }
 
+// ---- Ticket de venta (58mm) ----
+// Es OTRO formato que la etiqueta de producto, aunque salga del mismo
+// rollo: la etiqueta es 60x30mm apaisada y de alto fijo, el ticket va a lo
+// largo y con alto libre, porque no se sabe de antemano cuantas lineas
+// tiene. Por eso no reusa estilosEtiquetaTermica().
+function estilosTicket58() {
+  return '@page { size: 58mm auto; margin: 2mm; }' +
+    'body{font-family:"Courier New",monospace;color:#000;margin:0;padding:0;width:54mm;font-size:11px;line-height:1.35;}' +
+    '.tk-negocio{text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;line-height:1.2;}' +
+    '.tk-sub{text-align:center;font-size:10px;margin-bottom:4px;}' +
+    '.tk-sep{border-top:1px dashed #000;margin:5px 0;}' +
+    '.tk-fila{display:flex;justify-content:space-between;gap:6px;}' +
+    '.tk-fila span:last-child{white-space:nowrap;}' +
+    '.tk-item{margin-bottom:3px;}' +
+    '.tk-item .det{padding-left:8px;font-size:10px;}' +
+    '.tk-total{display:flex;justify-content:space-between;font-size:14px;font-weight:800;margin:4px 0;}' +
+    '.tk-pie{text-align:center;font-size:10px;margin-top:6px;}' +
+    '@media print{ .no-print{display:none;} }';
+}
+
+// autoImprimir abre el dialogo de impresion solo, apenas carga. OJO: ningun
+// navegador imprime sin mostrar ese dialogo, es una proteccion del propio
+// navegador y no hay forma de saltearla desde la pagina. Para que salga
+// derecho a la impresora hay que abrir Chrome con --kiosk-printing; sin
+// eso, el vendedor confirma en el dialogo y listo.
+function abrirVentanaTicket(titulo, contenidoHtml, autoImprimir) {
+  const ventana = window.open('', '_blank', 'width=380,height=620');
+  if (!ventana) { alert('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return null; }
+
+  ventana.document.write(
+    '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(titulo) + '</title>' +
+    '<style>' + estilosTicket58() + '</style></head><body>' +
+      contenidoHtml +
+      '<button class="no-print" onclick="window.print()" style="margin-top:10px;width:100%;padding:9px;font-size:12px;cursor:pointer;background:#15294D;color:#fff;border:none;border-radius:6px;">Imprimir de nuevo</button>' +
+      '<button class="no-print" onclick="window.close();" style="margin-top:6px;width:100%;padding:9px;font-size:12px;cursor:pointer;background:#fff;color:#15294D;border:1.5px solid #15294D;border-radius:6px;">Cerrar</button>' +
+      (autoImprimir
+        ? '<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };<\/script>'
+        : '') +
+    '</body></html>'
+  );
+  ventana.document.close();
+  return ventana;
+}
+
+// El detalle de la variante en el ticket: "Tamaño: Grande" debajo del
+// nombre. En una pizzeria es el dato que evita que salga la pizza
+// equivocada, asi que no puede quedar solo pegado al nombre del item.
+function detalleVarianteTicket(variante) {
+  if (!variante) return '';
+  return Object.entries(variante)
+    .map(([k, v]) => '<div class="det">' + escapeHtml(k) + ': ' + escapeHtml(String(v)) + '</div>')
+    .join('');
+}
+
+// v = { producto, qty, precioUnitario, variante, cliente, medioPago,
+//       vendedor, ordenId, fiado, abonaAhora }
+function imprimirTicketVenta(v) {
+  const ahora = new Date();
+  const total = Number(v.precioUnitario) * Number(v.qty);
+  // Los ultimos 6 del uuid alcanzan para que el cliente y el mostrador
+  // hablen del mismo ticket; el numero entero no entra ni sirve.
+  const numero = v.ordenId ? String(v.ordenId).replace(/-/g, '').slice(-6).toUpperCase() : null;
+
+  const html =
+    '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
+    (currentStore?.description ? '<div class="tk-sub">' + escapeHtml(currentStore.description) + '</div>' : '') +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-fila"><span>' + ahora.toLocaleDateString('es-AR') + '</span><span>' +
+      ahora.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span></div>' +
+    (numero ? '<div class="tk-fila"><span>Ticket</span><span>#' + numero + '</span></div>' : '') +
+    (v.cliente ? '<div class="tk-fila"><span>Cliente</span><span>' + escapeHtml(v.cliente) + '</span></div>' : '') +
+    '<div class="tk-sep"></div>' +
+
+    '<div class="tk-item">' +
+      '<div class="tk-fila">' +
+        '<span>' + (seVendePorMedida(v.producto)
+            ? formatearCantidad(v.qty, v.producto)
+            : Number(v.qty).toLocaleString('es-AR')) +
+          ' x ' + escapeHtml(v.producto.name) + '</span>' +
+        '<span>' + money(total) + '</span>' +
+      '</div>' +
+      detalleVarianteTicket(v.variante) +
+      (Number(v.qty) !== 1 ? '<div class="det">' + money(v.precioUnitario) + ' c/u</div>' : '') +
+    '</div>' +
+
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-total"><span>TOTAL</span><span>' + money(total) + '</span></div>' +
+    (v.medioPago ? '<div class="tk-fila"><span>Pago</span><span>' + escapeHtml(v.medioPago) + '</span></div>' : '') +
+    // En una venta a fiado el ticket tiene que decir cuanto queda debiendo:
+    // es el comprobante que se lleva el cliente.
+    (v.fiado
+      ? '<div class="tk-fila"><span>Pagó ahora</span><span>' + money(v.abonaAhora || 0) + '</span></div>' +
+        '<div class="tk-fila"><span><b>Debe</b></span><span><b>' +
+          money(Math.max(0, total - Number(v.abonaAhora || 0))) + '</b></span></div>'
+      : '') +
+    (v.vendedor ? '<div class="tk-fila"><span>Atendió</span><span>' + escapeHtml(v.vendedor) + '</span></div>' : '') +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-pie">¡Gracias por su compra!</div>' +
+    (currentStore?.slug ? '<div class="tk-pie">bruwaltech.com.ar/' + escapeHtml(currentStore.slug) + '</div>' : '');
+
+  abrirVentanaTicket('Ticket' + (numero ? ' #' + numero : ''), html, true);
+}
+
+// Arranca tildada en gastronomía (ahí el ticket es parte de la venta) y
+// apagada en el resto, pero lo que el vendedor elija manda de ahí en mas.
+// Por tienda, porque el mismo navegador puede administrar mas de una.
+function inicializarTicketVenta() {
+  const casilla = byId('barcodeTicket');
+  if (!casilla || !currentStore) return;
+  const clave = 'bruwal_ticket_' + currentStore.slug;
+  let guardado = null;
+  try { guardado = localStorage.getItem(clave); } catch (e) {}
+  casilla.checked = (guardado === null) ? rubroEsComida() : guardado === '1';
+}
+
 // Etiqueta chica para pegarle al equipo en reparación: el código grande es
 // lo único que hace falta para encontrarlo después entre varios celulares
 // en el mostrador; el resto es para confirmar que es el correcto y tener a
@@ -13634,6 +13754,24 @@ async function confirmBarcodeVenta() {
     }
     alert(mensaje);
 
+    // Despues del alert a proposito: el vendedor confirma la venta y recien
+    // ahi sale el ticket. Si saliera antes, el dialogo de impresion tapa el
+    // aviso de la venta (y el de la foto del equipo tomado, mas abajo).
+    if (byId('barcodeTicket')?.checked) {
+      imprimirTicketVenta({
+        producto: product,
+        qty,
+        precioUnitario: precioVigente(product),
+        variante,
+        cliente,
+        medioPago,
+        vendedor,
+        ordenId: ok.ordenId,
+        fiado: esFiado,
+        abonaAhora
+      });
+    }
+
     const idEquipoParaFoto = (ok.tradeIn && ok.equipoTomadoOk) ? ok.equipoTomadoId : null;
 
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
@@ -13866,7 +14004,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   }
 
   await refreshData();
-  return { ok: true, tradeIn: !!tradeIn, equipoTomadoOk, equipoTomadoId };
+  return { ok: true, tradeIn: !!tradeIn, equipoTomadoOk, equipoTomadoId, ordenId: data?.[0]?.id || null };
 }
 
 // Permitir escanear con Enter en el input
@@ -15615,6 +15753,12 @@ byId('tabVentas').addEventListener('click', () => {
   byId('tabVentas').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('ventasView').classList.add('visible');
+  inicializarTicketVenta();
+});
+
+byId('barcodeTicket').addEventListener('change', (e) => {
+  if (!currentStore) return;
+  try { localStorage.setItem('bruwal_ticket_' + currentStore.slug, e.target.checked ? '1' : '0'); } catch (err) {}
 });
 
 function mostrarVistaCaja() {
