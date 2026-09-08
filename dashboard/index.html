@@ -11985,16 +11985,18 @@ function imprimirTicketVenta(v) {
   abrirVentanaTicket('Ticket' + (numero ? ' #' + numero : ''), html, true);
 }
 
-// Arranca tildada en gastronomía (ahí el ticket es parte de la venta) y
-// apagada en el resto, pero lo que el vendedor elija manda de ahí en mas.
-// Por tienda, porque el mismo navegador puede administrar mas de una.
+// Arranca tildada en cualquier rubro: el comprobante de lo que se llevo le
+// sirve al kiosco y a la ferreteria igual que a la pizzeria, no solo a
+// gastronomia. El que no lo quiere lo destilda una vez y no lo ve mas.
+// Se recuerda por tienda y no por navegador, porque el mismo equipo puede
+// administrar mas de una.
 function inicializarTicketVenta() {
   const casilla = byId('barcodeTicket');
   if (!casilla || !currentStore) return;
   const clave = 'bruwal_ticket_' + currentStore.slug;
   let guardado = null;
   try { guardado = localStorage.getItem(clave); } catch (e) {}
-  casilla.checked = (guardado === null) ? rubroEsComida() : guardado === '1';
+  casilla.checked = (guardado === null) ? true : guardado === '1';
 }
 
 // Etiqueta chica para pegarle al equipo en reparación: el código grande es
