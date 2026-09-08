@@ -7490,7 +7490,7 @@ function renderMercadoLibre() {
   byId('mlVentasBody').innerHTML = mlOrdenes.length
     ? mlOrdenes.slice(0, 50).map((o) =>
         '<tr>' +
-          '<td>' + new Date(o.creado_en).toLocaleDateString('es-AR') + '</td>' +
+          '<td>' + fechaAR(o.creado_en) + '</td>' +
           '<td>' + escapeHtml(o.comprador || '—') + '</td>' +
           '<td style="text-align:right;">' + money(o.total) + '</td>' +
           '<td style="text-align:right;color:var(--danger);">' +
@@ -9090,17 +9090,18 @@ function renderRecentOrders() {
 function renderWeeklyChart() {
   const days = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'];
   const data = {};
+  // El dia de una venta es el dia EN EL LOCAL: un pedido de las 22:00 de
+  // Argentina son las 01:00 UTC del dia siguiente, y sin zona esa venta se
+  // sumaba al dia equivocado del grafico.
   const today = new Date();
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const key = d.toLocaleDateString('es-AR', { weekday: 'short' });
-    data[key] = 0;
+    data[fechaAR(d, { weekday: 'short' })] = 0;
   }
 
   orders.forEach(o => {
-    const d = new Date(o.created_at);
-    const key = d.toLocaleDateString('es-AR', { weekday: 'short' });
+    const key = fechaAR(o.created_at, { weekday: 'short' });
     if (data.hasOwnProperty(key)) data[key] += Number(o.total);
   });
 
@@ -9471,7 +9472,7 @@ function renderProducts() {
                 (p.stock_ultima_carga != null
                   ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">Última carga: ' +
                     formatearCantidad(p.stock_ultima_carga, p) +
-                    (p.fecha_ultima_carga ? ' (' + new Date(p.fecha_ultima_carga).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) + ')' : '') +
+                    (p.fecha_ultima_carga ? ' (' + fechaAR(p.fecha_ultima_carga, {day:'2-digit',month:'2-digit'}) + ')' : '') +
                     '</div>'
                   : ''))
         ) + '</td>' +
@@ -9990,7 +9991,7 @@ function renderClientes() {
       '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
       '<td>' + c.qty + '</td>' +
       '<td>' + money(c.total) + '</td>' +
-      '<td>' + new Date(c.lastOrder).toLocaleDateString('es-AR') + '</td>' +
+      '<td>' + fechaAR(c.lastOrder) + '</td>' +
       '<td>' + money(c.avg) + '</td>' +
       '<td><div class="row-actions">' +
         '<button class="icon-btn" data-vender-a="' + escapeHtml(c.name) + '" title="Cargarle una venta">+ Venta</button>' +
@@ -12826,6 +12827,10 @@ function renderGastos() {
 
   cuerpo.innerHTML = ordenados.length ? ordenados.map(g => {
     return '<tr>' +
+      // OJO: g.fecha es un dia suelto ('2026-09-09'), no un instante. Pasarlo
+      // por fechaAR lo mostraria un dia ANTES, porque 'YYYY-MM-DD' se parsea
+      // como medianoche UTC y en Argentina eso es las 21:00 del dia anterior.
+      // Los dias sueltos se muestran tal cual; la zona es para los timestamps.
       '<td style="font-size:12.5px;white-space:nowrap;">' + new Date(g.fecha).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'2-digit'}) + '</td>' +
       '<td>' + escapeHtml(g.concepto) + '</td>' +
       '<td>' + (g.categoria ? escapeHtml(g.categoria) : '—') + '</td>' +
@@ -13229,7 +13234,7 @@ async function buscarHistorialImei(imei) {
         '<div style="font-weight:600;font-size:13.5px;">' + info.label +
           (ev.monto != null ? ' — ' + money(ev.monto) : '') + '</div>' +
         (ev.detalle ? '<div style="font-size:12.5px;color:var(--text-mute);margin-top:2px;">' + escapeHtml(ev.detalle) + '</div>' : '') +
-        '<div style="font-size:11.5px;color:var(--text-mute);margin-top:2px;">' + new Date(ev.fecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</div>' +
+        '<div style="font-size:11.5px;color:var(--text-mute);margin-top:2px;">' + fechaHoraAR(ev.fecha, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</div>' +
       '</div>' +
     '</div>';
   }).join('') : '<div style="color:var(--text-mute);font-size:13.5px;padding:6px 0;">Sin eventos guardados, pero el equipo está en stock.</div>');
@@ -13414,7 +13419,7 @@ function renderEstadisticas() {
       '<td>' + c.compras + '</td>' +
       '<td style="text-align:right;">' + money(c.total) + '</td>' +
       '<td style="text-align:right;">' + money(c.ticketPromedio) + '</td>' +
-      '<td>' + new Date(c.ultimaCompra).toLocaleDateString('es-AR') + '</td>' +
+      '<td>' + fechaAR(c.ultimaCompra) + '</td>' +
       '<td><span class="badge" style="background:' + seg.bg + ';color:' + seg.color + ';">' + c.segmento + '</span></td>' +
     '</tr>';
   }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin clientes en este período</td></tr>';
@@ -13594,7 +13599,7 @@ function renderSalesHistory() {
   if (!el) return;
   el.innerHTML = orders.slice(0, 30).map((o, i) => {
     const items = (Array.isArray(o.items) ? o.items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it)).join(', ') : '');
-    const date = new Date(o.created_at).toLocaleDateString('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const date = fechaAR(o.created_at, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
     return '<tr style="' + (i % 2 === 0 ? 'background:rgba(245,245,245,0.5);' : '') + '">' +
       '<td style="font-size:12px;">' + date + '</td>' +
       '<td>' + escapeHtml(items) + '</td>' +
@@ -14251,7 +14256,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', horaEntrega = '', imei: imeiElegido = null } = opciones || {};
   const total = precioDeVentaMostrador(product, variante) * qty;
   const nombre = (nombreCliente || '').trim() ||
-                 ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
+                 ('Venta mostrador ' + horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
   // El total de la venta sigue siendo el precio de lista (así se calculan
   // bien las estadísticas de ingresos): el equipo tomado no es un descuento
   // sobre lo vendido, es una FORMA DE PAGO, igual que el abono en fiado.
@@ -14332,7 +14337,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     const { data: dataEquipo, error: errEquipo } = await sb.from('store_products').insert([{
       store_slug: currentStore.slug,
       name: tradeIn.descripcion,
-      description: 'Tomado en parte de pago el ' + new Date().toLocaleDateString('es-AR') +
+      description: 'Tomado en parte de pago el ' + fechaAR(Date.now()) +
         ' (venta a ' + nombre + ').' +
         (listo ? ' Revisá que el precio te deje margen.' : ' Pendiente de restauración antes de publicarlo.'),
       price: valorEquipo,
@@ -16570,6 +16575,10 @@ let relojTimer = null;
 
 function tickReloj() {
   const ahora = ahoraEnArgentina();
+  // OJO: aca getHours() SI corresponde. `ahora` viene de
+  // ahoraEnArgentina(), que devuelve un Date con los componentes locales
+  // ya puestos en la hora de Argentina. Pasarlo por horaAR() lo
+  // convertiria una segunda vez y el reloj quedaria 3 horas atras.
   byId('relojHora').textContent =
     String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0');
   byId('relojDia').textContent =
