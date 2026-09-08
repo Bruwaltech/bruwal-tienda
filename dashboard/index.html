@@ -11969,24 +11969,27 @@ function estilosTicket58() {
   //
   // 1) Letra mas grande (15px de cuerpo). El ticket se lee parado, con
   //    mala luz y de reojo mientras se arma el pedido.
-  // 2) SIN negrita en el cuerpo. En una impresora termica la negrita
-  //    chica se empasta: los puntos se tocan y el renglon se vuelve una
-  //    mancha. El generico no la usa. La negrita queda solo donde suma
-  //    jerarquia: el nombre, la entrega y el TOTAL.
+  // 2) TODO en negrita, con el mismo peso que el TOTAL. Yo lo habia sacado
+  //    pensando que en termica la negrita chica se empasta; el ticket
+  //    impreso de verdad mostro lo contrario: el TOTAL era lo unico que se
+  //    leia bien de lejos, justamente por ser el unico en negrita. Manda
+  //    el papel, no la teoria.
   //
-  // Ocupa 56mm de los 58 del rollo.
+  // Ocupa 56mm de los 58 del rollo. A 17px entran ~20 caracteres por
+  // renglon: los nombres largos se parten en dos, que es lo mismo que hace
+  // el ticket que ya usan.
   return '@page { size: 58mm auto; margin: 1mm; }' +
-    'body{font-family:"Courier New","DejaVu Sans Mono",monospace;color:#000;margin:0;padding:0;width:56mm;font-size:15px;line-height:1.45;font-weight:400;}' +
-    '.tk-negocio{text-align:center;font-size:22px;font-weight:700;text-transform:uppercase;line-height:1.15;margin-bottom:3px;}' +
-    '.tk-sub{text-align:center;font-size:14px;line-height:1.3;text-transform:uppercase;}' +
-    '.tk-sep{border-top:1px dashed #000;margin:7px 0;}' +
+    'body{font-family:"Courier New","DejaVu Sans Mono",monospace;color:#000;margin:0;padding:0;width:56mm;font-size:17px;line-height:1.55;font-weight:700;}' +
+    '.tk-negocio{text-align:center;font-size:24px;font-weight:800;text-transform:uppercase;line-height:1.15;margin-bottom:3px;}' +
+    '.tk-sub{text-align:center;font-size:15px;line-height:1.35;text-transform:uppercase;}' +
+    '.tk-sep{border-top:2px dashed #000;margin:8px 0;}' +
     '.tk-fila{display:flex;justify-content:space-between;gap:6px;}' +
     '.tk-fila span:last-child{white-space:nowrap;}' +
-    '.tk-item{margin-bottom:7px;}' +
-    '.tk-item .det{padding-left:12px;font-size:14px;}' +
-    '.tk-entrega{text-align:center;font-size:19px;font-weight:700;border:2px solid #000;padding:4px 2px;margin:6px 0;}' +
-    '.tk-total{display:flex;justify-content:space-between;font-size:23px;font-weight:700;margin:7px 0;}' +
-    '.tk-pie{text-align:center;font-size:13px;margin-top:8px;}' +
+    '.tk-item{margin-bottom:9px;}' +
+    '.tk-item .det{padding-left:12px;font-size:15px;}' +
+    '.tk-entrega{text-align:center;font-size:22px;font-weight:800;border:2px solid #000;padding:5px 2px;margin:7px 0;}' +
+    '.tk-total{display:flex;justify-content:space-between;font-size:25px;font-weight:800;margin:8px 0;}' +
+    '.tk-pie{text-align:center;font-size:13.5px;margin-top:9px;}' +
     '@media print{ .no-print{display:none;} }';
 }
 
@@ -12035,19 +12038,32 @@ function demoraDelLocal() {
 }
 
 function horaEntregaSugerida() {
-  const d = new Date(Date.now() + demoraDelLocal() * 60000);
-  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  // horaAR y no getHours(): getHours() es la hora del APARATO. Con el panel
+  // abierto desde Alemania sugeria una hora cinco horas adelantada.
+  return horaAR(Date.now() + demoraDelLocal() * 60000,
+                { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-// "22:00" -> timestamp real. A las 23:50 se toman pedidos para las 00:30,
-// que son de mañana: si se guardara la hora suelta, ese pedido se
-// ordenaria PRIMERO en la cola en vez de ultimo.
+// "22:00" -> timestamp real. Dos cosas que parecen detalle y no lo son:
+//
+// 1. Las 22:00 son las 22:00 EN EL LOCAL. setHours() usaba la hora del
+//    aparato: con el panel abierto desde Alemania, "22:00" se guardaba
+//    como las 17:00 de Argentina y el ticket mentia.
+//    -03:00 fijo porque Argentina no cambia de hora desde 2009.
+// 2. A las 23:50 se toman pedidos para las 00:30, que son de mañana. Sin
+//    la fecha, ese pedido se ordenaria PRIMERO en la cola en vez de
+//    ultimo.
 function horaEntregaISO(hhmm) {
   if (!hhmm) return null;
   const partes = String(hhmm).split(':');
-  const d = new Date();
-  d.setHours(Number(partes[0]) || 0, Number(partes[1]) || 0, 0, 0);
-  if (d.getTime() < Date.now() - 6 * 3600 * 1000) d.setDate(d.getDate() + 1);
+  const hh = String(Number(partes[0]) || 0).padStart(2, '0');
+  const mm = String(Number(partes[1]) || 0).padStart(2, '0');
+
+  // El dia de hoy EN ARGENTINA, que no siempre es el del aparato.
+  const diaAR = new Date().toLocaleDateString('en-CA', { timeZone: TZ_AR });
+  let d = new Date(diaAR + 'T' + hh + ':' + mm + ':00-03:00');
+  if (isNaN(d)) return null;
+  if (d.getTime() < Date.now() - 6 * 3600 * 1000) d = new Date(d.getTime() + 86400000);
   return d.toISOString();
 }
 
@@ -12055,7 +12071,7 @@ function horaEntregaTexto(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d)) return '';
-  return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return horaAR(d, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 const DEMORAS_SUGERIDAS = [0, 15, 30, 45, 60, 90];
@@ -12137,8 +12153,9 @@ function armarTicketHtml(d) {
       : '') +
     (currentStore?.phone ? '<div class="tk-sub">' + escapeHtml(currentStore.phone) + '</div>' : '') +
     '<div class="tk-sep"></div>' +
-    '<div class="tk-fila"><span>' + ahora.toLocaleDateString('es-AR') + '</span><span>' +
-      ahora.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span></div>' +
+    // Fecha y hora del LOCAL, no del aparato desde el que se imprime.
+    '<div class="tk-fila"><span>' + fechaAR(ahora) + '</span><span>' +
+      horaAR(ahora, { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span></div>' +
     (numero ? '<div class="tk-fila"><span>Ticket</span><span>#' + numero + '</span></div>' : '') +
     (d.cliente ? '<div class="tk-fila"><span>Cliente</span><span>' + escapeHtml(d.cliente) + '</span></div>' : '') +
     // Recuadrada y grande: en el mostrador es el dato que se busca de un
