@@ -408,7 +408,9 @@
 
   <div class="cart-bar" id="cartBar" style="display:none;">
     <div class="wrap cart-bar-inner">
-      <div class="cart-summary"><span id="cartCount">0</span> productos · <b id="cartTotal">$0</b></div>
+      <div class="cart-summary"><span id="cartCount">0</span> productos · <b id="cartTotal">$0</b>
+        <div id="avisoMitad" class="hidden" style="font-size:12.5px;font-weight:600;color:#8A5200;margin-top:3px;line-height:1.4;"></div>
+      </div>
       <button class="checkout-btn" id="openCheckoutBtn">Hacer pedido</button>
     </div>
   </div>
@@ -1616,6 +1618,65 @@ const claveLinea = (productoId, opciones, variante) =>
 
 const productoDe = (linea) => products.find(x => String(x.id) === String(linea.productId));
 
+// ---- Mitad y mitad ----
+// Una pizza tiene DOS mitades. El vendedor carga la variante "Media" con
+// el precio de una mitad sola, que sale mas cara que la mitad justa
+// porque la otra media queda sin vender (en Empire: entera $27.000, mitad
+// justa $13.500, media cargada $19.000 -> $5.500 de recargo).
+//
+// Entonces: cada mitad se cobra a mitad justa de SU gusto, y el recargo se
+// suma UNA sola vez al final, solo si queda una mitad sin pareja. Antes
+// dos mitades que completaban una pizza pagaban dos recargos: media Basic
+// + media Clasicc daba $41.000 cuando tenia que dar $30.000.
+//
+// "Media" y "Entera" los escribe el vendedor a mano, no son un tipo de
+// dato: por eso se reconocen por texto y la lista esta suelta aca, para
+// que sumar otra forma de escribirlo sea una linea.
+const TEXTOS_MITAD  = ['media', 'mitad', 'media pizza', '1/2', '\u00bd'];
+const TEXTOS_ENTERA = ['entera', 'entero', 'completa', 'pizza entera'];
+
+const sinAcentos = (t) => String(t == null ? '' : t)
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+const esVarianteMitad = (variante) => !!variante &&
+  Object.values(atributosRealesDe(variante) || {}).some(v => TEXTOS_MITAD.includes(sinAcentos(v)));
+
+// La entera es de donde sale la mitad justa: la variante que diga
+// "entera", y si el vendedor la llamo de otra forma, la mas cara.
+function precioEnteraDe(p){
+  const vs = Array.isArray(p && p.variantes) ? p.variantes : [];
+  const entera = vs.find(v => Object.values(v.atributos || {}).some(x => TEXTOS_ENTERA.includes(sinAcentos(x))));
+  if (entera) return precioDeVariante(p, entera);
+  const precios = vs.map(v => precioDeVariante(p, v));
+  return precios.length ? Math.max.apply(null, precios) : precioBase(p);
+}
+
+const mitadJustaDe = (p) => Math.round(precioEnteraDe(p) / 2);
+
+// Cuanto tiene de recargo la variante "Media" tal como la cargo el
+// vendedor. Nunca negativo: si la cargo mas barata que la mitad justa, es
+// su decision y no hay nada que cobrar de mas.
+function recargoDeLaMitad(p, variante){
+  const vs = Array.isArray(p && p.variantes) ? p.variantes : [];
+  const v = vs.find(x => claveVariante(x.atributos) === claveVariante(atributosRealesDe(variante)));
+  return Math.max(0, precioDeVariante(p, v) - mitadJustaDe(p));
+}
+
+// El recargo del carrito: cero si las mitades estan de a pares. Si sobra
+// una, se cobra el recargo MAS BARATO de las que hay — a favor del
+// cliente, y ademas es deterministico (no depende del orden de carga).
+function recargoMitadSuelta(){
+  const recargos = [];
+  Object.values(cart).forEach(l => {
+    if (!esVarianteMitad(l.variante)) return;
+    const p = productoDe(l);
+    if (!p) return;
+    for (let i = 0; i < l.qty; i++) recargos.push(recargoDeLaMitad(p, l.variante));
+  });
+  if (!recargos.length || recargos.length % 2 === 0) return 0;
+  return Math.min.apply(null, recargos);
+}
+
 const precioUnitario = (linea) => {
   const p = productoDe(linea);
   const extras = (linea.opciones || []).reduce((s, o) => s + Number(o.precio || 0), 0);
@@ -1625,6 +1686,9 @@ const precioUnitario = (linea) => {
     const clave = claveVariante(atributosRealesDe(linea.variante));
     const v = p.variantes.find(x => claveVariante(x.atributos) === clave);
     base = precioDeVariante(p, v);
+    // Media pizza: mitad justa de su gusto. El recargo por quedar sola va
+    // aparte, una sola vez, en recargoMitadSuelta().
+    if (esVarianteMitad(linea.variante)) base = mitadJustaDe(p);
   }
   return base + extras;
 };
@@ -1635,7 +1699,8 @@ const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => {
   const p = productoDe(l);
   return s + (seVendePorMedida(p) ? 1 : l.qty);
 }, 0);
-const totalDelCarrito   = () => Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0);
+const totalDelCarrito   = () =>
+  Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0) + recargoMitadSuelta();
 
 // Si hay al menos un producto físico en el carrito, hace falta preguntar
 // cómo lo recibe (retiro/envío) — un carrito de solo servicios (ej. un
@@ -1791,6 +1856,19 @@ function renderCartBar(){
   bar.style.display = 'block';
   byId('cartCount').textContent = unidadesEnCarrito();
   byId('cartTotal').textContent = money(totalDelCarrito());
+
+  // Si quedo una mitad sin pareja, se avisa POR QUE se cobra de mas y como
+  // evitarlo. Es informacion que el cliente necesita para decidir, y de
+  // paso al local le conviene: se lleva la pizza entera.
+  const recargo = recargoMitadSuelta();
+  const aviso = byId('avisoMitad');
+  if (aviso) {
+    aviso.classList.toggle('hidden', recargo <= 0);
+    if (recargo > 0) {
+      aviso.textContent = '\ud83c\udf55 Media sola: +' + money(recargo) +
+        '. Sum\u00e1 otra mitad del gusto que quieras y no lo pag\u00e1s.';
+    }
+  }
 }
 
 // ---- Opciones de entrega y pago ----
@@ -2303,6 +2381,17 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       });
     }
   });
+
+  // La mitad que quedo sin pareja paga el recargo una sola vez. Va como un
+  // renglon mas del pedido y no como un ajuste suelto del total: asi la
+  // suma de los renglones sigue dando el total, que es lo que leen el
+  // ticket, la caja y las estadisticas.
+  const recargoMitad = recargoMitadSuelta();
+  if (recargoMitad > 0) {
+    total += recargoMitad;
+    items.push({ name: 'Recargo por media sola', label: 'Recargo por media sola', qty: 1, price: recargoMitad, opciones: [], variante: null });
+    listaProductos += '• Recargo por media sola = $' + recargoMitad.toLocaleString('es-AR') + '\n';
+  }
 
   byId('confirmOrderBtn').disabled = true;
 

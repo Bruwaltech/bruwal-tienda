@@ -4349,6 +4349,26 @@ function porcentajeOff(p) {
   return Math.round((1 - Number(p.precio_oferta) / Number(p.price)) * 100);
 }
 
+// ---- Precio de la venta en el mostrador ----
+// Si el producto tiene variantes y hay una elegida, manda el precio de ESA
+// variante. Sin esto la venta miraba solo product.price: en una pizzeria,
+// una porcion de $7.500 se cobraba $28.500, el precio que quedo a nivel
+// producto. Mismo criterio que precioDeVariante() en tienda.html — una
+// variante con precio propio se cobra tal cual, sin la oferta encima.
+function precioDeVentaMostrador(p, variante) {
+  const base = precioVigente(p);
+  if (!p || !p.tiene_variantes || !variante || !Object.keys(variante).length) return base;
+  const vs = Array.isArray(p.variantes) ? p.variantes : [];
+  const v = vs.find(x => claveVariante(x.atributos) === claveVariante(variante));
+  return (v && v.precio != null) ? Number(v.precio) : base;
+}
+
+// El precio de lo que hay ahora mismo en la pantalla de venta.
+function precioVentaEnPantalla() {
+  if (!currentBarcodeProduct) return 0;
+  return precioDeVentaMostrador(currentBarcodeProduct, varianteSeleccionadaVenta);
+}
+
 // La fecha de un día (YYYY-MM-DD) tal como la vive el usuario, NO en UTC.
 //
 // toISOString() convierte a UTC antes de recortar: en Argentina (UTC-3),
@@ -13768,7 +13788,7 @@ function seleccionarProductoVenta(id, cantidad) {
   // no el de lista: si no, canta un precio y el sistema registra otro.
   inicializarTicketVenta();
   aplicarVisibilidadEntrega();
-  byId('barcodeProductPrice').textContent = money(precioVigente(product)) + sufijoPrecioPorMedida(product) +
+  byId('barcodeProductPrice').textContent = money(precioDeVentaMostrador(product, varianteSeleccionadaVenta)) + sufijoPrecioPorMedida(product) +
     (hayOferta(product) ? '  (antes ' + money(product.price) + ' — ' + porcentajeOff(product) + '% OFF)' : '');
 
   // Con venta por medida el campo cantidad acepta decimales y dice en qué
@@ -13852,6 +13872,9 @@ function renderVarianteVenta() {
       varianteSeleccionadaVenta[b.dataset.ventaAttr] = b.dataset.ventaValor;
       imeiSeleccionadoVenta = null;   // cambió la combinación: el equipo elegido para la anterior ya no aplica
       renderVarianteVenta();
+      // Elegir "Porción" o "Entera" cambia el precio: si la pantalla no se
+      // refresca, el vendedor canta un numero y el sistema cobra otro.
+      refrescarPrecioVenta();
     });
   });
 
@@ -13927,10 +13950,20 @@ function cantidadVendida() {
   return seVendePorMedida(currentBarcodeProduct) ? redondearMedida(bruto) : Math.floor(bruto) || 1;
 }
 
+// Repinta el precio unitario y el total con la variante que este elegida.
+function refrescarPrecioVenta() {
+  const p = currentBarcodeProduct;
+  if (!p || !byId('barcodeProductPrice')) return;
+  const precio = precioDeVentaMostrador(p, varianteSeleccionadaVenta);
+  byId('barcodeProductPrice').textContent = money(precio) + sufijoPrecioPorMedida(p) +
+    (hayOferta(p) ? '  (antes ' + money(p.price) + ' \u2014 ' + porcentajeOff(p) + '% OFF)' : '');
+  calculateTotal();
+}
+
 function calculateTotal() {
   if (!currentBarcodeProduct) return;
   const qty = cantidadVendida();
-  const total = precioVigente(currentBarcodeProduct) * qty;
+  const total = precioVentaEnPantalla() * qty;
   byId('barcodeTotal').textContent = money(total);
   calculateChange();
 }
@@ -14054,7 +14087,7 @@ async function confirmBarcodeVenta() {
   const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta });
   if (ok) {
     guardarNombreVendedor(vendedor);
-    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioVigente(product) * qty);
+    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioDeVentaMostrador(product, variante) * qty);
     if (ok.tradeIn) {
       mensaje += ok.equipoTomadoOk
         ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos.'
@@ -14069,7 +14102,7 @@ async function confirmBarcodeVenta() {
       imprimirTicketVenta({
         producto: product,
         qty,
-        precioUnitario: precioVigente(product),
+        precioUnitario: precioDeVentaMostrador(product, variante),
         variante,
         cliente,
         medioPago,
@@ -14216,7 +14249,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
   const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', horaEntrega = '', imei: imeiElegido = null } = opciones || {};
-  const total = precioVigente(product) * qty;
+  const total = precioDeVentaMostrador(product, variante) * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
   // El total de la venta sigue siendo el precio de lista (así se calculan
@@ -14238,7 +14271,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // entienden Pedidos, Fiado y el estado de cuenta (ver esTelefonoReal).
     customer_phone: String(telefono || '').trim() || 'scanner',
     hora_entrega: horaEntregaISO(horaEntrega),
-    items: [{ product_id: product.id, qty, name: nombreItem, price: precioVigente(product), variante }],
+    items: [{ product_id: product.id, qty, name: nombreItem, price: precioDeVentaMostrador(product, variante), variante }],
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
     saldo_pendiente: saldoPendiente,
@@ -14279,7 +14312,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // campo IMEI del producto en sí. Se anota en la orden para poder
     // devolverlo exacto si la venta se anula, y arranca su historial.
     await sb.from('orders').update({
-      items: [{ product_id: product.id, qty, name: nombreItem, price: precioVigente(product), variante, imei: imeiVendido }]
+      items: [{ product_id: product.id, qty, name: nombreItem, price: precioDeVentaMostrador(product, variante), variante, imei: imeiVendido }]
     }).eq('id', data[0].id);
     await registrarEventoImei(imeiVendido, 'venta', 'Vendido a ' + nombre, total);
   }
