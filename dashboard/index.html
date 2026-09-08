@@ -9867,14 +9867,41 @@ async function cambiarEstadoPedido(id, nuevo) {
     (anterior === 'confirmado' && nuevo === 'cancelado');
   if (!transicionValida) return;
 
+  // Un pedido que entra por la tienda no trae hora: el cliente pidio, pero
+  // para cuando esta lo decide la cocina. Este es el momento en que se
+  // decide, asi que se pregunta aca y no antes ni despues. Solo
+  // gastronomia; el resto de los rubros no promete hora.
+  let horaConfirmada = null;
+  if (nuevo === 'confirmado' && rubroEsComida()) {
+    const sugerida = pedido.hora_entrega
+      ? horaEntregaTexto(pedido.hora_entrega)
+      : horaEntregaSugerida();
+    const escrita = prompt(
+      '\u00bfPara qu\u00e9 hora es este pedido?  (HH:MM)\n\n' +
+      (demoraDelLocal()
+        ? 'Sugerida: ahora + ' + demoraDelLocal() + ' min. Cambiala si el cliente la pidi\u00f3 para otra hora.'
+        : 'Escrib\u00ed la hora en que va a estar listo.'),
+      sugerida);
+    // Cancelar en el prompt cancela la confirmacion entera: es mejor no
+    // confirmar que confirmar sin hora y que despues nadie sepa para
+    // cuando era.
+    if (escrita === null) return;
+    horaConfirmada = horaEntregaISO(String(escrita).trim());
+  }
+
   // Pedimos que devuelva la fila modificada Y exigimos que el estado
   // anterior siga siendo el que vimos. Sin el .eq('estado', anterior), dos
   // clics rápidos (o dos pestañas) podrían descontar el mismo stock dos
   // veces. Si la base rechaza el cambio por permisos, tampoco devuelve
   // error: devuelve cero filas. Sin este control el botón parecía andar y
   // no hacía nada.
+  // La hora viaja en el MISMO update que el estado: si fueran dos, un
+  // pedido podria quedar confirmado sin hora si el segundo falla.
+  const cambiosPedido = { estado: nuevo };
+  if (horaConfirmada) cambiosPedido.hora_entrega = horaConfirmada;
+
   const { data, error } = await sb.from('orders')
-    .update({ estado: nuevo })
+    .update(cambiosPedido)
     .eq('id', id)
     .eq('estado', anterior)
     .select('id');
@@ -9910,6 +9937,14 @@ async function cambiarEstadoPedido(id, nuevo) {
 
   if (seTocaronImeis) {
     await sb.from('orders').update({ items }).eq('id', id);
+  }
+
+  // El ticket sale con la hora recien decidida. Se actualiza el objeto
+  // local ANTES de imprimir porque imprimirTicketDeOrden() lee de la
+  // lista en memoria, y refreshData() recien corre despues.
+  if (horaConfirmada) {
+    pedido.hora_entrega = horaConfirmada;
+    imprimirTicketDeOrden(id);
   }
 
   await refreshData();
