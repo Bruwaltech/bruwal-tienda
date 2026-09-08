@@ -1672,7 +1672,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head">🛒 Pedidos recibidos</div>
         <table>
-          <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th><th>Entrega</th><th>Estado</th><th></th></tr></thead>
           <tbody id="ordersBody"></tbody>
         </table>
       </div>
@@ -1721,6 +1721,12 @@ tr:last-child td { border-bottom: none; }
     <div id="ventasView" class="hidden">
       <div class="panel" style="background:#EAF4FD;border:2px solid var(--celeste);margin-bottom:20px;">
         <div class="panel-head">📱 Escanear venta</div>
+        <!-- Solo gastronomia: una ferreteria no promete hora de entrega.
+             Lo muestra/oculta aplicarVisibilidadEntrega(). -->
+        <div id="barraDemora" class="hidden" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 12px;">
+          <span style="font-size:13px;color:var(--text-mute);">⏱ Demora ahora:</span>
+          <span id="chipsDemora" style="display:flex;gap:6px;flex-wrap:wrap;"></span>
+        </div>
         <div class="fila-escaner">
           <input type="text" id="barcodeInput" placeholder="Escanea código, EAN o nombre del producto..." autofocus style="padding:12px 14px;border:1px solid var(--line);border-radius:8px;font-size:15px;">
           <button onclick="searchByBarcode()" class="btn btn-primary" style="width:auto;padding:12px 24px;">Buscar</button>
@@ -1784,6 +1790,14 @@ tr:last-child td { border-bottom: none; }
                 <label style="font-size:13px;color:var(--text-mute);">¿Cuánto paga ahora? (dejalo en 0 si no paga nada)</label>
                 <input type="number" id="barcodeFiadoAbono" value="0" min="0" step="1"
                        style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
+              </div>
+
+              <div id="filaEntrega" class="hidden" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                <label style="font-size:14px;color:var(--text-mute);">🕜 Entrega:</label>
+                <input type="time" id="barcodeHoraEntrega"
+                       style="padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:15px;font-weight:700;">
+                <button type="button" id="entregaAhoraBtn" class="btn-ghost" style="padding:7px 12px;font-size:12.5px;">Ahora + demora</button>
+                <span id="entregaAviso" style="font-size:12.5px;color:var(--text-mute);"></span>
               </div>
 
               <label id="filaTicket" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
@@ -9611,7 +9625,21 @@ function renderOrders() {
     cancelado:  { texto: 'Cancelado',     fondo: '#FDECEC', color: '#97201D' }
   };
 
-  cuerpo.innerHTML = pedidosTodos.map(o => {
+  // La cocina trabaja por hora de ENTREGA, no por hora de carga: un pedido
+  // tomado 20:00 para las 22:00 va despues de uno tomado 20:10 para las
+  // 20:40. Los que no tienen hora (rubros que no la usan, o pedidos
+  // viejos) mantienen el orden de siempre, el mas nuevo arriba, y quedan
+  // detras de los que si tienen una hora comprometida.
+  const enCola = [...pedidosTodos].sort((a, b) => {
+    const ha = a.hora_entrega ? new Date(a.hora_entrega).getTime() : null;
+    const hb = b.hora_entrega ? new Date(b.hora_entrega).getTime() : null;
+    if (ha && hb) return ha - hb;
+    if (ha) return -1;
+    if (hb) return 1;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+
+  cuerpo.innerHTML = enCola.map(o => {
     const items = Array.isArray(o.items)
       ? o.items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it) + detalleDelItem(it)).join(', ')
       : '';
@@ -9661,10 +9689,16 @@ function renderOrders() {
       '</td>' +
       '<td style="font-weight:600;">' + money(o.total) + '</td>' +
       '<td style="font-size:12.5px;">' + fechaHoraAR(o.created_at, {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
+      // La hora prometida, grande y aparte de la hora de carga: son dos
+      // cosas distintas y mezclarlas es lo que hace que un pedido "para
+      // las 22" se cocine a las 20.
+      '<td>' + (o.hora_entrega
+        ? '<b style="font-size:14px;color:var(--navy);white-space:nowrap;">' + horaEntregaTexto(o.hora_entrega) + '</b>'
+        : '<span style="color:var(--text-mute);">\u2014</span>') + '</td>' +
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
       '<td>' + acciones + '</td>' +
       '</tr>';
-  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos</td></tr>';
 
   cuerpo.querySelectorAll('[data-confirmar]').forEach(b =>
     b.addEventListener('click', () => cambiarEstadoPedido(b.dataset.confirmar, 'confirmado')));
@@ -11908,6 +11942,7 @@ function estilosTicket58() {
     '.tk-fila span:last-child{white-space:nowrap;}' +
     '.tk-item{margin-bottom:5px;}' +
     '.tk-item .det{padding-left:10px;font-size:12px;}' +
+    '.tk-entrega{text-align:center;font-size:17px;font-weight:800;border:1.5px solid #000;padding:3px 2px;margin:5px 0;}' +
     '.tk-total{display:flex;justify-content:space-between;font-size:20px;font-weight:800;margin:6px 0;}' +
     '.tk-pie{text-align:center;font-size:11.5px;margin-top:7px;}' +
     '@media print{ .no-print{display:none;} }';
@@ -11947,6 +11982,88 @@ function detalleVarianteTicket(variante) {
     .join('');
 }
 
+// ---- Hora de entrega ----
+// La demora del local (cuanto tarda AHORA) solo SUGIERE una hora. La que
+// vale es la del pedido: si el cliente la pide para las 22, manda el
+// cliente. Por eso se guarda en la orden y no se recalcula despues — una
+// promesa hecha al cliente no se puede mover sola porque el cocinero
+// cambio la demora.
+function demoraDelLocal() {
+  return Number(currentStore?.demora_minutos || 0);
+}
+
+function horaEntregaSugerida() {
+  const d = new Date(Date.now() + demoraDelLocal() * 60000);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+// "22:00" -> timestamp real. A las 23:50 se toman pedidos para las 00:30,
+// que son de mañana: si se guardara la hora suelta, ese pedido se
+// ordenaria PRIMERO en la cola en vez de ultimo.
+function horaEntregaISO(hhmm) {
+  if (!hhmm) return null;
+  const partes = String(hhmm).split(':');
+  const d = new Date();
+  d.setHours(Number(partes[0]) || 0, Number(partes[1]) || 0, 0, 0);
+  if (d.getTime() < Date.now() - 6 * 3600 * 1000) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
+function horaEntregaTexto(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+const DEMORAS_SUGERIDAS = [0, 15, 30, 45, 60, 90];
+
+function renderChipsDemora() {
+  const cont = byId('chipsDemora');
+  if (!cont) return;
+  const actual = demoraDelLocal();
+  cont.innerHTML = DEMORAS_SUGERIDAS.map(m =>
+    '<button type="button" class="icon-btn" data-demora="' + m + '" style="' +
+      (m === actual ? 'background:var(--celeste);color:#fff;border-color:var(--celeste);' : '') +
+    '">' + (m === 0 ? 'Sin demora' : m + ' min') + '</button>').join('');
+
+  cont.querySelectorAll('[data-demora]').forEach(b =>
+    b.addEventListener('click', () => fijarDemora(Number(b.dataset.demora))));
+}
+
+async function fijarDemora(minutos) {
+  if (!puedeOperar() || !currentStore) return;
+  const { error } = await sb.from('store_profiles')
+    .update({ demora_minutos: minutos }).eq('slug', currentStore.slug);
+  if (error) {
+    alert('No se pudo guardar la demora:\n\n' + error.message +
+          '\n\n(Si dice que falta la columna, correr schema/38-hora-entrega.sql en Supabase.)');
+    return;
+  }
+  currentStore.demora_minutos = minutos;
+  renderChipsDemora();
+  // La hora sugerida cambia con la demora, pero solo se pisa si el
+  // vendedor no la toco a mano todavia.
+  if (!horaEntregaEditadaAMano) byId('barcodeHoraEntrega').value = horaEntregaSugerida();
+}
+
+let horaEntregaEditadaAMano = false;
+
+// Gastronomia promete hora; una ferreteria no. Se decide por rubro, igual
+// que el resto de la pantalla.
+function aplicarVisibilidadEntrega() {
+  const esComida = rubroEsComida();
+  ['barraDemora', 'filaEntrega'].forEach(id => {
+    const el = byId(id);
+    if (el) el.classList.toggle('hidden', !esComida);
+  });
+  if (!esComida) return;
+  renderChipsDemora();
+  if (!horaEntregaEditadaAMano && byId('barcodeHoraEntrega')) {
+    byId('barcodeHoraEntrega').value = horaEntregaSugerida();
+  }
+}
+
 // Los ultimos 6 del uuid alcanzan para que el cliente y el mostrador hablen
 // del mismo ticket; el numero entero no entra en 58mm ni le sirve a nadie.
 function numeroDeTicket(ordenId) {
@@ -11975,6 +12092,9 @@ function armarTicketHtml(d) {
       ahora.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span></div>' +
     (numero ? '<div class="tk-fila"><span>Ticket</span><span>#' + numero + '</span></div>' : '') +
     (d.cliente ? '<div class="tk-fila"><span>Cliente</span><span>' + escapeHtml(d.cliente) + '</span></div>' : '') +
+    // Recuadrada y grande: en el mostrador es el dato que se busca de un
+    // vistazo entre varios tickets pinchados.
+    (d.horaEntrega ? '<div class="tk-entrega">ENTREGA ' + escapeHtml(d.horaEntrega) + '</div>' : '') +
     '<div class="tk-sep"></div>' +
 
     (d.items || []).map(it =>
@@ -12017,7 +12137,7 @@ function imprimirTicketDeOrden(id) {
     // TOTAL de la orden sigue siendo correcto y es lo que se cobra.
     return {
       texto: qty.toLocaleString('es-AR') + ' x ' + escapeHtml(nombreDelItem(it)),
-      detalle: '',
+      detalle: detalleDeItemTicket(it),
       importe: precio > 0 ? money(precio * qty) : '',
       unitario: (precio > 0 && qty !== 1) ? money(precio) + ' c/u' : ''
     };
@@ -12030,6 +12150,7 @@ function imprimirTicketDeOrden(id) {
     cliente: (o.customer_name && o.customer_name !== 'scanner') ? o.customer_name : '',
     items,
     total: Number(o.total || 0),
+    horaEntrega: horaEntregaTexto(o.hora_entrega),
     medioPago: o.medio_pago || '',
     vendedor: o.vendedor || '',
     pagoAhora: Number(o.total || 0) - saldo,
@@ -12037,6 +12158,31 @@ function imprimirTicketDeOrden(id) {
   });
 
   abrirVentanaTicket('Ticket #' + numeroDeTicket(o.id), html, true);
+}
+
+// Que se llevo, debajo del renglon: "Tamano: Porcion", "+ Cheddar". Sin
+// esto, tres porciones de distinto tamano salian las tres como "1 x Basic"
+// y en la cocina no habia forma de saber cual era cual.
+//
+// El chequeo de includes() no es capricho: la venta de mostrador PEGA la
+// variante al nombre ("Pizza (Tamano: Grande)") y el pedido de la tienda
+// la guarda aparte. Sin el chequeo, en los tickets del mostrador el tamano
+// aparecia dos veces.
+function detalleDeItemTicket(it) {
+  const nombre = String(nombreDelItem(it) || '');
+  const filas = [];
+
+  if (it && it.variante) {
+    Object.entries(it.variante).forEach(([k, v]) => {
+      if (!nombre.includes(String(v))) filas.push(k + ': ' + v);
+    });
+  }
+  if (it && Array.isArray(it.opciones) && it.opciones.length) {
+    const extras = it.opciones.filter(o => !nombre.includes(String(o)));
+    if (extras.length) filas.push('+ ' + extras.join(', '));
+  }
+
+  return filas.map(f => '<div class="det">' + escapeHtml(f) + '</div>').join('');
 }
 
 // v = { producto, qty, precioUnitario, variante, cliente, medioPago,
@@ -12059,6 +12205,7 @@ function imprimirTicketVenta(v) {
       unitario: Number(v.qty) !== 1 ? money(v.precioUnitario) + ' c/u' : ''
     }],
     total,
+    horaEntrega: v.horaEntrega || '',
     medioPago: v.medioPago,
     vendedor: v.vendedor,
     pagoAhora: v.abonaAhora || 0,
@@ -13554,6 +13701,7 @@ function seleccionarProductoVenta(id, cantidad) {
   // Con oferta puesta, el vendedor tiene que ver el precio que va a cobrar,
   // no el de lista: si no, canta un precio y el sistema registra otro.
   inicializarTicketVenta();
+  aplicarVisibilidadEntrega();
   byId('barcodeProductPrice').textContent = money(precioVigente(product)) + sufijoPrecioPorMedida(product) +
     (hayOferta(product) ? '  (antes ' + money(product.price) + ' — ' + porcentajeOff(product) + '% OFF)' : '');
 
@@ -13833,8 +13981,11 @@ async function confirmBarcodeVenta() {
   const vendedor = (byId('barcodeVendedor')?.value || '').trim();
   const medioPago = byId('barcodeMedioPago')?.value || '';
   const telefonoCliente = (byId('barcodeClienteTel')?.value || '').trim();
+  // Solo se guarda si el rubro la usa: en los demas el campo esta oculto y
+  // mandaria la hora sugerida sin que nadie la haya decidido.
+  const horaEntrega = rubroEsComida() ? (byId('barcodeHoraEntrega')?.value || '') : '';
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, imei: imeiSeleccionadoVenta });
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta });
   if (ok) {
     guardarNombreVendedor(vendedor);
     let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioVigente(product) * qty);
@@ -13858,6 +14009,7 @@ async function confirmBarcodeVenta() {
         medioPago,
         vendedor,
         ordenId: ok.ordenId,
+        horaEntrega: horaEntrega,
         fiado: esFiado,
         abonaAhora
       });
@@ -13868,6 +14020,9 @@ async function confirmBarcodeVenta() {
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
     if (byId('barcodeClienteTel')) byId('barcodeClienteTel').value = '';
     telefonoVentaAutocompletado = true;
+    // El proximo pedido arranca de cero: la hora del anterior no aplica.
+    horaEntregaEditadaAMano = false;
+    if (byId('barcodeHoraEntrega')) byId('barcodeHoraEntrega').value = horaEntregaSugerida();
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
     byId('barcodeFiadoAbono').value = '0';
@@ -13994,7 +14149,7 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', imei: imeiElegido = null } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', horaEntrega = '', imei: imeiElegido = null } = opciones || {};
   const total = precioVigente(product) * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + new Date().toLocaleTimeString('es-AR'));
@@ -14016,6 +14171,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // Sin telefono cargado se sigue guardando 'scanner', el centinela que ya
     // entienden Pedidos, Fiado y el estado de cuenta (ver esTelefonoReal).
     customer_phone: String(telefono || '').trim() || 'scanner',
+    hora_entrega: horaEntregaISO(horaEntrega),
     items: [{ product_id: product.id, qty, name: nombreItem, price: precioVigente(product), variante }],
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
@@ -15845,6 +16001,20 @@ byId('tabVentas').addEventListener('click', () => {
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('ventasView').classList.add('visible');
   inicializarTicketVenta();
+  aplicarVisibilidadEntrega();
+});
+
+byId('barcodeHoraEntrega').addEventListener('input', () => {
+  horaEntregaEditadaAMano = true;
+  const aviso = byId('entregaAviso');
+  if (aviso) aviso.textContent = 'Hora fijada a mano';
+});
+
+byId('entregaAhoraBtn').addEventListener('click', () => {
+  horaEntregaEditadaAMano = false;
+  byId('barcodeHoraEntrega').value = horaEntregaSugerida();
+  const aviso = byId('entregaAviso');
+  if (aviso) aviso.textContent = demoraDelLocal() ? 'Ahora + ' + demoraDelLocal() + ' min' : '';
 });
 
 byId('barcodeTicket').addEventListener('change', (e) => {
