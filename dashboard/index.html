@@ -5907,13 +5907,22 @@ function quitarValorAtributo(i, valorIdx) {
 function renderAtributosVariante() {
   const cont = byId('variAtributos');
   // El texto de ejemplo (placeholder, no un dato real) también tiene que
-  // ser del rubro correcto: a una tienda de electrónica no le sirve ver
-  // "Ej: Talle" en un campo vacío, aunque no sea información cargada de
-  // verdad — confunde igual.
-  const phNombre = rubroEsElectronica() ? 'Ej: Modelo' : 'Ej: Talle';
-  const phValores = rubroEsElectronica()
-    ? 'Escribí un valor y Enter — ej: iPhone 13'
-    : 'Escribí un valor y Enter — ej: M';
+  // ser del rubro correcto: a una pizzería no le sirve ver "Ej: Talle" en
+  // un campo vacío, aunque no sea información cargada de verdad — confunde
+  // igual. "Talle" es de indumentaria y de ningún otro rubro.
+  //
+  // Sale del primer atributo sugerido del rubro y no de un if aparte: esas
+  // listas (Tamaño/Porción en comida, Modelo en electrónica, Talle en ropa)
+  // ya existen y son la fuente de verdad. Si mañana la pizzería sugiere
+  // otra cosa, el ejemplo la sigue solo, sin tocar esta función.
+  //
+  // Un rubro sin sugeridos (kiosco, ferretería) cae en "Tamaño", que le
+  // sirve a cualquiera; "Talle" ahí era ropa metida en una tienda que no
+  // vende ropa.
+  const sugeridoBase = (grupoAtributosSugeridos() || [])[0];
+  const phNombre = 'Ej: ' + ((sugeridoBase && sugeridoBase.nombre) || 'Tamaño');
+  const phValores = 'Escribí un valor y Enter — ej: ' +
+    ((sugeridoBase && (sugeridoBase.valores || [])[0]) || 'Grande');
   cont.innerHTML = variAtributosEnEdicion.map((at, i) => `
     <div style="border:1px solid var(--line);border-radius:8px;padding:9px;margin-bottom:8px;">
       <div style="display:flex;gap:6px;align-items:flex-start;">
@@ -6292,11 +6301,16 @@ function quitarImeiDeVariante(clave, idx) {
 function actualizarTextoVariantes() {
   const esElec = rubroEsElectronica();
   const esComida = rubroEsComida();
+  // "Talle" es de indumentaria y de ningún otro rubro: antes era el caso
+  // por defecto, así que una ferretería o un kiosco también lo veían. Los
+  // que no son ropa, comida ni electrónica van con palabras neutras.
+  const esRopa = categoriaDeRubro() === 'indumentaria';
 
   const parentesis = byId('variTipoParentesis');
   if (parentesis) parentesis.textContent =
     esElec   ? '(modelo de equipo...)' :
-    esComida ? '(tamaño, porción...)'  : '(talle, color...)';
+    esComida ? '(tamaño, porción...)'  :
+    esRopa   ? '(talle, color...)'      : '(tamaño, color...)';
 
   // En gastronomía la variante no divide el stock, divide el PRECIO: eso
   // es lo que hay que explicar, porque nadie lleva la cuenta de cuántas
@@ -6305,7 +6319,8 @@ function actualizarTextoVariantes() {
   if (ayuda) ayuda.textContent =
     esElec   ? 'Cada combinación lleva su propio stock. "Pantalla iPhone 13" y "Pantalla iPhone 14" se agotan por separado.' :
     esComida ? 'Cada tamaño lleva su propio precio, en una sola ficha: chica $8.000, grande $12.000. El cliente elige al pedir.' :
-               'Cada combinación lleva su propio stock. "Remera talle M" y "Remera talle L" se agotan por separado.';
+    esRopa   ? 'Cada combinación lleva su propio stock. "Remera talle M" y "Remera talle L" se agotan por separado.' :
+               'Cada combinación lleva su propio stock: una medida se agota sin tocar el stock de las otras.';
 
   // El aviso largo de abajo habla de actualizar el stock de cada variante a
   // mano. En gastronomía no se pide stock por tamaño, así que ahí diría lo
