@@ -9624,15 +9624,20 @@ function renderOrders() {
     // tocó stock). Confirmado: primero hay que Anular (eso devuelve el
     // stock); recién ahí se puede borrar. No se permite borrar un
     // confirmado de un paso, para no perder el stock sin darse cuenta.
+    // El ticket va en cualquier estado: de un pedido pendiente sirve como
+    // comanda para la cocina, y de uno confirmado como comprobante.
+    const botonTicket = '<button class="icon-btn" data-ticket-pedido="' + o.id + '" title="Imprimir el ticket">🧾</button>';
+
     const acciones = e === 'pendiente'
-      ? '<div class="row-actions">' +
+      ? '<div class="row-actions">' + botonTicket +
           '<button class="icon-btn" data-confirmar="' + o.id + '" title="Marcar como confirmado y descontar stock" style="color:var(--stock);">✓ Confirmar</button>' +
           '<button class="icon-btn danger" data-cancelar="' + o.id + '" title="No llegó nunca">✕</button>' +
           '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar directamente">🗑</button>' +
         '</div>'
-      : (e === 'confirmado'
+      : '<div class="row-actions">' + botonTicket + (e === 'confirmado'
           ? '<button class="icon-btn danger" data-anular="' + o.id + '" title="Anular y devolver el stock">Anular</button>'
-          : '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar de la lista">🗑</button>');
+          : '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar de la lista">🗑</button>') +
+        '</div>';
 
     return '<tr>' +
       '<td>' + escapeHtml(o.customer_name || '—') +
@@ -9677,6 +9682,8 @@ function renderOrders() {
     }));
   cuerpo.querySelectorAll('[data-eliminar-pedido]').forEach(b =>
     b.addEventListener('click', () => eliminarPedido(b.dataset.eliminarPedido)));
+  cuerpo.querySelectorAll('[data-ticket-pedido]').forEach(b =>
+    b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketPedido)));
 
   // Aviso arriba de la tabla cuando hay pedidos esperando respuesta
   const pendientes = pedidosTodos.filter(o => estadoPedido(o) === 'pendiente').length;
@@ -11936,54 +11943,120 @@ function detalleVarianteTicket(variante) {
     .join('');
 }
 
-// v = { producto, qty, precioUnitario, variante, cliente, medioPago,
-//       vendedor, ordenId, fiado, abonaAhora }
-function imprimirTicketVenta(v) {
-  const ahora = new Date();
-  const total = Number(v.precioUnitario) * Number(v.qty);
-  // Los ultimos 6 del uuid alcanzan para que el cliente y el mostrador
-  // hablen del mismo ticket; el numero entero no entra ni sirve.
-  const numero = v.ordenId ? String(v.ordenId).replace(/-/g, '').slice(-6).toUpperCase() : null;
+// Los ultimos 6 del uuid alcanzan para que el cliente y el mostrador hablen
+// del mismo ticket; el numero entero no entra en 58mm ni le sirve a nadie.
+function numeroDeTicket(ordenId) {
+  return ordenId ? String(ordenId).replace(/-/g, '').slice(-6).toUpperCase() : null;
+}
 
-  const html =
-    '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
+// El armado del ticket vive aca y no adentro de la venta porque lo usan dos
+// caminos: la venta recien hecha y la reimpresion desde el historial. Si el
+// layout se toca, se toca una sola vez.
+//
+// d = { numero, fecha, cliente, items:[{texto, detalle, importe, unitario}],
+//       total, medioPago, vendedor, pagoAhora, debe }
+function armarTicketHtml(d) {
+  const ahora = d.fecha || new Date();
+  const numero = d.numero;
+  const total = Number(d.total || 0);
+
+  return '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
     (currentStore?.description ? '<div class="tk-sub">' + escapeHtml(currentStore.description) + '</div>' : '') +
     '<div class="tk-sep"></div>' +
     '<div class="tk-fila"><span>' + ahora.toLocaleDateString('es-AR') + '</span><span>' +
       ahora.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span></div>' +
     (numero ? '<div class="tk-fila"><span>Ticket</span><span>#' + numero + '</span></div>' : '') +
-    (v.cliente ? '<div class="tk-fila"><span>Cliente</span><span>' + escapeHtml(v.cliente) + '</span></div>' : '') +
+    (d.cliente ? '<div class="tk-fila"><span>Cliente</span><span>' + escapeHtml(d.cliente) + '</span></div>' : '') +
     '<div class="tk-sep"></div>' +
 
-    '<div class="tk-item">' +
-      '<div class="tk-fila">' +
-        '<span>' + (seVendePorMedida(v.producto)
-            ? formatearCantidad(v.qty, v.producto)
-            : Number(v.qty).toLocaleString('es-AR')) +
-          ' x ' + escapeHtml(v.producto.name) + '</span>' +
-        '<span>' + money(total) + '</span>' +
-      '</div>' +
-      detalleVarianteTicket(v.variante) +
-      (Number(v.qty) !== 1 ? '<div class="det">' + money(v.precioUnitario) + ' c/u</div>' : '') +
-    '</div>' +
+    (d.items || []).map(it =>
+      '<div class="tk-item">' +
+        '<div class="tk-fila"><span>' + it.texto + '</span><span>' + it.importe + '</span></div>' +
+        (it.detalle || '') +
+        (it.unitario ? '<div class="det">' + it.unitario + '</div>' : '') +
+      '</div>').join('') +
 
     '<div class="tk-sep"></div>' +
     '<div class="tk-total"><span>TOTAL</span><span>' + money(total) + '</span></div>' +
-    (v.medioPago ? '<div class="tk-fila"><span>Pago</span><span>' + escapeHtml(v.medioPago) + '</span></div>' : '') +
+    (d.medioPago ? '<div class="tk-fila"><span>Pago</span><span>' + escapeHtml(d.medioPago) + '</span></div>' : '') +
     // En una venta a fiado el ticket tiene que decir cuanto queda debiendo:
     // es el comprobante que se lleva el cliente.
-    (v.fiado
-      ? '<div class="tk-fila"><span>Pagó ahora</span><span>' + money(v.abonaAhora || 0) + '</span></div>' +
-        '<div class="tk-fila"><span><b>Debe</b></span><span><b>' +
-          money(Math.max(0, total - Number(v.abonaAhora || 0))) + '</b></span></div>'
+    (Number(d.debe) > 0
+      ? '<div class="tk-fila"><span>Pag\u00f3 ahora</span><span>' + money(d.pagoAhora || 0) + '</span></div>' +
+        '<div class="tk-fila"><span><b>Debe</b></span><span><b>' + money(d.debe) + '</b></span></div>'
       : '') +
-    (v.vendedor ? '<div class="tk-fila"><span>Atendió</span><span>' + escapeHtml(v.vendedor) + '</span></div>' : '') +
+    (d.vendedor ? '<div class="tk-fila"><span>Atendi\u00f3</span><span>' + escapeHtml(d.vendedor) + '</span></div>' : '') +
     '<div class="tk-sep"></div>' +
-    '<div class="tk-pie">¡Gracias por su compra!</div>' +
+    '<div class="tk-pie">\u00a1Gracias por su compra!</div>' +
     (currentStore?.slug ? '<div class="tk-pie">bruwaltech.com.ar/' + escapeHtml(currentStore.slug) + '</div>' : '');
+}
+
+// Reimprimir el ticket de una venta ya hecha. Se arma con lo que quedo
+// GUARDADO en la orden, no con el producto de hoy: si despues cambio el
+// precio o el nombre, el comprobante tiene que seguir diciendo lo que se
+// cobro ese dia. Ademas soporta varias lineas, que es como vienen los
+// pedidos de la tienda.
+function imprimirTicketDeOrden(id) {
+  const lista = (orders || []).concat(pedidosTodos || []);
+  const o = lista.find(x => String(x.id) === String(id));
+  if (!o) { alert('No se encontr\u00f3 esa venta.'); return; }
+
+  const items = (Array.isArray(o.items) ? o.items : []).map(it => {
+    const qty = Number(it.qty || 1);
+    const precio = Number(it.price || 0);
+    return {
+      texto: qty.toLocaleString('es-AR') + ' x ' + escapeHtml(nombreDelItem(it)),
+      detalle: '',
+      importe: money(precio * qty),
+      unitario: qty !== 1 ? money(precio) + ' c/u' : ''
+    };
+  });
+
+  const saldo = Number(o.saldo_pendiente || 0);
+  const html = armarTicketHtml({
+    numero: numeroDeTicket(o.id),
+    fecha: new Date(o.created_at),
+    cliente: (o.customer_name && o.customer_name !== 'scanner') ? o.customer_name : '',
+    items,
+    total: Number(o.total || 0),
+    medioPago: o.medio_pago || '',
+    vendedor: o.vendedor || '',
+    pagoAhora: Number(o.total || 0) - saldo,
+    debe: saldo
+  });
+
+  abrirVentanaTicket('Ticket #' + numeroDeTicket(o.id), html, true);
+}
+
+// v = { producto, qty, precioUnitario, variante, cliente, medioPago,
+//       vendedor, ordenId, fiado, abonaAhora }
+function imprimirTicketVenta(v) {
+  const total = Number(v.precioUnitario) * Number(v.qty);
+  const numero = numeroDeTicket(v.ordenId);
+
+  const html = armarTicketHtml({
+    numero,
+    fecha: new Date(),
+    cliente: v.cliente,
+    items: [{
+      texto: (seVendePorMedida(v.producto)
+                ? formatearCantidad(v.qty, v.producto)
+                : Number(v.qty).toLocaleString('es-AR')) +
+             ' x ' + escapeHtml(v.producto.name),
+      detalle: detalleVarianteTicket(v.variante),
+      importe: money(total),
+      unitario: Number(v.qty) !== 1 ? money(v.precioUnitario) + ' c/u' : ''
+    }],
+    total,
+    medioPago: v.medioPago,
+    vendedor: v.vendedor,
+    pagoAhora: v.abonaAhora || 0,
+    debe: v.fiado ? Math.max(0, total - Number(v.abonaAhora || 0)) : 0
+  });
 
   abrirVentanaTicket('Ticket' + (numero ? ' #' + numero : ''), html, true);
 }
+
 
 // Arranca tildada en cualquier rubro: el comprobante de lo que se llevo le
 // sirve al kiosco y a la ferreteria igual que a la pizzeria, no solo a
@@ -13284,6 +13357,7 @@ function renderSalesHistory() {
       '<td style="text-align:center;color:var(--celeste);">N/A</td>' +
       '<td style="text-align:right;color:var(--navy);font-weight:600;">' + money(o.total) + '</td>' +
       '<td style="text-align:right;">' +
+        '<button class="icon-btn" data-ticket-venta="' + o.id + '" title="Reimprimir el ticket">🧾</button>' +
         '<button class="icon-btn" data-borrar-venta="' + o.id + '" title="Anular esta venta" ' +
         'style="color:var(--danger);">🗑</button></td>' +
       '</tr>';
@@ -13291,6 +13365,9 @@ function renderSalesHistory() {
 
   el.querySelectorAll('[data-borrar-venta]').forEach(b => {
     b.addEventListener('click', () => anularVenta(b.dataset.borrarVenta));
+  });
+  el.querySelectorAll('[data-ticket-venta]').forEach(b => {
+    b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketVenta));
   });
 }
 
@@ -13465,6 +13542,7 @@ function seleccionarProductoVenta(id, cantidad) {
   byId('barcodeProductName').textContent = product.name;
   // Con oferta puesta, el vendedor tiene que ver el precio que va a cobrar,
   // no el de lista: si no, canta un precio y el sistema registra otro.
+  inicializarTicketVenta();
   byId('barcodeProductPrice').textContent = money(precioVigente(product)) + sufijoPrecioPorMedida(product) +
     (hayOferta(product) ? '  (antes ' + money(product.price) + ' — ' + porcentajeOff(product) + '% OFF)' : '');
 
