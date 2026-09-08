@@ -1167,6 +1167,22 @@ tr:last-child td { border-bottom: none; }
 .cfg-tel-pprice { font-size: 15px; font-weight: 700; color: #2F8FE0; margin-top: 3px; }
 
 /* Pestanas de la configuracion */
+/* Oferta en el listado de productos */
+.precio-oferta-fila { font-weight: 700; color: #1B7F4B; }
+.precio-lista-tachado { font-size: 12px; color: var(--text-mute); text-decoration: line-through; margin-left: 6px; }
+.pill-off {
+  display: inline-block; background: #E8F7EE; color: #1B7F4B;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .03em;
+  padding: 2px 7px; border-radius: 999px; margin-left: 6px; white-space: nowrap;
+}
+.chip-ofertas {
+  display: inline-block; margin-left: 10px; vertical-align: middle;
+  background: #E8F7EE; color: #1B7F4B; border: 1.5px solid transparent;
+  font-size: 11.5px; font-weight: 700; padding: 3px 10px;
+  border-radius: 999px; cursor: pointer; font-family: inherit;
+}
+.chip-ofertas.activo { border-color: #1B7F4B; }
+
 .cfg-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
 .cfg-tab {
   background: var(--bg); border: 1.5px solid var(--line); border-radius: 999px;
@@ -3394,6 +3410,39 @@ tr:last-child td { border-bottom: none; }
       comprobante de lo que se vendió. Sí podés corregir el nombre, el teléfono y el saldo.
     </div>
     <button type="button" id="guardarFiadoManualBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar deuda</button>
+  </div>
+</div>
+
+<!-- MODAL OFERTA -->
+<div class="modal-overlay hidden" id="ofertaModal">
+  <div class="modal" style="max-width:440px;">
+    <button class="modal-close" id="cerrarOfertaModal">✕</button>
+    <h3>🏷️ Oferta</h3>
+    <p id="ofertaProducto" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 16px;line-height:1.5;"></p>
+
+    <div style="background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+      <div style="font-size:12px;color:var(--text-mute);">Precio de lista</div>
+      <div id="ofertaPrecioLista" style="font-size:20px;font-weight:700;color:var(--navy);"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field" style="margin:0;">
+        <label>% de descuento</label>
+        <input type="number" id="ofertaPct" min="1" max="95" step="1" placeholder="Ej: 12">
+      </div>
+      <div class="field" style="margin:0;">
+        <label>Precio final</label>
+        <input type="number" id="ofertaFinal" min="0" step="0.01" placeholder="Ej: 25432">
+      </div>
+    </div>
+    <small style="display:block;margin:8px 0 16px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+      Completá cualquiera de los dos y el otro se calcula solo.
+    </small>
+
+    <div id="ofertaResultado" style="font-size:13.5px;line-height:1.6;margin-bottom:16px;"></div>
+
+    <button type="button" id="guardarOfertaBtn" class="btn btn-primary" style="width:100%;">Guardar oferta</button>
+    <button type="button" id="sacarOfertaBtn" class="btn hidden" style="width:100%;margin-top:8px;color:var(--danger);">Sacar la oferta</button>
   </div>
 </div>
 
@@ -9220,11 +9269,35 @@ function botonPausar(p) {
     (p.pausado ? '▶ Activar' : '⏸ Pausar') + '</button>';
 }
 
+// La celda de precio del listado. Con oferta puesta muestra lo que se
+// cobra, el de lista tachado al lado y el % — el vendedor tiene que poder
+// ver de un vistazo cuales estan rebajados, sin abrir producto por
+// producto.
+function celdaPrecioProducto(p, conSufijo) {
+  const sufijo = conSufijo ? sufijoPrecioPorMedida(p) : '';
+  if (!hayOferta(p)) return money(p.price) + sufijo + precioSecundarioProducto(p);
+  return '<span class="precio-oferta-fila">' + money(p.precio_oferta) + '</span>' + sufijo +
+         '<span class="precio-lista-tachado">' + money(p.price) + '</span>' +
+         '<span class="pill-off">' + porcentajeOff(p) + '% OFF</span>' +
+         precioSecundarioProducto(p);
+}
+
+// Filtro aparte del de destino (tienda / servicios / interno): se cruza con
+// el que ya estaba, no lo reemplaza.
+let soloEnOferta = false;
+
 function renderProducts() {
   const panel = PANELES_PRODUCTOS[filtroProductosDestino] || PANELES_PRODUCTOS.tienda;
-  const lista = products.filter(panel.filtro);
+  const lista = products.filter(panel.filtro).filter(p => !soloEnOferta || hayOferta(p));
 
-  byId('productsPanelTitulo').textContent = panel.titulo;
+  // El contador va pegado al titulo y ademas filtra: sin esto, saber cuantas
+  // ofertas hay activas obligaba a recorrer la lista entera a ojo.
+  const enOferta = products.filter(panel.filtro).filter(hayOferta).length;
+  byId('productsPanelTitulo').innerHTML = escapeHtml(panel.titulo) +
+    (enOferta || soloEnOferta
+      ? ' <button type="button" class="chip-ofertas' + (soloEnOferta ? ' activo' : '') + '" id="chipOfertas">' +
+          '🏷️ ' + enOferta + ' en oferta' + (soloEnOferta ? ' — ver todos' : '') + '</button>'
+      : '');
   byId('productsHead').innerHTML = '<tr>' + panel.columnas.map(c => '<th>' + c + '</th>').join('') + '</tr>';
 
   if (lista.length === 0) {
@@ -9260,6 +9333,8 @@ function renderProducts() {
         ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
         : '') +
       '<button class="icon-btn" data-etiqueta="' + p.id + '" title="Imprimir etiqueta" style="color:var(--celeste);">🏷️</button>' +
+      '<button class="icon-btn" data-oferta="' + p.id + '" title="Poner o sacar oferta" style="color:#1B7F4B;">' +
+        (hayOferta(p) ? '−' + porcentajeOff(p) + '%' : '% Oferta') + '</button>' +
       '<button class="icon-btn" data-edit="' + p.id + '">Editar</button>' +
       '<button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>';
 
@@ -9277,7 +9352,7 @@ function renderProducts() {
 
       return '<tr>' +
         '<td>' + imgHtml + '</td>' + celdaNombre +
-        '<td>' + money(p.price) + precioSecundarioProducto(p) + '</td>' +
+        '<td>' + celdaPrecioProducto(p, false) + '</td>' +
         '<td>' + (p.duracion_minutos
           ? '<strong>' + p.duracion_minutos + '</strong> min'
           : '<span style="color:var(--text-mute);font-size:12px;">Sin cargar</span>') + '</td>' +
@@ -9324,7 +9399,7 @@ function renderProducts() {
       '<td><strong>' + escapeHtml(p.name) + '</strong>' +
         (p.pendiente_restauracion ? ' <span class="badge" style="background:#FEF3E2;color:#8A5200;" title="Tomado en parte de pago, todavía no está listo para vender">🔧 Restauración</span>' : '') +
       '</td>' +
-      '<td>' + money(p.price) + sufijoPrecioPorMedida(p) + precioSecundarioProducto(p) + '</td>' +
+      '<td>' + celdaPrecioProducto(p, true) + '</td>' +
       '<td>' + (
         !esProductoFisico(p)
           ? '<span class="badge" style="background:#EAF4FD;color:var(--navy);">SERVICIO</span>' +
@@ -9353,11 +9428,16 @@ function renderProducts() {
           ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
           : '') +
         '<button class="icon-btn" data-etiqueta="' + p.id + '" title="Imprimir etiqueta" style="color:var(--celeste);">🏷️</button>' +
+        '<button class="icon-btn" data-oferta="' + p.id + '" title="Poner o sacar oferta" style="color:#1B7F4B;">' +
+          (hayOferta(p) ? '−' + porcentajeOff(p) + '%' : '% Oferta') + '</button>' +
         '<button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
       '</tr>';
   }).join('');
 
   byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
+  byId('productsBody').querySelectorAll('[data-oferta]').forEach(b => b.addEventListener('click', () => abrirOferta(b.getAttribute('data-oferta'))));
+  const chip = byId('chipOfertas');
+  if (chip) chip.addEventListener('click', () => { soloEnOferta = !soloEnOferta; renderProducts(); });
   byId('productsBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(b.getAttribute('data-del'))));
   byId('productsBody').querySelectorAll('[data-pausar]').forEach(b => b.addEventListener('click', () => alternarPausado(b.getAttribute('data-pausar'))));
   // Con variantes hay que elegir talle/color antes de sumar stock; sin
@@ -9390,6 +9470,103 @@ document.querySelectorAll('.productos-destino-tab').forEach(b => {
 });
 
 // Pausar / activar desde la lista, sin abrir el producto.
+// ===================== Ofertas desde el listado =====================
+// Poner una oferta abriendo el producto entero es demasiado para algo que
+// se cambia seguido (fin de semana, liquidacion). Este modal hace lo minimo:
+// elegir el descuento y guardarlo.
+let productoEnOferta = null;
+
+function abrirOferta(id) {
+  if (!puedeOperar()) return;
+  const p = (products || []).find(x => String(x.id) === String(id));
+  if (!p) return;
+
+  if (!Number(p.price)) {
+    alert('Este producto no tiene precio de lista cargado, así que no se le puede calcular un descuento.');
+    return;
+  }
+
+  productoEnOferta = p;
+  byId('ofertaProducto').textContent = p.name;
+  byId('ofertaPrecioLista').textContent = money(p.price);
+
+  const tiene = hayOferta(p);
+  byId('ofertaFinal').value = tiene ? p.precio_oferta : '';
+  byId('ofertaPct').value = tiene ? porcentajeOff(p) : '';
+  byId('sacarOfertaBtn').classList.toggle('hidden', !tiene);
+
+  recalcularOferta();
+  show(byId('ofertaModal'));
+}
+
+// Los dos campos son la misma cuenta mirada de los dos lados: el que toca
+// el vendedor manda y el otro se recalcula. Sin esto habria que hacer la
+// regla de tres a mano para saber cuanto queda.
+function recalcularOferta(desde) {
+  if (!productoEnOferta) return;
+  const lista = Number(productoEnOferta.price);
+  const campoPct = byId('ofertaPct');
+  const campoFinal = byId('ofertaFinal');
+
+  if (desde === 'pct') {
+    const pct = Number(campoPct.value);
+    campoFinal.value = (pct > 0 && pct < 100) ? Math.round(lista * (1 - pct / 100)) : '';
+  } else if (desde === 'final') {
+    const fin = Number(campoFinal.value);
+    campoPct.value = (fin > 0 && fin < lista) ? Math.round((1 - fin / lista) * 100) : '';
+  }
+
+  const fin = Number(campoFinal.value);
+  const caja = byId('ofertaResultado');
+  if (fin > 0 && fin < lista) {
+    caja.style.color = 'var(--stock)';
+    caja.innerHTML = '✓ En la tienda se va a ver <strong>' + money(fin) + '</strong>, con ' +
+      money(lista) + ' tachado y el globo de <strong>' + Math.round((1 - fin / lista) * 100) + '% OFF</strong>.';
+  } else if (campoFinal.value === '' && campoPct.value === '') {
+    caja.innerHTML = '';
+  } else {
+    caja.style.color = 'var(--danger)';
+    caja.textContent = 'El precio con descuento tiene que ser mayor a 0 y menor a ' + money(lista) + '.';
+  }
+}
+
+async function guardarOferta() {
+  if (!productoEnOferta) return;
+  const lista = Number(productoEnOferta.price);
+  const fin = Number(byId('ofertaFinal').value);
+  if (!(fin > 0) || fin >= lista) {
+    alert('Poné un precio con descuento mayor a 0 y menor a ' + money(lista) + '.');
+    return;
+  }
+  await grabarPrecioOferta(productoEnOferta, fin);
+}
+
+async function sacarOferta() {
+  if (!productoEnOferta) return;
+  if (!confirm('¿Sacar la oferta de "' + productoEnOferta.name + '"?\n\nVuelve a venderse a ' +
+               money(productoEnOferta.price) + '.')) return;
+  await grabarPrecioOferta(productoEnOferta, null);
+}
+
+async function grabarPrecioOferta(p, valor) {
+  const { error } = await sb.from('store_products').update({ precio_oferta: valor }).eq('id', p.id);
+  if (error) {
+    alert('No se pudo guardar la oferta:\n\n' + error.message +
+          '\n\n(Si dice que falta la columna, correr schema/37-precio-oferta.sql en Supabase.)');
+    return;
+  }
+  p.precio_oferta = valor;   // se refleja al toque, sin esperar el refresh entero
+  hide(byId('ofertaModal'));
+  productoEnOferta = null;
+  renderProducts();
+}
+
+byId('ofertaPct').addEventListener('input', () => recalcularOferta('pct'));
+byId('ofertaFinal').addEventListener('input', () => recalcularOferta('final'));
+byId('guardarOfertaBtn').addEventListener('click', guardarOferta);
+byId('sacarOfertaBtn').addEventListener('click', sacarOferta);
+byId('cerrarOfertaModal').addEventListener('click', () => { hide(byId('ofertaModal')); productoEnOferta = null; });
+
 async function alternarPausado(id) {
   if (!puedeOperar()) return;
   const p = (products || []).find(x => String(x.id) === String(id));
