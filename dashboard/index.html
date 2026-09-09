@@ -1726,6 +1726,14 @@ tr:last-child td { border-bottom: none; }
         <div id="barraDemora" class="hidden" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 12px;">
           <span style="font-size:13px;color:var(--text-mute);">⏱ Demora ahora:</span>
           <span id="chipsDemora" style="display:flex;gap:6px;flex-wrap:wrap;"></span>
+          <!-- La hora del LOCAL a la vista. No es decorativo: es la misma hora
+               con la que se calcula la entrega y se imprime el ticket, asi
+               que si alguna vez vuelve a verse una hora rara, se compara
+               contra esta y se sabe al toque si el problema es el sistema o
+               el reloj de la maquina. -->
+          <span style="margin-left:auto;font-size:13px;color:var(--text-mute);white-space:nowrap;">
+            Hora del local: <b id="horaLocalAhora" style="color:var(--navy);font-size:15px;">--:--</b>
+          </span>
         </div>
         <div class="fila-escaner">
           <input type="text" id="barcodeInput" placeholder="Escanea código, EAN o nombre del producto..." autofocus style="padding:12px 14px;border:1px solid var(--line);border-radius:8px;font-size:15px;">
@@ -12136,6 +12144,20 @@ function renderChipsDemora() {
 
   cont.querySelectorAll('[data-demora]').forEach(b =>
     b.addEventListener('click', () => fijarDemora(Number(b.dataset.demora))));
+
+  pintarHoraLocal();
+}
+
+// La hora del local, la MISMA con la que se calcula la entrega y se imprime
+// el ticket. Se refresca sola cada 30 segundos mientras la barra este a la
+// vista; si estuviera oculta no hay nada que pintar y el timer no molesta.
+let timerHoraLocal = null;
+
+function pintarHoraLocal() {
+  const el = byId('horaLocalAhora');
+  if (!el) return;
+  el.textContent = horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (!timerHoraLocal) timerHoraLocal = setInterval(pintarHoraLocal, 30000);
 }
 
 async function fijarDemora(minutos) {
