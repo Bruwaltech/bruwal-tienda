@@ -12019,23 +12019,51 @@ function estilosTicket58() {
 // navegador y no hay forma de saltearla desde la pagina. Para que salga
 // derecho a la impresora hay que abrir Chrome con --kiosk-printing; sin
 // eso, el vendedor confirma en el dialogo y listo.
+// Imprime desde un IFRAME oculto, no desde una ventana nueva.
+//
+// El motivo es concreto: el ticket sale DESPUES de guardar el pedido, y en
+// el medio hay un await al servidor. Para el navegador eso ya no cuenta
+// como "algo que hizo el usuario", asi que bloqueaba la ventana emergente
+// y aparecia "El navegador bloqueo la ventana de impresion". Con un iframe
+// no hay ventana que bloquear, no se abre una pestana de mas, y no hay que
+// pedirle al local que permita emergentes.
+//
+// OJO: ningun navegador imprime sin mostrar su dialogo — es una proteccion
+// propia y no se puede saltear desde la pagina. Para que salga derecho a
+// la impresora hay que abrir Chrome con --kiosk-printing.
 function abrirVentanaTicket(titulo, contenidoHtml, autoImprimir) {
-  const ventana = window.open('', '_blank', 'width=380,height=620');
-  if (!ventana) { alert('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return null; }
+  // Uno por vez: si quedan varios colgados, cada impresion arrastra los
+  // anteriores.
+  const viejo = document.getElementById('marcoTicket');
+  if (viejo) viejo.remove();
 
-  ventana.document.write(
+  const marco = document.createElement('iframe');
+  marco.id = 'marcoTicket';
+  marco.setAttribute('aria-hidden', 'true');
+  marco.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  document.body.appendChild(marco);
+
+  const doc = marco.contentWindow.document;
+  doc.open();
+  doc.write(
     '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(titulo) + '</title>' +
-    '<style>' + estilosTicket58() + '</style></head><body>' +
-      contenidoHtml +
-      '<button class="no-print" onclick="window.print()" style="margin-top:10px;width:100%;padding:9px;font-size:12px;cursor:pointer;background:#15294D;color:#fff;border:none;border-radius:6px;">Imprimir de nuevo</button>' +
-      '<button class="no-print" onclick="window.close();" style="margin-top:6px;width:100%;padding:9px;font-size:12px;cursor:pointer;background:#fff;color:#15294D;border:1.5px solid #15294D;border-radius:6px;">Cerrar</button>' +
-      (autoImprimir
-        ? '<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };<\/script>'
-        : '') +
-    '</body></html>'
+    '<style>' + estilosTicket58() + '</style></head><body>' + contenidoHtml + '</body></html>'
   );
-  ventana.document.close();
-  return ventana;
+  doc.close();
+
+  if (autoImprimir) {
+    // El respiro es para que el navegador termine de aplicar los estilos:
+    // imprimiendo en el mismo tick, el ticket salia sin formato.
+    setTimeout(() => {
+      try {
+        marco.contentWindow.focus();
+        marco.contentWindow.print();
+      } catch (e) {
+        alert('No se pudo abrir la impresión:\n\n' + (e && e.message ? e.message : e));
+      }
+    }, 350);
+  }
+  return marco.contentWindow;
 }
 
 // El detalle de la variante en el ticket: "Tamaño: Grande" debajo del

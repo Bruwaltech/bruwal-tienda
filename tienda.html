@@ -1662,19 +1662,37 @@ function recargoDeLaMitad(p, variante){
   return Math.max(0, precioDeVariante(p, v) - mitadJustaDe(p));
 }
 
-// El recargo del carrito: cero si las mitades estan de a pares. Si sobra
-// una, se cobra el recargo MAS BARATO de las que hay — a favor del
-// cliente, y ademas es deterministico (no depende del orden de carga).
-function recargoMitadSuelta(){
-  const recargos = [];
+const claveDeLinea = (l) => claveLinea(l.productId, l.opciones, l.variante);
+
+// Cuantas medias hay en total. Si el numero es impar, una queda sin pareja.
+function cantidadDeMitades(){
+  let n = 0;
+  Object.values(cart).forEach(l => { if (esVarianteMitad(l.variante)) n += Number(l.qty || 0); });
+  return n;
+}
+
+// A que linea se le carga la mitad que quedo sola: a la del recargo MAS
+// BARATO. A favor del cliente, y deterministico — no depende del orden en
+// que fue armando el carrito.
+function lineaConMitadSuelta(){
+  if (cantidadDeMitades() % 2 === 0) return null;
+  let elegida = null;
   Object.values(cart).forEach(l => {
     if (!esVarianteMitad(l.variante)) return;
     const p = productoDe(l);
     if (!p) return;
-    for (let i = 0; i < l.qty; i++) recargos.push(recargoDeLaMitad(p, l.variante));
+    const r = recargoDeLaMitad(p, l.variante);
+    if (!elegida || r < elegida.recargo) elegida = { clave: claveDeLinea(l), recargo: r };
   });
-  if (!recargos.length || recargos.length % 2 === 0) return 0;
-  return Math.min.apply(null, recargos);
+  return elegida;
+}
+
+// Cuanto recargo se esta cobrando en total (0 o el de una sola mitad).
+// Se usa para el aviso del carrito; el monto en si ya viaja dentro del
+// precio de la linea, no aparte.
+function recargoMitadSuelta(){
+  const suelta = lineaConMitadSuelta();
+  return suelta ? suelta.recargo : 0;
 }
 
 const precioUnitario = (linea) => {
@@ -1686,9 +1704,16 @@ const precioUnitario = (linea) => {
     const clave = claveVariante(atributosRealesDe(linea.variante));
     const v = p.variantes.find(x => claveVariante(x.atributos) === clave);
     base = precioDeVariante(p, v);
-    // Media pizza: mitad justa de su gusto. El recargo por quedar sola va
-    // aparte, una sola vez, en recargoMitadSuelta().
-    if (esVarianteMitad(linea.variante)) base = mitadJustaDe(p);
+    // Media pizza: mitad justa de su gusto. Y si esta es la mitad que quedo
+    // sin pareja, el recargo va DENTRO de su precio — en el ticket tiene
+    // que verse un solo numero, no un renglon de "recargo" aparte.
+    if (esVarianteMitad(linea.variante)) {
+      base = mitadJustaDe(p);
+      const suelta = lineaConMitadSuelta();
+      if (suelta && suelta.clave === claveDeLinea(linea)) {
+        base += suelta.recargo / Math.max(1, Number(linea.qty || 1));
+      }
+    }
   }
   return base + extras;
 };
@@ -1699,8 +1724,9 @@ const unidadesEnCarrito = () => Object.values(cart).reduce((s, l) => {
   const p = productoDe(l);
   return s + (seVendePorMedida(p) ? 1 : l.qty);
 }, 0);
-const totalDelCarrito   = () =>
-  Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0) + recargoMitadSuelta();
+// El recargo ya esta adentro del precio de la mitad suelta: sumarlo otra
+// vez aca lo cobraria dos veces.
+const totalDelCarrito   = () => Object.values(cart).reduce((s, l) => s + precioUnitario(l) * l.qty, 0);
 
 // Si hay al menos un producto físico en el carrito, hace falta preguntar
 // cómo lo recibe (retiro/envío) — un carrito de solo servicios (ej. un
@@ -2382,16 +2408,9 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     }
   });
 
-  // La mitad que quedo sin pareja paga el recargo una sola vez. Va como un
-  // renglon mas del pedido y no como un ajuste suelto del total: asi la
-  // suma de los renglones sigue dando el total, que es lo que leen el
-  // ticket, la caja y las estadisticas.
-  const recargoMitad = recargoMitadSuelta();
-  if (recargoMitad > 0) {
-    total += recargoMitad;
-    items.push({ name: 'Recargo por media sola', label: 'Recargo por media sola', qty: 1, price: recargoMitad, opciones: [], variante: null });
-    listaProductos += '• Recargo por media sola = $' + recargoMitad.toLocaleString('es-AR') + '\n';
-  }
+  // El recargo de la mitad sola NO va como renglon aparte: ya esta dentro
+  // del precio de esa mitad (ver precioUnitario). En el ticket y en el
+  // pedido se ve un solo numero por producto.
 
   byId('confirmOrderBtn').disabled = true;
 
