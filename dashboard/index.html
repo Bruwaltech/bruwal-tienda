@@ -395,6 +395,28 @@ h1, h2, h3 {
 .buscar-prod-x:hover { color:var(--navy); }
 .buscar-prod-cuenta { font-size:13px; color:var(--text-mute); white-space:nowrap; }
 
+/* ---- Lista ordenable de categorias ---- */
+.cat-fila {
+  display:flex; align-items:center; gap:9px; background:#fff;
+  border:1px solid var(--line); border-radius:9px; padding:8px 10px; cursor:grab;
+}
+.cat-fila:active { cursor:grabbing; }
+.cat-fila.arrastrando { opacity:.35; }
+.cat-fila.encima { border-color:var(--celeste); background:#EAF4FD; }
+.cat-fila-num {
+  width:22px; height:22px; flex-shrink:0; border-radius:50%; background:var(--bg);
+  color:var(--text-mute); font-size:11.5px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+.cat-fila-nombre { flex:1; font-size:13.5px; font-weight:600; color:var(--navy); }
+.cat-fila-mover, .cat-fila-x {
+  border:none; background:none; cursor:pointer; font-family:inherit;
+  font-size:14px; line-height:1; padding:4px 8px; border-radius:6px; color:var(--text-mute);
+}
+.cat-fila-mover:hover:not(:disabled) { background:var(--bg); color:var(--navy); }
+.cat-fila-mover:disabled { opacity:.22; cursor:default; }
+.cat-fila-x:hover { background:#FDECEC; color:var(--danger); }
+
 /* Boton que se comporta como enlace, para acciones secundarias del login */
 .link-suave {
   display: block;
@@ -2765,8 +2787,11 @@ tr:last-child td { border-bottom: none; }
     <button class="modal-close" id="closeCategoriasModal">✕</button>
     <h3><i class="fa-solid fa-tags" style="color:var(--celeste);"></i> Categorías de tu tienda</h3>
     <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;line-height:1.6;">
-      Con esto tus clientes filtran el catálogo. Por ejemplo, una tienda de
+      Con esto tus clientes recorren el catálogo. Por ejemplo, una tienda de
       electrónica puede tener Teléfonos, Auriculares y Cargadores.
+      <b style="color:var(--navy);">El orden de la lista es el orden en que
+      las ve tu cliente</b>: lo que pongas primero es lo primero que aparece
+      al entrar a tu tienda.
     </p>
 
     <div style="display:flex;gap:8px;margin-bottom:18px;">
@@ -2777,10 +2802,13 @@ tr:last-child td { border-bottom: none; }
 
     <div id="sugerenciasCategorias" style="margin-bottom:18px;"></div>
 
-    <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px;">
-      Tus categorías
+    <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">
+      Tus categorías — arrastrá o usá las flechas para ordenarlas
     </div>
-    <div id="listaCategorias" style="display:flex;flex-wrap:wrap;gap:8px;min-height:44px;"></div>
+    <div style="font-size:12px;color:var(--text-mute);margin-bottom:10px;">
+      La <b>1</b> es la primera que ve tu cliente.
+    </div>
+    <div id="listaCategorias" style="display:flex;flex-direction:column;gap:7px;min-height:44px;"></div>
 
     <button type="button" id="guardarCategoriasBtn" class="btn btn-primary" style="width:100%;margin-top:22px;">Guardar</button>
 
@@ -5092,18 +5120,88 @@ function categoriasDeLaTienda() {
   return [...new Set(products.map(p => p.category).filter(Boolean))].sort();
 }
 
+// El orden de categoriasEnEdicion ES el orden que va a ver el cliente: se
+// guarda tal cual en store_profiles.categorias y la tienda lo respeta.
+function moverCategoria(desde, hasta) {
+  if (hasta < 0 || hasta >= categoriasEnEdicion.length || desde === hasta) return;
+  const [c] = categoriasEnEdicion.splice(desde, 1);
+  categoriasEnEdicion.splice(hasta, 0, c);
+  renderCategorias();
+}
+
+// La lista guardada puede haber quedado corta: hay categorias escritas a
+// mano al cargar un producto que nunca se agregaron aca. Si falta alguna, el
+// vendedor no la puede acomodar y en la tienda le cae al final. Se suman al
+// abrir el modal, al final, para que las ponga donde quiera.
+function listaDeCategoriasParaOrdenar() {
+  const lista = [];
+  const sumar = (c) => {
+    const t = String(c || '').trim();
+    if (t && !lista.some(x => claveCat(x) === claveCat(t))) lista.push(t);
+  };
+  (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).forEach(sumar);
+  [...new Set(products.map(p => String(p.category || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es'))
+    .forEach(sumar);
+  return lista;
+}
+
+// Arrastrar es lo comodo en la compu, pero en el celular el arrastre HTML no
+// existe: por eso ademas van las flechas, que son las que de verdad usa el
+// que carga desde el telefono.
+let catArrastradaDesde = null;
+
 function renderCategorias() {
   const cont = byId('listaCategorias');
+  const ultima = categoriasEnEdicion.length - 1;
+
   cont.innerHTML = categoriasEnEdicion.length
     ? categoriasEnEdicion.map((c, i) =>
-        '<span class="chip-cat">' + escapeHtml(c) +
-        '<button type="button" data-i="' + i + '" title="Quitar">✕</button></span>').join('')
-    : '<span style="color:var(--text-mute);font-size:13px;">Todavía no cargaste ninguna.</span>';
+        '<div class="cat-fila" draggable="true" data-pos="' + i + '">' +
+          '<span class="cat-fila-num">' + (i + 1) + '</span>' +
+          '<span class="cat-fila-nombre">' + escapeHtml(c) + '</span>' +
+          '<button type="button" class="cat-fila-mover" data-subir="' + i + '" title="Subir"' +
+            (i === 0 ? ' disabled' : '') + '>\u2191</button>' +
+          '<button type="button" class="cat-fila-mover" data-bajar="' + i + '" title="Bajar"' +
+            (i === ultima ? ' disabled' : '') + '>\u2193</button>' +
+          '<button type="button" class="cat-fila-x" data-i="' + i + '" title="Quitar de la lista">\u2715</button>' +
+        '</div>').join('')
+    : '<span style="color:var(--text-mute);font-size:13px;">Todav\u00eda no cargaste ninguna.</span>';
 
   cont.querySelectorAll('button[data-i]').forEach(b => {
     b.addEventListener('click', () => {
       categoriasEnEdicion.splice(+b.dataset.i, 1);
       renderCategorias();
+    });
+  });
+
+  cont.querySelectorAll('button[data-subir]').forEach(b => {
+    b.addEventListener('click', () => moverCategoria(+b.dataset.subir, +b.dataset.subir - 1));
+  });
+  cont.querySelectorAll('button[data-bajar]').forEach(b => {
+    b.addEventListener('click', () => moverCategoria(+b.dataset.bajar, +b.dataset.bajar + 1));
+  });
+
+  cont.querySelectorAll('.cat-fila').forEach(fila => {
+    fila.addEventListener('dragstart', () => {
+      catArrastradaDesde = +fila.dataset.pos;
+      fila.classList.add('arrastrando');
+    });
+    fila.addEventListener('dragend', () => {
+      catArrastradaDesde = null;
+      cont.querySelectorAll('.cat-fila').forEach(f => f.classList.remove('arrastrando', 'encima'));
+    });
+    // Sin preventDefault el navegador no deja soltar nada encima.
+    fila.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (catArrastradaDesde !== null && +fila.dataset.pos !== catArrastradaDesde) fila.classList.add('encima');
+    });
+    fila.addEventListener('dragleave', () => fila.classList.remove('encima'));
+    fila.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (catArrastradaDesde === null) return;
+      moverCategoria(catArrastradaDesde, +fila.dataset.pos);
+      catArrastradaDesde = null;
     });
   });
 
@@ -5145,7 +5243,7 @@ function agregarCategoria(nombre) {
 }
 
 byId('gestionarCategoriasBtn').addEventListener('click', () => {
-  categoriasEnEdicion = [...categoriasDeLaTienda()];
+  categoriasEnEdicion = listaDeCategoriasParaOrdenar();
   renderCategorias();
   byId('nuevaCategoria').value = '';
   show(byId('categoriasModal'));
