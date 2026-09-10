@@ -8224,11 +8224,19 @@ async function buscarVentasFaltantes() {
     }
 
     cuerpo.innerHTML =
-      '<div style="color:var(--danger);font-weight:600;margin-bottom:10px;">' +
+      '<div style="color:var(--danger);font-weight:600;margin-bottom:6px;">' +
         faltantes.length + (faltantes.length === 1 ? ' venta de Mercado Libre no est\u00e1' : ' ventas de Mercado Libre no est\u00e1n') +
         ' registrada' + (faltantes.length === 1 ? '' : 's') + ' en BRUWAL.</div>' +
+      // La columna "\u00bfAvis\u00f3 ML?" separa dos problemas que se ven igual desde
+      // afuera pero se arreglan distinto. Si no se explica, es un dato mudo.
+      '<div style="font-size:12px;margin-bottom:10px;line-height:1.6;">' +
+        '<b>S\u00ed, y no se registr\u00f3</b>: Mercado Libre avis\u00f3 y BRUWAL no la guard\u00f3. ' +
+        'Era el caso de las publicaciones sin vincular, ya corregido: las pr\u00f3ximas entran solas.<br>' +
+        '<b>No lleg\u00f3 el aviso</b>: Mercado Libre nunca nos notific\u00f3 esta venta. ' +
+        'Eso es la suscripci\u00f3n a las notificaciones y hay que revisarla aparte.' +
+      '</div>' +
       '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-      '<thead><tr>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', ''].map(t =>
+      '<thead><tr>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', '\u00bfAvis\u00f3 ML?', ''].map(t =>
         '<th style="text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);font-size:11.5px;' +
         'text-transform:uppercase;letter-spacing:.03em;color:var(--text-mute);">' + t + '</th>').join('') +
       '</tr></thead><tbody>' +
@@ -8241,6 +8249,14 @@ async function buscarVentasFaltantes() {
             (v.productos || []).map(p => escapeHtml(p.cantidad + '\u00d7 ' + p.titulo)).join('<br>') + '</td>' +
           '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;font-weight:700;color:var(--navy);">' +
             money(Math.round(v.total)) + '</td>' +
+          // `vista` = existe la fila en store_ml_ordenes, y esa tabla la
+          // escribe UNICAMENTE el webhook. Entonces este si/no dice si
+          // Mercado Libre nos avis\u00f3 de la venta, que es justo lo que hay
+          // que saber para distinguir los dos problemas posibles.
+          '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:12px;">' +
+            (v.vista
+              ? '<span style="color:var(--stock);">S\u00ed, y no se registr\u00f3</span>'
+              : '<span style="color:var(--danger);">No lleg\u00f3 el aviso</span>') + '</td>' +
           '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
             '<button type="button" class="icon-btn" data-importar="' + escapeHtml(v.id) + '" ' +
             'data-total="' + v.total + '" style="color:var(--stock);">\u2b07 Traer a BRUWAL</button></td>' +
