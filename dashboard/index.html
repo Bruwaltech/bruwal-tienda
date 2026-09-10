@@ -330,6 +330,54 @@ h1, h2, h3 {
 }
 .chip-sug:hover { border-color: var(--celeste); color: var(--celeste); border-style: solid; }
 
+/* ---- Acomodar categorias ---- */
+.acom-fila { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+.acom-fila > label {
+  flex:0 0 82px; font-size:12px; font-weight:700; color:var(--text-mute);
+  text-transform:uppercase; letter-spacing:.03em;
+}
+.acom-fila select, .acom-fila input[type="text"] {
+  flex:1; min-width:180px; padding:10px 12px; border:1px solid var(--line);
+  border-radius:8px; font-size:14px; font-family:inherit; background:#fff; color:var(--navy);
+}
+.acom-caja { border:1px solid var(--line); border-radius:10px; padding:15px; background:var(--bg); }
+.acom-lista {
+  max-height:280px; overflow-y:auto; border:1px solid var(--line);
+  border-radius:8px; background:#fff; margin:10px 0 14px;
+}
+.acom-item {
+  display:flex; align-items:center; gap:10px; padding:9px 12px;
+  border-bottom:1px solid var(--line); font-size:13.5px; cursor:pointer;
+}
+.acom-item:last-child { border-bottom:none; }
+.acom-item:hover { background:var(--bg); }
+.acom-item input { width:17px; height:17px; flex-shrink:0; cursor:pointer; }
+.acom-item-nombre { flex:1; color:var(--navy); font-weight:600; }
+.acom-item-dato { color:var(--text-mute); font-size:12.5px; white-space:nowrap; }
+.acom-resumen { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:18px; }
+.acom-pill {
+  display:inline-flex; align-items:center; gap:7px; background:#fff;
+  border:1px solid var(--line); border-radius:999px; padding:6px 8px 6px 13px; font-size:13px;
+}
+.acom-pill b { color:var(--navy); font-weight:700; }
+.acom-pill span { color:var(--text-mute); font-size:12px; }
+.acom-pill button {
+  border:none; background:none; color:var(--celeste); cursor:pointer;
+  font-size:12px; font-weight:700; font-family:inherit; padding:3px 7px; border-radius:999px;
+}
+.acom-pill button:hover { background:#EAF4FD; }
+.acom-aviso {
+  border:1px solid #F5C518; background:#FFF9E6; border-radius:10px;
+  padding:13px 15px; margin-bottom:18px; font-size:13.5px; line-height:1.6; color:var(--navy);
+}
+.acom-aviso b { font-weight:700; }
+.acom-aviso button {
+  border:1px solid var(--navy); background:#fff; color:var(--navy); cursor:pointer;
+  font-family:inherit; font-size:12.5px; font-weight:700; padding:6px 13px;
+  border-radius:999px; margin-top:9px;
+}
+.acom-aviso button:hover { background:var(--navy); color:#fff; }
+
 /* Boton que se comporta como enlace, para acciones secundarias del login */
 .link-suave {
   display: block;
@@ -2706,6 +2754,62 @@ tr:last-child td { border-bottom: none; }
     <div id="listaCategorias" style="display:flex;flex-wrap:wrap;gap:8px;min-height:44px;"></div>
 
     <button type="button" id="guardarCategoriasBtn" class="btn btn-primary" style="width:100%;margin-top:22px;">Guardar</button>
+
+    <!-- Esta lista son los NOMBRES. Mover los productos de una categoria a
+         otra es otra cosa y vive en su propio modal. -->
+    <button type="button" id="abrirAcomodarBtn" class="btn"
+            style="width:100%;margin-top:10px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+      <i class="fa-solid fa-right-left"></i> Acomodar los productos por categoría
+    </button>
+  </div>
+</div>
+
+<!-- MODAL ACOMODAR CATEGORÍAS -->
+<div class="modal-overlay hidden" id="acomodarModal">
+  <div class="modal" style="max-width:720px;">
+    <button class="modal-close" id="closeAcomodarModal">✕</button>
+    <h3><i class="fa-solid fa-right-left" style="color:var(--celeste);"></i> Acomodar los productos</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;line-height:1.6;">
+      Acá se mueven los productos de una categoría a otra. Sirve cuando una
+      categoría quedó con dos cosas y el resto está mezclado adentro de otra
+      más grande.
+    </p>
+
+    <!-- Categorias que son la misma escrita distinto -->
+    <div id="acomRepetidas"></div>
+
+    <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px;">
+      Lo que tenés cargado hoy
+    </div>
+    <div id="acomResumen" class="acom-resumen"></div>
+
+    <div class="acom-caja">
+      <div class="acom-fila">
+        <label>Sacar de</label>
+        <select id="acomOrigen"></select>
+      </div>
+
+      <div class="acom-fila">
+        <label>Buscar</label>
+        <input type="text" id="acomFiltro" placeholder="Ej: auricular — filtra por nombre adentro de esa categoría">
+      </div>
+
+      <div id="acomAcciones" style="font-size:13px;color:var(--text-mute);margin-bottom:4px;"></div>
+      <div id="acomLista" class="acom-lista"></div>
+
+      <div class="acom-fila">
+        <label>Mover a</label>
+        <select id="acomDestino"></select>
+      </div>
+      <div class="acom-fila hidden" id="acomFilaNueva">
+        <label>Nombre</label>
+        <input type="text" id="acomDestinoNueva" maxlength="40" placeholder="Ej: Auriculares">
+      </div>
+
+      <button type="button" id="acomMoverBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">
+        Mover
+      </button>
+    </div>
   </div>
 </div>
 
@@ -5047,6 +5151,364 @@ byId('guardarCategoriasBtn').addEventListener('click', async () => {
   currentStore.categorias = [...categoriasEnEdicion];
   refrescarListaDeCategorias();
   hide(byId('categoriasModal'));
+});
+
+// ===================== ACOMODAR CATEGORÍAS =====================
+// De donde sale esto: en una tienda de 408 productos "Auriculares" tenía 2
+// y adentro de "Accesorios" (132 productos) había 20 auriculares mas. La
+// unica forma de arreglarlo era abrir producto por producto.
+//
+// El modal de Categorías maneja la LISTA de nombres que ve el cliente; esto
+// maneja los PRODUCTOS. Son dos cosas distintas a proposito: sacar un
+// nombre de la lista nunca movio un producto de lado.
+
+let acomMarcados = new Set();
+let acomOrigenes = [];
+let acomDestinos = [];
+
+const claveCat = (c) => normalizarTexto(c).trim();
+
+// La categoria de un producto tal cual esta guardada. null y '' son la
+// misma cosa para el cliente (no tiene rubro), pero NO para la base: por eso
+// todo lo que escribe se hace por id y nunca con .eq('category', ...).
+const catCrudaDe = (p) => (p.category == null ? '' : String(p.category));
+
+// Lo que hay CARGADO, no la lista guardada del perfil: interesan tambien
+// las categorias que el vendedor escribio a mano y nunca agrego a la lista.
+// Sin trim a proposito: "Auriculares" y "Auriculares " tienen que verse como
+// dos, que es el problema que hay que mostrar.
+function categoriasEnUso() {
+  const mapa = new Map();
+  products.forEach(p => {
+    const cruda = catCrudaDe(p);
+    if (!mapa.has(cruda)) mapa.set(cruda, { nombre: cruda, cantidad: 0 });
+    mapa.get(cruda).cantidad++;
+  });
+  return [...mapa.values()].sort((a, b) => b.cantidad - a.cantidad);
+}
+
+// Categorias que son la misma escrita distinto: "Auriculares" y
+// "Auriculares " (con un espacio al final), "Modulos" y "Módulos". Al
+// cliente le aparecen como dos rubros separados, cada uno con la mitad.
+function categoriasRepetidas() {
+  const grupos = new Map();
+  categoriasEnUso().forEach(c => {
+    if (!c.nombre.trim()) return;
+    const k = claveCat(c.nombre);
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(c);
+  });
+  return [...grupos.values()].filter(g => g.length > 1);
+}
+
+const productosDeCategoria = (nombre) => products.filter(p => catCrudaDe(p) === nombre);
+
+// PostgREST manda el filtro en la direccion: 132 ids de una vez arman una
+// URL enorme que algunos proxys cortan. Se manda de a 50.
+async function moverProductosA(ids, categoria) {
+  const LOTE = 50;
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const parte = ids.slice(i, i + LOTE);
+    const { error } = await sb.from('store_products')
+      .update({ category: categoria })
+      .in('id', parte);
+    if (error) return error;
+    // La copia en memoria se actualiza junto con la base: si algo falla a
+    // mitad de camino, lo que quedo en pantalla es lo que quedo guardado.
+    products.forEach(p => { if (parte.includes(p.id)) p.category = categoria; });
+  }
+  return null;
+}
+
+// La lista del perfil se mantiene al dia sola: si no, mover productos a una
+// categoria nueva la dejaba fuera de las sugerencias del alta de producto.
+async function guardarListaCategorias(lista) {
+  if (!currentStore) return null;
+  const limpia = [];
+  (lista || []).forEach(c => {
+    const t = String(c || '').trim();
+    if (t && !limpia.some(x => claveCat(x) === claveCat(t))) limpia.push(t);
+  });
+  const { error } = await sb.from('store_profiles')
+    .update({ categorias: limpia })
+    .eq('slug', currentStore.slug);
+  if (!error) currentStore.categorias = limpia;
+  return error;
+}
+
+// ---- Pintado ----
+function renderAcomRepetidas() {
+  const cont = byId('acomRepetidas');
+  const grupos = categoriasRepetidas();
+  if (!grupos.length) { cont.innerHTML = ''; return; }
+
+  cont.innerHTML = grupos.map((g, i) => {
+    const principal = g[0];   // la que mas productos tiene
+    const detalle = g.map(c =>
+      '<b>\u201c' + escapeHtml(c.nombre) + '\u201d</b> (' + c.cantidad + ')').join(' y ');
+    return '<div class="acom-aviso">' +
+      'Ten\u00e9s la misma categor\u00eda escrita de dos formas: ' + detalle + '. ' +
+      'Al cliente le aparecen como dos rubros distintos, cada uno con una parte de los productos.' +
+      '<br><button type="button" data-unificar="' + i + '">Unificar todo en \u201c' +
+        escapeHtml(principal.nombre) + '\u201d</button>' +
+    '</div>';
+  }).join('');
+
+  cont.querySelectorAll('[data-unificar]').forEach(b => {
+    b.addEventListener('click', () => unificarGrupo(Number(b.dataset.unificar)));
+  });
+}
+
+function renderAcomResumen() {
+  const cont = byId('acomResumen');
+  cont.innerHTML = categoriasEnUso().map(c => {
+    const nombre = c.nombre.trim() ? escapeHtml(c.nombre) : '<i>Sin categor\u00eda</i>';
+    return '<span class="acom-pill">' +
+      '<b>' + nombre + '</b> <span>' + c.cantidad + '</span>' +
+      (c.nombre.trim() ? '<button type="button" data-renombrar="' + escapeHtml(c.nombre) + '">Renombrar</button>' : '') +
+    '</span>';
+  }).join('');
+
+  cont.querySelectorAll('[data-renombrar]').forEach(b => {
+    b.addEventListener('click', () => renombrarCategoria(b.dataset.renombrar));
+  });
+}
+
+function llenarSelectsAcomodar() {
+  acomOrigenes = categoriasEnUso();
+  const selOrigen = byId('acomOrigen');
+  const elegidoAntes = selOrigen.value;
+  selOrigen.innerHTML = acomOrigenes.map((c, i) =>
+    '<option value="' + i + '">' +
+      (c.nombre.trim() ? escapeHtml(c.nombre) : 'Sin categor\u00eda') +
+      ' \u2014 ' + c.cantidad + (c.cantidad === 1 ? ' producto' : ' productos') +
+    '</option>').join('');
+  if (elegidoAntes && acomOrigenes[Number(elegidoAntes)]) selOrigen.value = elegidoAntes;
+
+  // El destino incluye las que estan en uso Y las que el vendedor cargo en
+  // la lista sin usar todavia: mover algo a una categoria vacia es
+  // justamente para lo que la creo.
+  const nombres = [];
+  categoriasEnUso().forEach(c => { if (c.nombre.trim()) nombres.push(c.nombre.trim()); });
+  (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).forEach(c => {
+    if (String(c || '').trim()) nombres.push(String(c).trim());
+  });
+  acomDestinos = [];
+  nombres.forEach(n => { if (!acomDestinos.some(x => claveCat(x) === claveCat(n))) acomDestinos.push(n); });
+  acomDestinos.sort((a, b) => a.localeCompare(b, 'es'));
+
+  const selDestino = byId('acomDestino');
+  const destinoAntes = selDestino.value;
+  selDestino.innerHTML =
+    acomDestinos.map((n, i) => '<option value="' + i + '">' + escapeHtml(n) + '</option>').join('') +
+    '<option value="__nueva">\u2795 Una categor\u00eda nueva\u2026</option>' +
+    '<option value="__sin">Sacarles la categor\u00eda</option>';
+  if (destinoAntes) selDestino.value = destinoAntes;
+}
+
+function productosDelOrigen() {
+  const c = acomOrigenes[Number(byId('acomOrigen').value)];
+  return c ? productosDeCategoria(c.nombre) : [];
+}
+
+function renderAcomLista() {
+  const filtro = normalizarTexto(byId('acomFiltro').value).trim();
+  const dentro = productosDelOrigen();
+  const visibles = filtro
+    ? dentro.filter(p => normalizarTexto(p.name).includes(filtro) ||
+                         normalizarTexto(p.marca || '').includes(filtro))
+    : dentro;
+
+  const acciones = byId('acomAcciones');
+  const marcadosVisibles = visibles.filter(p => acomMarcados.has(p.id)).length;
+  acciones.innerHTML = visibles.length
+    ? visibles.length + (visibles.length === 1 ? ' producto' : ' productos') +
+      (filtro ? ' coinciden con \u201c' + escapeHtml(byId('acomFiltro').value.trim()) + '\u201d' : '') +
+      ' \u00b7 <button type="button" id="acomMarcarTodos" style="border:none;background:none;color:var(--celeste);' +
+      'font:inherit;font-weight:700;cursor:pointer;padding:0;">' +
+      (marcadosVisibles === visibles.length ? 'Desmarcar todos' : 'Marcar los ' + visibles.length) + '</button>'
+    : '';
+
+  byId('acomLista').innerHTML = visibles.length
+    ? visibles.map(p =>
+        '<label class="acom-item">' +
+          '<input type="checkbox" data-acom-id="' + escapeHtml(p.id) + '"' +
+            (acomMarcados.has(p.id) ? ' checked' : '') + '>' +
+          '<span class="acom-item-nombre">' + escapeHtml(p.name) + '</span>' +
+          '<span class="acom-item-dato">' + money(precioVigente(p)) + '</span>' +
+        '</label>').join('')
+    : '<div style="padding:18px;text-align:center;color:var(--text-mute);font-size:13.5px;">' +
+      (dentro.length ? 'Nada con esa palabra ac\u00e1 adentro.' : 'Esta categor\u00eda no tiene productos.') +
+      '</div>';
+
+  byId('acomLista').querySelectorAll('[data-acom-id]').forEach(chk => {
+    chk.addEventListener('change', () => {
+      if (chk.checked) acomMarcados.add(chk.dataset.acomId);
+      else acomMarcados.delete(chk.dataset.acomId);
+      renderAcomLista();
+    });
+  });
+
+  const btnTodos = byId('acomMarcarTodos');
+  if (btnTodos) {
+    btnTodos.addEventListener('click', () => {
+      const todosMarcados = marcadosVisibles === visibles.length;
+      visibles.forEach(p => {
+        if (todosMarcados) acomMarcados.delete(p.id);
+        else acomMarcados.add(p.id);
+      });
+      renderAcomLista();
+    });
+  }
+
+  // Solo cuentan los marcados que siguen en esta categoria: si movio un
+  // lote y despues cambio de origen, los de antes ya no existen ac\u00e1.
+  const enJuego = dentro.filter(p => acomMarcados.has(p.id)).length;
+  byId('acomMoverBtn').textContent = enJuego
+    ? 'Mover ' + enJuego + (enJuego === 1 ? ' producto' : ' productos')
+    : 'Mover';
+  byId('acomMoverBtn').disabled = !enJuego;
+  byId('acomMoverBtn').style.opacity = enJuego ? '1' : '.55';
+}
+
+function renderAcomodar() {
+  renderAcomRepetidas();
+  renderAcomResumen();
+  llenarSelectsAcomodar();
+  renderAcomLista();
+}
+
+// ---- Acciones ----
+async function renombrarCategoria(nombreViejo) {
+  if (!puedeOperar()) return;
+
+  const propuesto = window.prompt('Nuevo nombre para \u201c' + nombreViejo + '\u201d:', nombreViejo);
+  if (propuesto === null) return;
+  const nuevo = propuesto.trim();
+  if (!nuevo || nuevo === nombreViejo) return;
+
+  const ids = productosDeCategoria(nombreViejo).map(p => p.id);
+  const yaExiste = categoriasEnUso().some(c =>
+    c.nombre !== nombreViejo && c.nombre.trim() && claveCat(c.nombre) === claveCat(nuevo));
+
+  // Renombrar a algo que ya existe es unificar. No es un error, pero tiene
+  // que decirlo antes: son dos categorias que se vuelven una sola.
+  if (yaExiste && !confirm(
+      'Ya ten\u00e9s una categor\u00eda \u201c' + nuevo + '\u201d.\n\n' +
+      'Se van a juntar en una sola, con estos ' + ids.length + ' productos adentro. \u00bfSeguimos?')) return;
+
+  const error = await moverProductosA(ids, nuevo);
+  if (error) { alert('No se pudo renombrar:\n\n' + error.message); return; }
+
+  const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : [])
+    .filter(c => claveCat(c) !== claveCat(nombreViejo));
+  lista.push(nuevo);
+  await guardarListaCategorias(lista);
+
+  terminarAcomodada();
+}
+
+async function unificarGrupo(indice) {
+  if (!puedeOperar()) return;
+  const g = categoriasRepetidas()[indice];
+  if (!g) return;
+
+  const principal = g[0].nombre;
+  const ids = [];
+  g.slice(1).forEach(c => productosDeCategoria(c.nombre).forEach(p => ids.push(p.id)));
+  if (!ids.length) return;
+
+  const error = await moverProductosA(ids, principal);
+  if (error) { alert('No se pudieron unificar:\n\n' + error.message); return; }
+
+  const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : [])
+    .filter(c => g.slice(1).every(x => claveCat(c) !== claveCat(x.nombre) || claveCat(c) === claveCat(principal)));
+  lista.push(principal);
+  await guardarListaCategorias(lista);
+
+  terminarAcomodada();
+}
+
+// Despues de cualquier movida: la grilla de productos, las sugerencias del
+// alta y el propio acomodador tienen que mostrar lo mismo que la base.
+function terminarAcomodada() {
+  acomMarcados = new Set();
+  renderProducts();
+  refrescarListaDeCategorias();
+  renderAcomodar();
+}
+
+function abrirAcomodar() {
+  acomMarcados = new Set();
+  byId('acomFiltro').value = '';
+  renderAcomodar();
+  show(byId('acomodarModal'));
+}
+
+byId('abrirAcomodarBtn').addEventListener('click', () => {
+  // Se cierra el de categorias en vez de apilarse encima: dos modales uno
+  // arriba del otro no se entiende cual se esta cerrando.
+  hide(byId('categoriasModal'));
+  abrirAcomodar();
+});
+
+byId('closeAcomodarModal').addEventListener('click', () => hide(byId('acomodarModal')));
+
+byId('acomOrigen').addEventListener('change', () => {
+  acomMarcados = new Set();   // los marcados eran de la categoria anterior
+  byId('acomFiltro').value = '';
+  renderAcomLista();
+});
+
+byId('acomFiltro').addEventListener('input', renderAcomLista);
+
+byId('acomDestino').addEventListener('change', () => {
+  const esNueva = byId('acomDestino').value === '__nueva';
+  byId('acomFilaNueva').classList.toggle('hidden', !esNueva);
+  if (esNueva) byId('acomDestinoNueva').focus();
+});
+
+byId('acomMoverBtn').addEventListener('click', async () => {
+  if (!puedeOperar()) return;
+
+  const dentro = productosDelOrigen();
+  const ids = dentro.filter(p => acomMarcados.has(p.id)).map(p => p.id);
+  if (!ids.length) return;
+
+  const valor = byId('acomDestino').value;
+  let destino;
+  if (valor === '__nueva') {
+    destino = byId('acomDestinoNueva').value.trim();
+    if (!destino) { alert('Escrib\u00ed el nombre de la categor\u00eda nueva.'); return; }
+  } else if (valor === '__sin') {
+    destino = null;
+  } else {
+    destino = acomDestinos[Number(valor)];
+    if (!destino) { alert('Eleg\u00ed a d\u00f3nde mover los productos.'); return; }
+  }
+
+  const btn = byId('acomMoverBtn');
+  const textoAntes = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Moviendo\u2026';
+
+  const error = await moverProductosA(ids, destino);
+
+  btn.disabled = false;
+  btn.textContent = textoAntes;
+
+  if (error) { alert('No se pudieron mover:\n\n' + error.message); return; }
+
+  if (destino) {
+    const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).slice();
+    lista.push(destino);
+    await guardarListaCategorias(lista);
+  }
+
+  byId('acomDestinoNueva').value = '';
+  byId('acomFilaNueva').classList.add('hidden');
+  byId('acomDestino').value = valor === '__nueva' ? '__nueva' : valor;
+  terminarAcomodada();
 });
 
 // ---- Producto físico vs servicio ----
