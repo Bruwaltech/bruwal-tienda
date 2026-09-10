@@ -417,6 +417,32 @@ h1, h2, h3 {
 .cat-fila-mover:disabled { opacity:.22; cursor:default; }
 .cat-fila-x:hover { background:#FDECEC; color:var(--danger); }
 
+/* ---- Seleccion multiple en la lista de productos ---- */
+/* Pegada arriba a proposito: con 400 filas, elegir 20 y despues subir hasta
+   el principio para encontrar el boton era la mitad del trabajo. */
+.barra-sel {
+  position:sticky; top:8px; z-index:15;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  background:var(--navy); color:#fff; border-radius:10px;
+  padding:10px 14px; margin:12px 0; box-shadow:0 8px 22px rgba(21,41,77,.26);
+}
+.barra-sel-cuenta { font-size:13.5px; font-weight:700; margin-right:6px; white-space:nowrap; }
+.barra-sel button {
+  border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.10); color:#fff;
+  border-radius:999px; padding:7px 13px; font-family:inherit; font-size:12.5px;
+  font-weight:700; cursor:pointer; transition:background .15s ease;
+}
+.barra-sel button:hover { background:rgba(255,255,255,.24); }
+.barra-sel button:disabled { opacity:.5; cursor:default; }
+.barra-sel button.peligro { border-color:#F8B4B4; color:#FFD9D9; }
+.barra-sel button.peligro:hover { background:var(--danger); border-color:var(--danger); color:#fff; }
+.barra-sel button.suave { border-color:transparent; background:none; text-decoration:underline; padding:7px 6px; }
+.barra-sel button.suave:hover { background:none; opacity:.75; }
+
+.celda-check { width:36px; text-align:center; }
+.check-prod, .check-todos { width:16px; height:16px; cursor:pointer; accent-color:var(--celeste); }
+tr.fila-elegida > td { background:#EAF4FD; }
+
 /* Boton que se comporta como enlace, para acciones secundarias del login */
 .link-suave {
   display: block;
@@ -1748,6 +1774,19 @@ tr:last-child td { border-bottom: none; }
         <span id="buscarProductosCuenta" class="buscar-prod-cuenta"></span>
       </div>
 
+      <!-- Barra de acciones en lote. Aparece sola cuando hay algo tildado. -->
+      <div id="barraSeleccion" class="barra-sel hidden">
+        <span class="barra-sel-cuenta"><b id="selCuenta">0</b> <span id="selPalabra">seleccionados</span></span>
+        <button type="button" data-sel-accion="categoria">🏷️ Cambiar categoría</button>
+        <button type="button" data-sel-accion="precio">$ Ajustar precio</button>
+        <button type="button" data-sel-accion="oferta">% Poner oferta</button>
+        <button type="button" data-sel-accion="sacar-oferta">Sacar oferta</button>
+        <button type="button" data-sel-accion="pausar">⏸ Pausar</button>
+        <button type="button" data-sel-accion="activar">▶ Activar</button>
+        <button type="button" data-sel-accion="eliminar" class="peligro">Eliminar</button>
+        <button type="button" id="limpiarSeleccion" class="suave">Limpiar</button>
+      </div>
+
       <div id="emptyProducts" class="empty-state hidden">
         <h3>Sin productos</h3>
         <p>Crea tu primer producto para comenzar a recibir pedidos.</p>
@@ -2817,6 +2856,28 @@ tr:last-child td { border-bottom: none; }
     <button type="button" id="abrirAcomodarBtn" class="btn"
             style="width:100%;margin-top:10px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
       <i class="fa-solid fa-right-left"></i> Acomodar los productos por categoría
+    </button>
+  </div>
+</div>
+
+<!-- MODAL: CATEGORÍA DE LOS SELECCIONADOS -->
+<div class="modal-overlay hidden" id="selCategoriaModal">
+  <div class="modal" style="max-width:440px;">
+    <button class="modal-close" id="closeSelCategoriaModal">✕</button>
+    <h3><i class="fa-solid fa-tags" style="color:var(--celeste);"></i> Cambiar la categoría</h3>
+    <p id="selCategoriaCuantos" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 16px;line-height:1.6;"></p>
+
+    <div class="acom-fila">
+      <label>Mover a</label>
+      <select id="selCategoriaDestino"></select>
+    </div>
+    <div class="acom-fila hidden" id="selCategoriaFilaNueva">
+      <label>Nombre</label>
+      <input type="text" id="selCategoriaNueva" maxlength="40" placeholder="Ej: Auriculares">
+    </div>
+
+    <button type="button" id="selCategoriaAplicar" class="btn btn-primary" style="width:100%;margin-top:10px;">
+      Cambiar
     </button>
   </div>
 </div>
@@ -5330,6 +5391,20 @@ function categoriasRepetidas() {
 
 const productosDeCategoria = (nombre) => products.filter(p => catCrudaDe(p) === nombre);
 
+// Los nombres de categoria a los que se puede mandar algo: las que estan en
+// uso Y las que el vendedor cargo en la lista sin usar todavia — mover algo
+// a una categoria vacia es justamente para lo que la creo.
+function nombresDeCategoriasDisponibles() {
+  const nombres = [];
+  categoriasEnUso().forEach(c => { if (c.nombre.trim()) nombres.push(c.nombre.trim()); });
+  (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).forEach(c => {
+    if (String(c || '').trim()) nombres.push(String(c).trim());
+  });
+  const unicos = [];
+  nombres.forEach(n => { if (!unicos.some(x => claveCat(x) === claveCat(n))) unicos.push(n); });
+  return unicos.sort((a, b) => a.localeCompare(b, 'es'));
+}
+
 // PostgREST manda el filtro en la direccion: 132 ids de una vez arman una
 // URL enorme que algunos proxys cortan. Se manda de a 50.
 async function moverProductosA(ids, categoria) {
@@ -5412,17 +5487,7 @@ function llenarSelectsAcomodar() {
     '</option>').join('');
   if (elegidoAntes && acomOrigenes[Number(elegidoAntes)]) selOrigen.value = elegidoAntes;
 
-  // El destino incluye las que estan en uso Y las que el vendedor cargo en
-  // la lista sin usar todavia: mover algo a una categoria vacia es
-  // justamente para lo que la creo.
-  const nombres = [];
-  categoriasEnUso().forEach(c => { if (c.nombre.trim()) nombres.push(c.nombre.trim()); });
-  (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).forEach(c => {
-    if (String(c || '').trim()) nombres.push(String(c).trim());
-  });
-  acomDestinos = [];
-  nombres.forEach(n => { if (!acomDestinos.some(x => claveCat(x) === claveCat(n))) acomDestinos.push(n); });
-  acomDestinos.sort((a, b) => a.localeCompare(b, 'es'));
+  acomDestinos = nombresDeCategoriasDisponibles();
 
   const selDestino = byId('acomDestino');
   const destinoAntes = selDestino.value;
@@ -9977,6 +10042,235 @@ function pintarBarraBuscarProductos(mostrados, total) {
     : total + (total === 1 ? ' producto' : ' productos');
 }
 
+// ============ SELECCION MULTIPLE Y ACCIONES EN LOTE ============
+// Se apoya en el buscador de arriba: buscar "auricular", tildar el
+// encabezado y cambiarle la categoria a las 20 de una. Producto por
+// producto eso eran 20 formularios.
+//
+// La seleccion vive aparte del filtro: si busca, tilda 20 y despues borra la
+// busqueda, las 20 siguen tildadas. Lo que SI la limpia es cambiar de solapa
+// (tienda / servicios / interno), porque ahi cambia el universo entero.
+let seleccionProductos = new Set();
+
+const productosSeleccionados = () =>
+  products.filter(p => seleccionProductos.has(String(p.id)));
+
+function limpiarSeleccionProductos() {
+  seleccionProductos = new Set();
+  renderProducts();
+}
+
+function pintarBarraSeleccion() {
+  const barra = byId('barraSeleccion');
+  if (!barra) return;
+  const elegidos = productosSeleccionados();
+  barra.classList.toggle('hidden', elegidos.length === 0);
+  byId('selCuenta').textContent = elegidos.length;
+  byId('selPalabra').textContent = elegidos.length === 1 ? 'seleccionado' : 'seleccionados';
+}
+
+// PostgREST manda el filtro en la direccion: 300 ids de una vez arman una
+// URL enorme que algunos proxys cortan. Igual que en moverProductosA.
+async function actualizarEnLote(ids, campos) {
+  const LOTE = 50;
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const parte = ids.slice(i, i + LOTE);
+    const { error } = await sb.from('store_products').update(campos).in('id', parte);
+    if (error) return error;
+    products.forEach(p => { if (parte.includes(p.id)) Object.assign(p, campos); });
+  }
+  return null;
+}
+
+async function borrarEnLote(ids) {
+  const LOTE = 50;
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const parte = ids.slice(i, i + LOTE);
+    const { error } = await sb.from('store_products').delete().in('id', parte);
+    if (error) return error;
+  }
+  return null;
+}
+
+// Precio y oferta son distintos: cada producto termina en un numero propio,
+// asi que no hay un solo update que sirva para todos y va uno por uno. Con
+// 20 productos ni se nota; con 300 tarda, y por eso el boton avisa.
+async function aplicarUnoPorUno(elegidos, calcularCampos) {
+  let hechos = 0, saltados = 0;
+  for (const p of elegidos) {
+    const campos = calcularCampos(p);
+    if (!campos) { saltados++; continue; }
+    const { error } = await sb.from('store_products').update(campos).eq('id', p.id);
+    if (error) return { error: error, hechos: hechos, saltados: saltados };
+    Object.assign(p, campos);
+    hechos++;
+  }
+  return { error: null, hechos: hechos, saltados: saltados };
+}
+
+// El numero que escribe el vendedor. Acepta "20", "20%", "20,5" y "-10".
+function pedirPorcentaje(titulo, ejemplo) {
+  const txt = window.prompt(titulo, ejemplo);
+  if (txt === null) return null;
+  const n = Number(String(txt).replace('%', '').replace(',', '.').trim());
+  if (!isFinite(n) || n === 0) { alert('Escrib\u00ed un n\u00famero, por ejemplo ' + ejemplo + '.'); return null; }
+  return n;
+}
+
+function llenarSelectCategoriaSeleccion() {
+  const nombres = nombresDeCategoriasDisponibles();
+  const sel = byId('selCategoriaDestino');
+  sel.innerHTML =
+    nombres.map((n, i) => '<option value="' + i + '">' + escapeHtml(n) + '</option>').join('') +
+    '<option value="__nueva">\u2795 Una categor\u00eda nueva\u2026</option>' +
+    '<option value="__sin">Sacarles la categor\u00eda</option>';
+  sel.dataset.nombres = JSON.stringify(nombres);
+  byId('selCategoriaFilaNueva').classList.add('hidden');
+  byId('selCategoriaNueva').value = '';
+}
+
+async function accionSeleccion(accion) {
+  if (!puedeOperar()) return;
+  const elegidos = productosSeleccionados();
+  if (!elegidos.length) return;
+  const ids = elegidos.map(p => p.id);
+  const cuantos = elegidos.length + (elegidos.length === 1 ? ' producto' : ' productos');
+
+  if (accion === 'categoria') {
+    llenarSelectCategoriaSeleccion();
+    byId('selCategoriaCuantos').textContent =
+      'Se le va a cambiar la categor\u00eda a ' + cuantos + '.';
+    show(byId('selCategoriaModal'));
+    return;
+  }
+
+  if (accion === 'precio') {
+    const pct = pedirPorcentaje(
+      'Ajustar el precio de ' + cuantos + '.\n\n' +
+      'Pon\u00e9 10 para subir un 10%, o -10 para bajarlo un 10%.', '10');
+    if (pct === null) return;
+    const factor = 1 + pct / 100;
+    if (factor <= 0) { alert('Ese descuento deja los precios en cero o en negativo.'); return; }
+
+    // Si el producto esta en oferta, la oferta se mueve con el precio: si no,
+    // subir la lista un 20% agranda el descuento sin que nadie lo pida.
+    const r = await aplicarUnoPorUno(elegidos, (p) => {
+      const lista = Number(p.price) || 0;
+      if (!lista) return null;
+      const campos = { price: Math.round(lista * factor) };
+      if (hayOferta(p)) campos.precio_oferta = Math.round(Number(p.precio_oferta) * factor);
+      return campos;
+    });
+    if (r.error) { alert('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.error.message); }
+    else if (r.saltados) { alert('Listo: ' + r.hechos + ' con precio nuevo.\n' + r.saltados + ' sin precio de lista cargado quedaron igual.'); }
+    terminarAccionSeleccion();
+    return;
+  }
+
+  if (accion === 'oferta') {
+    const pct = pedirPorcentaje('\u00bfQu\u00e9 descuento les pon\u00e9s a ' + cuantos + '?\n\nPor ejemplo 20 para 20% OFF.', '20');
+    if (pct === null) return;
+    if (pct <= 0 || pct >= 100) { alert('El descuento tiene que estar entre 1 y 99.'); return; }
+
+    const r = await aplicarUnoPorUno(elegidos, (p) => {
+      const lista = Number(p.price) || 0;
+      if (!lista) return null;
+      return { precio_oferta: Math.round(lista * (1 - pct / 100)) };
+    });
+    if (r.error) { alert('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.error.message); }
+    else if (r.saltados) { alert('Listo: ' + r.hechos + ' en oferta.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
+    terminarAccionSeleccion();
+    return;
+  }
+
+  if (accion === 'sacar-oferta') {
+    const error = await actualizarEnLote(ids, { precio_oferta: null });
+    if (error) alert('No se pudo:\n\n' + error.message);
+    terminarAccionSeleccion();
+    return;
+  }
+
+  if (accion === 'pausar' || accion === 'activar') {
+    const error = await actualizarEnLote(ids, { pausado: accion === 'pausar' });
+    if (error) alert('No se pudo:\n\n' + error.message);
+    terminarAccionSeleccion();
+    return;
+  }
+
+  if (accion === 'eliminar') {
+    // Los primeros nombres a la vista: borrar 20 cosas a ciegas porque el
+    // cartel dice "20 productos" es como no preguntar nada.
+    const muestra = elegidos.slice(0, 6).map(p => '\u2022 ' + p.name).join('\n');
+    const resto = elegidos.length > 6 ? '\n\u2026 y ' + (elegidos.length - 6) + ' m\u00e1s' : '';
+    if (!confirm('\u00bfEliminar ' + cuantos + '?\n\n' + muestra + resto + '\n\nEsto no se puede deshacer.')) return;
+
+    const error = await borrarEnLote(ids);
+    if (error) { alert('No se pudieron eliminar:\n\n' + error.message); return; }
+    seleccionProductos = new Set();
+    await refreshData();
+    return;
+  }
+}
+
+function terminarAccionSeleccion() {
+  // Los ids borrados o movidos de solapa dejan de existir en la seleccion.
+  const vivos = new Set(products.map(p => String(p.id)));
+  seleccionProductos = new Set([...seleccionProductos].filter(id => vivos.has(id)));
+  renderProducts();
+  refrescarListaDeCategorias();
+}
+
+document.querySelectorAll('#barraSeleccion [data-sel-accion]').forEach(b => {
+  b.addEventListener('click', () => accionSeleccion(b.dataset.selAccion));
+});
+byId('limpiarSeleccion').addEventListener('click', limpiarSeleccionProductos);
+
+byId('closeSelCategoriaModal').addEventListener('click', () => hide(byId('selCategoriaModal')));
+byId('selCategoriaDestino').addEventListener('change', () => {
+  const esNueva = byId('selCategoriaDestino').value === '__nueva';
+  byId('selCategoriaFilaNueva').classList.toggle('hidden', !esNueva);
+  if (esNueva) byId('selCategoriaNueva').focus();
+});
+
+byId('selCategoriaAplicar').addEventListener('click', async () => {
+  if (!puedeOperar()) return;
+  const ids = productosSeleccionados().map(p => p.id);
+  if (!ids.length) { hide(byId('selCategoriaModal')); return; }
+
+  const sel = byId('selCategoriaDestino');
+  const nombres = JSON.parse(sel.dataset.nombres || '[]');
+  let destino;
+  if (sel.value === '__nueva') {
+    destino = byId('selCategoriaNueva').value.trim();
+    if (!destino) { alert('Escrib\u00ed el nombre de la categor\u00eda nueva.'); return; }
+  } else if (sel.value === '__sin') {
+    destino = null;
+  } else {
+    destino = nombres[Number(sel.value)];
+    if (!destino) { alert('Eleg\u00ed una categor\u00eda.'); return; }
+  }
+
+  const btn = byId('selCategoriaAplicar');
+  btn.disabled = true;
+  btn.textContent = 'Cambiando\u2026';
+
+  const error = await moverProductosA(ids, destino);
+
+  btn.disabled = false;
+  btn.textContent = 'Cambiar';
+
+  if (error) { alert('No se pudo:\n\n' + error.message); return; }
+
+  if (destino) {
+    const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).slice();
+    lista.push(destino);
+    await guardarListaCategorias(lista);
+  }
+
+  hide(byId('selCategoriaModal'));
+  terminarAccionSeleccion();
+});
+
 function renderProducts() {
   const panel = PANELES_PRODUCTOS[filtroProductosDestino] || PANELES_PRODUCTOS.tienda;
   const enLaSolapa = products.filter(panel.filtro);
@@ -9995,7 +10289,14 @@ function renderProducts() {
       ? ' <button type="button" class="chip-ofertas' + (soloEnOferta ? ' activo' : '') + '" id="chipOfertas">' +
           '🏷️ ' + enOferta + ' en oferta' + (soloEnOferta ? ' — ver todos' : '') + '</button>'
       : '');
-  byId('productsHead').innerHTML = '<tr>' + panel.columnas.map(c => '<th>' + c + '</th>').join('') + '</tr>';
+  // El tilde del encabezado marca TODO LO QUE SE ESTA VIENDO, no la tienda
+  // entera: buscando "auricular" tilda esos 20 y nada mas, que es justo el
+  // gesto que sirve.
+  const todosMarcados = lista.length > 0 && lista.every(p => seleccionProductos.has(String(p.id)));
+  byId('productsHead').innerHTML = '<tr>' +
+    '<th class="celda-check"><input type="checkbox" class="check-todos" id="checkTodosProductos"' +
+      (todosMarcados ? ' checked' : '') + ' title="Seleccionar todo lo que se ve"></th>' +
+    panel.columnas.map(c => '<th>' + c + '</th>').join('') + '</tr>';
 
   if (lista.length === 0) {
     show(byId('emptyProducts'));
@@ -10025,6 +10326,10 @@ function renderProducts() {
   if (rubroEsElectronica() && !cotizacionCache.USD) {
     obtenerCotizacion('USD').then(() => renderProducts());
   }
+
+  const celdaCheck = (p) =>
+    '<td class="celda-check"><input type="checkbox" class="check-prod" data-check="' +
+      escapeHtml(p.id) + '"' + (seleccionProductos.has(String(p.id)) ? ' checked' : '') + '></td>';
 
   byId('productsBody').innerHTML = lista.map(p => {
     const low = p.stock <= (p.min_stock || 0);
@@ -10058,7 +10363,8 @@ function renderProducts() {
           }).join('')
         : '<span style="color:var(--text-mute);font-size:12px;">Nada</span>';
 
-      return '<tr>' +
+      return '<tr' + (seleccionProductos.has(String(p.id)) ? ' class="fila-elegida"' : '') + '>' +
+        celdaCheck(p) +
         '<td>' + imgHtml + '</td>' + celdaNombre +
         '<td>' + celdaPrecioProducto(p, false) + '</td>' +
         '<td>' + (p.duracion_minutos
@@ -10073,7 +10379,8 @@ function renderProducts() {
     // queda y qué servicios se lo comen.
     if (filtroProductosDestino === 'interno') {
       const usadoEn = serviciosQueUsan(p.id);
-      return '<tr>' +
+      return '<tr' + (seleccionProductos.has(String(p.id)) ? ' class="fila-elegida"' : '') + '>' +
+        celdaCheck(p) +
         '<td>' + imgHtml + '</td>' + celdaNombre +
         '<td>' + formatearCantidad(p.stock, p) +
           ' <span class="badge ' + (low ? 'low' : 'ok') + '">' + (low ? 'BAJO' : 'OK') + '</span></td>' +
@@ -10102,7 +10409,8 @@ function renderProducts() {
       '</tr>';
     }
 
-    return '<tr>' +
+    return '<tr' + (seleccionProductos.has(String(p.id)) ? ' class="fila-elegida"' : '') + '>' +
+      celdaCheck(p) +
       '<td>' + imgHtml + '</td>' +
       '<td><strong>' + escapeHtml(p.name) + '</strong>' +
         (p.pendiente_restauracion ? ' <span class="badge" style="background:#FEF3E2;color:#8A5200;" title="Tomado en parte de pago, todavía no está listo para vender">🔧 Restauración</span>' : '') +
@@ -10142,6 +10450,29 @@ function renderProducts() {
       '</tr>';
   }).join('');
 
+  pintarBarraSeleccion();
+
+  byId('productsBody').querySelectorAll('.check-prod').forEach(chk => {
+    chk.addEventListener('change', () => {
+      if (chk.checked) seleccionProductos.add(String(chk.dataset.check));
+      else seleccionProductos.delete(String(chk.dataset.check));
+      // Se repinta entero para que el tilde del encabezado, el resaltado de
+      // la fila y el contador digan siempre lo mismo.
+      renderProducts();
+    });
+  });
+
+  const checkTodos = byId('checkTodosProductos');
+  if (checkTodos) {
+    checkTodos.addEventListener('change', () => {
+      lista.forEach(p => {
+        if (checkTodos.checked) seleccionProductos.add(String(p.id));
+        else seleccionProductos.delete(String(p.id));
+      });
+      renderProducts();
+    });
+  }
+
   byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
   byId('productsBody').querySelectorAll('[data-oferta]').forEach(b => b.addEventListener('click', () => abrirOferta(b.getAttribute('data-oferta'))));
   const chip = byId('chipOfertas');
@@ -10168,6 +10499,9 @@ function renderProducts() {
 document.querySelectorAll('.productos-destino-tab').forEach(b => {
   b.addEventListener('click', () => {
     filtroProductosDestino = b.dataset.productosDestino;
+    // Cambia el universo entero: dejar tildado un insumo mientras se mira la
+    // tienda es como no ver lo que se esta por tocar.
+    seleccionProductos = new Set();
     document.querySelectorAll('.productos-destino-tab').forEach(o => {
       const activo = o === b;
       o.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
