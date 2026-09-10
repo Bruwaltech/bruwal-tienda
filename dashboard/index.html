@@ -8193,16 +8193,23 @@ const ESTRATEGIAS_CAMPANA = {
 // Nombres de metricas vistos en la API de Product Ads. Las que no esten en
 // la lista se muestran con su nombre crudo en vez de esconderse.
 const NOMBRES_METRICAS = {
-  clicks: 'Clics', prints: 'Impresiones', impressions: 'Impresiones',
-  cost: 'Inversi\u00f3n', acos: 'ACOS', cpc: 'CPC', roas: 'ROAS',
-  total_amount: 'Ventas', direct_amount: 'Ventas directas', indirect_amount: 'Ventas indirectas',
-  units_quantity: 'Unidades', direct_units_quantity: 'Unidades directas',
-  indirect_units_quantity: 'Unidades indirectas', organic_units_quantity: 'Unidades org\u00e1nicas',
-  advertising_fee: 'Comisi\u00f3n', sov: 'Participaci\u00f3n'
+  clicks: 'Clics', prints: 'Veces que se mostr\u00f3', impressions: 'Veces que se mostr\u00f3',
+  ctr: 'Entran', cost: 'Invertido', acos: 'ACOS', cpc: 'Costo por clic', roas: 'ROAS',
+  cvr: 'Compran', total_amount: 'Vendido', direct_amount: 'Vendido del anunciado',
+  indirect_amount: 'Vendido de otros', units_quantity: 'Unidades',
+  direct_units_quantity: 'Unidades del anunciado', indirect_units_quantity: 'Unidades de otros',
+  organic_units_quantity: 'Unidades org\u00e1nicas', organic_units_amount: 'Vendido org\u00e1nico',
+  advertising_fee: 'Comisi\u00f3n', sov: 'Participaci\u00f3n', cost_usd: 'Invertido (USD)'
 };
 
-const METRICAS_EN_PESOS = ['cost', 'cpc', 'total_amount', 'direct_amount', 'indirect_amount', 'advertising_fee'];
-const METRICAS_EN_PORCENTAJE = ['acos', 'sov'];
+// El orden en que se leen: primero lo que se gasta y se vende, despues el
+// detalle. Las que no esten en la lista se muestran igual, al final.
+const ORDEN_METRICAS = ['cost', 'total_amount', 'acos', 'roas', 'units_quantity',
+                        'clicks', 'prints', 'ctr', 'cvr', 'cpc'];
+
+const METRICAS_EN_PESOS = ['cost', 'cpc', 'total_amount', 'direct_amount', 'indirect_amount',
+                           'organic_units_amount', 'advertising_fee'];
+const METRICAS_EN_PORCENTAJE = ['acos', 'sov', 'ctr', 'cvr'];
 
 function valorDeMetrica(clave, valor) {
   if (typeof valor !== 'number') return escapeHtml(String(valor));
@@ -8214,16 +8221,146 @@ function valorDeMetrica(clave, valor) {
 // Las metricas pueden venir adentro de la campana o no venir: depende de si
 // Mercado Libre acepto el rango de fechas. Si no vinieron, no se inventa
 // nada -- simplemente no se muestra esa fila.
+const metricasDe = (c) => (c && (c.metrics || c.metrics_summary)) || null;
+
 function metricasDeCampana(c) {
-  const m = c.metrics || c.metrics_summary || null;
+  const m = metricasDe(c);
   if (!m || typeof m !== 'object') return '';
-  const partes = Object.keys(m)
-    .filter(k => m[k] !== null && m[k] !== undefined && m[k] !== 0)
-    .map(k => '<span style="margin-right:14px;white-space:nowrap;">' +
-      escapeHtml(NOMBRES_METRICAS[k] || k) + ': <strong style="color:var(--navy);">' +
-      valorDeMetrica(k, m[k]) + '</strong></span>');
+
+  const claves = Object.keys(m).filter(k => m[k] !== null && m[k] !== undefined && m[k] !== 0);
+  claves.sort((a, b) => {
+    const ia = ORDEN_METRICAS.indexOf(a), ib = ORDEN_METRICAS.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  const partes = claves.map(k => '<span style="margin-right:14px;white-space:nowrap;">' +
+    escapeHtml(NOMBRES_METRICAS[k] || k) + ': <strong style="color:var(--navy);">' +
+    valorDeMetrica(k, m[k]) + '</strong></span>');
+
   if (!partes.length) return '';
   return '<div style="margin-top:6px;font-size:12px;color:var(--text-mute);">' + partes.join('') + '</div>';
+}
+
+// ---- Recomendaciones sobre el ACOS ----
+// ACOS = de cada $100 que vendes por publicidad, cuantos se van en
+// publicidad. Es el numero con el que se decide si una campana conviene, y
+// solo tiene sentido comparado contra DOS cosas: el objetivo que puso el
+// vendedor, y su propio margen. Un ACOS de 20% con 15% de margen es plata
+// que se pierde en cada venta, aunque el tablero de Mercado Libre lo pinte
+// de verde.
+//
+// Cada regla pide un minimo de datos a proposito: opinar sobre 3 clics es
+// inventar. Con menos de eso, no se dice nada.
+// 41.8 se lee “41,8” en Argentina. toFixed() siempre pone punto.
+const pctAR = (n) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 1 });
+
+function recomendacionesDeCampana(c) {
+  const m = metricasDe(c) || {};
+  const avisos = [];
+
+  const objetivo = Number(c.acos_target) || 0;
+  const real = Number(m.acos) || 0;
+  const invertido = Number(m.cost) || 0;
+  const vendido = Number(m.total_amount) || 0;
+  const clics = Number(m.clicks) || 0;
+  const veces = Number(m.prints) || 0;
+  const unidades = Number(m.units_quantity) || 0;
+
+  // Sin plata invertida no hay nada que analizar todavia.
+  if (!invertido && !clics && !veces) return avisos;
+
+  if (invertido > 0 && vendido === 0 && clics >= 20) {
+    avisos.push({ tono: 'alerta', texto:
+      'Invertiste ' + money(Math.round(invertido)) + ' y no se registr\u00f3 ninguna venta. ' +
+      'Con ' + clics + ' clics ya hay gente entrando: el problema no es que no la vean, ' +
+      'es que entran y no compran. Mir\u00e1 precio, fotos y stock de lo que est\u00e1s anunciando.' });
+  }
+
+  if (objetivo > 0 && real > 0 && real > objetivo * 1.25) {
+    avisos.push({ tono: 'ojo', texto:
+      'Est\u00e1s pagando m\u00e1s de lo que te propusiste: ACOS real ' + pctAR(real) + '% ' +
+      'contra un objetivo de ' + pctAR(objetivo) + '%. ' +
+      'De cada $100 vendidos se te van $' + Math.round(real) + ' en publicidad. ' +
+      'O baj\u00e1s el presupuesto, o sac\u00e1s de la campa\u00f1a los productos que menos convierten.' });
+  }
+
+  if (objetivo > 0 && real > 0 && real < objetivo * 0.7 && clics >= 30) {
+    avisos.push({ tono: 'bien', texto:
+      'Te sobra margen: est\u00e1s en ' + pctAR(real) + '% de ACOS con un objetivo de ' +
+      pctAR(objetivo) + '%. Sub\u00ed el presupuesto diario y vas a vender m\u00e1s ' +
+      'sin salirte de lo que ya decidiste pagar.' });
+  }
+
+  // CTR bajo: se muestra mucho y nadie entra. Umbral 0,3%, que es flojo
+  // hasta para marketplace.
+  const ctr = Number(m.ctr) || (veces ? (clics / veces) * 100 : 0);
+  if (veces >= 2000 && ctr > 0 && ctr < 0.3) {
+    avisos.push({ tono: 'ojo', texto:
+      'Se mostr\u00f3 ' + veces.toLocaleString('es-AR') + ' veces y solo entr\u00f3 el ' +
+      Number(ctr).toLocaleString('es-AR', { maximumFractionDigits: 2 }) + '%. La gente ve tu aviso y sigue de largo: casi siempre es la ' +
+      'foto principal o el precio contra el de al lado.' });
+  }
+
+  if (clics >= 50 && unidades === 0 && vendido === 0) {
+    avisos.push({ tono: 'ojo', texto:
+      'Pagaste ' + clics + ' clics sin una sola unidad vendida. Si el precio est\u00e1 bien, ' +
+      'revis\u00e1 que los productos anunciados tengan stock.' });
+  }
+
+  if (c.status === 'paused' && objetivo > 0 && real > 0 && real <= objetivo) {
+    avisos.push({ tono: 'dato', texto:
+      'Est\u00e1 pausada, pero ven\u00eda rindiendo dentro del objetivo (' + pctAR(real) +
+      '% contra ' + pctAR(objetivo) + '%). Si la pausaste por las dudas, ' +
+      'los n\u00fameros dec\u00edan que iba bien.' });
+  }
+
+  return avisos;
+}
+
+const COLORES_AVISO = {
+  alerta: { fondo: '#FDECEC', borde: '#F5B5B5', icono: '\u26a0\ufe0f' },
+  ojo:    { fondo: '#FFF9E6', borde: '#F5C518', icono: '\ud83d\udc41\ufe0f' },
+  bien:   { fondo: '#E7F6EE', borde: '#8FD3AE', icono: '\u2705' },
+  dato:   { fondo: 'var(--bg)', borde: 'var(--line)', icono: '\u2139\ufe0f' }
+};
+
+function htmlRecomendaciones(c) {
+  const avisos = recomendacionesDeCampana(c);
+  if (!avisos.length) return '';
+  return avisos.map(a => {
+    const col = COLORES_AVISO[a.tono] || COLORES_AVISO.dato;
+    return '<div style="margin-top:6px;background:' + col.fondo + ';border:1px solid ' + col.borde +
+      ';border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.55;color:var(--navy);">' +
+      col.icono + ' ' + a.texto + '</div>';
+  }).join('');
+}
+
+// La explicacion va una sola vez, plegada: el que ya sabe que es el ACOS no
+// tiene que leerla todas las veces, y el que no sabe la tiene a mano.
+function htmlGlosarioPublicidad() {
+  return '<details style="margin-top:14px;">' +
+    '<summary style="cursor:pointer;font-size:12.5px;color:var(--celeste);font-weight:700;">' +
+      '\u00bfQu\u00e9 significan estos n\u00fameros?</summary>' +
+    '<div style="margin-top:8px;font-size:12.5px;line-height:1.7;color:var(--text-mute);">' +
+      '<div style="margin-bottom:7px;"><b style="color:var(--navy);">ACOS</b> \u2014 de cada $100 ' +
+        'que vend\u00e9s por publicidad, cu\u00e1ntos se van en publicidad. ACOS 20% = $20 de cada $100. ' +
+        '<b style="color:var(--navy);">Compar\u00e1lo contra tu margen</b>: si en ese producto gan\u00e1s ' +
+        '15% y el ACOS es 20%, cada venta te deja p\u00e9rdida, aunque la campa\u00f1a parezca andar.</div>' +
+      '<div style="margin-bottom:7px;"><b style="color:var(--navy);">ACOS objetivo</b> \u2014 lo que vos ' +
+        'le dijiste a Mercado Libre que est\u00e1s dispuesto a pagar. \u00c9l ajusta cu\u00e1nto ofertar ' +
+        'para tratar de cumplirlo.</div>' +
+      '<div style="margin-bottom:7px;"><b style="color:var(--navy);">ROAS</b> \u2014 lo mismo dado vuelta: ' +
+        'cu\u00e1ntos pesos vend\u00e9s por cada peso invertido. ROAS 5 = $5 vendidos por cada $1 gastado.</div>' +
+      '<div style="margin-bottom:7px;"><b style="color:var(--navy);">Entran (CTR)</b> \u2014 de los que ven ' +
+        'el aviso, qu\u00e9 porcentaje hace clic. Si es bajo, el problema es la foto o el precio ' +
+        'contra el de al lado.</div>' +
+      '<div style="margin-bottom:7px;"><b style="color:var(--navy);">Compran (CVR)</b> \u2014 de los que ' +
+        'entran, qu\u00e9 porcentaje compra. Si entran y no compran, mir\u00e1 la publicaci\u00f3n, ' +
+        'no la campa\u00f1a.</div>' +
+      '<div><b style="color:var(--navy);">Vendido del anunciado / de otros</b> \u2014 Mercado Libre ' +
+        'cuenta tambi\u00e9n lo que compraron de tu tienda despu\u00e9s de entrar por un aviso, ' +
+        'aunque termine siendo otro producto.</div>' +
+    '</div></details>';
 }
 
 function resumenDeCampanas(campanas) {
@@ -8234,7 +8371,7 @@ function resumenDeCampanas(campanas) {
   return '<div style="margin-top:10px;font-size:13.5px;color:var(--navy);">' +
     '<strong>' + campanas.length + '</strong> ' + (campanas.length === 1 ? 'campa\u00f1a' : 'campa\u00f1as') +
     ' \u00b7 <strong>' + activas.length + '</strong> ' + (activas.length === 1 ? 'activa' : 'activas') +
-    (porDia ? ' \u00b7 hasta <strong>' + money(porDia) + '</strong> por d\u00eda' : '') +
+    (porDia ? ' \u00b7 hasta <strong>' + money(Math.round(porDia)) + '</strong> por d\u00eda' : '') +
   '</div>';
 }
 
@@ -8246,7 +8383,7 @@ function tablaDeCampanas(campanas) {
   return '<div style="overflow-x:auto;margin-top:12px;">' +
     '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
     '<thead><tr>' +
-      ['Campa\u00f1a', 'Estado', 'Presupuesto diario', 'Objetivo', 'Creada']
+      ['Campa\u00f1a', 'Estado', 'Presupuesto diario', 'Objetivo', 'Creada', '']
         .map(t => '<th style="text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);' +
                   'font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-mute);">' +
                   t + '</th>').join('') +
@@ -8262,6 +8399,7 @@ function tablaDeCampanas(campanas) {
         '<td style="padding:9px;border-bottom:1px solid var(--line);">' +
           '<strong style="color:var(--navy);">' + escapeHtml(c.name || 'Sin nombre') + '</strong>' +
           metricasDeCampana(c) +
+          htmlRecomendaciones(c) +
         '</td>' +
         '<td style="padding:9px;border-bottom:1px solid var(--line);">' +
           '<span style="background:' + est.fondo + ';color:' + est.color + ';padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;">' +
@@ -8272,9 +8410,73 @@ function tablaDeCampanas(campanas) {
           escapeHtml(objetivo) + acos + '</td>' +
         '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:12.5px;color:var(--text-mute);">' +
           (c.date_created ? fechaAR(c.date_created, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '\u2014') + '</td>' +
+        '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
+          '<button type="button" class="icon-btn" data-campana="' + escapeHtml(String(c.id)) + '" ' +
+            'data-nuevo-estado="' + (c.status === 'active' ? 'paused' : 'active') + '" ' +
+            'data-nombre="' + escapeHtml(c.name || '') + '" ' +
+            'data-presupuesto="' + (Number(c.daily_budget) || 0) + '" ' +
+            'style="color:' + (c.status === 'active' ? '#8A5200' : 'var(--stock)') + ';">' +
+            (c.status === 'active' ? '\u23f8 Pausar' : '\u25b6 Activar') + '</button></td>' +
       '</tr>';
     }).join('') +
     '</tbody></table></div>';
+}
+
+// Activar una campana hace que Mercado Libre empiece a gastar plata de la
+// cuenta. Por eso se pregunta antes Y se dice cuanto puede gastar por dia:
+// "\u00bfActivar?" a secas no alcanza para una decision que cuesta plata.
+async function cambiarEstadoCampana(datos) {
+  if (!puedeOperar()) return;
+
+  const activar = datos.nuevoEstado === 'active';
+  const presupuesto = Number(datos.presupuesto) || 0;
+  const nombre = datos.nombre || 'esta campa\u00f1a';
+
+  const pregunta = activar
+    ? '\u00bfActivar \u201c' + nombre + '\u201d?\n\n' +
+      (presupuesto
+        ? 'Mercado Libre va a poder gastar hasta ' + money(Math.round(presupuesto)) + ' por d\u00eda.'
+        : 'Va a empezar a mostrar avisos y a gastar seg\u00fan su presupuesto.')
+    : '\u00bfPausar \u201c' + nombre + '\u201d?\n\nDeja de mostrar avisos y de gastar. ' +
+      'La pod\u00e9s volver a activar cuando quieras.';
+
+  if (!confirm(pregunta)) return;
+
+  const cuerpo = byId('mlPublicidadCuerpo');
+  const antes = cuerpo.innerHTML;
+  cuerpo.innerHTML = (activar ? 'Activando' : 'Pausando') + ' \u201c' + escapeHtml(nombre) + '\u201d\u2026';
+
+  try {
+    const r = await llamarApiMl('publicidad_estado', {
+      campana_id: datos.campana,
+      estado: datos.nuevoEstado
+    });
+
+    if (!r.ok) {
+      cuerpo.innerHTML = antes +
+        '<div style="margin-top:10px;color:var(--danger);font-size:13px;">' +
+          'No se pudo cambiar el estado' + (r.status ? ' (Mercado Libre contest\u00f3 ' + r.status + ')' : '') + '.' +
+          (Array.isArray(r.intentos) && r.intentos.length
+            ? '<div style="margin-top:6px;font-size:11px;font-family:monospace;color:var(--text-mute);">' +
+              r.intentos.map(i => escapeHtml(i.status + ' \u00b7 ' + i.ruta)).join('<br>') + '</div>'
+            : '') +
+        '</div>';
+      return;
+    }
+
+    // Se avisa lo que dice la API, no lo que pedimos. Si Mercado Libre lo
+    // acepto pero lo dejo en otro estado, el vendedor tiene que enterarse.
+    if (r.estado_real && r.estado_real !== r.estado_pedido) {
+      alert('Mercado Libre acept\u00f3 el cambio pero la campa\u00f1a qued\u00f3 en "' +
+            r.estado_real + '". Puede tardar unos minutos en aplicarse.');
+    }
+
+    await consultarPublicidadMl();
+  } catch (err) {
+    cuerpo.innerHTML = antes +
+      '<div style="margin-top:10px;color:var(--danger);font-size:13px;">' +
+        escapeHtml(err.message) + '</div>';
+  }
 }
 
 async function consultarPublicidadMl() {
@@ -8336,7 +8538,21 @@ async function consultarPublicidadMl() {
       return;
     }
 
-    cuerpo.innerHTML = encabezado + resumenDeCampanas(campanas) + tablaDeCampanas(campanas) + crudo;
+    const hayMetricas = campanas.some(c => metricasDe(c));
+    const notaMetricas = hayMetricas
+      ? '<div style="margin-top:8px;font-size:12px;color:var(--text-mute);">' +
+          'N\u00fameros de los \u00faltimos 30 d\u00edas. Mercado Libre los actualiza a las 10 de la ma\u00f1ana, ' +
+          'as\u00ed que el d\u00eda de hoy siempre viene incompleto.</div>'
+      : '<div style="margin-top:8px;font-size:12px;color:var(--text-mute);">' +
+          'Mercado Libre no devolvi\u00f3 m\u00e9tricas para este per\u00edodo. Se ve la configuraci\u00f3n ' +
+          'de cada campa\u00f1a; los n\u00fameros de rendimiento aparecen cuando haya movimiento.</div>';
+
+    cuerpo.innerHTML = encabezado + resumenDeCampanas(campanas) + notaMetricas +
+                       tablaDeCampanas(campanas) + htmlGlosarioPublicidad() + crudo;
+
+    cuerpo.querySelectorAll('[data-campana]').forEach(b => {
+      b.addEventListener('click', () => cambiarEstadoCampana(b.dataset));
+    });
   } catch (err) {
     cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
   } finally {

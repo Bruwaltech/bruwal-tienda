@@ -400,14 +400,19 @@ async function accionPublicidad(slug) {
   const baseAds = '/marketplace/advertising/' + encodeURIComponent(siteAnunciante) +
                   '/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
   const baseViejo = '/advertising/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
-  // La respuesta base trae la campana pero NO como viene rindiendo: para eso
-  // hay que pedir un rango de fechas. Se prueba primero con metricas de los
-  // ultimos 30 dias y, si esa forma no le gusta, cae en la pelada, que ya
-  // sabemos que contesta. Peor caso: se ven las campanas sin numeros.
+  // Como se piden las metricas, segun la documentacion de Product Ads:
+  //  - `metrics` es una lista separada por comas. SIN ese parametro no viene
+  //    ninguna metrica, que es exactamente lo que nos pasaba antes.
+  //  - date_from y date_to son obligatorias cuando se piden metricas.
+  //  - el rango no puede ir mas de 90 dias para atras.
+  // Ademas Mercado Libre actualiza estos numeros a las 10 de la manana
+  // (GMT-3): el dia de hoy siempre viene incompleto.
   const hoy = new Date();
   const hasta = hoy.toISOString().slice(0, 10);
   const desde = new Date(hoy.getTime() - 29 * 86400000).toISOString().slice(0, 10);
-  const conMetricas = '/search?limit=50&date_from=' + desde + '&date_to=' + hasta;
+  const METRICAS = 'clicks,prints,ctr,cost,cpc,acos,cvr,roas,units_quantity,total_amount,direct_amount,indirect_amount';
+  const conMetricas = '/search?limit=50&date_from=' + desde + '&date_to=' + hasta +
+                      '&metrics=' + METRICAS;
 
   const candidatas = [
     { ruta: baseAds + conMetricas,          version: '2' },
@@ -450,6 +455,88 @@ async function accionPublicidad(slug) {
     // métricas en esta cuenta, y prefiero mostrarlas tal cual una vez a
     // inventar una tabla con campos que capaz no existen.
     campanas: campanas.datos
+  };
+}
+
+
+// Pausar o activar una campana. Este endpoint NO esta en la documentacion
+// publica -- la parte de escritura pide login de Mercado Libre -- asi que se
+// prueban las formas conocidas igual que con la lectura.
+//
+// Dos cuidados, porque esto toca plata del negocio:
+//  1. Se manda SOLO el campo status. Nada de mandar el objeto entero, que
+//     podria pisar el presupuesto sin que nadie lo haya pedido.
+//  2. Despues se RELEE la campana y se devuelve el estado que quedo segun la
+//     API, no el que pedimos. Si la pantalla dice "pausada" es porque
+//     Mercado Libre lo confirmo, no porque nosotros lo supusimos.
+async function accionPublicidadEstado(slug, campanaId, estado) {
+  if (estado !== 'active' && estado !== 'paused') {
+    return { ok: false, motivo: 'Estado invalido.' };
+  }
+
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { ok: false, motivo: 'La tienda no tiene Mercado Libre conectado.' };
+
+  const token = await tokenDeTienda(slug);
+  const anunciantes = await pedirAAds('/advertising/advertisers?product_id=PADS', token);
+  const lista = (anunciantes.datos && (anunciantes.datos.advertisers || anunciantes.datos.results)) || [];
+  if (!lista.length) return { ok: false, motivo: 'La cuenta no figura como anunciante.' };
+
+  const anunciante = lista[0];
+  const idAnunciante = anunciante.advertiser_id || anunciante.id;
+  const site = anunciante.site_id || 'MLA';
+  const id = encodeURIComponent(campanaId);
+
+  const candidatas = [
+    { ruta: '/marketplace/advertising/' + encodeURIComponent(site) + '/advertisers/' +
+            encodeURIComponent(idAnunciante) + '/product_ads/campaigns/' + id, version: '2' },
+    { ruta: '/advertising/advertisers/' + encodeURIComponent(idAnunciante) +
+            '/product_ads/campaigns/' + id, version: '2' },
+    { ruta: '/advertising/product_ads/campaigns/' + id, version: '1' }
+  ];
+
+  const intentos = [];
+  let ultima = null;
+  for (const c of candidatas) {
+    const r = await fetch(ML_API + c.ruta, {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'Api-Version': c.version
+      },
+      body: JSON.stringify({ status: estado })
+    });
+    const datos = await r.json().catch(() => null);
+    intentos.push({ ruta: c.ruta, version: c.version, status: r.status });
+    ultima = { ok: r.ok, status: r.status, datos: datos, ruta: c.ruta };
+    if (r.ok) break;
+  }
+
+  if (!ultima || !ultima.ok) {
+    return {
+      ok: false,
+      motivo: 'Mercado Libre no acepto el cambio.',
+      status: ultima && ultima.status,
+      intentos: intentos,
+      crudo: ultima && ultima.datos
+    };
+  }
+
+  // La confirmacion sale de releer, no de suponer.
+  const relectura = await pedirAAds(
+    '/marketplace/advertising/' + encodeURIComponent(site) + '/advertisers/' +
+    encodeURIComponent(idAnunciante) + '/product_ads/campaigns/search?limit=50', token, '2');
+  const campanas = (relectura.datos && relectura.datos.results) || [];
+  const encontrada = campanas.find(c => String(c.id) === String(campanaId));
+
+  return {
+    ok: true,
+    ruta: ultima.ruta,
+    estado_pedido: estado,
+    estado_real: encontrada ? encontrada.status : null,
+    campana: encontrada || null,
+    intentos: intentos
   };
 }
 
@@ -561,6 +648,11 @@ module.exports = async (req, res) => {
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
+    if (accion === 'publicidad_estado') {
+      const cuerpo = req.body || {};
+      return res.status(200).json(
+        await accionPublicidadEstado(tienda.slug, cuerpo.campana_id, cuerpo.estado));
+    }
     return res.status(400).json({ error: 'Acción desconocida' });
   } catch (err) {
     console.error('mercadolibre.js', accion, err);
