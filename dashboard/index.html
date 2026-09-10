@@ -2340,7 +2340,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
         <table>
-          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión</th><th style="text-align:right;">Neto</th><th>Estado</th><th>Stock</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Ganancia</th><th>Estado</th><th>Stock</th></tr></thead>
           <tbody id="mlVentasBody"></tbody>
         </table>
       </div>
@@ -2632,6 +2632,12 @@ tr:last-child td { border-bottom: none; }
             Cada vez que vendas este servicio se descuenta solo. Ej: un corte con barba gasta <strong>1</strong> hoja de afeitar
             y <strong>1</strong> tira de cuello. Si una hoja te rinde dos cortes, poné <strong>0,5</strong>.
             Cargá los insumos como productos de <strong>uso interno</strong> (el rollo de 100 tiras entra como stock 100).
+          </small>
+          <small id="insumosAyudaCombo" class="hidden" style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Para <strong>combos</strong>: cargá de qué está hecho y el costo se arma solo
+            sumando sus partes. Ej: un combo de proteína + creatina cuesta lo que cuestan las dos.
+            Cuando te suba el precio de una, el costo del combo se actualiza solo — no hay que
+            volver a tocarlo. Y cada vez que vendas el combo, se descuenta el stock de lo que lleva.
           </small>
           <small id="insumosAyudaPlato" class="hidden" style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Cada vez que vendas este plato se descuenta solo. Ej: una muzzarella se lleva <strong>0,2</strong> kg de queso
@@ -5993,13 +5999,35 @@ function alCambiarTipoProducto() {
   // queso y 100 de salsa, igual que el corte se lleva media hoja. El motor
   // (aplicarInsumosDeItem) nunca miro si el item era un servicio; era el
   // formulario el que solo lo ofrecia ahi.
-  if (byId('campoInsumos')) byId('campoInsumos').classList.toggle('hidden', !esServicio && !esPlatoDelMenu());
-  if (esServicio || esPlatoDelMenu()) renderInsumos();
+  // Antes esto era solo para servicios y platos de menu. Pero un combo de
+  // suplementos es exactamente lo mismo: un producto que se arma con otros
+  // que ya estan en el catalogo. Se ofrece para cualquier producto fisico
+  // que no sea de uso interno.
+  //
+  // Nadie se ve afectado por el cambio: mientras no se carguen componentes,
+  // el producto se comporta igual que siempre.
+  const puedeTenerPartes = esServicio || esPlatoDelMenu() ||
+    (!byId('pDestinoInterno')?.checked && !byId('pTipoServicio')?.checked);
+  if (byId('campoInsumos')) byId('campoInsumos').classList.toggle('hidden', !puedeTenerPartes);
+  if (puedeTenerPartes) renderInsumos();
+
+  // El titulo del campo cambia segun que se este cargando: "que gasta del
+  // stock" no describe un combo, y "de que esta compuesto" no describe un
+  // corte de pelo.
+  const rotulo = byId('insumosLabel');
+  if (rotulo) {
+    rotulo.innerHTML = (esServicio || esPlatoDelMenu())
+      ? '\u00bfQu\u00e9 gasta del stock? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>'
+      : '\u00bfEst\u00e1 compuesto por otros productos? <span style="font-weight:400;color:var(--text-mute);">(opcional \u2014 combos)</span>';
+  }
+  const ayudaCombo = byId('insumosAyudaCombo');
+  if (ayudaCombo) ayudaCombo.classList.toggle('hidden', esServicio || esPlatoDelMenu());
 
   // El ejemplo de la ayuda cambia: media hoja de afeitar no le dice nada a
   // una pizzeria, y 200 g de queso no le dice nada a una peluqueria.
   const plato = esPlatoDelMenu();
-  if (byId('insumosAyudaServicio')) byId('insumosAyudaServicio').classList.toggle('hidden', plato);
+  const esCombo = !esServicio && !plato;
+  if (byId('insumosAyudaServicio')) byId('insumosAyudaServicio').classList.toggle('hidden', plato || esCombo);
   if (byId('insumosAyudaPlato')) byId('insumosAyudaPlato').classList.toggle('hidden', !plato);
   // Un servicio no se mide en metros ni en kilos.
   //
@@ -8127,6 +8155,10 @@ let mlOrdenes = [];
 //     facturan aparte por periodo y NO vienen en la orden. Tampoco estan.
 //
 // Por eso la ganancia se muestra como estimada y no como un dato cerrado.
+// El costo de una unidad sale de costoDeProducto() (mas arriba): el costo
+// propio si esta cargado, y si no la suma de sus partes. O sea que un combo
+// que dice de que esta hecho saca su costo solo, y cuando sube el precio de
+// un componente el combo se actualiza sin que nadie lo toque.
 function costosDeOrdenMl(orden) {
   const d = orden.detalle || {};
   const bruto = Number(orden.total) || Number(d.total_amount) || 0;
@@ -8147,7 +8179,7 @@ function costosDeOrdenMl(orden) {
       v.ml_item_id === String(itemId) &&
       (variacion ? String(v.ml_variation_id) === variacion : !v.ml_variation_id));
     const producto = vinculo && products.find((p) => p.id === vinculo.product_id);
-    const unitario = producto ? Number(producto.costo) || 0 : 0;
+    const unitario = costoDeProducto(producto);
     if (unitario > 0) costo += unitario * cantidad; else lineasSinCosto++;
   });
 
@@ -8219,7 +8251,23 @@ function renderMercadoLibre() {
           '<td style="text-align:right;">' + money(o.total) + '</td>' +
           '<td style="text-align:right;color:var(--danger);">' +
             (costosDeOrdenMl(o).comision ? '− ' + money(costosDeOrdenMl(o).comision) : '—') + '</td>' +
-          '<td style="text-align:right;">' + money(costosDeOrdenMl(o).neto) + '</td>' +
+          // El costo y la ganancia de ESTA venta. Si a alguna línea le falta
+          // el costo no se muestra un número: se dice que falta. Una ganancia
+          // a la que le falta la mitad de los costos miente para arriba, que
+          // es la peor dirección para equivocarse.
+          '<td style="text-align:right;">' + (() => {
+            const c = costosDeOrdenMl(o);
+            return c.lineasSinCosto
+              ? '<span style="color:var(--text-mute);font-size:12px;" title="Cargá el costo del producto vinculado, o de qué está compuesto">falta</span>'
+              : (c.costo ? '− ' + money(Math.round(c.costo)) : '—');
+          })() + '</td>' +
+          '<td style="text-align:right;font-weight:700;">' + (() => {
+            const c = costosDeOrdenMl(o);
+            if (c.lineasSinCosto) return '<span style="color:var(--text-mute);font-weight:400;">—</span>';
+            const g = c.neto - c.costo;
+            return '<span style="color:' + (g >= 0 ? 'var(--stock)' : 'var(--danger)') + ';">' +
+                   money(Math.round(g)) + '</span>';
+          })() + '</td>' +
           '<td>' + escapeHtml(ESTADOS[o.estado] || o.estado || '—') + '</td>' +
           '<td>' + (
             o.logistica === 'fulfillment' ? '🏭 Full' :
@@ -8227,7 +8275,7 @@ function renderMercadoLibre() {
             o.stock_descontado ? '✅ descontado' : '—'
           ) + '</td>' +
         '</tr>').join('')
-    : '<tr><td colspan="7" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+    : '<tr><td colspan="9" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
 }
 
 // ---- Rescate de ventas de Mercado Libre ----
@@ -16981,7 +17029,10 @@ byId('productForm').addEventListener('submit', async (e) => {
     // Se guardan en un servicio y en un plato del menu. En un producto
     // comun se limpian, para no dejar insumos colgados descontando stock
     // sin que el campo se vea.
-    insumos: (byId('pTipoServicio').checked || esPlatoDelMenu()) ? insumosEnEdicion : [],
+    // Se guardan para servicios, platos de menu Y combos: los tres son un
+    // producto que se arma con otros. Solo el stock de uso interno queda
+    // afuera, que es lo que se consume, no lo que se compone.
+    insumos: byId('pDestinoInterno')?.checked ? [] : insumosEnEdicion,
     tipo: byId('pTipoServicio').checked ? 'servicio' : 'producto',
     duracion_minutos: byId('pTipoServicio').checked && byId('pDuracion').value ? Number(byId('pDuracion').value) : null,
     solo_interno: byId('pDestinoInterno').checked,
