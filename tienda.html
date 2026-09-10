@@ -217,6 +217,58 @@
   }
   .volver-cat:hover{opacity:.7;}
 
+  /* Buscador + orden + chips de rubro */
+  .barra-buscar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+  .buscar-campo{position:relative;flex:1 1 240px;display:flex;align-items:center;}
+  .buscar-campo input{
+    width:100%;padding:12px 40px 12px 40px;border:1.5px solid var(--line);
+    border-radius:999px;font:inherit;font-size:15px;background:#fff;
+    color:var(--text-dark);outline:none;transition:border-color .2s;
+  }
+  .buscar-campo input:focus{border-color:var(--celeste);}
+  .buscar-campo input::-webkit-search-cancel-button{display:none;}
+  .buscar-lupa{position:absolute;left:14px;font-size:15px;opacity:.6;pointer-events:none;}
+  .buscar-limpiar{
+    position:absolute;right:8px;border:none;background:transparent;
+    font-size:16px;color:var(--text-mute);cursor:pointer;padding:5px 8px;line-height:1;
+  }
+  .buscar-orden{
+    padding:12px 14px;border:1.5px solid var(--line);border-radius:999px;
+    font:inherit;font-size:14px;font-weight:600;background:#fff;
+    color:var(--text-dark);cursor:pointer;outline:none;
+  }
+  .buscar-orden:focus{border-color:var(--celeste);}
+  .buscar-cuenta{font-size:13px;color:var(--text-mute);margin:0 0 14px;}
+  .buscar-vacio{text-align:center;padding:36px 16px;color:var(--text-mute);font-size:14.5px;line-height:1.6;}
+
+  /* Los chips scrollean de costado a proposito: una tienda con 12 rubros no
+     entra en el ancho de un celular y apilarlos comia media pantalla. */
+  .chips-cat{
+    display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:16px;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .chips-cat::-webkit-scrollbar{display:none;}
+  .chip-cat{
+    flex:0 0 auto;padding:8px 15px;border:1.5px solid var(--line);border-radius:999px;
+    background:#fff;color:var(--text-dark);font:inherit;font-size:13.5px;font-weight:600;
+    cursor:pointer;white-space:nowrap;transition:all .2s;
+  }
+  .chip-cat:hover{border-color:var(--celeste);}
+  .chip-cat.activo{background:var(--celeste);border-color:var(--celeste);color:#fff;}
+
+  /* Titulo de un rubro dentro de la vista agrupada o de los resultados */
+  .grupo-cat-titulo{
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    font-size:16px;font-weight:700;color:var(--navy);
+    margin:24px 0 12px;padding-top:16px;border-top:1px solid #e3ebf3;
+  }
+  .grupo-cat-titulo:first-child{margin-top:0;padding-top:0;border-top:none;}
+  .grupo-cat-ver{
+    border:none;background:transparent;color:var(--celeste);
+    font:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;
+  }
+  .grupo-cat-ver:hover{text-decoration:underline;}
+
   /* Vista compacta: cuando hay categorias entran mas productos en pantalla */
   .products-grid.compacta .product-photo-container{height:132px;}
   .products-grid.compacta .product-info{padding:10px;}
@@ -374,6 +426,29 @@
   <div id="hlBanner" class="hidden" style="text-align:center;padding:10px 16px;font-size:13.5px;font-weight:600;line-height:1.5;"></div>
 
   <main class="wrap">
+    <!-- Buscador y orden. Van ARRIBA de todo el listado: el cliente que ya
+         sabe lo que quiere no tiene que entrar rubro por rubro a buscarlo.
+         El markup es fijo (nunca se reescribe con innerHTML) para que
+         escribir en el campo no le saque el foco al teclado del celular. -->
+    <div id="barraBuscar" class="barra-buscar hidden">
+      <div class="buscar-campo">
+        <span class="buscar-lupa">🔍</span>
+        <input id="inputBuscar" type="search" autocomplete="off" placeholder="Buscar producto o categoría...">
+        <button type="button" id="limpiarBuscar" class="buscar-limpiar hidden" aria-label="Borrar búsqueda">✕</button>
+      </div>
+      <select id="ordenProductos" class="buscar-orden" aria-label="Ordenar productos">
+        <option value="recomendado">Recomendados</option>
+        <option value="precio-asc">Menor precio</option>
+        <option value="precio-desc">Mayor precio</option>
+        <option value="nombre">Nombre A-Z</option>
+        <option value="ofertas">Ofertas primero</option>
+      </select>
+    </div>
+
+    <!-- Atajos entre rubros: parado adentro de "Pizzas" se puede saltar a
+         "Empanadas" sin volver atras primero. Lo llena pintarChipsCategorias(). -->
+    <div id="chipsCategorias" class="chips-cat hidden"></div>
+
     <div id="categoriesSection" style="margin-bottom:24px;display:none;">
       <div class="category-filters" id="categoriesContainer">
         <div class="category-filter active" onclick="filterByCategory(null)">Todos</div>
@@ -842,7 +917,7 @@ function renderTarjetasDeCategoria(categorias){
   const list = byId('productsList');
   list.className = '';   // acá adentro va la grilla de rubros y la de sueltos
 
-  const sueltos = productosSinCategoria();
+  const sueltos = ordenar(productosSinCategoria());
 
   const htmlRubros = categorias.map(cat => {
     const dentro = productosDe(cat);
@@ -893,6 +968,7 @@ function abrirCategoria(cat){
 
 function mostrarCategorias(){
   selectedCategory = null;
+  vistaAgrupada = false;
   renderProducts();
   scrollAlListado();
 }
@@ -919,30 +995,283 @@ window.addEventListener('popstate', () => {
     .find(m => m && !m.classList.contains('hidden'));
   if (abierto) {
     hide(abierto);
-    if (selectedCategory) {
-      try { history.pushState({ bruwalCategoria: selectedCategory }, ''); } catch (e) {}
+    if (selectedCategory || vistaAgrupada) {
+      try { history.pushState({ bruwalCategoria: selectedCategory || '__todo' }, ''); } catch (e) {}
     }
     return;
   }
-  if (selectedCategory) mostrarCategorias();
+  if (selectedCategory || vistaAgrupada) mostrarCategorias();
 });
+
+// ================= BUSCADOR, AGRUPADO Y ORDEN =================
+// Tres cosas distintas que comparten la misma barra de arriba:
+//   1. buscar por nombre o categoria en TODA la tienda,
+//   2. ver todos los rubros juntos, uno abajo del otro,
+//   3. elegir que aparece primero (precio, nombre, ofertas).
+// Ninguna toca el arreglo `products`: siempre se trabaja sobre copias, asi
+// que salir del buscador deja la tienda exactamente como estaba.
+
+let textoBusqueda = '';
+let ordenElegido = 'recomendado';
+let vistaAgrupada = false;
+let temporizadorBusqueda = null;
+
+// Los atajos y los chips llevan la POSICION en estos arreglos, no el nombre
+// del rubro: escapeHtml() no escapa comillas y una categoria escrita
+// 'Ofertas 2x1" ' rompia el atributo. Con un indice no hay texto que romper.
+let gruposEnPantalla = [];
+let chipsEnPantalla = [];
+
+// Un producto entra en la busqueda si CADA palabra escrita aparece en
+// alguna parte suya. Asi "media muzza" encuentra la pizza aunque "media"
+// este en la variante y "muzza" en el nombre. sinAcentos() ya existe mas
+// abajo en este mismo script: acentos y mayusculas no importan.
+function textoBuscableDe(p){
+  const partes = [p.name, p.category, p.description];
+  if (Array.isArray(p.variantes)) {
+    p.variantes.forEach(v => Object.values(v.atributos || {}).forEach(x => partes.push(x)));
+  }
+  if (Array.isArray(p.opciones)) {
+    p.opciones.forEach(o => partes.push(o && o.nombre));
+  }
+  return sinAcentos(partes.filter(Boolean).join(' '));
+}
+
+function productosBuscados(){
+  const palabras = sinAcentos(textoBusqueda).split(/\s+/).filter(Boolean);
+  if (!palabras.length) return [];
+  return products.filter(p => {
+    const texto = textoBuscableDe(p);
+    return palabras.every(w => texto.includes(w));
+  });
+}
+
+// Con que precio se ordena: el de oferta si hay, y en un producto con
+// variantes el mas barato -- que es justo el numero que el cliente ve en la
+// tarjeta como "desde $X". Ordenar por el precio del producto padre dejaba
+// una pizza entera de $27.000 arriba de una porcion de $3.000.
+function precioParaOrdenar(p){
+  if (p && p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length){
+    const precios = p.variantes.map(v => precioDeVariante(p, v)).filter(n => n > 0);
+    if (precios.length) return Math.min.apply(null, precios);
+  }
+  return precioBase(p);
+}
+
+// Un servicio nunca se agota; un producto fisico sin stock si.
+const productoAgotado = (p) => esProductoFisico(p) && !(Number(p.stock) > 0);
+
+// OJO: siempre sobre una COPIA. sort() ordena en el lugar, y ordenar
+// `products` directo dejaria la tienda ordenada para siempre -- volver a
+// "Recomendados" ya no podria recuperar el orden original.
+function ordenar(lista){
+  const copia = (lista || []).slice();
+  if (ordenElegido === 'precio-asc')
+    return copia.sort((a, b) => precioParaOrdenar(a) - precioParaOrdenar(b));
+  if (ordenElegido === 'precio-desc')
+    return copia.sort((a, b) => precioParaOrdenar(b) - precioParaOrdenar(a));
+  if (ordenElegido === 'nombre')
+    return copia.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+  if (ordenElegido === 'ofertas')
+    return copia.sort((a, b) =>
+      (hayOferta(b) ? porcentajeOff(b) : -1) - (hayOferta(a) ? porcentajeOff(a) : -1));
+  // Recomendados = como los trae la tienda, pero con los agotados al final:
+  // lo primero que ve el cliente tiene que ser algo que pueda comprar.
+  return copia.sort((a, b) => (productoAgotado(a) ? 1 : 0) - (productoAgotado(b) ? 1 : 0));
+}
+
+// Un grupo = titulo del rubro + su grilla de productos.
+// El atajo cuenta los productos REALES del rubro, no los que se estan
+// viendo en pantalla: buscando "creat" salen 5 combos pero el rubro tiene
+// 7, y el boton lleva a los 7. Poner ahi el 5 prometia algo que no pasaba.
+function htmlGrupo(cat, lista, conAtajo){
+  const i = gruposEnPantalla.push(cat) - 1;
+  const enElRubro = productosDe(cat).length || lista.length;
+  return '<div class="grupo-cat-titulo">' +
+      '<span>' + escapeHtml(cat) + '</span>' +
+      (conAtajo ? '<button type="button" class="grupo-cat-ver" data-ir="' + i + '">' +
+        (enElRubro === 1 ? 'Ver' : 'Ver los ' + enElRubro) + ' \u2192</button>' : '') +
+    '</div>' +
+    '<div class="products-grid compacta">' + lista.map(htmlTarjetaProducto).join('') + '</div>';
+}
+
+function conectarAtajosDeGrupo(list){
+  list.querySelectorAll('.grupo-cat-ver').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cat = gruposEnPantalla[Number(b.dataset.ir)];
+      limpiarBusqueda(false);
+      vistaAgrupada = false;
+      if (cat) abrirCategoria(cat);
+    });
+  });
+}
+
+// Todos los rubros uno abajo del otro, cada uno con su titulo. Es la vista
+// para el que quiere pasear por la tienda entera sin entrar y salir.
+function renderAgrupado(categorias){
+  const list = byId('productsList');
+  list.className = '';
+  gruposEnPantalla = [];
+
+  const sueltos = ordenar(productosSinCategoria());
+  list.innerHTML =
+    categorias.map(cat => htmlGrupo(cat, ordenar(productosDe(cat)), true)).join('') +
+    (sueltos.length ? htmlGrupo('Tambi\u00e9n en la tienda', sueltos, false) : '');
+
+  conectarAtajosDeGrupo(list);
+  conectarTarjetas(list);
+}
+
+// Los resultados salen agrupados por rubro: buscando "coca" en un kiosco
+// aparecen bebidas y combos mezclados, y el titulo dice de donde sale cada
+// uno. La busqueda es de toda la tienda, no del rubro donde estaba parado.
+function renderBusqueda(){
+  const list = byId('productsList');
+  hide(byId('emptyProducts'));
+  hide(byId('volverCategorias'));
+  list.className = '';
+  gruposEnPantalla = [];
+
+  const encontrados = ordenar(productosBuscados());
+  if (!encontrados.length){
+    list.innerHTML = '<div class="buscar-vacio">No encontramos nada con <b>' +
+      escapeHtml(textoBusqueda) + '</b>.<br>Prob\u00e1 con otra palabra o mir\u00e1 las categor\u00edas.</div>';
+    return;
+  }
+
+  const porCategoria = new Map();
+  encontrados.forEach(p => {
+    const cat = (p.category || '').trim() || 'Otros productos';
+    if (!porCategoria.has(cat)) porCategoria.set(cat, []);
+    porCategoria.get(cat).push(p);
+  });
+
+  list.innerHTML =
+    '<div class="buscar-cuenta">' + encontrados.length +
+      (encontrados.length === 1 ? ' resultado para \u201c' : ' resultados para \u201c') +
+      escapeHtml(textoBusqueda) + '\u201d</div>' +
+    [...porCategoria.entries()]
+      .map(([cat, lista]) => htmlGrupo(cat, lista, cat !== 'Otros productos'))
+      .join('');
+
+  conectarAtajosDeGrupo(list);
+  conectarTarjetas(list);
+}
+
+function pintarChipsCategorias(categorias){
+  const cont = byId('chipsCategorias');
+  if (!cont) return;
+  // Con un solo rubro los chips no son un atajo a ningun lado.
+  if (categorias.length < 2){ hide(cont); cont.innerHTML = ''; return; }
+  show(cont);
+
+  chipsEnPantalla = ['__inicio', '__todo'].concat(categorias);
+  const activo = (cond) => cond ? ' activo' : '';
+  cont.innerHTML = chipsEnPantalla.map((clave, i) => {
+    const texto = clave === '__inicio' ? 'Categor\u00edas'
+                : clave === '__todo'   ? 'Ver todo junto'
+                : escapeHtml(clave);
+    const encendido = !textoBusqueda && (
+      clave === '__inicio' ? (!selectedCategory && !vistaAgrupada) :
+      clave === '__todo'   ? vistaAgrupada :
+                             selectedCategory === clave);
+    return '<button type="button" class="chip-cat' + activo(encendido) + '" data-chip="' + i + '">' + texto + '</button>';
+  }).join('');
+
+  cont.querySelectorAll('.chip-cat').forEach(b => {
+    b.addEventListener('click', () => {
+      const clave = chipsEnPantalla[Number(b.dataset.chip)];
+      limpiarBusqueda(false);
+      if (clave === '__inicio'){ mostrarCategorias(); return; }
+      if (clave === '__todo'){
+        vistaAgrupada = true;
+        selectedCategory = null;
+        renderProducts();
+        // Misma marca en el historial que abrirCategoria(): asi la flecha
+        // de atras del telefono vuelve a las tarjetas y no sale de la tienda.
+        try { history.pushState({ bruwalCategoria: '__todo' }, ''); } catch (e) {}
+        scrollAlListado();
+        return;
+      }
+      vistaAgrupada = false;
+      abrirCategoria(clave);
+    });
+  });
+}
+
+function pintarBarraBusqueda(){
+  const barra = byId('barraBuscar');
+  if (!barra) return;
+  // En una tienda de 5 productos el buscador es ruido: se ve todo de una.
+  if (products.length < 6){ hide(barra); return; }
+  show(barra);
+}
+
+function limpiarBusqueda(repintar){
+  textoBusqueda = '';
+  clearTimeout(temporizadorBusqueda);
+  const input = byId('inputBuscar');
+  if (input) input.value = '';
+  const equis = byId('limpiarBuscar');
+  if (equis) equis.classList.add('hidden');
+  if (repintar) renderProducts();
+}
+
+// Se engancha una sola vez: renderProducts() corre en cada cambio y volver
+// a agregar el listener duplicaria cada tecla.
+function conectarBuscador(){
+  const input = byId('inputBuscar');
+  if (!input || input.dataset.listo) return;
+  input.dataset.listo = '1';
+
+  input.addEventListener('input', () => {
+    clearTimeout(temporizadorBusqueda);
+    // El respiro es por el celular: sin el, en una tienda de 400 productos
+    // cada tecla repinta la grilla entera y se traba al escribir.
+    temporizadorBusqueda = setTimeout(() => {
+      textoBusqueda = input.value.trim();
+      byId('limpiarBuscar').classList.toggle('hidden', !textoBusqueda);
+      renderProducts();
+    }, 180);
+  });
+
+  byId('limpiarBuscar').addEventListener('click', () => {
+    limpiarBusqueda(true);
+    input.focus();
+  });
+
+  byId('ordenProductos').addEventListener('change', (e) => {
+    ordenElegido = e.target.value;
+    renderProducts();
+  });
+}
 
 function renderProducts(){
   loadCategories();
 
   const categorias = categoriasDeLaTienda();
 
+  conectarBuscador();
+  pintarBarraBusqueda();
+  pintarChipsCategorias(categorias);
+
+  // Buscar manda sobre todo lo demas: mientras hay texto escrito no importa
+  // en que rubro estaba parado el cliente, se busca en la tienda entera.
+  if (textoBusqueda){ renderBusqueda(); return; }
+
   // Sin categorías cargadas todo sigue como antes: la lista completa
   if (categorias.length && !selectedCategory){
     hide(byId('emptyProducts'));
     hide(byId('volverCategorias'));
+    if (vistaAgrupada){ renderAgrupado(categorias); return; }
     renderTarjetasDeCategoria(categorias);
     return;
   }
 
-  filteredProducts = selectedCategory
+  filteredProducts = ordenar(selectedCategory
     ? productosDe(selectedCategory)
-    : products;
+    : products);
 
   const list = byId('productsList');
   if (filteredProducts.length === 0){
