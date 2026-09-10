@@ -649,6 +649,43 @@ tr.fila-elegida > td { background:#EAF4FD; }
 
 .app-user b { color: var(--navy); }
 
+/* ---- Campanita de novedades ---- */
+.campanita-caja { position: relative; display: inline-flex; }
+.campanita { position: relative; }
+.campanita-globo {
+  position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px;
+  padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff;
+  font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.campanita-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  width: 330px; max-width: calc(100vw - 24px); max-height: 70vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 14px 38px rgba(21, 41, 77, .20); padding: 6px;
+}
+.campanita-titulo {
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-mute); padding: 9px 10px 6px;
+}
+.campanita-item {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%;
+  padding: 10px; border: none; background: none; border-radius: 9px;
+  cursor: pointer; text-align: left; font-family: inherit;
+}
+.campanita-item:hover { background: var(--bg); }
+.campanita-item-icono { font-size: 17px; line-height: 1.25; flex-shrink: 0; }
+.campanita-item-txt { flex: 1; }
+.campanita-item-txt b { display: block; color: var(--navy); font-size: 13.5px; font-weight: 700; }
+.campanita-item-txt span { display: block; color: var(--text-mute); font-size: 12px; line-height: 1.5; margin-top: 2px; }
+.campanita-vacio { padding: 18px 12px; text-align: center; color: var(--text-mute); font-size: 13px; }
+
+/* En el celular el panel no puede colgar del boton: no entra. Va pegado
+   abajo del encabezado y a lo ancho de la pantalla. */
+@media (max-width: 560px) {
+  .campanita-panel { position: fixed; top: 62px; left: 12px; right: 12px; width: auto; }
+}
+
 .btn-ghost {
   background: #fff;
   border: 1px solid var(--line);
@@ -1588,6 +1625,13 @@ tr:last-child td { border-bottom: none; }
     <div class="app-user">
       <span id="userBusiness"><b></b></span>
       <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
+      <div class="campanita-caja">
+        <button class="btn-ghost campanita" id="campanitaBtn" title="Novedades" aria-label="Novedades">
+          <i class="fa-solid fa-bell"></i>
+          <span class="campanita-globo hidden" id="campanitaGlobo">0</span>
+        </button>
+        <div class="campanita-panel hidden" id="campanitaPanel"></div>
+      </div>
       <button class="btn-ghost" id="verGuiaBtn" title="Ver el video de ayuda" style="display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-circle-play"></i> Cómo usar</button>
       <button class="btn-ghost hidden" id="instalarPanelBtn" title="Instalar el panel como app" style="display:none;align-items:center;gap:6px;"><i class="fa-solid fa-mobile-screen"></i> Descargar app</button>
       <a href="/" class="btn-ghost" title="Ir al inicio" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-house"></i> Inicio</a>
@@ -9278,8 +9322,168 @@ async function refreshData() {
   aplicarVisibilidadPorTurnos();
   aplicarVisibilidadPorPlan();
   refrescarListaDeCategorias();
+  pintarCampanita();
   await renderAgendaDia();
 }
+
+// ===================== CAMPANITA DE NOVEDADES =====================
+// Todo lo que muestra sale de datos que el panel YA tiene cargados
+// (pedidosTodos, mlOrdenes, products): no agrega ni una consulta. Y como
+// refreshData() corre solo cada minuto, se actualiza sola.
+//
+// Dos clases de aviso, y la diferencia importa:
+//
+//  - HECHOS: "vendiste por Mercado Libre". Pasaron una vez. Se marcan como
+//    vistos al abrir la campanita y no molestan mas.
+//  - TAREAS: "tenes pedidos sin confirmar". No son noticias, son cosas por
+//    hacer. Se quedan hasta que se hagan, aunque se abra la campanita mil
+//    veces. Marcarlas como leidas seria esconder trabajo pendiente.
+
+const claveVistoCampanita = () => 'bruwal_campanita_' + (currentStore ? currentStore.slug : '');
+
+function ultimaVezVistaCampanita() {
+  try { return localStorage.getItem(claveVistoCampanita()) || ''; }
+  catch (e) { return ''; }   // navegador con el almacenamiento bloqueado
+}
+
+function marcarCampanitaVista() {
+  try { localStorage.setItem(claveVistoCampanita(), new Date().toISOString()); }
+  catch (e) { /* sin localStorage la campanita anda igual, solo no recuerda */ }
+}
+
+function novedadesDelPanel() {
+  const avisos = [];
+  const visto = ultimaVezVistaCampanita();
+
+  // ---- HECHO: ventas nuevas de Mercado Libre
+  const ventasMl = (mlOrdenes || []).filter(o =>
+    o.estado === 'paid' && o.creado_en && (!visto || o.creado_en > visto));
+  if (ventasMl.length) {
+    const plata = ventasMl.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    avisos.push({
+      tipo: 'hecho',
+      icono: '\ud83c\udf89',
+      titulo: ventasMl.length === 1 ? 'Vendiste por Mercado Libre' : 'Vendiste ' + ventasMl.length + ' veces por Mercado Libre',
+      detalle: money(Math.round(plata)) + (ventasMl.length === 1 ? '' : ' en total') + ' \u00b7 tocá para ver el detalle',
+      ir: 'tabMercadoLibre'
+    });
+  }
+
+  // ---- TAREA: pedidos de la tienda esperando confirmacion
+  const pendientes = (pedidosTodos || []).filter(o => estadoPedido(o) === 'pendiente');
+  if (pendientes.length) {
+    avisos.push({
+      tipo: 'tarea',
+      icono: '\u23f3',
+      titulo: 'Ten\u00e9s ' + pendientes.length + ' pedido' + (pendientes.length === 1 ? '' : 's') + ' por confirmar',
+      detalle: 'Reci\u00e9n al confirmarlos cuentan como venta y se descuenta el stock.',
+      ir: 'tabPedidos'
+    });
+  }
+
+  // ---- TAREA: ventas de ML a las que no se les pudo descontar stock
+  const sinDescontar = (mlOrdenes || []).filter(o => o.estado === 'paid' && o.sin_vincular);
+  if (sinDescontar.length) {
+    avisos.push({
+      tipo: 'tarea',
+      icono: '\u26a0\ufe0f',
+      titulo: sinDescontar.length + ' venta' + (sinDescontar.length === 1 ? '' : 's') + ' de ML sin descontar stock',
+      detalle: 'La publicaci\u00f3n no estaba vinculada. Ajust\u00e1 el stock a mano y vincul\u00e1la.',
+      ir: 'tabMercadoLibre'
+    });
+  }
+
+  // ---- TAREA: stock bajo. Solo con minimo cargado: sin minimo no hay forma
+  // de saber que es "poco" para ese negocio, y avisar por todo es no avisar.
+  const bajos = (products || []).filter(p =>
+    esProductoFisico(p) && !p.solo_interno &&
+    Number(p.min_stock) > 0 && Number(p.stock || 0) <= Number(p.min_stock));
+  if (bajos.length) {
+    avisos.push({
+      tipo: 'tarea',
+      icono: '\ud83d\udce6',
+      titulo: bajos.length === 1 ? 'Un producto con stock bajo' : bajos.length + ' productos con stock bajo',
+      detalle: bajos.slice(0, 3).map(p => p.name).join(', ') + (bajos.length > 3 ? ' y ' + (bajos.length - 3) + ' m\u00e1s' : ''),
+      ir: 'tabProductos'
+    });
+  }
+
+  return avisos;
+}
+
+function pintarCampanita() {
+  const globo = byId('campanitaGlobo');
+  if (!globo) return;
+  const avisos = novedadesDelPanel();
+  globo.textContent = avisos.length > 9 ? '9+' : String(avisos.length);
+  globo.classList.toggle('hidden', avisos.length === 0);
+
+  // Con el panel ABIERTO no se toca el contenido, solo el globo. Es el mismo
+  // criterio que el refresco automatico, que no repinta nada mientras hay un
+  // modal abierto: no se le mueve la mesa al que esta leyendo. Al cerrar y
+  // volver a abrir se arma de nuevo con lo ultimo.
+}
+
+function pintarPanelCampanita(avisos) {
+  const panel = byId('campanitaPanel');
+  if (!panel) return;
+
+  panel.innerHTML = '<div class="campanita-titulo">Novedades</div>' +
+    (avisos.length
+      ? avisos.map((a, i) =>
+          '<button type="button" class="campanita-item" data-novedad="' + i + '">' +
+            '<span class="campanita-item-icono">' + a.icono + '</span>' +
+            '<span class="campanita-item-txt"><b>' + escapeHtml(a.titulo) + '</b>' +
+              '<span>' + escapeHtml(a.detalle) + '</span></span>' +
+          '</button>').join('')
+      : '<div class="campanita-vacio">\u2705 Todo al d\u00eda.<br>No hay nada esperando.</div>');
+
+  panel.querySelectorAll('[data-novedad]').forEach(b => {
+    b.addEventListener('click', () => {
+      const a = avisos[Number(b.dataset.novedad)];
+      hide(panel);
+      const tab = a && byId(a.ir);
+      if (tab) tab.click();
+    });
+  });
+}
+
+function abrirCampanita() {
+  const panel = byId('campanitaPanel');
+  const avisos = novedadesDelPanel();
+  pintarPanelCampanita(avisos);
+  show(panel);
+
+  // Los hechos ya fueron leidos; las tareas siguen ahi hasta que se hagan.
+  // El globo se baja a mano y NO se llama a pintarCampanita(): eso repintaba
+  // el panel recien abierto y "Vendiste por Mercado Libre" se borraba en el
+  // mismo parpadeo en que aparecia.
+  marcarCampanitaVista();
+  const globo = byId('campanitaGlobo');
+  const quedan = novedadesDelPanel().length;   // ya sin los hechos, que quedaron leidos
+  globo.textContent = quedan > 9 ? '9+' : String(quedan);
+  globo.classList.toggle('hidden', quedan === 0);
+}
+
+byId('campanitaBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const panel = byId('campanitaPanel');
+  if (panel.classList.contains('hidden')) abrirCampanita();
+  else hide(panel);
+});
+
+// Tocar afuera cierra. En el celular el panel tapa media pantalla y sin esto
+// hay que apuntarle de nuevo a la campanita para sacarlo.
+document.addEventListener('click', (e) => {
+  const panel = byId('campanitaPanel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  if (panel.contains(e.target) || byId('campanitaBtn').contains(e.target)) return;
+  hide(panel);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { const p = byId('campanitaPanel'); if (p) hide(p); }
+});
 
 // ---- Refresco automatico ----------------------------------------------
 // Un pedido que entra por la tienda no avisa: hasta ahora habia que
