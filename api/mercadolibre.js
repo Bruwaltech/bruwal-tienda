@@ -541,6 +541,156 @@ async function accionPublicidadEstado(slug, campanaId, estado) {
 }
 
 
+// ---------- Rescate de ventas ----------
+//
+// Por que existe: una venta de Mercado Libre puede no quedar registrada. Si
+// el aviso no llega, o llega y se procesa mal, esa plata no aparece en
+// ningun lado y nadie se entera hasta que no cierran las cuentas.
+//
+// Y no se arregla sola: store_ml_ordenes tiene el id de la orden como clave,
+// asi que cuando Mercado Libre reintenta, el webhook entra por la rama "esta
+// ya la vi" y solo refresca el estado. Sin esto, una venta perdida se
+// perdia para siempre.
+
+async function ordenesRecientesDeMl(cuenta, token) {
+  // Mercado Libre movio esta busqueda de lugar mas de una vez; se prueban
+  // las formas conocidas y gana la primera que conteste, igual que con las
+  // campanas de publicidad.
+  const seller = encodeURIComponent(String(cuenta.ml_user_id));
+  const candidatas = [
+    '/orders/search?seller=' + seller + '&order.status=paid&sort=date_desc&limit=50',
+    '/orders/search?seller=' + seller + '&sort=date_desc&limit=50',
+    '/orders/search/recent?seller=' + seller + '&limit=50'
+  ];
+
+  const intentos = [];
+  for (const ruta of candidatas) {
+    const r = await fetch(ML_API + ruta, { headers: { Authorization: 'Bearer ' + token } });
+    const datos = await r.json().catch(() => null);
+    intentos.push({ ruta: ruta, status: r.status });
+    if (r.ok && datos && Array.isArray(datos.results)) {
+      return { ok: true, ordenes: datos.results, ruta: ruta, intentos: intentos };
+    }
+  }
+  return { ok: false, ordenes: [], intentos: intentos };
+}
+
+async function accionVentasFaltantes(slug) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+  const traidas = await ordenesRecientesDeMl(cuenta, token);
+  if (!traidas.ok) {
+    return { conectado: true, ok: false, motivo: 'No se pudieron leer las ventas de Mercado Libre.', intentos: traidas.intentos };
+  }
+
+  // Lo que BRUWAL tiene anotado de esas ordenes. order_id null significa que
+  // se vio la venta pero nunca se convirtio en un pedido: esa es la perdida.
+  const anotadas = await sb('/rest/v1/store_ml_ordenes?store_slug=eq.' + encodeURIComponent(slug) +
+                            '&select=ml_order_id,order_id&limit=500');
+  const porId = {};
+  (anotadas || []).forEach((f) => { porId[String(f.ml_order_id)] = f; });
+
+  const ventas = traidas.ordenes
+    .filter((o) => o.status === 'paid')
+    .map((o) => {
+      const fila = porId[String(o.id)];
+      return {
+        id: String(o.id),
+        fecha: o.date_created || o.date_closed || null,
+        total: Number(o.total_amount) || 0,
+        comprador: (o.buyer && (o.buyer.nickname || o.buyer.first_name)) || null,
+        productos: (o.order_items || []).map((li) => ({
+          titulo: (li.item && li.item.title) || '',
+          cantidad: Number(li.quantity) || 0
+        })),
+        vista: !!fila,
+        registrada: !!(fila && fila.order_id)
+      };
+    });
+
+  return {
+    conectado: true,
+    ok: true,
+    ventas: ventas,
+    faltan: ventas.filter((v) => !v.registrada).length
+  };
+}
+
+async function accionImportarVenta(slug, mlOrderId) {
+  if (!mlOrderId) return { ok: false, motivo: 'Falta el numero de orden.' };
+
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { ok: false, motivo: 'La tienda no tiene Mercado Libre conectado.' };
+
+  const token = await tokenDeTienda(slug);
+
+  // La orden se le pide a Mercado Libre con el token de ESTA tienda: si la
+  // orden fuera de otra cuenta, la API no la devuelve. Esa es la validacion.
+  const r = await fetch(ML_API + '/orders/' + encodeURIComponent(mlOrderId), {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  if (!r.ok) return { ok: false, motivo: 'Mercado Libre no devolvio esa orden (' + r.status + ').' };
+  const orden = await r.json();
+
+  if (orden.status !== 'paid') {
+    return { ok: false, motivo: 'Esa orden todavia no figura pagada en Mercado Libre (' + orden.status + ').' };
+  }
+
+  const previas = await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' +
+                           encodeURIComponent(String(orden.id)) + '&select=ml_order_id,order_id');
+  const previa = previas && previas[0];
+
+  // Con pedido ya creado no se toca: importarla de nuevo duplicaria la venta
+  // Y volveria a descontar el stock.
+  if (previa && previa.order_id) {
+    return { ok: false, ya: true, motivo: 'Esa venta ya esta registrada en BRUWAL.' };
+  }
+
+  // El require va ACA adentro, no arriba del archivo: ml-webhook.js hace
+  // require de este mismo archivo, y pedirselo en la carga daria un modulo a
+  // medio armar. Adentro de la funcion los dos ya terminaron de cargar.
+  const { registrarOrdenEnBruwal } = require('./ml-webhook');
+  const hecho = await registrarOrdenEnBruwal(slug, orden, token);
+
+  const fila = {
+    estado: orden.status,
+    stock_descontado: hecho.resumen.descontados > 0 || hecho.resumen.porFull > 0,
+    sin_vincular: hecho.resumen.sinVinculo.length > 0,
+    logistica: hecho.resumen.porFull ? 'fulfillment' : 'propio',
+    order_id: hecho.idPedido,
+    total: Number(orden.total_amount) || 0,
+    comprador: (orden.buyer && orden.buyer.nickname) || null,
+    detalle: orden
+  };
+
+  if (previa) {
+    await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' + encodeURIComponent(String(orden.id)), {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: Object.assign({ actualizado_en: new Date().toISOString() }, fila)
+    });
+  } else {
+    await sb('/rest/v1/store_ml_ordenes', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: [Object.assign({ ml_order_id: String(orden.id), store_slug: slug }, fila)]
+    });
+  }
+
+  return {
+    ok: true,
+    order_id: hecho.idPedido,
+    total: Number(orden.total_amount) || 0,
+    descontados: hecho.resumen.descontados,
+    por_full: hecho.resumen.porFull,
+    comision: hecho.resumen.comision,
+    sin_vinculo: hecho.resumen.sinVinculo
+  };
+}
+
+
 // ---------- Acciones ----------
 
 async function accionEstado(slug) {
@@ -648,6 +798,11 @@ module.exports = async (req, res) => {
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
+    if (accion === 'ventas_faltantes') return res.status(200).json(await accionVentasFaltantes(tienda.slug));
+    if (accion === 'importar_venta') {
+      const cuerpo = req.body || {};
+      return res.status(200).json(await accionImportarVenta(tienda.slug, cuerpo.ml_order_id));
+    }
     if (accion === 'publicidad_estado') {
       const cuerpo = req.body || {};
       return res.status(200).json(

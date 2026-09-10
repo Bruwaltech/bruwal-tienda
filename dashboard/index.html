@@ -2275,6 +2275,24 @@ tr:last-child td { border-bottom: none; }
         </div>
       </div>
 
+      <!-- Red de seguridad: si un aviso de Mercado Libre no llega o se
+           procesa mal, esa venta no aparece en ningun lado y nadie se
+           entera. Esto la va a buscar. -->
+      <div class="panel" style="margin-bottom:20px;">
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span>🔎 ¿Falta alguna venta?</span>
+          <button type="button" id="buscarVentasFaltantesBtn" class="btn"
+                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+            Buscar en Mercado Libre
+          </button>
+        </div>
+        <div id="ventasFaltantesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+          Le pregunta a Mercado Libre por tus ventas pagadas de los últimos días y
+          las compara con las que tenés acá. Si alguna no quedó registrada, la
+          traigo con su stock y su comisión.
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
         <table>
@@ -8166,6 +8184,121 @@ function renderMercadoLibre() {
           ) + '</td>' +
         '</tr>').join('')
     : '<tr><td colspan="7" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+}
+
+// ---- Rescate de ventas de Mercado Libre ----
+// Una venta puede no quedar registrada: si el aviso de ML no llega, o llega
+// y se procesa mal, esa plata no figura en Pedidos ni en Caja y nadie se
+// entera hasta que no cierran las cuentas. Y no se arregla sola, porque
+// cuando ML reintenta el webhook la reconoce como "ya vista".
+
+async function buscarVentasFaltantes() {
+  const cuerpo = byId('ventasFaltantesCuerpo');
+  const boton = byId('buscarVentasFaltantesBtn');
+  boton.disabled = true;
+  cuerpo.textContent = 'Preguntando a Mercado Libre\u2026';
+
+  try {
+    const r = await llamarApiMl('ventas_faltantes');
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conect\u00e1 tu cuenta en <strong>Configuraci\u00f3n \u2192 Mercado Libre</strong>.';
+      return;
+    }
+    if (!r.ok) {
+      cuerpo.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(r.motivo || 'No se pudo consultar.') + '</span>' +
+        (Array.isArray(r.intentos) && r.intentos.length
+          ? '<div style="margin-top:6px;font-size:11px;font-family:monospace;">' +
+            r.intentos.map(i => escapeHtml(i.status + ' \u00b7 ' + i.ruta)).join('<br>') + '</div>'
+          : '');
+      return;
+    }
+
+    const faltantes = (r.ventas || []).filter(v => !v.registrada);
+
+    if (!faltantes.length) {
+      cuerpo.innerHTML = '<span style="color:var(--stock);font-weight:600;">\u2705 Est\u00e1 todo.</span> ' +
+        'Las ' + (r.ventas || []).length + ' ventas pagadas que Mercado Libre tiene registradas ' +
+        'tambi\u00e9n est\u00e1n ac\u00e1.';
+      return;
+    }
+
+    cuerpo.innerHTML =
+      '<div style="color:var(--danger);font-weight:600;margin-bottom:10px;">' +
+        faltantes.length + (faltantes.length === 1 ? ' venta de Mercado Libre no est\u00e1' : ' ventas de Mercado Libre no est\u00e1n') +
+        ' registrada' + (faltantes.length === 1 ? '' : 's') + ' en BRUWAL.</div>' +
+      '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+      '<thead><tr>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', ''].map(t =>
+        '<th style="text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);font-size:11.5px;' +
+        'text-transform:uppercase;letter-spacing:.03em;color:var(--text-mute);">' + t + '</th>').join('') +
+      '</tr></thead><tbody>' +
+      faltantes.map(v =>
+        '<tr>' +
+          '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
+            (v.fecha ? fechaAR(v.fecha, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '\u2014') + '</td>' +
+          '<td style="padding:9px;border-bottom:1px solid var(--line);">' + escapeHtml(v.comprador || '\u2014') + '</td>' +
+          '<td style="padding:9px;border-bottom:1px solid var(--line);font-size:12.5px;">' +
+            (v.productos || []).map(p => escapeHtml(p.cantidad + '\u00d7 ' + p.titulo)).join('<br>') + '</td>' +
+          '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;font-weight:700;color:var(--navy);">' +
+            money(Math.round(v.total)) + '</td>' +
+          '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
+            '<button type="button" class="icon-btn" data-importar="' + escapeHtml(v.id) + '" ' +
+            'data-total="' + v.total + '" style="color:var(--stock);">\u2b07 Traer a BRUWAL</button></td>' +
+        '</tr>').join('') +
+      '</tbody></table></div>';
+
+    cuerpo.querySelectorAll('[data-importar]').forEach(b => {
+      b.addEventListener('click', () => importarVentaMl(b.dataset.importar, Number(b.dataset.total), b));
+    });
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+async function importarVentaMl(idOrden, total, boton) {
+  if (!puedeOperar()) return;
+
+  // Traerla mueve stock y anota la comision: se pregunta antes.
+  if (!confirm('\u00bfTraer esta venta de ' + money(Math.round(total)) + ' a BRUWAL?\n\n' +
+               'Se registra el pedido, se descuenta el stock de los productos vinculados ' +
+               'y se anota la comisi\u00f3n de Mercado Libre.')) return;
+
+  boton.disabled = true;
+  boton.textContent = 'Trayendo\u2026';
+
+  try {
+    const r = await llamarApiMl('importar_venta', { ml_order_id: idOrden });
+
+    if (!r.ok) {
+      alert(r.ya
+        ? 'Esa venta ya estaba registrada en BRUWAL.'
+        : 'No se pudo traer:\n\n' + (r.motivo || 'Error desconocido.'));
+      boton.disabled = false;
+      boton.textContent = '\u2b07 Traer a BRUWAL';
+      return;
+    }
+
+    // Que el vendedor sepa exactamente que se movio, sobre todo el stock que
+    // NO se movio: esas unidades hay que ajustarlas a mano.
+    let detalle = 'Venta de ' + money(Math.round(r.total)) + ' registrada.';
+    if (r.descontados) detalle += '\nStock descontado de ' + r.descontados + ' producto' + (r.descontados === 1 ? '' : 's') + '.';
+    if (r.por_full) detalle += '\n' + r.por_full + ' por Full: no se toc\u00f3 el stock del local.';
+    if (r.comision) detalle += '\nComisi\u00f3n anotada: ' + money(Math.round(r.comision)) + '.';
+    if (Array.isArray(r.sin_vinculo) && r.sin_vinculo.length) {
+      detalle += '\n\nOJO: ' + r.sin_vinculo.length + ' publicaci\u00f3n sin vincular, as\u00ed que ' +
+                 'ese stock NO se descont\u00f3. Ajustalo a mano y vincul\u00e1 la publicaci\u00f3n.';
+    }
+    alert(detalle);
+
+    await refreshData();
+    await buscarVentasFaltantes();
+  } catch (err) {
+    alert('No se pudo traer:\n\n' + err.message);
+    boton.disabled = false;
+    boton.textContent = '\u2b07 Traer a BRUWAL';
+  }
 }
 
 // El que no tiene Pro no ve la solapa, pero sí esta pantalla: es mejor
@@ -16271,6 +16404,7 @@ byId('conectarMlBtn').addEventListener('click', conectarMl);
 byId('mlPublicacionesBtn').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicacionesBtn2').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicidadBtn').addEventListener('click', consultarPublicidadMl);
+byId('buscarVentasFaltantesBtn').addEventListener('click', buscarVentasFaltantes);
 byId('tabMercadoLibre').addEventListener('click', () => {
   if (!tienePlanPro()) { abrirBeneficiosMl(true); return; }
   mostrarVistaMercadoLibre();

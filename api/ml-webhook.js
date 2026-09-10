@@ -276,6 +276,32 @@ async function registrarPedido(slug, orden, items, resumen) {
   return (filas && filas[0] && filas[0].id) || null;
 }
 
+// Registrar una orden de Mercado Libre en BRUWAL: descontar el stock, crear
+// el pedido y anotar la comision.
+//
+// Vive en su propia funcion porque la usan DOS caminos: el aviso de Mercado
+// Libre, que es lo normal, y el rescate a mano desde el panel para las
+// ventas que no hayan quedado registradas. Un solo lugar donde esta escrito
+// que significa "registrar una venta", asi los dos caminos no se separan.
+async function registrarOrdenEnBruwal(slug, orden, token) {
+  const resumen = { descontados: 0, porFull: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
+  const items = [];
+
+  const logistica = await logisticaDeOrden(orden, token);
+  const esFull = logistica === 'fulfillment';
+
+  for (const linea of (orden.order_items || [])) {
+    const item = await descontarUnItem(slug, linea, resumen, esFull);
+    if (item) items.push(item);
+  }
+
+  const idPedido = await registrarPedido(slug, orden, items, resumen);
+  resumen.comision = await registrarComision(slug, orden);
+
+  return { resumen: resumen, items: items, idPedido: idPedido };
+}
+
+
 // ---------- Entrada ----------
 
 module.exports = async (req, res) => {
@@ -340,20 +366,15 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, repetida: true, stock_descontado: previa.stock_descontado });
     }
 
-    const resumen = { descontados: 0, porFull: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
+    let resumen = { descontados: 0, porFull: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
     let items = [];
     let idPedido = null;
 
     if (pagada) {
-      const logistica = await logisticaDeOrden(orden, token);
-      const esFull = logistica === 'fulfillment';
-
-      for (const linea of (orden.order_items || [])) {
-        const item = await descontarUnItem(slug, linea, resumen, esFull);
-        if (item) items.push(item);
-      }
-      idPedido = await registrarPedido(slug, orden, items, resumen);
-      resumen.comision = await registrarComision(slug, orden);
+      const hecho = await registrarOrdenEnBruwal(slug, orden, token);
+      resumen = hecho.resumen;
+      items = hecho.items;
+      idPedido = hecho.idPedido;
     }
 
     await sb('/rest/v1/store_ml_ordenes', {
@@ -389,3 +410,6 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: String(err.message || err) });
   }
 };
+
+// La usa el rescate de ventas desde el panel (ver api/mercadolibre.js).
+module.exports.registrarOrdenEnBruwal = registrarOrdenEnBruwal;
