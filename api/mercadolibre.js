@@ -400,7 +400,17 @@ async function accionPublicidad(slug) {
   const baseAds = '/marketplace/advertising/' + encodeURIComponent(siteAnunciante) +
                   '/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
   const baseViejo = '/advertising/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
+  // La respuesta base trae la campana pero NO como viene rindiendo: para eso
+  // hay que pedir un rango de fechas. Se prueba primero con metricas de los
+  // ultimos 30 dias y, si esa forma no le gusta, cae en la pelada, que ya
+  // sabemos que contesta. Peor caso: se ven las campanas sin numeros.
+  const hoy = new Date();
+  const hasta = hoy.toISOString().slice(0, 10);
+  const desde = new Date(hoy.getTime() - 29 * 86400000).toISOString().slice(0, 10);
+  const conMetricas = '/search?limit=50&date_from=' + desde + '&date_to=' + hasta;
+
   const candidatas = [
+    { ruta: baseAds + conMetricas,          version: '2' },
     { ruta: baseAds + '/search?limit=50',   version: '2' },
     { ruta: baseAds + '/search?limit=50',   version: '1' },
     { ruta: baseAds + '?limit=50',          version: '2' },

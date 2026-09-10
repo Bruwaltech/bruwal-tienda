@@ -8175,6 +8175,108 @@ function abrirBeneficiosMl(ofrecerUpgrade) {
   show(byId('mlBeneficiosModal'));
 }
 
+// Los estados y las estrategias vienen en ingles y en MAYUSCULA. Si aparece
+// uno que no conocemos se muestra crudo: mejor un dato feo que un dato menos.
+const ESTADOS_CAMPANA = {
+  active:   { texto: 'Activa',    color: 'var(--stock)',  fondo: '#E7F6EE' },
+  paused:   { texto: 'Pausada',   color: '#8A5200',       fondo: '#FEF3E2' },
+  idle:     { texto: 'Sin uso',   color: 'var(--text-mute)', fondo: 'var(--bg)' },
+  finished: { texto: 'Terminada', color: 'var(--text-mute)', fondo: 'var(--bg)' }
+};
+
+const ESTRATEGIAS_CAMPANA = {
+  PROFITABILITY: 'Rentabilidad',
+  INCREASE: 'Crecimiento',
+  VISIBILITY: 'Visibilidad'
+};
+
+// Nombres de metricas vistos en la API de Product Ads. Las que no esten en
+// la lista se muestran con su nombre crudo en vez de esconderse.
+const NOMBRES_METRICAS = {
+  clicks: 'Clics', prints: 'Impresiones', impressions: 'Impresiones',
+  cost: 'Inversi\u00f3n', acos: 'ACOS', cpc: 'CPC', roas: 'ROAS',
+  total_amount: 'Ventas', direct_amount: 'Ventas directas', indirect_amount: 'Ventas indirectas',
+  units_quantity: 'Unidades', direct_units_quantity: 'Unidades directas',
+  indirect_units_quantity: 'Unidades indirectas', organic_units_quantity: 'Unidades org\u00e1nicas',
+  advertising_fee: 'Comisi\u00f3n', sov: 'Participaci\u00f3n'
+};
+
+const METRICAS_EN_PESOS = ['cost', 'cpc', 'total_amount', 'direct_amount', 'indirect_amount', 'advertising_fee'];
+const METRICAS_EN_PORCENTAJE = ['acos', 'sov'];
+
+function valorDeMetrica(clave, valor) {
+  if (typeof valor !== 'number') return escapeHtml(String(valor));
+  if (METRICAS_EN_PESOS.includes(clave)) return money(Math.round(valor));
+  if (METRICAS_EN_PORCENTAJE.includes(clave)) return valor.toLocaleString('es-AR', { maximumFractionDigits: 1 }) + '%';
+  return valor.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+}
+
+// Las metricas pueden venir adentro de la campana o no venir: depende de si
+// Mercado Libre acepto el rango de fechas. Si no vinieron, no se inventa
+// nada -- simplemente no se muestra esa fila.
+function metricasDeCampana(c) {
+  const m = c.metrics || c.metrics_summary || null;
+  if (!m || typeof m !== 'object') return '';
+  const partes = Object.keys(m)
+    .filter(k => m[k] !== null && m[k] !== undefined && m[k] !== 0)
+    .map(k => '<span style="margin-right:14px;white-space:nowrap;">' +
+      escapeHtml(NOMBRES_METRICAS[k] || k) + ': <strong style="color:var(--navy);">' +
+      valorDeMetrica(k, m[k]) + '</strong></span>');
+  if (!partes.length) return '';
+  return '<div style="margin-top:6px;font-size:12px;color:var(--text-mute);">' + partes.join('') + '</div>';
+}
+
+function resumenDeCampanas(campanas) {
+  const activas = campanas.filter(c => c.status === 'active');
+  // El presupuesto que importa es el de las ACTIVAS: sumar el de una campana
+  // pausada dice que se gastan $26.000 por dia cuando en realidad son $1.000.
+  const porDia = activas.reduce((s, c) => s + (Number(c.daily_budget) || 0), 0);
+  return '<div style="margin-top:10px;font-size:13.5px;color:var(--navy);">' +
+    '<strong>' + campanas.length + '</strong> ' + (campanas.length === 1 ? 'campa\u00f1a' : 'campa\u00f1as') +
+    ' \u00b7 <strong>' + activas.length + '</strong> ' + (activas.length === 1 ? 'activa' : 'activas') +
+    (porDia ? ' \u00b7 hasta <strong>' + money(porDia) + '</strong> por d\u00eda' : '') +
+  '</div>';
+}
+
+function tablaDeCampanas(campanas) {
+  // Las activas primero: es lo que esta gastando plata ahora.
+  const orden = campanas.slice().sort((a, b) =>
+    (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1));
+
+  return '<div style="overflow-x:auto;margin-top:12px;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+    '<thead><tr>' +
+      ['Campa\u00f1a', 'Estado', 'Presupuesto diario', 'Objetivo', 'Creada']
+        .map(t => '<th style="text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);' +
+                  'font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-mute);">' +
+                  t + '</th>').join('') +
+    '</tr></thead><tbody>' +
+    orden.map(c => {
+      const est = ESTADOS_CAMPANA[c.status] || { texto: c.status, color: 'var(--text-mute)', fondo: 'var(--bg)' };
+      const objetivo = ESTRATEGIAS_CAMPANA[c.strategy] || c.strategy || '\u2014';
+      // ACOS: cuanto de cada venta se va en publicidad. Es el numero con el
+      // que el negocio decide si la campana le conviene, asi que va al lado
+      // del objetivo y no escondido en el crudo.
+      const acos = Number(c.acos_target) ? ' \u00b7 ACOS ' + Number(c.acos_target).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + '%' : '';
+      return '<tr>' +
+        '<td style="padding:9px;border-bottom:1px solid var(--line);">' +
+          '<strong style="color:var(--navy);">' + escapeHtml(c.name || 'Sin nombre') + '</strong>' +
+          metricasDeCampana(c) +
+        '</td>' +
+        '<td style="padding:9px;border-bottom:1px solid var(--line);">' +
+          '<span style="background:' + est.fondo + ';color:' + est.color + ';padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;">' +
+            escapeHtml(est.texto) + '</span></td>' +
+        '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
+          (Number(c.daily_budget) ? money(Math.round(c.daily_budget)) : '\u2014') + '</td>' +
+        '<td style="padding:9px;border-bottom:1px solid var(--line);font-size:12.5px;">' +
+          escapeHtml(objetivo) + acos + '</td>' +
+        '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:12.5px;color:var(--text-mute);">' +
+          (c.date_created ? fechaAR(c.date_created, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '\u2014') + '</td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table></div>';
+}
+
 async function consultarPublicidadMl() {
   const cuerpo = byId('mlPublicidadCuerpo');
   const boton = byId('mlPublicidadBtn');
@@ -8196,9 +8298,9 @@ async function consultarPublicidadMl() {
       return;
     }
 
-    // Mientras no sepamos con qué nombres vienen las métricas en una cuenta
-    // argentina, se muestra la respuesta tal cual. Es feo a propósito: es
-    // para leerla una vez entre los dos y después armar la tabla de verdad.
+    // Ya sabemos con que nombres vienen los datos en una cuenta argentina
+    // (se leyo la respuesta real de Novalis), asi que va la tabla de verdad.
+    // El JSON crudo queda abajo, plegado, por si aparece un campo nuevo.
     // Cuando ninguna ruta contesta, lo util no es el error: es QUE se probo.
     // Con la lista de intentos a la vista se sabe en una mirada si Mercado
     // Libre movio el recurso otra vez o si el problema es la cuenta.
@@ -8209,16 +8311,32 @@ async function consultarPublicidadMl() {
         '</div>'
       : '';
 
-    cuerpo.innerHTML =
+    const encabezado =
       '✅ Publicidad habilitada. Anunciante: <strong>' + escapeHtml(String(r.anunciante?.nombre || r.anunciante?.id || '')) + '</strong>' +
       (r.campanas_ok
-        ? '<br><span style="color:var(--stock);">Campa\u00f1as le\u00eddas desde <code style="font-size:11.5px;">' +
-          escapeHtml(String(r.campanas_ruta || '')) + '</code></span>'
+        ? ''
         : '<br><span style="color:var(--danger);">Ninguna ruta de campa\u00f1as contest\u00f3 (\u00faltima: ' + r.campanas_status + ').</span>') +
-      detalleIntentos +
-      '<pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11.5px;max-height:280px;overflow:auto;margin-top:10px;white-space:pre-wrap;">' +
-        escapeHtml(JSON.stringify(r.campanas, null, 1)) +
-      '</pre>';
+      detalleIntentos;
+
+    const crudo =
+      '<details style="margin-top:12px;">' +
+        '<summary style="cursor:pointer;font-size:12px;color:var(--text-mute);">Ver la respuesta completa de Mercado Libre</summary>' +
+        '<pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11.5px;max-height:280px;overflow:auto;margin-top:8px;white-space:pre-wrap;">' +
+          escapeHtml(JSON.stringify(r.campanas, null, 1)) +
+        '</pre>' +
+      '</details>';
+
+    const campanas = (r.campanas && Array.isArray(r.campanas.results)) ? r.campanas.results : [];
+    if (!r.campanas_ok || !campanas.length) {
+      cuerpo.innerHTML = encabezado +
+        (r.campanas_ok
+          ? '<div style="margin-top:10px;">Esta cuenta todav\u00eda no tiene campa\u00f1as de Product Ads.</div>'
+          : '') +
+        crudo;
+      return;
+    }
+
+    cuerpo.innerHTML = encabezado + resumenDeCampanas(campanas) + tablaDeCampanas(campanas) + crudo;
   } catch (err) {
     cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
   } finally {
