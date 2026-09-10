@@ -466,7 +466,7 @@ module.exports = async (req, res) => {
       detalle: orden
     };
 
-    // Si todavia no se corrio la migracion 41, `costo_envio` no existe y
+    // Si todavia no se corrio la migracion 45, `costo_envio` no existe y
     // Supabase contesta PGRST204. Eso, sin este catch, tira la venta ENTERA
     // a la basura: es el mismo bug de la columna `notes` que arreglamos hoy.
     // Perder el dato del envio es molesto; perder la venta es grave.
@@ -476,7 +476,7 @@ module.exports = async (req, res) => {
       });
     } catch (err) {
       if (!String(err.message || '').includes('costo_envio')) throw err;
-      console.warn('Falta la columna costo_envio (correr schema/41-costo-envio-ml.sql). ' +
+      console.warn('Falta la columna costo_envio (correr schema/45-ml-costo-envio.sql). ' +
                    'La venta se guarda sin ese dato.');
       delete fila.costo_envio;
       await sb('/rest/v1/store_ml_ordenes', {

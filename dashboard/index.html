@@ -8166,7 +8166,7 @@ let mlOrdenes = [];
 //     venta real hay que confirmarlo mirando store_ml_ordenes.detalle: si
 //     estuviera al reves, la comision sale inflada en las ventas de 2 o mas
 //     unidades y hay que sacar el "* cantidad".
-//  2. El envio SI esta incluido desde la migracion 41: sale de
+//  2. El envio SI esta incluido desde la migracion 45: sale de
 //     /shipments/{id}/costs (senders[].cost) y lo guarda el webhook. En las
 //     ventas anteriores a ese cambio viene null y se avisa en pantalla. Mientras no este,
 //     el neto es mejor de lo que va a ser en las ventas con envio gratis.
@@ -8257,7 +8257,7 @@ function renderMercadoLibre() {
     ? money(suma('neto') - suma('costo'))
     : '—';
   // Cuantas ventas del mes no tienen el envio averiguado. Son las anteriores
-  // a la migracion 41: su ganancia esta inflada por lo que costo mandarlas.
+  // a la migracion 45: su ganancia esta inflada por lo que costo mandarlas.
   const sinEnvio = delMes.filter((o) => costosDeOrdenMl(o).envio === null).length;
 
   byId('mlGananciaNota').textContent = !hayVentas
