@@ -378,6 +378,23 @@ h1, h2, h3 {
 }
 .acom-aviso button:hover { background:var(--navy); color:#fff; }
 
+/* ---- Buscador de la lista de productos ---- */
+.buscar-prod { display:flex; align-items:center; gap:12px; margin:14px 0 4px; flex-wrap:wrap; }
+.buscar-prod-campo { position:relative; display:flex; align-items:center; flex:1; min-width:240px; max-width:520px; }
+.buscar-prod-campo input {
+  width:100%; padding:11px 38px 11px 38px; border:1px solid var(--line);
+  border-radius:999px; font-size:14px; font-family:inherit;
+  background:#fff; color:var(--navy); outline:none; transition:border-color .2s ease;
+}
+.buscar-prod-campo input:focus { border-color:var(--celeste); }
+.buscar-prod-lupa { position:absolute; left:14px; font-size:14px; opacity:.6; pointer-events:none; }
+.buscar-prod-x {
+  position:absolute; right:8px; border:none; background:none; cursor:pointer;
+  color:var(--text-mute); font-size:15px; font-family:inherit; padding:4px 7px; line-height:1;
+}
+.buscar-prod-x:hover { color:var(--navy); }
+.buscar-prod-cuenta { font-size:13px; color:var(--text-mute); white-space:nowrap; }
+
 /* Boton que se comporta como enlace, para acciones secundarias del login */
 .link-suave {
   display: block;
@@ -1695,6 +1712,18 @@ tr:last-child td { border-bottom: none; }
         <button type="button" class="productos-destino-tab" data-productos-destino="interno" style="flex:1;max-width:220px;padding:9px 14px;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;font-weight:700;font-size:13px;background:#fff;color:var(--text-dark);font-family:inherit;">
           <span id="tabInternoTexto">🔒 Stock interno</span>
         </button>
+      </div>
+
+      <!-- Buscador de la lista. El markup es fijo (nunca se reescribe con
+           innerHTML) para que escribir no le saque el foco al campo. -->
+      <div id="barraBuscarProductos" class="buscar-prod hidden">
+        <div class="buscar-prod-campo">
+          <span class="buscar-prod-lupa">🔍</span>
+          <input type="text" id="buscarProductos" autocomplete="off"
+                 placeholder="Buscar producto por nombre, categoría, código o marca…">
+          <button type="button" id="limpiarBuscarProductos" class="buscar-prod-x hidden" aria-label="Borrar la búsqueda">✕</button>
+        </div>
+        <span id="buscarProductosCuenta" class="buscar-prod-cuenta"></span>
       </div>
 
       <div id="emptyProducts" class="empty-state hidden">
@@ -9811,9 +9840,54 @@ function celdaPrecioProducto(p, conSufijo) {
 // el que ya estaba, no lo reemplaza.
 let soloEnOferta = false;
 
+// Lo mismo para el buscador de arriba de la lista: se cruza con la solapa y
+// con el de ofertas. En una tienda de 408 productos, bajar con la rueda
+// hasta encontrar uno era el trabajo.
+let busquedaProductos = '';
+let temporizadorBuscarProductos = null;
+
+// Todo lo que sirve para encontrar un producto, no solo el nombre: buscar
+// "auricular" tiene que traer tambien los que lo dicen en la categoria, y
+// pegar un EAN o un IMEI tiene que encontrarlo derecho.
+function textoBuscableProducto(p) {
+  const partes = [p.name, p.category, p.ean, p.marca, p.modelo, p.sku, p.imei, p.description];
+  if (Array.isArray(p.variantes)) {
+    p.variantes.forEach(v => {
+      Object.values(v.atributos || {}).forEach(x => partes.push(x));
+      (Array.isArray(v.imeis) ? v.imeis : []).forEach(u => partes.push(typeof u === 'string' ? u : (u && u.imei)));
+    });
+  }
+  return normalizarTexto(partes.filter(Boolean).join(' '));
+}
+
+// Cada palabra escrita tiene que aparecer en alguna parte: "funda iphone"
+// no trae todas las fundas ni todos los iPhone, trae las fundas de iPhone.
+function coincideBusquedaProducto(p, palabras) {
+  const texto = textoBuscableProducto(p);
+  return palabras.every(w => texto.includes(w));
+}
+
+function pintarBarraBuscarProductos(mostrados, total) {
+  const barra = byId('barraBuscarProductos');
+  if (!barra) return;
+  // Sin productos cargados el buscador es un campo que no puede encontrar
+  // nada; ahi la pantalla es la de "cre\u00e1 tu primer producto".
+  barra.classList.toggle('hidden', total === 0 && !busquedaProductos);
+  byId('limpiarBuscarProductos').classList.toggle('hidden', !busquedaProductos);
+  byId('buscarProductosCuenta').textContent = busquedaProductos
+    ? mostrados + ' de ' + total
+    : total + (total === 1 ? ' producto' : ' productos');
+}
+
 function renderProducts() {
   const panel = PANELES_PRODUCTOS[filtroProductosDestino] || PANELES_PRODUCTOS.tienda;
-  const lista = products.filter(panel.filtro).filter(p => !soloEnOferta || hayOferta(p));
+  const enLaSolapa = products.filter(panel.filtro);
+  const palabras = normalizarTexto(busquedaProductos).trim().split(/\s+/).filter(Boolean);
+  const lista = enLaSolapa
+    .filter(p => !soloEnOferta || hayOferta(p))
+    .filter(p => !palabras.length || coincideBusquedaProducto(p, palabras));
+
+  pintarBarraBuscarProductos(lista.length, enLaSolapa.length);
 
   // El contador va pegado al titulo y ademas filtra: sin esto, saber cuantas
   // ofertas hay activas obligaba a recorrer la lista entera a ojo.
@@ -9828,7 +9902,18 @@ function renderProducts() {
   if (lista.length === 0) {
     show(byId('emptyProducts'));
     hide(byId('productsPanel'));
-    byId('emptyProducts').querySelector('p').textContent = panel.vacio;
+    // Buscando algo que no esta, "cre\u00e1 tu primer producto" es mentira: la
+    // tienda tiene productos, lo que no hay es ESE.
+    const cartel = byId('emptyProducts');
+    if (busquedaProductos) {
+      cartel.querySelector('h3').textContent = 'Sin resultados';
+      cartel.querySelector('p').textContent =
+        'No hay nada con \u201c' + busquedaProductos + '\u201d' +
+        (soloEnOferta ? ' entre los que est\u00e1n en oferta' : '') + '.';
+    } else {
+      cartel.querySelector('h3').textContent = 'Sin productos';
+      cartel.querySelector('p').textContent = panel.vacio;
+    }
     return;
   }
 
@@ -16445,6 +16530,31 @@ async function deleteProduct(id) {
   }
   await refreshData();
 }
+
+// El buscador de la lista. OJO: no es el mismo campo que scannerInput, que
+// esta al lado en la barra de arriba y hace otra cosa (escanear un codigo
+// nuevo abre el formulario de alta). Este solo filtra lo que ya hay.
+byId('buscarProductos').addEventListener('input', (e) => {
+  clearTimeout(temporizadorBuscarProductos);
+  // Un respiro corto: con 408 productos, repintar la tabla entera en cada
+  // tecla se traba al escribir.
+  temporizadorBuscarProductos = setTimeout(() => {
+    busquedaProductos = e.target.value.trim();
+    renderProducts();
+  }, 180);
+});
+
+byId('limpiarBuscarProductos').addEventListener('click', () => {
+  clearTimeout(temporizadorBuscarProductos);
+  busquedaProductos = '';
+  byId('buscarProductos').value = '';
+  renderProducts();
+  byId('buscarProductos').focus();
+});
+
+byId('buscarProductos').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') byId('limpiarBuscarProductos').click();
+});
 
 byId('scannerInput').addEventListener('keypress', async (e) => {
   if (e.key !== 'Enter') return;
