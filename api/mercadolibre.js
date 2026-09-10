@@ -652,11 +652,12 @@ async function accionImportarVenta(slug, mlOrderId) {
   // require de este mismo archivo, y pedirselo en la carga daria un modulo a
   // medio armar. Adentro de la funcion los dos ya terminaron de cargar.
   const { registrarOrdenEnBruwal } = require('./ml-webhook');
-  const hecho = await registrarOrdenEnBruwal(slug, orden, token);
+  const hecho = await registrarOrdenEnBruwal(slug, orden, token, cuenta.ml_user_id);
 
   const fila = {
     estado: orden.status,
     stock_descontado: hecho.resumen.descontados > 0 || hecho.resumen.porFull > 0,
+    costo_envio: hecho.resumen.envio,
     sin_vincular: hecho.resumen.sinVinculo.length > 0,
     logistica: hecho.resumen.porFull ? 'fulfillment' : 'propio',
     order_id: hecho.idPedido,
@@ -686,6 +687,7 @@ async function accionImportarVenta(slug, mlOrderId) {
     descontados: hecho.resumen.descontados,
     por_full: hecho.resumen.porFull,
     comision: hecho.resumen.comision,
+    envio: hecho.resumen.envio,
     sin_vinculo: hecho.resumen.sinVinculo
   };
 }

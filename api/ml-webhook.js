@@ -75,6 +75,71 @@ async function logisticaDeOrden(orden, token) {
 }
 
 
+// Lo que el VENDEDOR paga de envio en esta venta.
+//
+// No viene en la orden: hay que pedir /shipments/{id}/costs. Ahi
+// senders[].cost es, en palabras de la documentacion, "the final shipping
+// cost for each user" — ya con los descuentos aplicados. gross_amount es el
+// costo sin descuentos y NO sirve para la ganancia: el vendedor no paga eso.
+//
+// Devuelve null (no cero) cuando no se pudo averiguar. La diferencia importa:
+// cero es "el envio no le costo nada" y null es "no sabemos", y el panel
+// muestra la ganancia solo cuando tiene todos los numeros.
+async function costoDeEnvioDelVendedor(orden, token, mlUserId) {
+  const idEnvio = orden.shipping && orden.shipping.id;
+  if (!idEnvio) return null;   // retiro en el local, sin envio
+
+  try {
+    const r = await fetch(ML_API + '/shipments/' + encodeURIComponent(idEnvio) + '/costs', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!r.ok) return null;
+    const costos = await r.json();
+
+    const senders = Array.isArray(costos.senders) ? costos.senders : [];
+    if (!senders.length) return null;
+
+    // Un envio puede tener varios vendedores (carrito con productos de
+    // distintas tiendas). Se busca el nuestro; si no aparece, el primero.
+    const propio = senders.find((x) => String(x.user_id) === String(mlUserId)) || senders[0];
+    const costo = Number(propio.cost);
+    return isFinite(costo) ? costo : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Igual que la comision: Mercado Pago acredita el total MENOS el envio que
+// absorbe el vendedor. Si no queda anotado, Caja y Estadisticas muestran mas
+// ganancia de la que hay.
+async function registrarGastoEnvio(slug, orden, costo) {
+  if (!(Number(costo) > 0)) return 0;
+
+  const monto = Math.round(Number(costo) * 100) / 100;
+  const fecha = (orden.date_created || new Date().toISOString()).slice(0, 10);
+
+  await sb('/rest/v1/store_gastos', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: [{
+      store_slug: slug,
+      concepto: 'Env\u00edo Mercado Libre \u2014 Orden ' + orden.id,
+      categoria: 'Env\u00edos Mercado Libre',
+      monto: monto,
+      moneda: 'ARS',
+      monto_original: monto,
+      cotizacion: 1,
+      fecha: fecha,
+      medio_pago: 'Descontado por Mercado Libre',
+      notas: 'Lo que pon\u00e9s vos del env\u00edo. Registrado solo desde la venta: ' +
+             'no se paga aparte, Mercado Pago acredita el total menos esto.'
+    }]
+  });
+
+  return monto;
+}
+
+
 // ---------- Descontar ----------
 
 // Una linea de la venta que no se pudo emparejar con un producto de BRUWAL.
@@ -286,8 +351,9 @@ async function registrarPedido(slug, orden, items, resumen) {
 // Libre, que es lo normal, y el rescate a mano desde el panel para las
 // ventas que no hayan quedado registradas. Un solo lugar donde esta escrito
 // que significa "registrar una venta", asi los dos caminos no se separan.
-async function registrarOrdenEnBruwal(slug, orden, token) {
-  const resumen = { descontados: 0, porFull: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
+async function registrarOrdenEnBruwal(slug, orden, token, mlUserId) {
+  const resumen = { descontados: 0, porFull: 0, comision: 0, envio: null,
+                    sinVinculo: [], sinProducto: [], sinVariante: [] };
   const items = [];
 
   const logistica = await logisticaDeOrden(orden, token);
@@ -300,6 +366,11 @@ async function registrarOrdenEnBruwal(slug, orden, token) {
 
   const idPedido = await registrarPedido(slug, orden, items, resumen);
   resumen.comision = await registrarComision(slug, orden);
+
+  // El envio va despues del pedido, como la comision: son dos costos que
+  // Mercado Pago descuenta del total, no cosas que el vendedor paga aparte.
+  resumen.envio = await costoDeEnvioDelVendedor(orden, token, mlUserId);
+  await registrarGastoEnvio(slug, orden, resumen.envio);
 
   return { resumen: resumen, items: items, idPedido: idPedido };
 }
@@ -374,29 +445,44 @@ module.exports = async (req, res) => {
     let idPedido = null;
 
     if (pagada) {
-      const hecho = await registrarOrdenEnBruwal(slug, orden, token);
+      const hecho = await registrarOrdenEnBruwal(slug, orden, token, aviso.user_id);
       resumen = hecho.resumen;
       items = hecho.items;
       idPedido = hecho.idPedido;
     }
 
-    await sb('/rest/v1/store_ml_ordenes', {
-      method: 'POST',
-      headers: { Prefer: 'return=minimal' },
-      body: [{
-        ml_order_id: String(orden.id),
-        store_slug: slug,
-        estado: orden.status,
-        // "se resolvi\u00f3 bien": se descont\u00f3, o no correspond\u00eda porque es Full.
-        stock_descontado: pagada && (resumen.descontados > 0 || resumen.porFull > 0),
-        sin_vincular: resumen.sinVinculo.length > 0,
-        logistica: pagada ? (resumen.porFull ? 'fulfillment' : 'propio') : null,
-        order_id: idPedido,
-        total: Number(orden.total_amount) || 0,
-        comprador: (orden.buyer && orden.buyer.nickname) || null,
-        detalle: orden
-      }]
-    });
+    const fila = {
+      ml_order_id: String(orden.id),
+      store_slug: slug,
+      estado: orden.status,
+      // "se resolvi\u00f3 bien": se descont\u00f3, o no correspond\u00eda porque es Full.
+      stock_descontado: pagada && (resumen.descontados > 0 || resumen.porFull > 0),
+      sin_vincular: resumen.sinVinculo.length > 0,
+      logistica: pagada ? (resumen.porFull ? 'fulfillment' : 'propio') : null,
+      order_id: idPedido,
+      total: Number(orden.total_amount) || 0,
+      costo_envio: resumen.envio,
+      comprador: (orden.buyer && orden.buyer.nickname) || null,
+      detalle: orden
+    };
+
+    // Si todavia no se corrio la migracion 41, `costo_envio` no existe y
+    // Supabase contesta PGRST204. Eso, sin este catch, tira la venta ENTERA
+    // a la basura: es el mismo bug de la columna `notes` que arreglamos hoy.
+    // Perder el dato del envio es molesto; perder la venta es grave.
+    try {
+      await sb('/rest/v1/store_ml_ordenes', {
+        method: 'POST', headers: { Prefer: 'return=minimal' }, body: [fila]
+      });
+    } catch (err) {
+      if (!String(err.message || '').includes('costo_envio')) throw err;
+      console.warn('Falta la columna costo_envio (correr schema/41-costo-envio-ml.sql). ' +
+                   'La venta se guarda sin ese dato.');
+      delete fila.costo_envio;
+      await sb('/rest/v1/store_ml_ordenes', {
+        method: 'POST', headers: { Prefer: 'return=minimal' }, body: [fila]
+      });
+    }
 
     return res.status(200).json({
       ok: true,

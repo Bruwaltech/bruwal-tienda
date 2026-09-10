@@ -2340,7 +2340,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel">
         <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
         <table>
-          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Ganancia</th><th>Estado</th><th>Stock</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión</th><th style="text-align:right;">Envío</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Ganancia</th><th>Estado</th><th>Stock</th></tr></thead>
           <tbody id="mlVentasBody"></tbody>
         </table>
       </div>
@@ -8166,8 +8166,9 @@ let mlOrdenes = [];
 //     venta real hay que confirmarlo mirando store_ml_ordenes.detalle: si
 //     estuviera al reves, la comision sale inflada en las ventas de 2 o mas
 //     unidades y hay que sacar el "* cantidad".
-//  2. El envio NO esta incluido todavia. El costo que absorbe el vendedor
-//     vive en el recurso de envio, que es otra llamada. Mientras no este,
+//  2. El envio SI esta incluido desde la migracion 41: sale de
+//     /shipments/{id}/costs (senders[].cost) y lo guarda el webhook. En las
+//     ventas anteriores a ese cambio viene null y se avisa en pantalla. Mientras no este,
 //     el neto es mejor de lo que va a ser en las ventas con envio gratis.
 //  3. Con FULL aparecen almacenamiento y servicio de gestion, que se
 //     facturan aparte por periodo y NO vienen en la orden. Tampoco estan.
@@ -8183,6 +8184,12 @@ function costosDeOrdenMl(orden) {
   const lineas = Array.isArray(d.order_items) ? d.order_items : [];
 
   let comision = 0, costo = 0, unidades = 0, lineasSinCosto = 0;
+
+  // Lo que el vendedor puso del envio. null = no lo sabemos (venta vieja,
+  // retiro en el local, o Mercado Libre no lo devolvio). No es lo mismo que
+  // cero, y por eso se distingue: con null la ganancia no se muestra.
+  const envio = (orden.costo_envio === null || orden.costo_envio === undefined)
+    ? null : Number(orden.costo_envio) || 0;
 
   lineas.forEach((li) => {
     const cantidad = Number(li.quantity) || 0;
@@ -8204,9 +8211,9 @@ function costosDeOrdenMl(orden) {
   // Lo que el vendedor puso de su bolsillo en una promoción con descuento
   // compartido — el caso de las campañas bonificadas.
   const descuentoPropio = Number((d.discounts && d.discounts.seller) || 0);
-  const neto = bruto - comision - descuentoPropio;
+  const neto = bruto - comision - descuentoPropio - (envio || 0);
 
-  return { bruto, comision, descuentoPropio, neto, costo, unidades, lineasSinCosto };
+  return { bruto, comision, descuentoPropio, envio, neto, costo, unidades, lineasSinCosto };
 }
 
 function renderMercadoLibre() {
@@ -8234,11 +8241,17 @@ function renderMercadoLibre() {
   byId('mlGananciaMes').textContent = (hayVentas && !sinCosto)
     ? money(suma('neto') - suma('costo'))
     : '—';
+  // Cuantas ventas del mes no tienen el envio averiguado. Son las anteriores
+  // a la migracion 41: su ganancia esta inflada por lo que costo mandarlas.
+  const sinEnvio = delMes.filter((o) => costosDeOrdenMl(o).envio === null).length;
+
   byId('mlGananciaNota').textContent = !hayVentas
     ? ''
     : (sinCosto
         ? 'Falta el costo en ' + sinCosto + ' venta' + (sinCosto === 1 ? '' : 's')
-        : 'Sin contar envío ni costos de Full');
+        : (sinEnvio
+            ? 'Sin el envío de ' + sinEnvio + ' venta' + (sinEnvio === 1 ? '' : 's') + ' (anteriores al cambio)'
+            : 'Sin contar los costos de Full'));
 
   // Se cuentan publicaciones, no filas: una con variantes tiene un vínculo
   // por variante y diría cualquier número.
@@ -8273,6 +8286,11 @@ function renderMercadoLibre() {
           // el costo no se muestra un número: se dice que falta. Una ganancia
           // a la que le falta la mitad de los costos miente para arriba, que
           // es la peor dirección para equivocarse.
+          '<td style="text-align:right;color:var(--danger);">' + (() => {
+            const c = costosDeOrdenMl(o);
+            if (c.envio === null) return '<span style="color:var(--text-mute);font-size:12px;" title="Venta anterior al cambio, o retiro en el local">\u2014</span>';
+            return c.envio ? '\u2212 ' + money(Math.round(c.envio)) : '$0';
+          })() + '</td>' +
           '<td style="text-align:right;">' + (() => {
             const c = costosDeOrdenMl(o);
             return c.lineasSinCosto
@@ -8293,7 +8311,7 @@ function renderMercadoLibre() {
             o.stock_descontado ? '✅ descontado' : '—'
           ) + '</td>' +
         '</tr>').join('')
-    : '<tr><td colspan="9" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+    : '<tr><td colspan="10" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
 }
 
 // ---- Rescate de ventas de Mercado Libre ----
