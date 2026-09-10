@@ -381,24 +381,30 @@ async function accionPublicidad(slug) {
 
   const anunciante = lista[0];
   const idAnunciante = anunciante.advertiser_id || anunciante.id;
+  const siteAnunciante = anunciante.site_id || 'MLA';
 
-  // Mercado Libre movio las campanas de lugar. La direccion vieja
-  //   /advertising/product_ads/campaigns?advertiser_id=...
-  // contesta 404 "No static resource advertising/product_ads/campaigns",
-  // que es el servidor diciendo que esa ruta no existe -- no es "no tenes
-  // campanas" ni un problema de permisos. La nueva las cuelga del
-  // anunciante y pide Api-Version 2.
+  // Por que fallaba: Mercado Ads deprecio los endpoints viejos y desde el
+  // 26 de febrero de 2026 devuelven 404. No era la cuenta ni el permiso --
+  // la consulta de anunciantes andaba bien y trajo advertiser_id 1616315.
+  // El 404 decia "No static resource advertising/product_ads/campaigns",
+  // que es el servidor avisando que esa direccion ya no existe.
   //
-  // Se prueban las formas conocidas en orden y nos quedamos con la primera
-  // que conteste. Es a proposito: la documentacion publica de ML todavia
-  // muestra las dos, y una lista de candidatas se banca la proxima mudanza
-  // sin que haya que salir a adivinar de nuevo. Los intentos se devuelven
-  // para que, si ninguna anda, se vea QUE se probo y QUE contesto cada una.
-  const base = '/advertising/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
+  // Los actuales viven bajo /marketplace/, llevan el SITE del anunciante
+  // (MLA en Argentina) y terminan en /search, que es obligatorio:
+  //   /marketplace/advertising/MLA/advertisers/1616315/product_ads/campaigns/search
+  //
+  // Igual se prueban varias formas en orden y gana la primera que conteste.
+  // Ya nos mudaron esto una vez; la lista de candidatas se banca la
+  // proxima sin salir a adivinar. Los intentos se devuelven para que, si
+  // ninguna anda, se vea QUE se probo y QUE contesto cada una.
+  const baseAds = '/marketplace/advertising/' + encodeURIComponent(siteAnunciante) +
+                  '/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
+  const baseViejo = '/advertising/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
   const candidatas = [
-    { ruta: base + '/search?limit=50', version: '2' },
-    { ruta: base + '?limit=50',        version: '2' },
-    { ruta: base + '/search?limit=50', version: '1' },
+    { ruta: baseAds + '/search?limit=50',   version: '2' },
+    { ruta: baseAds + '/search?limit=50',   version: '1' },
+    { ruta: baseAds + '?limit=50',          version: '2' },
+    { ruta: baseViejo + '/search?limit=50', version: '2' },
     { ruta: '/advertising/product_ads/campaigns?advertiser_id=' +
             encodeURIComponent(idAnunciante) + '&limit=50', version: '1' }
   ];
@@ -419,8 +425,12 @@ async function accionPublicidad(slug) {
     disponible: true,
     anunciante: {
       id: idAnunciante,
+      site: siteAnunciante,
       nombre: anunciante.account_name || anunciante.site_id || ''
     },
+    // Crudo del anunciante: si algo vuelve a fallar, los nombres de campo
+    // reales se leen de una vez en vez de ir sacando capturas.
+    anunciante_crudo: anunciante,
     campanas_ok: campanas.ok,
     campanas_status: campanas.status,
     campanas_ruta: campanas.ruta,
