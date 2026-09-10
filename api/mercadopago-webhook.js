@@ -109,7 +109,16 @@ module.exports = async (req, res) => {
   // Solo interesa cuando una suscripción cambia de estado. Los pagos
   // individuales (subscription_authorized_payment) y otros topics se
   // confirman sin hacer nada — Mercado Pago reintenta si no contestamos 200.
-  if (tipo !== 'subscription_preapproval' || !dataId) {
+  //
+  // Se aceptan los DOS nombres porque Mercado Pago tiene dos formatos de
+  // aviso y manda uno u otro segun como quedo dada de alta la integracion:
+  //   Webhooks (nuevo):  {"type": "subscription_preapproval", ...}
+  //   IPN (viejo):       ?topic=preapproval&id=123
+  // Aceptando solo el primero, el segundo se contestaba 200 "ignorado" y el
+  // plan no se activaba nunca. Peor: Mercado Pago lo cuenta como entregado,
+  // asi que el problema no se ve por ningun lado.
+  const TOPICOS_SUSCRIPCION = ['subscription_preapproval', 'preapproval'];
+  if (!TOPICOS_SUSCRIPCION.includes(tipo) || !dataId) {
     res.statusCode = 200;
     return res.end('ignorado');
   }
