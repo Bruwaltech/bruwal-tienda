@@ -103,7 +103,11 @@ module.exports = async (req, res) => {
     return res.end('cuerpo invalido');
   }
 
-  const tipo = cuerpo.type || cuerpo.topic || '';
+  // El topico puede venir en el cuerpo (formato nuevo) o en la direccion
+  // (formato viejo: ?topic=preapproval&id=123). Se miraba solo el cuerpo, asi
+  // que un aviso IPN entraba como sin topico y se contestaba "ignorado".
+  const tipo = cuerpo.type || cuerpo.topic ||
+               (req.query && (req.query.type || req.query.topic)) || '';
   const dataId = (cuerpo.data && cuerpo.data.id) || (req.query && (req.query['data.id'] || req.query.id));
 
   // Solo interesa cuando una suscripción cambia de estado. Los pagos
