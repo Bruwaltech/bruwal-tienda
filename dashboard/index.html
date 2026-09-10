@@ -3771,6 +3771,17 @@ tr:last-child td { border-bottom: none; }
     <p id="planesSubtitulo" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;"></p>
     <div id="planesContenido"></div>
 
+    <!-- Red de seguridad: el plan se activa cuando llega el aviso de Mercado
+         Pago. Si ese aviso no llega, el cliente paga y sigue bloqueado. Esto
+         le pregunta a Mercado Pago directamente. -->
+    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;text-align:center;">
+      <button type="button" id="verificarPagoBtn" class="btn"
+              style="width:auto;padding:9px 16px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+        ✓ Ya pagué — verificar mi suscripción
+      </button>
+      <div id="verificarPagoResultado" style="margin-top:10px;font-size:13px;line-height:1.6;color:var(--text-mute);"></div>
+    </div>
+
     <div id="pedirPruebaBloque" class="hidden" style="margin-top:18px;border-top:1px solid var(--line);padding-top:16px;text-align:center;">
       <p style="font-size:13.5px;color:var(--text-dark);margin:0 0 10px;line-height:1.6;">
         ¿Querés probarlo antes de contratar? Escribinos y te habilitamos
@@ -4485,6 +4496,9 @@ function aplicarModoSoloLectura(bloquear) {
 function abrirPlanes() {
   const cont = byId('planesContenido');
   const estado = estadoSuscripcion();
+  // Sin esto, el resultado de la vez anterior queda pegado y se lee como si
+  // fuera de ahora.
+  if (byId('verificarPagoResultado')) byId('verificarPagoResultado').innerHTML = '';
 
   // Solo a quien no esta pagando. Ofrecerle una prueba al que ya contrato
   // es, ademas de raro, una invitacion a pedir que le devuelvan la plata.
@@ -16653,6 +16667,64 @@ byId('guiaModal').addEventListener('click', (e) => {
 });
 
 byId('pedirPruebaBtn').addEventListener('click', pedirPrueba);
+// Le pregunta a Mercado Pago si esta tienda tiene una suscripcion
+// autorizada. Si la tiene, activa el plan.
+//
+// No hay forma de usarlo para darse un plan a uno mismo: el servidor saca el
+// slug de la sesion (no de lo que mande el navegador) y el plan de lo que
+// contesta Mercado Pago para ESE slug. Si MP no dice que hay una suscripcion
+// autorizada, no se activa nada.
+async function verificarSuscripcion() {
+  const caja = byId('verificarPagoResultado');
+  const boton = byId('verificarPagoBtn');
+  boton.disabled = true;
+  caja.textContent = 'Preguntando a Mercado Pago\u2026';
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: '{}'
+    });
+    const datos = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(datos.error || ('Error ' + r.status));
+
+    if (datos.ok && datos.activado) {
+      caja.innerHTML = '<span style="color:var(--stock);font-weight:700;">\u2705 Listo: plan ' +
+        escapeHtml(nombrePlan(datos.plan)) + ' activado.</span><br>Recargando el panel\u2026';
+      setTimeout(() => window.location.reload(), 1400);
+      return;
+    }
+
+    if (datos.ok && datos.ya) {
+      caja.innerHTML = '<span style="color:var(--stock);">Tu plan ' +
+        escapeHtml(nombrePlan(datos.plan)) + ' ya estaba activo.</span> ' +
+        'Si ves algo bloqueado, cerr\u00e1 sesi\u00f3n y volv\u00e9 a entrar.';
+      return;
+    }
+
+    // Lo que encontro Mercado Pago se muestra igual: "no encontramos nada"
+    // sin decir que se busco no le sirve a nadie para destrabar el problema.
+    const detalle = (datos.suscripciones || []).map(p =>
+      '<div style="font-family:monospace;font-size:11.5px;">' +
+        escapeHtml(p.estado + ' \u00b7 ' + (p.plan || p.plan_id)) + '</div>').join('');
+
+    caja.innerHTML = '<span style="color:var(--danger);">' +
+      escapeHtml(datos.motivo || 'No se pudo verificar.') + '</span>' + detalle +
+      '<div style="margin-top:8px;">Si pagaste y esto sigue igual, escribinos por WhatsApp ' +
+      'y lo activamos a mano.</div>';
+  } catch (err) {
+    caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+byId('verificarPagoBtn').addEventListener('click', verificarSuscripcion);
+
 byId('closePlanesModal').addEventListener('click', () => hide(byId('planesModal')));
 byId('verPlanesBtn').addEventListener('click', abrirPlanes);
 byId('adherirmeBtn').addEventListener('click', abrirPlanes);
