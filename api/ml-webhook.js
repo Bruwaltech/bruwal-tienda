@@ -77,8 +77,31 @@ async function logisticaDeOrden(orden, token) {
 
 // ---------- Descontar ----------
 
-// Devuelve el item para el pedido del panel, o null si esa línea de la venta
-// no tiene con qué corresponderse acá.
+// Una linea de la venta que no se pudo emparejar con un producto de BRUWAL.
+//
+// Se arma con lo que mando Mercado Libre y va SIN product_id a proposito:
+// asi el pedido queda registrado con su plata y su detalle, pero ningun
+// stock se mueve (aplicarStockDeItem saltea los items sin producto, igual
+// que ya hace con las deudas cargadas a mano).
+//
+// El caso real: la venta entra, y como la publicacion no estaba vinculada,
+// no se registraba NADA. La comision si se anotaba. Quedaba el gasto sin la
+// venta que lo genero.
+function itemSuelto(linea, motivo) {
+  return {
+    qty: Number(linea.quantity) || 0,
+    name: (linea.item && linea.item.title) ||
+          ('Publicaci\u00f3n ' + ((linea.item && linea.item.id) || 'de Mercado Libre')),
+    price: Number(linea.unit_price) || 0,
+    ml_item_id: String((linea.item && linea.item.id) || ''),
+    sin_vincular: true,
+    motivo: motivo
+  };
+}
+
+// Devuelve el item para el pedido del panel. Nunca null cuando la linea
+// tiene producto y cantidad: si no se puede emparejar, devuelve el item
+// suelto para que la venta quede igual.
 async function descontarUnItem(slug, linea, resumen, esFull) {
   const itemId = linea.item && linea.item.id;
   const variacionId = linea.item && linea.item.variation_id;
@@ -95,16 +118,22 @@ async function descontarUnItem(slug, linea, resumen, esFull) {
 
   const vinculo = vinculos && vinculos[0];
   if (!vinculo) {
-    // Publicación sin vincular: se anota y se sigue. No se adivina a qué
-    // producto pertenece, porque descontarle a otro es peor que no descontar.
+    // Publicación sin vincular: no se adivina a qué producto pertenece,
+    // porque descontarle a otro es peor que no descontar. Pero la venta se
+    // registra igual, con la linea tal como la mando Mercado Libre.
     resumen.sinVinculo.push(String(itemId) + (variacionId ? '/' + variacionId : ''));
-    return null;
+    return itemSuelto(linea, 'sin vincular');
   }
 
   const productos = await sb('/rest/v1/store_products?id=eq.' + encodeURIComponent(vinculo.product_id) +
     '&select=id,name,price,stock,tiene_variantes,variantes');
   const producto = productos && productos[0];
-  if (!producto) { resumen.sinProducto.push(vinculo.product_id); return null; }
+  // El vinculo apunta a un producto que ya no existe (lo borraron). Mismo
+  // criterio: no hay stock que tocar, pero la venta entro.
+  if (!producto) {
+    resumen.sinProducto.push(vinculo.product_id);
+    return itemSuelto(linea, 'el producto vinculado ya no existe');
+  }
 
   // Full (o el v\u00ednculo dice que esa publicaci\u00f3n va por Full): la venta se
   // registra igual \u2014 ingreso, comisi\u00f3n y pedido \u2014 pero el stock del local
@@ -126,7 +155,11 @@ async function descontarUnItem(slug, linea, resumen, esFull) {
   if (vinculo.variante_local && producto.tiene_variantes && Array.isArray(producto.variantes)) {
     const lista = producto.variantes.map((v) => Object.assign({}, v));
     const i = lista.findIndex((v) => claveDeAtributos(v.atributos) === vinculo.variante_local);
-    if (i < 0) { resumen.sinVariante.push(vinculo.variante_local); return null; }
+    // La combinacion (talle/color) vinculada ya no esta en el producto.
+    if (i < 0) {
+      resumen.sinVariante.push(vinculo.variante_local);
+      return itemSuelto(linea, 'la variante vinculada ya no existe');
+    }
 
     variante = lista[i].atributos || {};
     lista[i].stock = Math.max(0, (Number(lista[i].stock) || 0) - cantidad);
@@ -202,6 +235,9 @@ async function registrarComision(slug, orden) {
 }
 
 async function registrarPedido(slug, orden, items, resumen) {
+  // Solo si Mercado Libre mando una orden sin lineas, que no deberia pasar.
+  // Antes esto se cumplia tambien cuando ninguna linea estaba vinculada, y
+  // ahi se perdia la venta entera.
   if (!items.length) return null;
 
   const comprador = (orden.buyer && (orden.buyer.nickname || orden.buyer.first_name)) || 'Mercado Libre';
@@ -220,7 +256,20 @@ async function registrarPedido(slug, orden, items, resumen) {
       total: Number(orden.total_amount) || 0,
       notes: 'Venta de Mercado Libre. Orden ' + orden.id +
              (resumen.porFull ? '. Enviada por Full: no se descont\u00f3 stock del local.' : '') +
-             (resumen.sinVinculo.length ? '. Sin vincular: ' + resumen.sinVinculo.join(', ') : '')
+             // Que quede escrito en el pedido: la venta esta registrada pero
+             // el stock de esas lineas NO se movio, y hay que ajustarlo a
+             // mano o vincular la publicacion para la proxima.
+             (resumen.sinVinculo.length
+               ? '. OJO: no se descont\u00f3 stock de ' + resumen.sinVinculo.length +
+                 (resumen.sinVinculo.length === 1 ? ' publicaci\u00f3n sin vincular (' : ' publicaciones sin vincular (') +
+                 resumen.sinVinculo.join(', ') + '). Vincul\u00e1 la publicaci\u00f3n para que se descuente sola.'
+               : '') +
+             (resumen.sinProducto.length
+               ? '. El producto vinculado ya no existe: ' + resumen.sinProducto.join(', ') + '.'
+               : '') +
+             (resumen.sinVariante.length
+               ? '. La variante vinculada ya no existe: ' + resumen.sinVariante.join(', ') + '.'
+               : '')
     }]
   });
 
