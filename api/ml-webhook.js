@@ -254,7 +254,10 @@ async function registrarPedido(slug, orden, items, resumen) {
       customer_phone: 'scanner',
       items: items,
       total: Number(orden.total_amount) || 0,
-      notes: 'Venta de Mercado Libre. Orden ' + orden.id +
+      // `aclaraciones`, NO `notes`. Esa columna no existe y nunca existio:
+      // el insert fallaba con PGRST204 y se perdia la venta ENTERA, todas
+      // las veces. Es la misma columna que usa el checkout de la tienda.
+      aclaraciones: 'Venta de Mercado Libre. Orden ' + orden.id +
              (resumen.porFull ? '. Enviada por Full: no se descont\u00f3 stock del local.' : '') +
              // Que quede escrito en el pedido: la venta esta registrada pero
              // el stock de esas lineas NO se movio, y hay que ajustarlo a

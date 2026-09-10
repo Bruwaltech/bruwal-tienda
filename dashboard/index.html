@@ -8274,10 +8274,10 @@ async function buscarVentasFaltantes() {
       // La columna "\u00bfAvis\u00f3 ML?" separa dos problemas que se ven igual desde
       // afuera pero se arreglan distinto. Si no se explica, es un dato mudo.
       '<div style="font-size:12px;margin-bottom:10px;line-height:1.6;">' +
-        '<b>S\u00ed, y no se registr\u00f3</b>: Mercado Libre avis\u00f3 y BRUWAL no la guard\u00f3. ' +
-        'Era el caso de las publicaciones sin vincular, ya corregido: las pr\u00f3ximas entran solas.<br>' +
-        '<b>No lleg\u00f3 el aviso</b>: Mercado Libre nunca nos notific\u00f3 esta venta. ' +
-        'Eso es la suscripci\u00f3n a las notificaciones y hay que revisarla aparte.' +
+        '<b>Lleg\u00f3, no se registr\u00f3</b>: Mercado Libre avis\u00f3 y BRUWAL no guard\u00f3 la venta.<br>' +
+        '<b>Sin rastro del aviso</b>: no qued\u00f3 ni la marca de que Mercado Libre haya avisado. ' +
+        'Puede ser que no haya avisado, o que el aviso haya llegado y fallado antes de dejar rastro ' +
+        '\u2014 que es lo que pasaba con la venta que no se registraba.' +
       '</div>' +
       '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
       '<thead><tr>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', '\u00bfAvis\u00f3 ML?', ''].map(t =>
@@ -8299,8 +8299,8 @@ async function buscarVentasFaltantes() {
           // que saber para distinguir los dos problemas posibles.
           '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:12px;">' +
             (v.vista
-              ? '<span style="color:var(--stock);">S\u00ed, y no se registr\u00f3</span>'
-              : '<span style="color:var(--danger);">No lleg\u00f3 el aviso</span>') + '</td>' +
+              ? '<span style="color:var(--stock);">Lleg\u00f3, no se registr\u00f3</span>'
+              : '<span style="color:var(--danger);">Sin rastro del aviso</span>') + '</td>' +
           '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
             '<button type="button" class="icon-btn" data-importar="' + escapeHtml(v.id) + '" ' +
             'data-total="' + v.total + '" style="color:var(--stock);">\u2b07 Traer a BRUWAL</button></td>' +
