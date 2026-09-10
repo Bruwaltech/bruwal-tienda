@@ -293,6 +293,15 @@
   .ficha-mini.activa{border-color:var(--celeste);}
   .ficha-cat{display:inline-block;background:#EAF4FD;color:var(--navy);font-size:11px;
     font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:9px;}
+  /* Encabezado de la ficha: el rubro a la izquierda, compartir a la derecha */
+  .ficha-encabezado{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .ficha-compartir{
+    flex-shrink:0;display:inline-flex;align-items:center;gap:6px;
+    border:1.5px solid var(--line);border-radius:999px;background:#fff;
+    color:var(--celeste);font:inherit;font-size:12.5px;font-weight:700;
+    padding:7px 13px;cursor:pointer;margin-bottom:9px;transition:all .2s;
+  }
+  .ficha-compartir:hover{border-color:var(--celeste);background:#EAF4FD;}
   .ficha-precio{font-size:27px;font-weight:700;color:var(--navy);margin:10px 0 4px;}
   .ficha-specs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;}
   .ficha-spec-chip{background:#F4F8FC;border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:12.5px;color:var(--text-dark);}
@@ -894,6 +903,15 @@ async function init(){
   hide(byId('loadingState'));
   show(byId('storeView'));
   renderProducts();
+
+  // Link directo a un producto: es lo que se comparte por WhatsApp. Se abre
+  // la ficha sola, ya en la tienda. Si el producto se dio de baja o quedo
+  // solo_interno, no se abre nada y la tienda se ve normal — mejor eso que
+  // un cartel de error para alguien que entro desde un estado.
+  const idCompartido = new URLSearchParams(window.location.search).get('p');
+  if (idCompartido && products.some(x => String(x.id) === String(idCompartido))) {
+    abrirFicha(idCompartido);
+  }
 }
 
 // Categorías reales cargadas por el vendedor. Ojo: hay productos con la
@@ -1515,6 +1533,22 @@ function productoEsIphone(nombre) {
   return String(nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes('iphone');
 }
 
+// El link de UN producto. Siempre con la direccion linda
+// (bruwaltech.com.ar/kitzone?p=123) y nunca con ?slug=: la vista previa con
+// la foto y el precio la arma /api/tienda, y a esa funcion solo entra la
+// direccion linda. Con ?slug= el link funciona igual pero se comparte pelado.
+function linkDeProducto(p){
+  const slug = getSlugFromUrl();
+  return window.location.origin + '/' + encodeURIComponent(slug) + '?p=' + encodeURIComponent(p.id);
+}
+
+// Lo que se lee en el mensaje. La vista previa (foto grande + precio) la
+// pone WhatsApp solo al leer el link; esto es el texto de arriba.
+function textoDeProducto(p){
+  const precio = (p.mostrar_precio === false) ? 'Consultar precio' : money(precioBase(p));
+  return p.name + ' \u2014 ' + precio;
+}
+
 function abrirFicha(id) {
   const p = products.find(x => String(x.id) === String(id));
   if (!p) return;
@@ -1575,7 +1609,11 @@ function abrirFicha(id) {
             : '') +
         '</div>'
       : '') +
-    (p.category ? '<span class="ficha-cat">' + escapeHtml(p.category) + '</span>' : '') +
+    '<div class="ficha-encabezado">' +
+      (p.category ? '<span class="ficha-cat">' + escapeHtml(p.category) + '</span>' : '<span></span>') +
+      '<button type="button" class="ficha-compartir" id="compartirProducto">' +
+        '<i class="fa-solid fa-share-nodes"></i> Compartir</button>' +
+    '</div>' +
     '<h3 style="margin:0;">' + escapeHtml(p.name) + '</h3>' +
     (p.mostrar_precio === false
       ? '<div class="ficha-precio" id="fichaPrecio">Consultar precio</div>'
@@ -1893,6 +1931,31 @@ function abrirFicha(id) {
     renderCartBar();
     hide(byId('fichaModal'));
   });
+
+  // Compartir este producto: en el celular abre el menu de siempre (WhatsApp,
+  // estado, Instagram); en la compu, que no tiene navigator.share, copia el
+  // link. El texto y el link son los mismos en los dos casos.
+  const btnCompartirProd = byId('compartirProducto');
+  if (btnCompartirProd) {
+    btnCompartirProd.addEventListener('click', async () => {
+      const link = linkDeProducto(p);
+      const texto = textoDeProducto(p);
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: p.name, text: texto, url: link });
+        } catch (e) { /* lo cancelo, no es un error */ }
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(texto + '\n' + link);
+        const antes = btnCompartirProd.innerHTML;
+        btnCompartirProd.innerHTML = '\u2713 Link copiado';
+        setTimeout(() => { btnCompartirProd.innerHTML = antes; }, 1600);
+      } catch (e) {
+        mostrarAviso('No se pudo copiar el link');
+      }
+    });
+  }
 
   refrescarPrecio();
   show(byId('fichaModal'));
