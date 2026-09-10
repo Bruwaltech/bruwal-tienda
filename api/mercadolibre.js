@@ -338,9 +338,11 @@ async function accionPublicaciones(slug) {
 // número exacto es lo que dice si es "no lo tenés activado" (404), "te
 // falta permiso" (403) o "acá no existe".
 
-async function pedirAAds(ruta, token) {
+// La version del encabezado cambia segun el recurso: los anunciantes andan
+// con 1 y las campanas con 2. Por eso es un parametro y no una constante.
+async function pedirAAds(ruta, token, version) {
   const r = await fetch(ML_API + ruta, {
-    headers: { Authorization: 'Bearer ' + token, 'Api-Version': '1' }
+    headers: { Authorization: 'Bearer ' + token, 'Api-Version': version || '1' }
   });
   const datos = await r.json().catch(() => null);
   return { ok: r.ok, status: r.status, datos: datos };
@@ -380,9 +382,37 @@ async function accionPublicidad(slug) {
   const anunciante = lista[0];
   const idAnunciante = anunciante.advertiser_id || anunciante.id;
 
-  const campanas = await pedirAAds(
-    '/advertising/product_ads/campaigns?advertiser_id=' + encodeURIComponent(idAnunciante) +
-    '&metrics_summary=true&limit=50', token);
+  // Mercado Libre movio las campanas de lugar. La direccion vieja
+  //   /advertising/product_ads/campaigns?advertiser_id=...
+  // contesta 404 "No static resource advertising/product_ads/campaigns",
+  // que es el servidor diciendo que esa ruta no existe -- no es "no tenes
+  // campanas" ni un problema de permisos. La nueva las cuelga del
+  // anunciante y pide Api-Version 2.
+  //
+  // Se prueban las formas conocidas en orden y nos quedamos con la primera
+  // que conteste. Es a proposito: la documentacion publica de ML todavia
+  // muestra las dos, y una lista de candidatas se banca la proxima mudanza
+  // sin que haya que salir a adivinar de nuevo. Los intentos se devuelven
+  // para que, si ninguna anda, se vea QUE se probo y QUE contesto cada una.
+  const base = '/advertising/advertisers/' + encodeURIComponent(idAnunciante) + '/product_ads/campaigns';
+  const candidatas = [
+    { ruta: base + '/search?limit=50', version: '2' },
+    { ruta: base + '?limit=50',        version: '2' },
+    { ruta: base + '/search?limit=50', version: '1' },
+    { ruta: '/advertising/product_ads/campaigns?advertiser_id=' +
+            encodeURIComponent(idAnunciante) + '&limit=50', version: '1' }
+  ];
+
+  const intentos = [];
+  let campanas = null;
+  for (const c of candidatas) {
+    const r = await pedirAAds(c.ruta, token, c.version);
+    intentos.push({ ruta: c.ruta, version: c.version, status: r.status });
+    campanas = r;
+    campanas.ruta = c.ruta;
+    campanas.version = c.version;
+    if (r.ok) break;
+  }
 
   return {
     conectado: true,
@@ -393,6 +423,9 @@ async function accionPublicidad(slug) {
     },
     campanas_ok: campanas.ok,
     campanas_status: campanas.status,
+    campanas_ruta: campanas.ruta,
+    campanas_version: campanas.version,
+    intentos: intentos,
     // Crudo a propósito: todavía no sabemos con qué nombres vienen las
     // métricas en esta cuenta, y prefiero mostrarlas tal cual una vez a
     // inventar una tabla con campos que capaz no existen.

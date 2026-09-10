@@ -8199,11 +8199,23 @@ async function consultarPublicidadMl() {
     // Mientras no sepamos con qué nombres vienen las métricas en una cuenta
     // argentina, se muestra la respuesta tal cual. Es feo a propósito: es
     // para leerla una vez entre los dos y después armar la tabla de verdad.
+    // Cuando ninguna ruta contesta, lo util no es el error: es QUE se probo.
+    // Con la lista de intentos a la vista se sabe en una mirada si Mercado
+    // Libre movio el recurso otra vez o si el problema es la cuenta.
+    const detalleIntentos = (!r.campanas_ok && Array.isArray(r.intentos) && r.intentos.length)
+      ? '<div style="margin-top:8px;font-size:12px;">Rutas probadas:' +
+          r.intentos.map(i => '<div style="font-family:monospace;font-size:11px;color:var(--text-mute);">' +
+            i.status + ' \u00b7 v' + escapeHtml(String(i.version)) + ' \u00b7 ' + escapeHtml(i.ruta) + '</div>').join('') +
+        '</div>'
+      : '';
+
     cuerpo.innerHTML =
       '✅ Publicidad habilitada. Anunciante: <strong>' + escapeHtml(String(r.anunciante?.nombre || r.anunciante?.id || '')) + '</strong>' +
       (r.campanas_ok
-        ? ''
-        : '<br><span style="color:var(--danger);">Las campañas devolvieron ' + r.campanas_status + '.</span>') +
+        ? '<br><span style="color:var(--stock);">Campa\u00f1as le\u00eddas desde <code style="font-size:11.5px;">' +
+          escapeHtml(String(r.campanas_ruta || '')) + '</code></span>'
+        : '<br><span style="color:var(--danger);">Ninguna ruta de campa\u00f1as contest\u00f3 (\u00faltima: ' + r.campanas_status + ').</span>') +
+      detalleIntentos +
       '<pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11.5px;max-height:280px;overflow:auto;margin-top:10px;white-space:pre-wrap;">' +
         escapeHtml(JSON.stringify(r.campanas, null, 1)) +
       '</pre>';
