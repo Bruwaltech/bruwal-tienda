@@ -8140,6 +8140,10 @@ async function onLoggedIn() {
 
   show(byId('ayudaBotBtn'));
 
+  // Si esta bloqueado, capaz ya pago y el aviso de Mercado Pago no llego.
+  // Va sin await: que no demore la carga del panel.
+  chequearSuscripcionAlEntrar();
+
   avisarVueltaDeMl();
 
   // El reloj gana: si la tablet arranca en modo reloj no hay que abrirle
@@ -16667,6 +16671,47 @@ byId('guiaModal').addEventListener('click', (e) => {
 });
 
 byId('pedirPruebaBtn').addEventListener('click', pedirPrueba);
+// Chequeo callado al abrir el panel: si esta bloqueado, le pregunta a
+// Mercado Pago si en realidad ya pago.
+//
+// Por que existe: la documentacion de Mercado Pago dice que la configuracion
+// de webhooks por "Tus integraciones" NO aplica a Suscripciones. O sea que
+// el aviso automatico puede no llegar nunca, y ahi el que pago se queda
+// mirando un panel bloqueado hasta que alguien lo note.
+//
+// Solo corre para quien esta bloqueado y no tiene plan pago ni cortesia: al
+// que ya esta operando no se le agrega ni una consulta. Si Mercado Pago dice
+// que no pago, no pasa nada y no se le muestra ningun cartel: no hace falta
+// contarle al usuario una consulta que dio negativo.
+async function chequearSuscripcionAlEntrar() {
+  if (!currentStore) return;
+  if (estadoSuscripcion() !== 'vencido') return;
+  if (PLANES_ACTIVOS.includes(currentStore.plan)) return;
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return;
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: '{}'
+    });
+    if (!r.ok) return;
+    const datos = await r.json().catch(() => null);
+    if (!datos || !datos.ok || !datos.activado) return;
+
+    // Pago y no lo sabiamos. Se le avisa antes de recargar, para que entienda
+    // por que se movio la pantalla sola.
+    alert('Encontramos tu pago: se activo el plan ' + nombrePlan(datos.plan) + '.\n\n' +
+          'Ya podes usar el panel.');
+    window.location.reload();
+  } catch (e) {
+    // Sin conexion o el endpoint caido: el panel sigue como estaba. Esto es
+    // una ayuda, no un requisito para entrar.
+  }
+}
+
 // Le pregunta a Mercado Pago si esta tienda tiene una suscripcion
 // autorizada. Si la tiene, activa el plan.
 //
