@@ -8829,9 +8829,15 @@ async function verFacturacionMl() {
       return;
     }
     if (!r.ok) {
+      // La ayuda del permiso solo cuando el error ES de permisos. Ponerla
+      // siempre manda a revisar la aplicacion de ML por un problema que
+      // capaz esta en la consulta.
+      const suenaAPermiso = /permis|403|forbidden|unauthorized|scope/i.test(String(r.motivo || ''));
       cuerpo.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(r.motivo || 'No se pudo consultar.') + '</span>' +
-        '<div style="margin-top:8px;font-size:12.5px;">Si dice que falta permiso, hay que tildar ' +
-        '<strong>facturaci\u00f3n</strong> en la aplicaci\u00f3n de Mercado Libre y volver a conectar la cuenta.</div>';
+        (suenaAPermiso
+          ? '<div style="margin-top:8px;font-size:12.5px;">Hay que tildar <strong>facturaci\u00f3n</strong> ' +
+            'en la aplicaci\u00f3n de Mercado Libre y volver a conectar la cuenta.</div>'
+          : '');
       return;
     }
     if (!r.cargos || !r.cargos.length) {

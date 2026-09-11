@@ -697,8 +697,11 @@ async function accionFacturacion(slug) {
 
   let detalle;
   try {
+    // group y document_type van tambien ACA. La documentacion lo dice una
+    // sola vez, arriba de todo ("All endpoints require the group
+    // parameter"), y sin ellos contesta "Missing required parameter".
     detalle = await pedirAMl('/billing/integration/periods/key/' +
-      encodeURIComponent(actual.key) + '/summary/details', token);
+      encodeURIComponent(actual.key) + '/summary/details?group=ML&document_type=BILL', token);
   } catch (e) {
     return { conectado: true, ok: false, motivo: String(e.message || e), periodo: actual };
   }
