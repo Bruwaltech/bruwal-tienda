@@ -684,6 +684,17 @@ tr.fila-elegida > td { background:#EAF4FD; }
 
 .app-user b { color: var(--navy); }
 
+/* ---- Hora de Buenos Aires en el encabezado ---- */
+.hora-ar {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--text-mute); white-space: nowrap;
+  padding: 0 4px;
+}
+.hora-ar b { color: var(--navy); font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* En pantallas chicas el encabezado ya viene apretado: ahi la hora estorba
+   mas de lo que ayuda, y sigue estando en la barra de Ventas. */
+@media (max-width: 720px) { .hora-ar { display: none; } }
+
 /* ---- Campanita de novedades ---- */
 .campanita-caja { position: relative; display: inline-flex; }
 .campanita { position: relative; }
@@ -1660,6 +1671,13 @@ tr:last-child td { border-bottom: none; }
     <div class="app-user">
       <span id="userBusiness"><b></b></span>
       <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
+      <!-- La hora de Buenos Aires, siempre a la vista. Sirve para dos cosas:
+           es la hora con la que trabaja todo el sistema (tickets, pedidos,
+           estadisticas), y si el reloj de la maquina dice otra, se nota al
+           toque en vez de descubrirlo por un ticket con la hora cambiada. -->
+      <span class="hora-ar" id="horaArgentinaCabecera" title="Hora de Buenos Aires: es la que usa BRUWAL para todo">
+        <i class="fa-regular fa-clock"></i> <b>--:--</b>
+      </span>
       <div class="campanita-caja">
         <button class="btn-ghost campanita" id="campanitaBtn" title="Novedades" aria-label="Novedades">
           <i class="fa-solid fa-bell"></i>
@@ -8191,6 +8209,10 @@ async function onLoggedIn() {
 
   show(byId('ayudaBotBtn'));
 
+  // La hora del encabezado tiene que estar desde que entra, no recien cuando
+  // abre Ventas: es el primer lugar donde se nota si el reloj esta corrido.
+  pintarHoraLocal();
+
   // Si esta bloqueado, capaz ya pago y el aviso de Mercado Pago no llego.
   // Va sin await: que no demore la carga del panel.
   chequearSuscripcionAlEntrar();
@@ -14087,9 +14109,15 @@ function renderChipsDemora() {
 let timerHoraLocal = null;
 
 function pintarHoraLocal() {
-  const el = byId('horaLocalAhora');
-  if (!el) return;
-  el.textContent = horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', hour12: false });
+  const ahora = horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  // Dos lugares, un solo calculo: la barra de Ventas y el encabezado.
+  const enVentas = byId('horaLocalAhora');
+  if (enVentas) enVentas.textContent = ahora;
+
+  const enCabecera = byId('horaArgentinaCabecera');
+  if (enCabecera) enCabecera.innerHTML = '<i class="fa-regular fa-clock"></i> <b>' + ahora + '</b>';
+
   if (!timerHoraLocal) timerHoraLocal = setInterval(pintarHoraLocal, 30000);
 }
 
@@ -15552,8 +15580,12 @@ function renderHourlyChart() {
   for (let i = 0; i < 24; i++) hours[i] = 0;
 
   orders.forEach(o => {
-    const h = new Date(o.created_at).getHours();
-    hours[h] += Number(o.total);
+    // La hora de una venta es la hora a la que se vendio EN EL LOCAL, no la
+    // del aparato que mira el grafico. Con getHours(), una compu con la zona
+    // mal puesta corria todas las ventas de lugar y el pico del mediodia
+    // aparecia a media tarde.
+    const h = Number(horaAR(o.created_at, { hour: '2-digit', hour12: false }));
+    if (hours[h] !== undefined) hours[h] += Number(o.total);
   });
 
   if (charts.hourly) charts.hourly.destroy();
