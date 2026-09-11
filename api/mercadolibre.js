@@ -558,6 +558,79 @@ async function accionPublicidadEstado(slug, campanaId, estado) {
 }
 
 
+// ---------- Lo que cobra Mercado Libre por fuera de la venta ----------
+//
+// Hay costos que no viven en la orden: el almacenamiento y la gestion de
+// FULL, y la publicidad. Se facturan por periodo. Calcular el margen solo
+// con la comision los deja afuera y la ganancia sale mejor de lo que es.
+//
+// Estos dos ya estan contados VENTA POR VENTA (sale_fee y costo_envio), asi
+// que si se restara la factura entera se descontarian dos veces. Se marcan
+// para poder separarlos.
+const YA_CONTADO_POR_VENTA = ['CV', 'CXD'];
+
+async function accionFacturacion(slug) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+
+  let periodos;
+  try {
+    periodos = await pedirAMl('/billing/integration/monthly/periods?group=ML&document_type=BILL&limit=6', token);
+  } catch (e) {
+    // La facturacion necesita permisos propios en la aplicacion de ML. Se
+    // dice, en vez de mostrar una pantalla vacia sin explicacion.
+    return { conectado: true, ok: false, motivo: String(e.message || e) };
+  }
+
+  const lista = (periodos && periodos.results) || [];
+  if (!lista.length) return { conectado: true, ok: true, periodos: [], cargos: [] };
+
+  // El mas reciente. `key` es el primer dia del mes y es lo que piden los
+  // demas endpoints.
+  const actual = lista[0];
+
+  let detalle;
+  try {
+    detalle = await pedirAMl('/billing/integration/periods/key/' +
+      encodeURIComponent(actual.key) + '/summary/details', token);
+  } catch (e) {
+    return { conectado: true, ok: false, motivo: String(e.message || e), periodo: actual };
+  }
+
+  const incluye = (detalle && detalle.bill_includes) || {};
+  const cargos = (incluye.charges || []).map((c) => ({
+    concepto: c.label,
+    tipo: c.type,
+    monto: Number(c.amount) || 0,
+    // Si ya se descuenta venta por venta, se marca para no restarlo de nuevo.
+    yaContado: YA_CONTADO_POR_VENTA.includes(c.type)
+  }));
+
+  const bonificaciones = (incluye.bonuses || []).map((b) => ({
+    concepto: b.label, tipo: b.type, monto: Number(b.amount) || 0
+  }));
+
+  return {
+    conectado: true,
+    ok: true,
+    periodo: {
+      desde: actual.period && actual.period.date_from,
+      hasta: actual.period && actual.period.date_to,
+      key: actual.key,
+      estado: actual.period_status,
+      total: Number(actual.amount) || 0
+    },
+    cargos: cargos,
+    bonificaciones: bonificaciones,
+    // Lo que NO esta en la ganancia por venta: publicidad, FULL y cualquier
+    // concepto nuevo que ML agregue. Es el numero que faltaba.
+    fueraDeLaVenta: cargos.filter((c) => !c.yaContado).reduce((s, c) => s + c.monto, 0)
+  };
+}
+
+
 // ---------- Calidad de las publicaciones ----------
 //
 // Cuantas publicaciones se miran de una. Cada una es UNA llamada a ML, y la
@@ -931,6 +1004,7 @@ module.exports = async (req, res) => {
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
+    if (accion === 'facturacion') return res.status(200).json(await accionFacturacion(tienda.slug));
     if (accion === 'calidad') return res.status(200).json(await accionCalidadPublicaciones(tienda.slug));
     if (accion === 'ventas_faltantes') return res.status(200).json(await accionVentasFaltantes(tienda.slug));
     if (accion === 'importar_venta') {

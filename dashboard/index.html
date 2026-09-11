@@ -2459,6 +2459,21 @@ tr:last-child td { border-bottom: none; }
 
       <div class="panel" style="margin-bottom:20px;">
         <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span>🧾 Lo que te cobra Mercado Libre</span>
+          <button type="button" id="verFacturacionBtn" class="btn"
+                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+            Ver la factura del mes
+          </button>
+        </div>
+        <div id="facturacionCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+          Hay costos que <strong>no vienen en la venta</strong>: el almacenamiento y la
+          gestión de FULL, y la publicidad. Se facturan por período, así que la
+          ganancia por venta los deja afuera. Acá están, con nombre y monto.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:20px;">
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
           <span>⭐ Cómo mejorar tus publicaciones</span>
           <button type="button" id="verCalidadBtn" class="btn"
                   style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
@@ -8558,6 +8573,95 @@ function renderMercadoLibre() {
           ) + '</td>' +
         '</tr>').join('')
     : '<tr><td colspan="10" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+}
+
+// ---- Lo que cobra Mercado Libre por fuera de la venta ----
+// El margen por venta cuenta la comision y el envio, porque los dos vienen en
+// la orden. Lo que NO viene: el almacenamiento y la gestion de FULL, y la
+// publicidad. Eso se factura por periodo y hay que ir a buscarlo aparte.
+//
+// Cuidado central de esta pantalla: NO contar dos veces. La factura tambien
+// trae la comision de venta y el envio, que ya estan descontados venta por
+// venta. Se muestran igual, pero marcados, y el total que se ofrece sumar al
+// margen es solo el de los que faltaban.
+
+async function verFacturacionMl() {
+  const cuerpo = byId('facturacionCuerpo');
+  const boton = byId('verFacturacionBtn');
+  boton.disabled = true;
+  cuerpo.textContent = 'Consultando la facturaci\u00f3n\u2026';
+
+  try {
+    const r = await llamarApiMl('facturacion');
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conect\u00e1 tu cuenta en <strong>Configuraci\u00f3n \u2192 Mercado Libre</strong>.';
+      return;
+    }
+    if (!r.ok) {
+      cuerpo.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(r.motivo || 'No se pudo consultar.') + '</span>' +
+        '<div style="margin-top:8px;font-size:12.5px;">Si dice que falta permiso, hay que tildar ' +
+        '<strong>facturaci\u00f3n</strong> en la aplicaci\u00f3n de Mercado Libre y volver a conectar la cuenta.</div>';
+      return;
+    }
+    if (!r.cargos || !r.cargos.length) {
+      cuerpo.innerHTML = 'Mercado Libre todav\u00eda no factur\u00f3 nada en este per\u00edodo.';
+      return;
+    }
+
+    const p = r.periodo || {};
+    const faltaban = r.cargos.filter(c => !c.yaContado);
+    const yaEstaban = r.cargos.filter(c => c.yaContado);
+
+    const fila = (c, gris) =>
+      '<tr>' +
+        '<td style="padding:8px 9px;border-bottom:1px solid var(--line);' +
+          (gris ? 'color:var(--text-mute);' : 'color:var(--navy);font-weight:600;') + '">' +
+          escapeHtml(c.concepto) +
+          (gris ? '<div style="font-size:11.5px;">ya descontado en cada venta</div>' : '') +
+        '</td>' +
+        '<td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;' +
+          (gris ? 'color:var(--text-mute);' : 'color:var(--danger);font-weight:700;') + '">\u2212 ' +
+          money(Math.round(c.monto)) + '</td>' +
+      '</tr>';
+
+    cuerpo.innerHTML =
+      '<div style="font-size:13px;margin-bottom:12px;">Per\u00edodo <strong>' +
+        escapeHtml(String(p.desde || '')) + '</strong> al <strong>' + escapeHtml(String(p.hasta || '')) + '</strong>' +
+        (p.estado === 'OPEN' ? ' \u00b7 <span style="color:#8A5200;">todav\u00eda abierto, puede subir</span>' : '') +
+      '</div>' +
+
+      '<div style="background:#FDECEC;border:1px solid #F5B5B5;border-radius:10px;padding:12px 14px;margin-bottom:14px;">' +
+        '<div style="font-size:12px;color:var(--navy);">Lo que NO estaba en tu ganancia por venta</div>' +
+        '<div style="font-size:22px;font-weight:700;color:var(--danger);margin-top:2px;">\u2212 ' +
+          money(Math.round(r.fueraDeLaVenta || 0)) + '</div>' +
+        '<div style="font-size:12px;color:var(--navy);margin-top:4px;line-height:1.55;">' +
+          'Rest\u00e1 esto a la ganancia del mes: son costos reales que no aparecen en ninguna venta.</div>' +
+      '</div>' +
+
+      '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<tbody>' +
+        faltaban.map(c => fila(c, false)).join('') +
+        yaEstaban.map(c => fila(c, true)).join('') +
+        ((r.bonificaciones || []).map(b =>
+          '<tr><td style="padding:8px 9px;border-bottom:1px solid var(--line);color:var(--stock);font-weight:600;">' +
+            escapeHtml(b.concepto) + '</td>' +
+          '<td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;color:var(--stock);font-weight:700;white-space:nowrap;">+ ' +
+            money(Math.round(b.monto)) + '</td></tr>').join('')) +
+        '<tr><td style="padding:10px 9px;border-top:2px solid var(--navy);font-weight:700;color:var(--navy);">Total de la factura</td>' +
+        '<td style="padding:10px 9px;border-top:2px solid var(--navy);text-align:right;font-weight:700;color:var(--navy);white-space:nowrap;">' +
+          money(Math.round(p.total || 0)) + '</td></tr>' +
+        '</tbody></table></div>' +
+
+      '<div style="margin-top:12px;font-size:12px;line-height:1.6;">' +
+        'Los conceptos en gris ya est\u00e1n descontados venta por venta (la comisi\u00f3n y el env\u00edo ' +
+        'vienen en cada orden). Se muestran para que la factura cierre, pero <strong>no hay que ' +
+        'volver a restarlos</strong>: eso ser\u00eda contarlos dos veces.</div>';
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 // ---- Calidad de las publicaciones ----
@@ -17468,6 +17572,7 @@ byId('mlPublicacionesBtn2').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicidadBtn').addEventListener('click', consultarPublicidadMl);
 byId('buscarVentasFaltantesBtn').addEventListener('click', buscarVentasFaltantes);
 byId('verCalidadBtn').addEventListener('click', verCalidadPublicaciones);
+byId('verFacturacionBtn').addEventListener('click', verFacturacionMl);
 byId('tabMercadoLibre').addEventListener('click', () => {
   if (!tienePlanPro()) { abrirBeneficiosMl(true); return; }
   mostrarVistaMercadoLibre();
