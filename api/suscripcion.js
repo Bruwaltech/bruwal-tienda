@@ -57,9 +57,12 @@ async function usuarioDeToken(token) {
   return r.json();
 }
 
+// Mismo criterio que el panel (la mas vieja) y explicito: sin order by,
+// Postgres puede devolver otra fila y se le activaria el plan a la tienda
+// equivocada. Ver el comentario largo en api/mercadolibre.js.
 async function tiendaDelUsuario(userId) {
   const filas = await sb('/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) +
-                         '&select=slug,plan,plan_vence');
+                         '&select=slug,plan,plan_vence&order=created_at.asc&limit=1');
   return (filas && filas[0]) || null;
 }
 

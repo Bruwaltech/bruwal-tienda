@@ -60,8 +60,14 @@ async function usuarioDeToken(token) {
   return r.json();
 }
 
+// OJO con el order: sin el, Postgres devuelve las filas en cualquier orden.
+// Con un usuario de una sola tienda da igual, pero el dia que tenga dos, el
+// panel le muestra una (ordena por created_at) y esto podria operar sobre LA
+// OTRA: conectar Mercado Libre a la tienda equivocada sin ningun error.
+// Mismo criterio que el panel: la mas vieja.
 async function tiendaDelUsuario(userId) {
-  const filas = await sb('/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) + '&select=slug,plan');
+  const filas = await sb('/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) +
+                         '&select=slug,plan&order=created_at.asc&limit=1');
   return (filas && filas[0]) || null;
 }
 

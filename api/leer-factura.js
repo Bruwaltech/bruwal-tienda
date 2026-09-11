@@ -37,7 +37,10 @@ async function usuarioDeToken(token) {
 
 async function tiendaDelUsuario(userId) {
   const r = await fetch(
-    SUPABASE_URL + '/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) + '&select=slug,plan',
+    // Con order y limit: sin eso Postgres elige cualquier fila, y con dos
+    // tiendas la factura se le cargaria al negocio equivocado.
+    SUPABASE_URL + '/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) +
+      '&select=slug,plan&order=created_at.asc&limit=1',
     { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY } }
   );
   if (!r.ok) return null;
