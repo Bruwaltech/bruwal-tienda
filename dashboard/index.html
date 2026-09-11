@@ -684,6 +684,23 @@ tr.fila-elegida > td { background:#EAF4FD; }
 
 .app-user b { color: var(--navy); }
 
+/* ---- Boton de actualizar ---- */
+.btn-refrescar {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--navy);
+  border-radius: 999px; padding: 7px 13px; font-family: inherit; font-size: 12.5px;
+  font-weight: 600; cursor: pointer; transition: border-color .2s ease;
+}
+.btn-refrescar:hover { border-color: var(--celeste); }
+.btn-refrescar:disabled { opacity: .6; cursor: default; }
+.btn-refrescar i { font-size: 12px; color: var(--celeste); }
+.btn-refrescar.girando i { animation: refrescar-giro .8s linear infinite; }
+.btn-refrescar .cuando { color: var(--text-mute); font-weight: 400; font-size: 12px; }
+@keyframes refrescar-giro { to { transform: rotate(360deg); } }
+/* En pantallas chicas queda solo el icono: el texto no entra y el celular
+   ademas se refresca deslizando. */
+@media (max-width: 720px) { .btn-refrescar .cuando { display: none; } }
+
 /* ---- Hora de Buenos Aires en el encabezado ---- */
 .hora-ar {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1671,6 +1688,14 @@ tr:last-child td { border-bottom: none; }
     <div class="app-user">
       <span id="userBusiness"><b></b></span>
       <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
+      <!-- Actualizar a mano. El panel instalado como app no tiene barra del
+           navegador, asi que sin esto no hay forma de pedir datos nuevos:
+           solo queda esperar el refresco automatico de cada minuto. -->
+      <button type="button" class="btn-refrescar" id="refrescarBtn" title="Traer los datos más nuevos">
+        <i class="fa-solid fa-rotate-right"></i>
+        <span class="cuando" id="refrescarCuando">Actualizar</span>
+      </button>
+
       <!-- La hora de Buenos Aires, siempre a la vista. Sirve para dos cosas:
            es la hora con la que trabaja todo el sistema (tickets, pedidos,
            estadisticas), y si el reloj de la maquina dice otra, se nota al
@@ -9822,12 +9847,68 @@ async function refrescoAutomatico() {
   if (hayModalAbierto()) return;
 
   refrescando = true;
-  try { await refreshData(); }
+  try {
+    await refreshData();
+    ultimoRefresco = Date.now();
+  }
   catch (e) { /* si falla, se reintenta en el proximo ciclo */ }
   refrescando = false;
 }
 
 setInterval(refrescoAutomatico, REFRESCO_MS);
+
+// ---- Actualizar a mano ----
+// Cuando se trajeron los datos por ultima vez. Sirve para dos cosas: que el
+// boton diga "hace 3 min" en vez de no decir nada, y que una pantalla vieja
+// no se vea igual que una al dia.
+let ultimoRefresco = Date.now();
+
+function haceCuanto(desde) {
+  const seg = Math.floor((Date.now() - desde) / 1000);
+  if (seg < 45) return 'reci\u00e9n';
+  const min = Math.round(seg / 60);
+  if (min < 60) return 'hace ' + min + ' min';
+  const hs = Math.round(min / 60);
+  return 'hace ' + hs + (hs === 1 ? ' hora' : ' horas');
+}
+
+function pintarUltimoRefresco() {
+  const el = byId('refrescarCuando');
+  if (el) el.textContent = haceCuanto(ultimoRefresco);
+}
+
+async function refrescarAhora() {
+  if (!currentStore || refrescando) return;
+
+  const boton = byId('refrescarBtn');
+  refrescando = true;
+  if (boton) { boton.disabled = true; boton.classList.add('girando'); }
+
+  try {
+    await refreshData();
+    ultimoRefresco = Date.now();
+  } catch (e) {
+    // Se avisa, porque el que apreta el boton esta esperando una respuesta:
+    // dejarlo sin nada es peor que decirle que no se pudo.
+    alert('No se pudieron traer los datos:\n\n' + (e && e.message ? e.message : e));
+  } finally {
+    refrescando = false;
+    if (boton) { boton.disabled = false; boton.classList.remove('girando'); }
+    pintarUltimoRefresco();
+  }
+}
+
+byId('refrescarBtn').addEventListener('click', refrescarAhora);
+
+// F5 y Ctrl+R en la app instalada recargan TODO (vuelve a bajar el panel
+// entero y a pedir la sesion). Esto hace lo mismo que el boton, que solo
+// trae los datos: mas rapido y sin parpadeo.
+document.addEventListener('keydown', (e) => {
+  const esRecargar = e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r');
+  if (!esRecargar || !currentStore) return;
+  e.preventDefault();
+  refrescarAhora();
+});
 
 // Al volver a la pestaña o a la app, refresca de una: es justo cuando mas
 // probable es que haya entrado algo mientras no estabas mirando. Ademas
@@ -14154,6 +14235,10 @@ function pintarHoraLocal() {
 
   const enCabecera = byId('horaArgentinaCabecera');
   if (enCabecera) enCabecera.innerHTML = '<i class="fa-regular fa-clock"></i> <b>' + ahora + '</b>';
+
+  // El "hace X min" del boton de actualizar se repinta con el mismo timer:
+  // los dos cambian con el paso del tiempo y no hace falta un segundo reloj.
+  pintarUltimoRefresco();
 
   if (!timerHoraLocal) timerHoraLocal = setInterval(pintarHoraLocal, 30000);
 }
