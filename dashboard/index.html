@@ -684,6 +684,31 @@ tr.fila-elegida > td { background:#EAF4FD; }
 
 .app-user b { color: var(--navy); }
 
+/* ---- Cruce de stock con Mercado Libre ---- */
+.sx-fila {
+  display: flex; align-items: flex-start; gap: 11px;
+  border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px;
+  padding: 11px 13px; margin-bottom: 8px; background: #fff;
+}
+.sx-fila.grave { border-left-color: var(--danger); }
+.sx-fila.plata { border-left-color: #F5C518; }
+.sx-fila.leve  { border-left-color: var(--line); }
+.sx-txt { flex: 1; min-width: 0; }
+.sx-titulo { font-size: 13.5px; font-weight: 700; color: var(--navy); line-height: 1.35; }
+.sx-que { font-size: 12.5px; line-height: 1.55; margin-top: 3px; }
+.sx-fila.grave .sx-que { color: var(--danger); }
+.sx-fila.plata .sx-que { color: #8A5200; }
+.sx-fila.leve  .sx-que { color: var(--text-mute); }
+.sx-num { font-size: 12px; color: var(--text-mute); margin-top: 3px; }
+.sx-num b { color: var(--navy); }
+.sx-accion {
+  flex-shrink: 0; border: 1px solid var(--celeste); background: #fff; color: var(--celeste);
+  border-radius: 999px; padding: 7px 13px; font-family: inherit; font-size: 12.5px;
+  font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.sx-accion:hover { background: var(--celeste); color: #fff; }
+.sx-accion:disabled { opacity: .5; cursor: default; }
+
 /* ---- Todos los negocios juntos ---- */
 .tn-tabla { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .tn-tabla th {
@@ -2454,6 +2479,22 @@ tr:last-child td { border-bottom: none; }
         </div>
         <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
           Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:20px;">
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span>⚖️ Stock: acá contra Mercado Libre</span>
+          <button type="button" id="verStockCruzadoBtn" class="btn"
+                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+            Comparar
+          </button>
+        </div>
+        <div id="stockCruzadoCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+          Compara lo que tenés acá con lo que dice cada publicación. Busca las dos
+          cosas que cuestan plata: <strong>vender lo que no tenés</strong> (activo
+          en ML y sin stock acá) y <strong>plata que no entra</strong> (con stock
+          acá y pausado o en cero allá).
         </div>
       </div>
 
@@ -8574,6 +8615,195 @@ function renderMercadoLibre() {
         '</tr>').join('')
     : '<tr><td colspan="10" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
 }
+
+// ---- Stock: acá contra Mercado Libre ----
+// Es lo unico de esta integracion que ningun otro sistema puede hacer, porque
+// BRUWAL ve los dos lados. Los dos errores que busca cuestan plata:
+//
+//   GRAVE  activo en ML sin stock aca -> se vende algo que no hay. Cancelar
+//          una venta en ML golpea la reputacion, no es solo el mal rato.
+//   PLATA  con stock aca y pausado o en cero alla -> no entra plata y nadie
+//          se entera, porque no falla nada. Es el error invisible.
+//
+// Con FULL no se compara: ahi el stock vive en el deposito de Mercado Libre y
+// el del local no tiene por que coincidir. Avisar de eso seria una alarma
+// falsa todos los dias, y una alarma que siempre suena deja de mirarse.
+
+// El stock local de lo que apunta un vinculo: la variante puntual si el
+// vinculo la nombra, el producto entero si no.
+function stockLocalDelVinculo(v) {
+  const p = (products || []).find(x => String(x.id) === String(v.product_id));
+  if (!p) return null;
+
+  if (v.variante_local && p.tiene_variantes && Array.isArray(p.variantes)) {
+    const comb = p.variantes.find(x => claveVariante(x.atributos) === v.variante_local);
+    return comb ? { nombre: p.name, stock: Number(comb.stock) || 0, variante: v.variante_local } : null;
+  }
+  return { nombre: p.name, stock: Number(p.stock) || 0, variante: null };
+}
+
+function diferenciasDeStock(datos) {
+  const porId = {};
+  (datos.publicaciones || []).forEach(p => { porId[p.id] = p; });
+
+  const filas = [];
+  (datos.vinculos || []).forEach(v => {
+    const pub = porId[String(v.ml_item_id)];
+    if (!pub) return;
+    if (pub.full) return;   // el stock de Full no es el del local
+
+    const local = stockLocalDelVinculo(v);
+    if (!local) return;     // el producto vinculado ya no existe
+
+    const enMl = v.ml_variation_id
+      ? (() => {
+          const vr = (pub.variantes || []).find(x => String(x.id) === String(v.ml_variation_id));
+          return vr ? vr.cantidad : null;
+        })()
+      : pub.cantidad;
+    if (enMl === null) return;   // la variante vinculada ya no esta en ML
+
+    const activa = pub.estado === 'active';
+    const base = {
+      titulo: pub.titulo || pub.id, link: pub.link, itemId: pub.id,
+      variacionId: v.ml_variation_id || null,
+      producto: local.nombre, variante: local.variante,
+      local: local.stock, ml: enMl, estado: pub.estado
+    };
+
+    if (activa && enMl > 0 && local.stock <= 0) {
+      filas.push(Object.assign({ nivel: 'grave', orden: 0,
+        que: 'Se puede vender y ac\u00e1 no queda ninguno.' }, base));
+    } else if (activa && enMl > local.stock) {
+      filas.push(Object.assign({ nivel: 'grave', orden: 1,
+        que: 'Mercado Libre ofrece m\u00e1s de lo que ten\u00e9s.' }, base));
+    } else if (local.stock > 0 && !activa) {
+      filas.push(Object.assign({ nivel: 'plata', orden: 2,
+        que: 'Ten\u00e9s stock y la publicaci\u00f3n est\u00e1 ' +
+             (pub.estado === 'paused' ? 'pausada' : pub.estado) + '.' }, base));
+    } else if (local.stock > 0 && activa && enMl === 0) {
+      filas.push(Object.assign({ nivel: 'plata', orden: 3,
+        que: 'Ten\u00e9s stock y en Mercado Libre figura sin unidades.' }, base));
+    } else if (enMl !== local.stock) {
+      filas.push(Object.assign({ nivel: 'leve', orden: 4,
+        que: 'Los n\u00fameros no coinciden.' }, base));
+    }
+  });
+
+  return filas.sort((a, b) => a.orden - b.orden);
+}
+
+async function verStockCruzado() {
+  const cuerpo = byId('stockCruzadoCuerpo');
+  const boton = byId('verStockCruzadoBtn');
+  boton.disabled = true;
+  cuerpo.textContent = 'Comparando con Mercado Libre\u2026';
+
+  try {
+    const r = await llamarApiMl('stock_ml');
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conect\u00e1 tu cuenta en <strong>Configuraci\u00f3n \u2192 Mercado Libre</strong>.';
+      return;
+    }
+    if (!r.vinculos || !r.vinculos.length) {
+      cuerpo.innerHTML = 'Todav\u00eda no vinculaste ninguna publicaci\u00f3n. Sin v\u00ednculo no hay con qu\u00e9 comparar.';
+      return;
+    }
+
+    const filas = diferenciasDeStock(r);
+    const revisadas = r.vinculos.length;
+
+    if (!filas.length) {
+      cuerpo.innerHTML = '<span style="color:var(--stock);font-weight:700;">\u2705 Todo cuadra.</span> ' +
+        'Las ' + revisadas + ' publicaciones vinculadas coinciden con tu stock.';
+      return;
+    }
+
+    const graves = filas.filter(f => f.nivel === 'grave').length;
+    const plata = filas.filter(f => f.nivel === 'plata').length;
+
+    cuerpo.innerHTML =
+      '<div style="margin-bottom:12px;">' +
+        (graves ? '<strong style="color:var(--danger);">' + graves +
+          (graves === 1 ? ' publicaci\u00f3n puede venderte algo que no ten\u00e9s' : ' publicaciones pueden venderte algo que no ten\u00e9s') + '</strong>' : '') +
+        (graves && plata ? ' \u00b7 ' : '') +
+        (plata ? '<strong style="color:#8A5200;">' + plata +
+          (plata === 1 ? ' no est\u00e1 vendiendo teniendo stock' : ' no est\u00e1n vendiendo teniendo stock') + '</strong>' : '') +
+      '</div>' +
+      filas.map((f, i) =>
+        '<div class="sx-fila ' + f.nivel + '">' +
+          '<div class="sx-txt">' +
+            '<div class="sx-titulo">' +
+              (f.link ? '<a href="' + escapeHtml(f.link) + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;">' + escapeHtml(f.titulo) + '</a>' : escapeHtml(f.titulo)) +
+            '</div>' +
+            '<div class="sx-que">' + escapeHtml(f.que) + '</div>' +
+            '<div class="sx-num">Ac\u00e1 <b>' + f.local + '</b> \u00b7 en Mercado Libre <b>' + f.ml + '</b>' +
+              (f.variante ? ' \u00b7 ' + escapeHtml(String(f.variante).replace(/~/g, ', ')) : '') +
+            '</div>' +
+          '</div>' +
+          // Solo se ofrece mandar la CANTIDAD. Reactivar una publicacion
+          // pausada es una decision del vendedor (capaz la pauso a proposito)
+          // y se hace en Mercado Libre.
+          (f.estado === 'active'
+            ? '<button type="button" class="sx-accion" data-sinc="' + i + '">Poner ' + f.local + ' en ML</button>'
+            : '')+
+        '</div>').join('') +
+      '<div style="margin-top:10px;font-size:12px;line-height:1.6;">' +
+        'Se compararon ' + revisadas + ' v\u00ednculos. Los de <strong>Full</strong> no se comparan: ' +
+        'ese stock est\u00e1 en el dep\u00f3sito de Mercado Libre y no tiene por qu\u00e9 coincidir con el tuyo.</div>';
+
+    cuerpo.querySelectorAll('[data-sinc]').forEach(b => {
+      b.addEventListener('click', () => sincronizarStockEnMl(filas[Number(b.dataset.sinc)], b));
+    });
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo comparar: ' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+async function sincronizarStockEnMl(fila, boton) {
+  if (!puedeOperar()) return;
+
+  // Esto cambia una publicacion en vivo: se pregunta, y se dice exactamente
+  // que numero va a quedar.
+  if (!confirm('\u00bfPoner ' + fila.local + ' unidad' + (fila.local === 1 ? '' : 'es') +
+               ' en Mercado Libre?\n\n' + fila.titulo + '\n' +
+               'Ahora figura con ' + fila.ml + '.')) return;
+
+  boton.disabled = true;
+  boton.textContent = 'Mandando\u2026';
+
+  try {
+    const r = await llamarApiMl('sincronizar_stock', {
+      item_id: fila.itemId,
+      variacion_id: fila.variacionId,
+      cantidad: fila.local
+    });
+
+    if (!r.ok) {
+      alert('No se pudo:\n\n' + (r.motivo || 'Error desconocido.'));
+      boton.disabled = false;
+      boton.textContent = 'Poner ' + fila.local + ' en ML';
+      return;
+    }
+
+    // Lo que se informa es lo que quedo segun Mercado Libre, no lo que
+    // pedimos: si acepto pero dejo otro numero, hay que verlo.
+    if (r.quedo !== null && r.quedo !== r.pedida) {
+      alert('Mercado Libre acept\u00f3 el cambio pero qued\u00f3 en ' + r.quedo +
+            ', no en ' + r.pedida + '.');
+    }
+    await verStockCruzado();
+  } catch (err) {
+    alert('No se pudo:\n\n' + err.message);
+    boton.disabled = false;
+    boton.textContent = 'Poner ' + fila.local + ' en ML';
+  }
+}
+
+byId('verStockCruzadoBtn').addEventListener('click', verStockCruzado);
 
 // ---- Lo que cobra Mercado Libre por fuera de la venta ----
 // El margen por venta cuenta la comision y el envio, porque los dos vienen en

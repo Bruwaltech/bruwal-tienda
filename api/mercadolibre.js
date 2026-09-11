@@ -558,6 +558,110 @@ async function accionPublicidadEstado(slug, campanaId, estado) {
 }
 
 
+// ---------- Cruce de stock con Mercado Libre ----------
+
+// Como esta cada publicacion VINCULADA en Mercado Libre. Solo las
+// vinculadas: el resto no se puede comparar contra nada del catalogo local.
+async function accionStockEnMl(slug) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+
+  const vinculos = await sb('/rest/v1/store_ml_vinculos?store_slug=eq.' + encodeURIComponent(slug) +
+                            '&select=ml_item_id,ml_variation_id,product_id,variante_local');
+  if (!vinculos || !vinculos.length) return { conectado: true, ok: true, vinculos: [], publicaciones: [] };
+
+  // Una publicacion con variantes tiene un vinculo por variante: se piden los
+  // ids UNICOS, si no se consulta la misma publicacion cinco veces.
+  const ids = [...new Set(vinculos.map((v) => String(v.ml_item_id)))];
+
+  const publicaciones = [];
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const detalle = await pedirAMl('/items?ids=' + lote.join(',') +
+      '&attributes=id,title,status,available_quantity,permalink,variations,shipping', token);
+    (detalle || []).forEach((d) => {
+      const b = d.body || d;
+      if (!b || !b.id) return;
+      publicaciones.push({
+        id: String(b.id),
+        titulo: b.title,
+        estado: b.status,
+        cantidad: Number(b.available_quantity) || 0,
+        link: b.permalink || null,
+        // Con Full el stock vive en el deposito de Mercado Libre: el del
+        // local no tiene por que coincidir y compararlos seria dar una
+        // alarma falsa todos los dias.
+        full: !!(b.shipping && b.shipping.logistic_type === 'fulfillment'),
+        variantes: (b.variations || []).map((v) => ({
+          id: String(v.id),
+          cantidad: Number(v.available_quantity) || 0
+        }))
+      });
+    });
+  }
+
+  return { conectado: true, ok: true, vinculos: vinculos, publicaciones: publicaciones };
+}
+
+// Mandar a Mercado Libre el stock que dice BRUWAL.
+//
+// Solo se toca available_quantity, nada mas: mandar el objeto entero podria
+// pisar precio, titulo o atributos sin que nadie lo haya pedido.
+async function accionSincronizarStock(slug, itemId, variacionId, cantidad) {
+  if (!itemId) return { ok: false, motivo: 'Falta la publicacion.' };
+  const qty = Math.max(0, Math.floor(Number(cantidad)));
+  if (!isFinite(qty)) return { ok: false, motivo: 'Cantidad invalida.' };
+
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { ok: false, motivo: 'La tienda no tiene Mercado Libre conectado.' };
+
+  // Que la publicacion sea de ESTA tienda: se exige que exista el vinculo.
+  // Sin esto, alguien podria mandar un id ajeno y tocarle el stock a otro.
+  const vinculos = await sb('/rest/v1/store_ml_vinculos?store_slug=eq.' + encodeURIComponent(slug) +
+                            '&ml_item_id=eq.' + encodeURIComponent(String(itemId)) + '&select=ml_item_id&limit=1');
+  if (!vinculos || !vinculos.length) {
+    return { ok: false, motivo: 'Esa publicacion no esta vinculada a esta tienda.' };
+  }
+
+  const token = await tokenDeTienda(slug);
+
+  // Con variantes el stock vive en la variante, no en la publicacion: mandar
+  // available_quantity arriba con variaciones cargadas lo rechaza ML.
+  const cuerpo = variacionId
+    ? { variations: [{ id: Number(variacionId), available_quantity: qty }] }
+    : { available_quantity: qty };
+
+  const r = await fetch(ML_API + '/items/' + encodeURIComponent(itemId), {
+    method: 'PUT',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(cuerpo)
+  });
+
+  const datos = await r.json().catch(() => null);
+  if (!r.ok) {
+    const motivo = (datos && (datos.message || datos.error)) || ('HTTP ' + r.status);
+    return { ok: false, motivo: 'Mercado Libre no acepto el cambio: ' + motivo, crudo: datos };
+  }
+
+  // Se confirma releyendo, no suponiendo.
+  const leido = variacionId
+    ? (datos.variations || []).find((v) => String(v.id) === String(variacionId))
+    : datos;
+
+  return {
+    ok: true,
+    pedida: qty,
+    quedo: leido ? (Number(leido.available_quantity) || 0) : null,
+    estado: datos.status || null
+  };
+}
+
+
 // ---------- Lo que cobra Mercado Libre por fuera de la venta ----------
 //
 // Hay costos que no viven en la orden: el almacenamiento y la gestion de
@@ -1004,6 +1108,11 @@ module.exports = async (req, res) => {
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
+    if (accion === 'stock_ml') return res.status(200).json(await accionStockEnMl(tienda.slug));
+    if (accion === 'sincronizar_stock') {
+      return res.status(200).json(await accionSincronizarStock(
+        tienda.slug, cuerpo.item_id, cuerpo.variacion_id, cuerpo.cantidad));
+    }
     if (accion === 'facturacion') return res.status(200).json(await accionFacturacion(tienda.slug));
     if (accion === 'calidad') return res.status(200).json(await accionCalidadPublicaciones(tienda.slug));
     if (accion === 'ventas_faltantes') return res.status(200).json(await accionVentasFaltantes(tienda.slug));
