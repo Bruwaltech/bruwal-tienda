@@ -4772,14 +4772,51 @@ function fechaLocalISO(fecha) {
 // desde otro huso, una venta de las 13:33 aparecia a las 18:33.
 const TZ_AR = 'America/Argentina/Buenos_Aires';
 
+// Supabase devuelve los timestamps SIN marca de zona:
+//     "created_at": "2026-08-12T12:33:35.446366"
+// Estan guardados en UTC, pero sin la Z el navegador los toma como hora
+// LOCAL. En Argentina eso se lee 3 horas adelantado: un pedido de las 06:00
+// imprimia un ticket que decia 09:00.
+//
+// Esta funcion es la que arregla eso, y es el unico lugar donde hay que
+// tocarlo. Si el dia de maniana las columnas pasan a timestamptz y empiezan
+// a venir con zona, sigue andando igual: solo le pega la Z al que no la
+// tiene.
+//
+// Las fechas sueltas ("2026-09-09", como la de los gastos) NO entran: no
+// tienen hora, y ponerles Z las correria un dia para atras.
+function comoFecha(v) {
+  if (v instanceof Date) return v;
+  if (typeof v === 'number') return new Date(v);
+
+  const texto = String(v == null ? '' : v).trim();
+
+  // Fecha sin hora ("2026-09-09"): es un DIA, no un instante. new Date() la
+  // toma como medianoche UTC, y medianoche UTC en Argentina son las 21:00 del
+  // dia anterior: el gasto del 9 se veia como del 8. Parandose al mediodia
+  // UTC el dia del calendario es el mismo en cualquier huso habitado.
+  const soloDia = /^\d{4}-\d{2}-\d{2}$/.test(texto);
+  if (soloDia) {
+    const [a, m, d] = texto.split('-').map(Number);
+    return new Date(Date.UTC(a, m - 1, d, 12));
+  }
+
+  const conHora = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(texto);
+  const conZona = /([zZ]|[+-]\d{2}:?\d{2})$/.test(texto);
+
+  return (conHora && !conZona)
+    ? new Date(texto.replace(' ', 'T') + 'Z')
+    : new Date(texto);
+}
+
 const fechaHoraAR = (v, opts) =>
-  new Date(v).toLocaleString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
+  comoFecha(v).toLocaleString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
 
 const fechaAR = (v, opts) =>
-  new Date(v).toLocaleDateString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
+  comoFecha(v).toLocaleDateString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
 
 const horaAR = (v, opts) =>
-  new Date(v).toLocaleTimeString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
+  comoFecha(v).toLocaleTimeString('es-AR', Object.assign({ timeZone: TZ_AR }, opts || {}));
 const escapeHtml = (str) => {
   const d = document.createElement('div');
   d.textContent = str == null ? '' : String(str);
@@ -8305,7 +8342,7 @@ function renderMercadoLibre() {
   const ahora = ahoraEnArgentina();
   const delMes = mlOrdenes.filter((o) => {
     if (o.estado !== 'paid') return false;
-    const f = new Date(o.creado_en);
+    const f = comoFecha(o.creado_en);
     return f.getMonth() === ahora.getMonth() && f.getFullYear() === ahora.getFullYear();
   });
 
@@ -10468,7 +10505,7 @@ function renderPulsoSemanal() {
   const ahora = Date.now();
   const sumar = (desde, hasta) => orders
     .filter(o => {
-      const t = new Date(o.created_at).getTime();
+      const t = comoFecha(o.created_at).getTime();
       return t >= ahora - desde * DIA && t < ahora - hasta * DIA;
     })
     .reduce((s, o) => s + Number(o.total || 0), 0);
@@ -10510,7 +10547,7 @@ function renderPulsoSemanal() {
       // Dato accionable en vez de una frase motivacional vacia
       const porDia = {};
       orders
-        .filter(o => new Date(o.created_at).getTime() >= ahora - 14 * DIA)
+        .filter(o => comoFecha(o.created_at).getTime() >= ahora - 14 * DIA)
         .forEach(o => {
           const d = fechaAR(o.created_at, { weekday: 'long' });
           porDia[d] = (porDia[d] || 0) + Number(o.total || 0);
@@ -10605,10 +10642,10 @@ function renderDashboard() {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const todayOrders = orders.filter(o => new Date(o.created_at) >= today);
-  const weekOrders = orders.filter(o => new Date(o.created_at) >= weekAgo);
+  const todayOrders = orders.filter(o => comoFecha(o.created_at) >= today);
+  const weekOrders = orders.filter(o => comoFecha(o.created_at) >= weekAgo);
   const monthOrders = orders.filter(o => {
-    const d = new Date(o.created_at);
+    const d = comoFecha(o.created_at);
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   });
 
@@ -10627,7 +10664,7 @@ function renderDashboard() {
   const yesterdayStart = new Date(today.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayEnd = today;
   const yesterdayOrders = orders.filter(o => {
-    const d = new Date(o.created_at);
+    const d = comoFecha(o.created_at);
     return d >= yesterdayStart && d < yesterdayEnd;
   });
   const yesterdayTotal = yesterdayOrders.reduce((sum, o) => sum + Number(o.total), 0);
@@ -10842,7 +10879,7 @@ function renderYearlyChart() {
   months.forEach(m => data[m] = 0);
 
   orders.forEach(o => {
-    const d = new Date(o.created_at);
+    const d = comoFecha(o.created_at);
     data[months[d.getMonth()]] += Number(o.total);
   });
 
@@ -11940,7 +11977,7 @@ function renderClientes() {
     if (!clients[o.customer_name]) clients[o.customer_name] = { qty: 0, total: 0, lastOrder: o.created_at };
     clients[o.customer_name].qty += 1;
     clients[o.customer_name].total += Number(o.total);
-    if (new Date(o.created_at) > new Date(clients[o.customer_name].lastOrder)) {
+    if (comoFecha(o.created_at) > comoFecha(clients[o.customer_name].lastOrder)) {
       clients[o.customer_name].lastOrder = o.created_at;
     }
   });
@@ -14244,7 +14281,7 @@ function imprimirTicketDeOrden(id) {
   const saldo = Number(o.saldo_pendiente || 0);
   const html = armarTicketHtml({
     numero: numeroDeTicket(o.id),
-    fecha: new Date(o.created_at),
+    fecha: comoFecha(o.created_at),
     cliente: (o.customer_name && o.customer_name !== 'scanner') ? o.customer_name : '',
     items,
     total: Number(o.total || 0),
@@ -15290,7 +15327,7 @@ let statsPeriodoDias = 30;
 
 function statsProductosYClientes(periodoDias) {
   const corte = periodoDias ? new Date(Date.now() - periodoDias * 86400000) : null;
-  const enPeriodo = orders.filter(o => !corte || new Date(o.created_at) >= corte);
+  const enPeriodo = orders.filter(o => !corte || comoFecha(o.created_at) >= corte);
 
   const porProducto = {};
   enPeriodo.forEach(o => {
@@ -15334,7 +15371,7 @@ function statsProductosYClientes(periodoDias) {
     if (!porCliente[nombre]) porCliente[nombre] = { qty: 0, total: 0, ultimaCompra: o.created_at };
     porCliente[nombre].qty += 1;
     porCliente[nombre].total += Number(o.total || 0);
-    if (new Date(o.created_at) > new Date(porCliente[nombre].ultimaCompra)) porCliente[nombre].ultimaCompra = o.created_at;
+    if (comoFecha(o.created_at) > comoFecha(porCliente[nombre].ultimaCompra)) porCliente[nombre].ultimaCompra = o.created_at;
   });
 
   const ahora = Date.now();
@@ -15344,7 +15381,7 @@ function statsProductosYClientes(periodoDias) {
     total: d.total,
     ticketPromedio: d.total / d.qty,
     ultimaCompra: d.ultimaCompra,
-    diasDesdeUltima: Math.floor((ahora - new Date(d.ultimaCompra).getTime()) / 86400000)
+    diasDesdeUltima: Math.floor((ahora - comoFecha(d.ultimaCompra).getTime()) / 86400000)
   }));
 
   // Segmentación simple, explicable — no un modelo estadístico: el umbral
@@ -18371,7 +18408,7 @@ function jornadasDeEmpleado(empleadoId, desde, hasta) {
     } else if (abierta) {
       jornadas.push({
         entrada: abierta, salida: m,
-        ms: new Date(m.momento) - new Date(abierta.momento)
+        ms: comoFecha(m.momento) - comoFecha(abierta.momento)
       });
       abierta = null;
     } else {
@@ -18708,7 +18745,7 @@ async function ficharEmpleado(empleadoId, origen) {
   let trabajado = null;
   if (tipo === 'salida') {
     const entrada = marcasDe(e.id).filter(f => f.tipo === 'entrada').slice(-1)[0];
-    if (entrada) trabajado = new Date(momento) - new Date(entrada.momento);
+    if (entrada) trabajado = comoFecha(momento) - comoFecha(entrada.momento);
   }
 
   return { empleado: e, tipo, momento, trabajado, pendiente };
