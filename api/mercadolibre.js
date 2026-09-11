@@ -60,15 +60,26 @@ async function usuarioDeToken(token) {
   return r.json();
 }
 
-// OJO con el order: sin el, Postgres devuelve las filas en cualquier orden.
-// Con un usuario de una sola tienda da igual, pero el dia que tenga dos, el
-// panel le muestra una (ordena por created_at) y esto podria operar sobre LA
-// OTRA: conectar Mercado Libre a la tienda equivocada sin ningun error.
-// Mismo criterio que el panel: la mas vieja.
-async function tiendaDelUsuario(userId) {
+// Con Pro un duenio puede tener varios negocios, asi que hay que trabajar
+// sobre el que esta MIRANDO, no sobre el primero que aparezca.
+//
+// El navegador manda el slug pero NO se le cree: se busca entre las tiendas
+// de ESE usuario. Mandar un slug ajeno no da acceso a nada — simplemente no
+// aparece en la lista y se cae a la suya.
+//
+// Y el order no es decorativo: sin el, Postgres devuelve las filas en
+// cualquier orden y el fallback podria elegir una distinta de la que muestra
+// el panel.
+async function tiendaDelUsuario(userId, slugPedido) {
   const filas = await sb('/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) +
-                         '&select=slug,plan&order=created_at.asc&limit=1');
-  return (filas && filas[0]) || null;
+                         '&select=slug,plan&order=created_at.asc');
+  if (!filas || !filas.length) return null;
+
+  if (slugPedido) {
+    const suya = filas.find((t) => t.slug === slugPedido);
+    if (suya) return suya;
+  }
+  return filas[0];
 }
 
 // ---------- Supabase con service role (salta RLS) ----------
@@ -908,11 +919,11 @@ module.exports = async (req, res) => {
   const usuario = await usuarioDeToken(token);
   if (!usuario || !usuario.id) return res.status(401).json({ error: 'Sesión inválida' });
 
-  const tienda = await tiendaDelUsuario(usuario.id);
-  if (!tienda) return res.status(403).json({ error: 'Este usuario no tiene tienda' });
-
   const cuerpo = req.body || {};
   const accion = cuerpo.accion || '';
+
+  const tienda = await tiendaDelUsuario(usuario.id, cuerpo.slug);
+  if (!tienda) return res.status(403).json({ error: 'Este usuario no tiene tienda' });
 
   try {
     if (accion === 'estado') return res.status(200).json(await accionEstado(tienda.slug));

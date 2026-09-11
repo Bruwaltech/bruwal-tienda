@@ -57,13 +57,19 @@ async function usuarioDeToken(token) {
   return r.json();
 }
 
-// Mismo criterio que el panel (la mas vieja) y explicito: sin order by,
-// Postgres puede devolver otra fila y se le activaria el plan a la tienda
-// equivocada. Ver el comentario largo en api/mercadolibre.js.
-async function tiendaDelUsuario(userId) {
+// El slug lo manda el navegador pero se verifica contra las tiendas de ESE
+// usuario: mandar uno ajeno no activa nada. Ver el comentario largo en
+// api/mercadolibre.js.
+async function tiendaDelUsuario(userId, slugPedido) {
   const filas = await sb('/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) +
-                         '&select=slug,plan,plan_vence&order=created_at.asc&limit=1');
-  return (filas && filas[0]) || null;
+                         '&select=slug,plan,plan_vence&order=created_at.asc');
+  if (!filas || !filas.length) return null;
+
+  if (slugPedido) {
+    const suya = filas.find((t) => t.slug === slugPedido);
+    if (suya) return suya;
+  }
+  return filas[0];
 }
 
 // Todas las suscripciones que Mercado Pago tenga con este slug como
@@ -92,7 +98,9 @@ module.exports = async (req, res) => {
   const usuario = await usuarioDeToken(token);
   if (!usuario || !usuario.id) return res.status(401).json({ error: 'Sesión inválida' });
 
-  const tienda = await tiendaDelUsuario(usuario.id);
+  // El plan es POR TIENDA: hay que verificar la suscripcion de la que se esta
+  // mirando, no la del primer negocio que tenga el usuario.
+  const tienda = await tiendaDelUsuario(usuario.id, (req.body || {}).slug);
   if (!tienda) return res.status(403).json({ error: 'Este usuario no tiene tienda' });
 
   try {

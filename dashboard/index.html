@@ -684,6 +684,39 @@ tr.fila-elegida > td { background:#EAF4FD; }
 
 .app-user b { color: var(--navy); }
 
+/* ---- Menu de negocios ---- */
+.negocio-caja { position: relative; display: inline-flex; }
+.negocio-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: none; padding: 4px 8px; border-radius: 8px;
+  font-family: inherit; font-size: 14px; cursor: pointer; color: var(--navy);
+}
+.negocio-btn:hover { background: var(--bg); }
+.negocio-btn .flecha { font-size: 10px; color: var(--text-mute); }
+.negocio-panel {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
+  min-width: 250px; max-width: calc(100vw - 24px);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 14px 38px rgba(21, 41, 77, .20); padding: 6px;
+}
+.negocio-titulo {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-mute); padding: 9px 10px 6px;
+}
+.negocio-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 10px; border: none; background: none; border-radius: 9px;
+  cursor: pointer; text-align: left; font-family: inherit; font-size: 13.5px;
+  color: var(--navy); font-weight: 600;
+}
+.negocio-item:hover { background: var(--bg); }
+.negocio-item.actual { background: #EAF4FD; }
+.negocio-item .tilde { color: var(--celeste); width: 14px; flex-shrink: 0; }
+.negocio-sumar {
+  border-top: 1px solid var(--line); margin-top: 5px; padding-top: 5px;
+}
+.negocio-sumar .negocio-item { color: var(--celeste); font-weight: 700; }
+
 /* ---- Boton de actualizar ---- */
 .btn-refrescar {
   display: inline-flex; align-items: center; gap: 7px;
@@ -1686,7 +1719,16 @@ tr:last-child td { border-bottom: none; }
   <header>
     <div class="app-logo"><span class="mark">B</span> BRUWALTECH</div>
     <div class="app-user">
-      <span id="userBusiness"><b></b></span>
+      <!-- El nombre del negocio es un menu: se ve en cual estas, se cambia y,
+           con Pro, se suma otro. Antes era un texto suelto y quien tenia dos
+           negocios no tenia forma de llegar al segundo. -->
+      <div class="negocio-caja">
+        <button type="button" class="negocio-btn" id="negocioBtn">
+          <span id="userBusiness"><b></b></span>
+          <span class="flecha" id="negocioFlecha">▼</span>
+        </button>
+        <div class="negocio-panel hidden" id="negocioPanel"></div>
+      </div>
       <button class="btn-adherir hidden" id="adherirmeBtn">⭐ Adherirme al plan</button>
       <!-- Actualizar a mano. El panel instalado como app no tiene barra del
            navegador, asi que sin esto no hay forma de pedir datos nuevos:
@@ -8171,18 +8213,31 @@ async function onLoggedIn() {
     // Nada de maybeSingle(): devuelve ERROR si hay mas de una fila, y ese
     // error se descartaba. El codigo creia que el usuario no tenia tienda y
     // le creaba otra en cada ingreso. Un usuario llego a tener cinco.
+    // Se traen TODAS, no la primera: con Pro un duenio puede tener varios
+    // negocios y hay que poder elegir. El limit(1) de antes hacia que el
+    // segundo negocio fuera invisible para siempre.
     const { data: tiendas, error: errorTienda } = await sb
       .from('store_profiles')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
-      .limit(1);
+      .order('created_at', { ascending: true });
 
     // Si la consulta falla NO creamos nada: ante la duda, preferimos no
     // duplicar. Duplicar rompe; no crear solo obliga a reintentar.
     if (errorTienda) throw errorTienda;
 
-    const store = tiendas && tiendas.length ? tiendas[0] : null;
+    misTiendas = tiendas || [];
+
+    // La ultima que estuvo mirando. Se valida que siga siendo suya: si la
+    // borro o cambio de cuenta en el mismo navegador, el slug guardado
+    // apunta a un negocio que no le corresponde.
+    let elegida = null;
+    try {
+      const guardada = localStorage.getItem('bruwal_tienda_elegida');
+      if (guardada) elegida = misTiendas.find(t => t.slug === guardada) || null;
+    } catch (e) { /* navegador con el almacenamiento bloqueado */ }
+
+    const store = elegida || (misTiendas.length ? misTiendas[0] : null);
 
     if (store) {
       currentStore = store;
@@ -8222,6 +8277,7 @@ async function onLoggedIn() {
 
       if (errorAlta) throw errorAlta;
       currentStore = newStore;
+      misTiendas = [newStore];
     }
   } catch (err) {
     // Antes se inventaba una tienda falsa ('temp-xxxx') que no existia en la
@@ -9477,7 +9533,12 @@ async function llamarApiMl(accion, cuerpoExtra) {
       'Content-Type': 'application/json',
       Authorization: 'Bearer ' + session.access_token
     },
-    body: JSON.stringify(Object.assign({ accion: accion }, cuerpoExtra || {}))
+    // El slug del negocio que se esta mirando. El servidor NO se lo cree: lo
+    // verifica contra las tiendas del usuario. Sin esto, un Pro parado en su
+    // segundo negocio conectaba Mercado Libre al primero.
+    body: JSON.stringify(Object.assign(
+      { accion: accion, slug: currentStore && currentStore.slug },
+      cuerpoExtra || {}))
   });
 
   const datos = await r.json().catch(() => ({}));
@@ -9856,6 +9917,121 @@ async function refrescoAutomatico() {
 }
 
 setInterval(refrescoAutomatico, REFRESCO_MS);
+
+// ---- Menu de negocios ----
+// Varios negocios con una sola cuenta es un beneficio del plan Pro. El que
+// no lo tiene ve su negocio y nada mas: no le mostramos una puerta cerrada.
+
+let misTiendas = [];
+
+function pintarMenuNegocios() {
+  const panel = byId('negocioPanel');
+  if (!panel || !currentStore) return;
+
+  const otras = misTiendas.filter(t => t.slug !== currentStore.slug);
+
+  panel.innerHTML =
+    '<div class="negocio-titulo">' +
+      (misTiendas.length > 1 ? 'Tus negocios' : 'Tu negocio') + '</div>' +
+    misTiendas.map(t =>
+      '<button type="button" class="negocio-item' + (t.slug === currentStore.slug ? ' actual' : '') + '" ' +
+        'data-ir-tienda="' + escapeHtml(t.slug) + '">' +
+        '<span class="tilde">' + (t.slug === currentStore.slug ? '\u2713' : '') + '</span>' +
+        escapeHtml(t.business_name || t.slug) +
+      '</button>').join('') +
+    // Solo con Pro. Y solo el boton: la validacion de verdad esta en
+    // agregarNegocio(), porque esconder un boton no es un control.
+    (tienePlanPro()
+      ? '<div class="negocio-sumar">' +
+          '<button type="button" class="negocio-item" id="agregarNegocioBtn">' +
+            '<span class="tilde">+</span> Agregar otro negocio</button>' +
+        '</div>'
+      : '');
+
+  panel.querySelectorAll('[data-ir-tienda]').forEach(b => {
+    b.addEventListener('click', () => cambiarDeNegocio(b.dataset.irTienda));
+  });
+
+  const sumar = byId('agregarNegocioBtn');
+  if (sumar) sumar.addEventListener('click', agregarNegocio);
+}
+
+// Cambiar de negocio RECARGA la pagina a proposito. Del currentStore salen
+// productos, pedidos, caja, empleados, la visibilidad por rubro y por plan,
+// los graficos y media docena de timers. Rearmar todo eso en caliente es la
+// forma segura de dejar un pedazo apuntando al negocio anterior; una recarga
+// tarda un segundo y no deja nada a medias.
+function cambiarDeNegocio(slug) {
+  if (!slug || (currentStore && slug === currentStore.slug)) {
+    hide(byId('negocioPanel'));
+    return;
+  }
+  try { localStorage.setItem('bruwal_tienda_elegida', slug); } catch (e) {}
+  window.location.reload();
+}
+
+async function agregarNegocio() {
+  // El boton se muestra solo con Pro, pero se vuelve a chequear aca: un
+  // boton escondido lo destapa cualquiera con el inspector.
+  if (!tienePlanPro()) { ofrecerUpgradePro('Varios negocios en una cuenta'); return; }
+  if (!puedeOperar()) return;
+
+  const nombre = (window.prompt('\u00bfC\u00f3mo se llama el negocio nuevo?') || '').trim();
+  if (!nombre) return;
+
+  const boton = byId('agregarNegocioBtn');
+  if (boton) { boton.disabled = true; boton.textContent = 'Creando\u2026'; }
+
+  try {
+    // El link no puede repetirse con NINGUNA tienda del sistema, no solo con
+    // las suyas: es la direccion publica.
+    let slug = generarSlug(nombre);
+    const base = slug;
+    let n = 1;
+    while (true) {
+      const { data: tomado } = await sb.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
+      if (!tomado) break;
+      n++;
+      slug = base + '-' + n;
+      if (n > 50) throw new Error('No se pudo generar un link libre para ese nombre.');
+    }
+
+    // El plan se hereda: el negocio nuevo nace con el mismo que el que lo
+    // creo. Si naciera en prueba vencida, el que acaba de pagar Pro se
+    // encontraria con el segundo negocio bloqueado, que es lo contrario de
+    // lo que compro.
+    const { data: nueva, error } = await sb.from('store_profiles').insert({
+      user_id: currentUser.id,
+      slug: slug,
+      business_name: nombre,
+      plan: currentStore.plan,
+      phone: currentStore.phone || ''
+    }).select().single();
+
+    if (error) throw error;
+
+    alert('Listo: "' + nombre + '" qued\u00f3 creado.\n\n' +
+          'Su tienda online es ' + window.location.origin + '/' + slug);
+    cambiarDeNegocio(nueva.slug);
+  } catch (err) {
+    alert('No se pudo crear el negocio:\n\n' + (err && err.message ? err.message : err));
+    if (boton) { boton.disabled = false; boton.textContent = '+ Agregar otro negocio'; }
+  }
+}
+
+byId('negocioBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const panel = byId('negocioPanel');
+  if (panel.classList.contains('hidden')) { pintarMenuNegocios(); show(panel); }
+  else hide(panel);
+});
+
+document.addEventListener('click', (e) => {
+  const panel = byId('negocioPanel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  if (panel.contains(e.target) || byId('negocioBtn').contains(e.target)) return;
+  hide(panel);
+});
 
 // ---- Actualizar a mano ----
 // Cuando se trajeron los datos por ultima vez. Sirve para dos cosas: que el
@@ -17051,7 +17227,7 @@ async function chequearSuscripcionAlEntrar() {
     const r = await fetch('/api/suscripcion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
-      body: '{}'
+      body: JSON.stringify({ slug: currentStore && currentStore.slug })
     });
     if (!r.ok) return;
     const datos = await r.json().catch(() => null);
@@ -17088,7 +17264,7 @@ async function verificarSuscripcion() {
     const r = await fetch('/api/suscripcion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
-      body: '{}'
+      body: JSON.stringify({ slug: currentStore && currentStore.slug })
     });
     const datos = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(datos.error || ('Error ' + r.status));
