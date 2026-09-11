@@ -139,6 +139,39 @@
   .cart-summary{display:flex;flex-direction:column;gap:4px;}
   .cart-items{font-size:12px;color:var(--text-mute);}
   .cart-total{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:var(--navy);}
+  /* Detalle del carrito: se despliega desde la misma barra de abajo. */
+  .ver-carrito{
+    background:none;border:none;padding:0;margin-top:2px;cursor:pointer;
+    font-family:inherit;font-size:12.5px;font-weight:700;color:var(--celeste);
+    display:inline-flex;align-items:center;gap:5px;align-self:flex-start;
+  }
+  .ver-carrito:hover{text-decoration:underline;}
+  .ver-carrito .flecha{transition:transform .2s ease;display:inline-block;}
+  .ver-carrito.abierto .flecha{transform:rotate(180deg);}
+
+  .carrito-detalle{
+    max-width:1000px;margin:0 auto;padding:0 20px;
+    max-height:min(46vh,420px);overflow-y:auto;
+    border-top:1px solid var(--line);margin-top:12px;padding-top:10px;
+  }
+  .carrito-linea{
+    display:flex;align-items:flex-start;gap:11px;
+    padding:9px 0;border-bottom:1px solid var(--line);
+  }
+  .carrito-linea:last-child{border-bottom:none;}
+  .carrito-linea-txt{flex:1;min-width:0;}
+  .carrito-linea-nombre{font-size:13.5px;font-weight:700;color:var(--navy);line-height:1.35;}
+  .carrito-linea-detalle{font-size:11.5px;color:var(--text-mute);line-height:1.5;margin-top:2px;}
+  .carrito-linea-precio{font-size:13.5px;font-weight:700;color:var(--navy);white-space:nowrap;}
+  .carrito-mas-menos{display:flex;align-items:center;gap:7px;flex-shrink:0;}
+  .carrito-mas-menos button{
+    width:27px;height:27px;border:1px solid var(--line);background:#fff;
+    border-radius:7px;cursor:pointer;font-size:15px;line-height:1;color:var(--navy);
+    font-family:inherit;display:flex;align-items:center;justify-content:center;
+  }
+  .carrito-mas-menos button:hover{border-color:var(--celeste);color:var(--celeste);}
+  .carrito-mas-menos b{min-width:22px;text-align:center;font-size:13px;color:var(--navy);}
+
   .checkout-btn{background:var(--celeste);color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.3s;white-space:nowrap;}
   .checkout-btn:hover{background:var(--celeste-soft);transform:scale(1.05);}
   .checkout-btn:disabled{opacity:0.4;cursor:not-allowed;}
@@ -494,9 +527,15 @@
     <div class="wrap cart-bar-inner">
       <div class="cart-summary"><span id="cartCount">0</span> productos · <b id="cartTotal">$0</b>
         <div id="avisoMitad" class="hidden" style="font-size:12.5px;font-weight:600;color:#8A5200;margin-top:3px;line-height:1.4;"></div>
+        <button type="button" class="ver-carrito" id="verCarritoBtn">
+          Ver lo que llevo <span class="flecha">▲</span>
+        </button>
       </div>
       <button class="checkout-btn" id="openCheckoutBtn">Hacer pedido</button>
     </div>
+    <!-- El detalle vive DENTRO de la barra: se despliega en el lugar, sin
+         taparle el catálogo ni hacerle perder dónde estaba mirando. -->
+    <div class="carrito-detalle hidden" id="carritoDetalle"></div>
   </div>
 
   <div class="aviso-toast" id="avisoToast"></div>
@@ -2296,9 +2335,102 @@ function mostrarAviso(texto){
   avisoTimeout = setTimeout(() => el.classList.remove('visible'), 2600);
 }
 
+// Como se lee una linea del carrito. Mismo criterio que el pedido que se
+// manda por WhatsApp: el talle/color pegado al nombre y los agregados
+// abajo. Si se leyera distinto en los dos lados, el cliente cree que se
+// pidio otra cosa.
+function detalleDeLineaCarrito(l, p){
+  const partes = l.variante
+    ? [
+        ...Object.entries(atributosRealesDe(l.variante) || {}).map(([k, v]) => k + ': ' + v),
+        l.variante._valorUnidad
+          ? (l.variante._campoUnidad === 'color' ? 'Color' : 'RAM') + ': ' + l.variante._valorUnidad
+          : null
+      ].filter(Boolean)
+    : [];
+
+  const agregados = (l.opciones || []).map(o =>
+    '+ ' + o.nombre + (Number(o.precio) > 0 ? ' (' + money(o.precio) + ')' : ''));
+
+  return partes.concat(agregados);
+}
+
+let carritoAbierto = false;
+
+function renderDetalleCarrito(){
+  const caja = byId('carritoDetalle');
+  if (!caja) return;
+
+  const lineas = Object.entries(cart);
+  caja.innerHTML = lineas.map(([clave, l]) => {
+    const p = productoDe(l);
+    if (!p) return '';
+    const detalle = detalleDeLineaCarrito(l, p);
+    const subtotal = precioUnitario(l) * l.qty;
+
+    // Lo fraccionado no lleva +/-: sumar manguera de a un metro no tiene
+    // sentido y el cliente la cargo escribiendo los metros en la ficha.
+    const porMedida = seVendePorMedida(p);
+
+    return '<div class="carrito-linea">' +
+      '<div class="carrito-linea-txt">' +
+        '<div class="carrito-linea-nombre">' + escapeHtml(p.name) + '</div>' +
+        (detalle.length
+          ? '<div class="carrito-linea-detalle">' + detalle.map(escapeHtml).join('<br>') + '</div>'
+          : '') +
+        (porMedida
+          ? '<div class="carrito-linea-detalle">' + escapeHtml(formatearCantidad(l.qty, p)) + '</div>'
+          : '') +
+      '</div>' +
+      (porMedida
+        ? ''
+        : '<div class="carrito-mas-menos">' +
+            '<button type="button" data-menos="' + escapeHtml(clave) + '" aria-label="Sacar uno">\u2212</button>' +
+            '<b>' + l.qty + '</b>' +
+            '<button type="button" data-mas="' + escapeHtml(clave) + '" aria-label="Sumar uno">+</button>' +
+          '</div>') +
+      '<div class="carrito-linea-precio">' + money(subtotal) + '</div>' +
+    '</div>';
+  }).join('');
+
+  // Los botones trabajan sobre la LINEA exacta, no sobre el producto: una
+  // remera talle M y una L son dos lineas distintas y restarle al producto
+  // le sacaria a cualquiera de las dos.
+  caja.querySelectorAll('[data-mas]').forEach(b => {
+    b.addEventListener('click', () => {
+      const l = cart[b.dataset.mas];
+      if (!l) return;
+      if (!sumarAlCarrito(l.productId, l.opciones, 1, l.variante)) {
+        mostrarAviso('No hay m\u00e1s stock de eso');
+      }
+      renderCartBar();
+      renderProducts();
+    });
+  });
+
+  caja.querySelectorAll('[data-menos]').forEach(b => {
+    b.addEventListener('click', () => {
+      const l = cart[b.dataset.menos];
+      if (!l) return;
+      l.qty = redondearMedida(l.qty - 1);
+      if (l.qty <= 0) delete cart[b.dataset.menos];
+      renderCartBar();
+      renderProducts();
+    });
+  });
+}
+
 function renderCartBar(){
   const bar = byId('cartBar');
-  if (!Object.keys(cart).length){ bar.style.display = 'none'; return; }
+  if (!Object.keys(cart).length){
+    bar.style.display = 'none';
+    // Con el carrito vacio no hay detalle que mostrar: si quedara abierto,
+    // al sumar el proximo producto se abriria solo sin que nadie lo pida.
+    carritoAbierto = false;
+    byId('carritoDetalle').classList.add('hidden');
+    byId('verCarritoBtn').classList.remove('abierto');
+    return;
+  }
   bar.style.display = 'block';
   byId('cartCount').textContent = unidadesEnCarrito();
   byId('cartTotal').textContent = money(totalDelCarrito());
@@ -2315,7 +2447,18 @@ function renderCartBar(){
         '. Sum\u00e1 otra mitad del gusto que quieras y no lo pag\u00e1s.';
     }
   }
+
+  // Si esta abierto se repinta: sumar algo desde el catalogo tiene que
+  // verse en la lista sin tener que cerrarla y abrirla.
+  if (carritoAbierto) renderDetalleCarrito();
 }
+
+byId('verCarritoBtn').addEventListener('click', () => {
+  carritoAbierto = !carritoAbierto;
+  byId('carritoDetalle').classList.toggle('hidden', !carritoAbierto);
+  byId('verCarritoBtn').classList.toggle('abierto', carritoAbierto);
+  if (carritoAbierto) renderDetalleCarrito();
+});
 
 // ---- Opciones de entrega y pago ----
 const MEDIOS_DE_PAGO_POR_DEFECTO = ['Efectivo', 'Débito', 'Crédito', 'Transferencia'];
