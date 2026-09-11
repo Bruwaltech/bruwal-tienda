@@ -684,6 +684,24 @@ tr.fila-elegida > td { background:#EAF4FD; }
 
 .app-user b { color: var(--navy); }
 
+/* ---- Todos los negocios juntos ---- */
+.tn-tabla { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tn-tabla th {
+  text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--line);
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-mute);
+}
+.tn-tabla th:first-child { text-align: left; }
+.tn-tabla td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.tn-tabla td:first-child { text-align: left; white-space: normal; }
+.tn-tabla tr.total td { border-top: 2px solid var(--navy); border-bottom: none; font-weight: 700; color: var(--navy); }
+.tn-nombre { background: none; border: none; padding: 0; font-family: inherit; font-size: 13.5px;
+  font-weight: 700; color: var(--navy); cursor: pointer; text-align: left; }
+.tn-nombre:hover { color: var(--celeste); text-decoration: underline; }
+.tn-nombre small { display: block; font-weight: 400; font-size: 11.5px; color: var(--text-mute); }
+.tn-pend { display: inline-block; background: #FEF3E2; color: #8A5200; border-radius: 999px;
+  padding: 2px 8px; font-size: 11.5px; font-weight: 700; }
+.tn-ok { color: var(--text-mute); font-size: 12px; }
+
 /* ---- Menu de negocios ---- */
 .negocio-caja { position: relative; display: inline-flex; }
 .negocio-btn {
@@ -3061,6 +3079,19 @@ tr:last-child td { border-bottom: none; }
             style="width:100%;margin-top:10px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
       <i class="fa-solid fa-right-left"></i> Acomodar los productos por categoría
     </button>
+  </div>
+</div>
+
+<!-- MODAL: TODOS LOS NEGOCIOS -->
+<div class="modal-overlay hidden" id="todosNegociosModal">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" id="closeTodosNegociosModal">✕</button>
+    <h3><i class="fa-solid fa-chart-simple" style="color:var(--celeste);"></i> Todos tus negocios</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 18px;line-height:1.6;">
+      Cómo viene cada uno, sin entrar y salir de cada panel. Tocá un nombre
+      para ir a operar ese negocio.
+    </p>
+    <div id="todosNegociosCuerpo" style="font-size:13.5px;color:var(--text-mute);">Cargando…</div>
   </div>
 </div>
 
@@ -9939,6 +9970,13 @@ function pintarMenuNegocios() {
         '<span class="tilde">' + (t.slug === currentStore.slug ? '\u2713' : '') + '</span>' +
         escapeHtml(t.business_name || t.slug) +
       '</button>').join('') +
+    // Con un solo negocio no hay nada que comparar.
+    (misTiendas.length > 1
+      ? '<div class="negocio-sumar">' +
+          '<button type="button" class="negocio-item" id="verTodosNegociosBtn">' +
+            '<span class="tilde">\u25a4</span> Ver todos juntos</button>' +
+        '</div>'
+      : '') +
     // Solo con Pro. Y solo el boton: la validacion de verdad esta en
     // agregarNegocio(), porque esconder un boton no es un control.
     (tienePlanPro()
@@ -9954,7 +9992,114 @@ function pintarMenuNegocios() {
 
   const sumar = byId('agregarNegocioBtn');
   if (sumar) sumar.addEventListener('click', agregarNegocio);
+
+  const todos = byId('verTodosNegociosBtn');
+  if (todos) todos.addEventListener('click', () => {
+    hide(byId('negocioPanel'));
+    abrirTodosLosNegocios();
+  });
 }
+
+// ---- Todos los negocios juntos ----
+// El panel OPERA un negocio por vez y eso esta bien: el stock, los pedidos y
+// los tickets son de un local. Lo que faltaba es la mirada de arriba: el
+// duenio de tres negocios no tenia donde ver como viene cada uno sin entrar
+// y salir tres veces.
+
+// El dia de hoy EN ARGENTINA. Comparar contra el dia del aparato haria que
+// una venta de las 22:00 cayera en el dia siguiente.
+const diaAR = (v) => comoFecha(v).toLocaleDateString('en-CA', { timeZone: TZ_AR });
+
+async function abrirTodosLosNegocios() {
+  const cuerpo = byId('todosNegociosCuerpo');
+  cuerpo.textContent = 'Cargando\u2026';
+  show(byId('todosNegociosModal'));
+
+  const slugs = misTiendas.map(t => t.slug);
+  const hoy = diaAR(Date.now());
+  const desdeMes = hoy.slice(0, 8) + '01';
+
+  try {
+    // Una sola consulta para todos los negocios, no una por cada uno: con
+    // cinco locales serian cinco viajes para la misma pantalla. Y acotada al
+    // mes, que es lo que se muestra.
+    const { data: pedidos, error: e1 } = await sb.from('orders')
+      .select('store_slug,total,estado,created_at')
+      .in('store_slug', slugs)
+      .gte('created_at', desdeMes);
+    if (e1) throw e1;
+
+    const { data: prods, error: e2 } = await sb.from('store_products')
+      .select('store_slug,stock,min_stock,tipo,solo_interno')
+      .in('store_slug', slugs);
+    if (e2) throw e2;
+
+    const porTienda = {};
+    misTiendas.forEach(t => {
+      porTienda[t.slug] = { nombre: t.business_name || t.slug, slug: t.slug,
+                            hoy: 0, mes: 0, pedidosHoy: 0, pendientes: 0, bajos: 0 };
+    });
+
+    (pedidos || []).forEach(o => {
+      const t = porTienda[o.store_slug];
+      if (!t) return;
+      if (estadoPedido(o) === 'pendiente') { t.pendientes++; return; }
+      if (!cuentaComoVenta(o)) return;
+      const monto = Number(o.total) || 0;
+      t.mes += monto;
+      if (diaAR(o.created_at) === hoy) { t.hoy += monto; t.pedidosHoy++; }
+    });
+
+    (prods || []).forEach(p => {
+      const t = porTienda[p.store_slug];
+      if (!t) return;
+      if (p.solo_interno || (p.tipo || 'producto') === 'servicio') return;
+      if (Number(p.min_stock) > 0 && Number(p.stock || 0) <= Number(p.min_stock)) t.bajos++;
+    });
+
+    const filas = Object.values(porTienda).sort((a, b) => b.mes - a.mes);
+    const suma = (c) => filas.reduce((s, t) => s + t[c], 0);
+
+    cuerpo.innerHTML =
+      '<div style="overflow-x:auto;"><table class="tn-tabla">' +
+      '<thead><tr><th>Negocio</th><th>Hoy</th><th>Este mes</th><th>Para revisar</th></tr></thead><tbody>' +
+      filas.map(t =>
+        '<tr>' +
+          '<td><button type="button" class="tn-nombre" data-ir-negocio="' + escapeHtml(t.slug) + '">' +
+            escapeHtml(t.nombre) +
+            '<small>' + (t.slug === currentStore.slug ? 'est\u00e1s ac\u00e1' : 'ir a este negocio') + '</small>' +
+          '</button></td>' +
+          '<td>' + money(Math.round(t.hoy)) +
+            (t.pedidosHoy ? '<div style="font-size:11.5px;color:var(--text-mute);font-weight:400;">' +
+              t.pedidosHoy + (t.pedidosHoy === 1 ? ' venta' : ' ventas') + '</div>' : '') + '</td>' +
+          '<td><strong>' + money(Math.round(t.mes)) + '</strong></td>' +
+          '<td>' +
+            (t.pendientes ? '<span class="tn-pend">' + t.pendientes + ' sin confirmar</span> ' : '') +
+            (t.bajos ? '<span class="tn-pend">' + t.bajos + ' stock bajo</span>' : '') +
+            (!t.pendientes && !t.bajos ? '<span class="tn-ok">\u2713 al d\u00eda</span>' : '') +
+          '</td>' +
+        '</tr>').join('') +
+      '<tr class="total">' +
+        '<td>Entre los ' + filas.length + '</td>' +
+        '<td>' + money(Math.round(suma('hoy'))) + '</td>' +
+        '<td>' + money(Math.round(suma('mes'))) + '</td>' +
+        '<td></td>' +
+      '</tr>' +
+      '</tbody></table></div>' +
+      '<div style="margin-top:12px;font-size:12px;color:var(--text-mute);line-height:1.6;">' +
+        'Las ventas son las confirmadas. Los pedidos sin confirmar se cuentan aparte, ' +
+        'en \u201cpara revisar\u201d: todav\u00eda no son plata.</div>';
+
+    cuerpo.querySelectorAll('[data-ir-negocio]').forEach(b => {
+      b.addEventListener('click', () => cambiarDeNegocio(b.dataset.irNegocio));
+    });
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo cargar: ' +
+      escapeHtml(err && err.message ? err.message : String(err)) + '</span>';
+  }
+}
+
+byId('closeTodosNegociosModal').addEventListener('click', () => hide(byId('todosNegociosModal')));
 
 // Cambiar de negocio RECARGA la pagina a proposito. Del currentStore salen
 // productos, pedidos, caja, empleados, la visibilidad por rubro y por plan,
