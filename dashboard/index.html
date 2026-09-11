@@ -439,6 +439,41 @@ h1, h2, h3 {
 .barra-sel button.suave { border-color:transparent; background:none; text-decoration:underline; padding:7px 6px; }
 .barra-sel button.suave:hover { background:none; opacity:.75; }
 
+/* ---- Calidad de las publicaciones ---- */
+.cal-nivel {
+  display:inline-flex; align-items:center; gap:6px; border-radius:999px;
+  padding:5px 12px; font-size:12.5px; font-weight:700;
+}
+.cal-nivel.profesional { background:#E7F6EE; color:#1B7F4B; }
+.cal-nivel.estandar    { background:#FFF9E6; color:#8A5200; }
+.cal-nivel.basica      { background:#FDECEC; color:var(--danger); }
+.cal-consejo {
+  display:flex; align-items:flex-start; gap:11px;
+  border:1px solid var(--line); border-radius:10px;
+  padding:11px 13px; margin-bottom:8px; background:#fff;
+}
+.cal-consejo-cuenta {
+  flex-shrink:0; min-width:34px; height:34px; border-radius:8px;
+  background:var(--navy); color:#fff; font-size:14px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+.cal-consejo-txt { flex:1; font-size:13px; line-height:1.55; color:var(--navy); }
+.cal-consejo-txt small { display:block; color:var(--text-mute); font-size:11.5px;
+  text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px; }
+.cal-item {
+  border:1px solid var(--line); border-radius:10px; padding:11px 13px;
+  margin-bottom:8px; background:#fff;
+}
+.cal-item-cab { display:flex; align-items:center; gap:10px; }
+.cal-item-cab img { width:38px; height:38px; object-fit:cover; border-radius:6px; flex-shrink:0; }
+.cal-item-nombre { flex:1; font-size:13.5px; font-weight:700; color:var(--navy); line-height:1.35; }
+.cal-item-acciones { margin-top:9px; padding-left:48px; }
+.cal-item-accion {
+  font-size:12.5px; line-height:1.6; color:var(--text-mute); margin-bottom:5px;
+}
+.cal-item-accion a { color:var(--celeste); font-weight:700; text-decoration:none; white-space:nowrap; }
+.cal-item-accion a:hover { text-decoration:underline; }
+
 .celda-check { width:36px; text-align:center; }
 .check-prod, .check-todos { width:16px; height:16px; cursor:pointer; accent-color:var(--celeste); }
 tr.fila-elegida > td { background:#EAF4FD; }
@@ -2316,6 +2351,22 @@ tr:last-child td { border-bottom: none; }
         </div>
         <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
           Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:20px;">
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span>⭐ Cómo mejorar tus publicaciones</span>
+          <button type="button" id="verCalidadBtn" class="btn"
+                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+            Revisar mis publicaciones
+          </button>
+        </div>
+        <div id="calidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+          Mercado Libre le pone un nivel a cada publicación (Básica, Estándar o
+          Profesional) según las fotos, la ficha técnica y los datos cargados.
+          Acá te traigo ese nivel y <strong>qué falta en cada una</strong>, con el
+          link para arreglarlo.
         </div>
       </div>
 
@@ -8336,6 +8387,102 @@ function renderMercadoLibre() {
           ) + '</td>' +
         '</tr>').join('')
     : '<tr><td colspan="10" style="color:var(--text-mute);">Todavía no entró ninguna venta de Mercado Libre. Cuando entre la primera, aparece acá sola.</td></tr>';
+}
+
+// ---- Calidad de las publicaciones ----
+// Los consejos NO los inventamos: los escribe Mercado Libre en
+// /item/{id}/performance, en castellano y con el link para arreglar cada
+// cosa. Nosotros los ordenamos y los agrupamos, nada mas. Mantener reglas
+// propias sobre que hace buena a una publicacion seria adivinar, y ademas
+// quedaria viejo cada vez que ML cambia de criterio.
+
+const claseDeNivel = (n) => {
+  const t = normalizarTexto(n || '');
+  if (t.includes('profesional')) return 'profesional';
+  if (t.includes('estandar') || t.includes('satisfat')) return 'estandar';
+  return 'basica';
+};
+
+async function verCalidadPublicaciones() {
+  const cuerpo = byId('calidadCuerpo');
+  const boton = byId('verCalidadBtn');
+  boton.disabled = true;
+  cuerpo.textContent = 'Revisando tus publicaciones en Mercado Libre\u2026 (puede tardar unos segundos)';
+
+  try {
+    const r = await llamarApiMl('calidad');
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conect\u00e1 tu cuenta en <strong>Configuraci\u00f3n \u2192 Mercado Libre</strong>.';
+      return;
+    }
+    if (!r.items || !r.items.length) {
+      cuerpo.innerHTML = 'No encontramos publicaciones activas en tu cuenta de Mercado Libre.';
+      return;
+    }
+
+    // Cuantas hay de cada nivel. Es la foto de la cuenta en una linea.
+    const niveles = Object.entries(r.niveles || {})
+      .map(([n, c]) => '<span class="cal-nivel ' + claseDeNivel(n) + '">' +
+        escapeHtml(n) + ': <b>' + c + '</b></span>').join(' ');
+
+    const aclaracion = r.total > r.revisadas
+      ? '<div style="font-size:12px;margin-top:8px;">Se revisaron las primeras <strong>' +
+        r.revisadas + '</strong> de <strong>' + r.total + '</strong> publicaciones. ' +
+        'Cada una es una consulta a Mercado Libre, as\u00ed que se miran de a tandas.</div>'
+      : '';
+
+    // Lo agrupado primero: "12 publicaciones necesitan mas fotos" se acciona
+    // mucho mejor que la misma frase repetida doce veces.
+    const resumen = (r.resumen || []).length
+      ? '<div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;' +
+        'letter-spacing:.03em;margin:18px 0 10px;">Lo que m\u00e1s se repite</div>' +
+        r.resumen.map(c =>
+          '<div class="cal-consejo">' +
+            '<span class="cal-consejo-cuenta">' + c.cuantas + '</span>' +
+            '<span class="cal-consejo-txt"><small>' + escapeHtml(c.grupo || '') + '</small>' +
+              escapeHtml(c.consejo) + '</span>' +
+          '</div>').join('')
+      : '<div style="margin-top:14px;color:var(--stock);font-weight:600;">' +
+        '\u2705 Mercado Libre no tiene nada para sugerir en las publicaciones que revisamos.</div>';
+
+    // Y despues una por una, de la peor a la mejor: por ahi se empieza.
+    const detalle = '<div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;' +
+      'letter-spacing:.03em;margin:22px 0 10px;">Publicaci\u00f3n por publicaci\u00f3n</div>' +
+      r.items.map(it => {
+        if (it.error) {
+          return '<div class="cal-item"><div class="cal-item-cab">' +
+            '<span class="cal-item-nombre">' + escapeHtml(it.titulo) + '</span>' +
+            '<span style="font-size:12px;color:var(--text-mute);">no se pudo consultar</span>' +
+            '</div></div>';
+        }
+        const pend = (it.pendientes || []);
+        return '<div class="cal-item">' +
+          '<div class="cal-item-cab">' +
+            (it.foto ? '<img src="' + escapeHtml(it.foto) + '" alt="">' : '') +
+            '<span class="cal-item-nombre">' +
+              (it.link ? '<a href="' + escapeHtml(it.link) + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;">' + escapeHtml(it.titulo) + '</a>' : escapeHtml(it.titulo)) +
+            '</span>' +
+            (it.nivel ? '<span class="cal-nivel ' + claseDeNivel(it.nivel) + '">' + escapeHtml(it.nivel) + '</span>' : '') +
+            '<span style="font-size:13px;font-weight:700;color:var(--navy);white-space:nowrap;">' + Math.round(it.puntaje) + '/100</span>' +
+          '</div>' +
+          (pend.length
+            ? '<div class="cal-item-acciones">' + pend.map(p =>
+                '<div class="cal-item-accion">\u2022 ' + escapeHtml(p.consejo) +
+                (p.link ? ' <a href="' + escapeHtml(p.link) + '" target="_blank" rel="noopener">' +
+                  escapeHtml(p.boton || 'Arreglar') + ' \u2197</a>' : '') + '</div>').join('') +
+              '</div>'
+            : '<div class="cal-item-acciones" style="color:var(--stock);font-size:12.5px;">' +
+              '\u2705 Sin pendientes.</div>') +
+        '</div>';
+      }).join('');
+
+    cuerpo.innerHTML = '<div>' + niveles + '</div>' + aclaracion + resumen + detalle;
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo revisar: ' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 // ---- Rescate de ventas de Mercado Libre ----
@@ -16832,6 +16979,7 @@ byId('mlPublicacionesBtn').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicacionesBtn2').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicidadBtn').addEventListener('click', consultarPublicidadMl);
 byId('buscarVentasFaltantesBtn').addEventListener('click', buscarVentasFaltantes);
+byId('verCalidadBtn').addEventListener('click', verCalidadPublicaciones);
 byId('tabMercadoLibre').addEventListener('click', () => {
   if (!tienePlanPro()) { abrirBeneficiosMl(true); return; }
   mostrarVistaMercadoLibre();

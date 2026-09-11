@@ -541,6 +541,120 @@ async function accionPublicidadEstado(slug, campanaId, estado) {
 }
 
 
+// ---------- Calidad de las publicaciones ----------
+//
+// Cuantas publicaciones se miran de una. Cada una es UNA llamada a ML, y la
+// funcion tiene un tope de tiempo: pedir 200 la haria expirar y no
+// devolveria nada. Con 30 alcanza para ver el panorama y decidir que tocar.
+const CALIDAD_MAXIMA = 30;
+const CALIDAD_EN_PARALELO = 6;
+
+// Saca de la respuesta de ML solo lo que falta hacer. La estructura viene
+// anidada en tres niveles (buckets -> variables -> rules) y lo util esta
+// abajo de todo, en `wordings`: el consejo escrito, el texto del boton y el
+// link que lleva derecho a la pantalla de ML donde se arregla.
+function pendientesDePerformance(datos) {
+  const pendientes = [];
+  (datos.buckets || []).forEach((b) => {
+    (b.variables || []).forEach((v) => {
+      (v.rules || []).forEach((r) => {
+        if (r.status === 'COMPLETED') return;
+        const w = r.wordings || {};
+        if (!w.title) return;
+        pendientes.push({
+          clave: v.key || r.key,
+          grupo: b.title || b.key,
+          consejo: w.title,
+          boton: w.label || null,
+          link: w.link || null,
+          // progress viene 0..1; sirve para ordenar por lo mas incompleto.
+          avance: Number(r.progress) || 0
+        });
+      });
+    });
+  });
+  return pendientes;
+}
+
+async function accionCalidadPublicaciones(slug) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+
+  const busqueda = await pedirAMl(
+    '/users/' + encodeURIComponent(cuenta.ml_user_id) +
+    '/items/search?status=active&limit=' + CALIDAD_MAXIMA, token);
+
+  const ids = (busqueda.results || []).slice(0, CALIDAD_MAXIMA);
+  const total = (busqueda.paging && busqueda.paging.total) || ids.length;
+  if (!ids.length) return { conectado: true, ok: true, total: 0, items: [] };
+
+  // Los titulos no vienen en /performance: se piden aparte con el multiget,
+  // que trae 20 de una. Sin el titulo la lista serian codigos MLA sueltos.
+  const titulos = {};
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const detalle = await pedirAMl('/items?ids=' + lote.join(',') +
+      '&attributes=id,title,permalink,thumbnail', token);
+    (detalle || []).forEach((d) => {
+      const b = d.body || d;
+      if (b && b.id) titulos[b.id] = { titulo: b.title, link: b.permalink, foto: b.thumbnail };
+    });
+  }
+
+  // De a 6: en serie tarda demasiado y todas juntas es pedirle a ML 30
+  // llamadas en el mismo instante, que es la forma mas rapida de comerse un
+  // 429 por limite de uso.
+  const items = [];
+  for (let i = 0; i < ids.length; i += CALIDAD_EN_PARALELO) {
+    const lote = ids.slice(i, i + CALIDAD_EN_PARALELO);
+    const resultados = await Promise.all(lote.map(async (id) => {
+      try {
+        const p = await pedirAMl('/item/' + encodeURIComponent(id) + '/performance', token);
+        const info = titulos[id] || {};
+        return {
+          id: id,
+          titulo: info.titulo || id,
+          link: info.link || null,
+          foto: info.foto || null,
+          puntaje: Number(p.score) || 0,
+          nivel: p.level_wording || p.level || null,
+          pendientes: pendientesDePerformance(p)
+        };
+      } catch (e) {
+        // Una publicacion que falla no puede tumbar el informe entero.
+        return { id: id, titulo: (titulos[id] || {}).titulo || id, error: String(e.message || e) };
+      }
+    }));
+    resultados.forEach((r) => items.push(r));
+  }
+
+  // Agrupado por tipo de consejo: "12 publicaciones necesitan mas fotos" se
+  // actua mucho mejor que la misma frase repetida doce veces.
+  const porConsejo = {};
+  items.forEach((it) => {
+    (it.pendientes || []).forEach((p) => {
+      if (!porConsejo[p.clave]) porConsejo[p.clave] = { clave: p.clave, grupo: p.grupo, consejo: p.consejo, cuantas: 0 };
+      porConsejo[p.clave].cuantas++;
+    });
+  });
+
+  const niveles = {};
+  items.forEach((it) => { if (it.nivel) niveles[it.nivel] = (niveles[it.nivel] || 0) + 1; });
+
+  return {
+    conectado: true,
+    ok: true,
+    total: total,
+    revisadas: items.length,
+    niveles: niveles,
+    resumen: Object.values(porConsejo).sort((a, b) => b.cuantas - a.cuantas),
+    items: items.sort((a, b) => (a.puntaje || 0) - (b.puntaje || 0))   // las peores primero
+  };
+}
+
+
 // ---------- Rescate de ventas ----------
 //
 // Por que existe: una venta de Mercado Libre puede no quedar registrada. Si
@@ -800,6 +914,7 @@ module.exports = async (req, res) => {
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
+    if (accion === 'calidad') return res.status(200).json(await accionCalidadPublicaciones(tienda.slug));
     if (accion === 'ventas_faltantes') return res.status(200).json(await accionVentasFaltantes(tienda.slug));
     if (accion === 'importar_venta') {
       const cuerpo = req.body || {};
