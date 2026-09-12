@@ -3180,6 +3180,40 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL: CAMBIAR CONTRASEÑA -->
+<div class="modal-overlay hidden" id="cambiarClaveModal">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" id="closeCambiarClaveModal">✕</button>
+    <h3><i class="fa-solid fa-key" style="color:var(--celeste);"></i> Cambiar contraseña</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 16px;line-height:1.6;">
+      Te pedimos la actual porque el panel suele quedar abierto en el mostrador.
+      Así nadie que pase por ahí puede dejarte afuera de tu propio sistema.
+    </p>
+
+    <form id="cambiarClaveForm">
+      <div class="field">
+        <label>Contraseña actual</label>
+        <input type="password" id="claveActual" autocomplete="current-password" required>
+      </div>
+      <div class="field">
+        <label>Contraseña nueva</label>
+        <input type="password" id="claveNueva" autocomplete="new-password" minlength="8" required>
+        <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">Mínimo 8 caracteres.</small>
+      </div>
+      <div class="field">
+        <label>Repetila</label>
+        <input type="password" id="claveNueva2" autocomplete="new-password" minlength="8" required>
+      </div>
+
+      <div id="cambiarClaveError" class="modal-error hidden"></div>
+
+      <button type="submit" id="cambiarClaveBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">
+        Cambiar contraseña
+      </button>
+    </form>
+  </div>
+</div>
+
 <!-- MODAL: TODOS LOS NEGOCIOS -->
 <div class="modal-overlay hidden" id="todosNegociosModal">
   <div class="modal" style="max-width:760px;">
@@ -10499,6 +10533,12 @@ function pintarMenuNegocios() {
             '<span class="tilde">\u25a4</span> Ver todos juntos</button>' +
         '</div>'
       : '') +
+    // La cuenta no es el negocio: va abajo de todo y separada, para que no
+    // se mezcle con la lista de negocios.
+    '<div class="negocio-sumar">' +
+      '<button type="button" class="negocio-item" id="abrirCambiarClaveBtn" style="color:var(--text-mute);font-weight:600;">' +
+        '<span class="tilde">\ud83d\udd11</span> Cambiar contrase\u00f1a</button>' +
+    '</div>' +
     // Solo con Pro. Y solo el boton: la validacion de verdad esta en
     // agregarNegocio(), porque esconder un boton no es un control.
     (tienePlanPro()
@@ -10520,7 +10560,72 @@ function pintarMenuNegocios() {
     hide(byId('negocioPanel'));
     abrirTodosLosNegocios();
   });
+
+  const clave = byId('abrirCambiarClaveBtn');
+  if (clave) clave.addEventListener('click', () => {
+    hide(byId('negocioPanel'));
+    abrirCambiarClave();
+  });
 }
+
+// ---- Cambiar la contrasena estando adentro ----
+function abrirCambiarClave() {
+  ['claveActual', 'claveNueva', 'claveNueva2'].forEach(id => { byId(id).value = ''; });
+  hide(byId('cambiarClaveError'));
+  show(byId('cambiarClaveModal'));
+  byId('claveActual').focus();
+}
+
+byId('closeCambiarClaveModal').addEventListener('click', () => hide(byId('cambiarClaveModal')));
+
+byId('cambiarClaveForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const actual = byId('claveActual').value;
+  const nueva = byId('claveNueva').value;
+  const repetida = byId('claveNueva2').value;
+  const cartel = byId('cambiarClaveError');
+
+  const fallar = (texto) => {
+    cartel.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(texto) + '</span>';
+    show(cartel);
+  };
+
+  if (nueva !== repetida) return fallar('Las dos contrase\u00f1as nuevas no coinciden.');
+  if (nueva.length < 8) return fallar('La nueva tiene que tener al menos 8 caracteres.');
+  if (nueva === actual) return fallar('La nueva es igual a la que ten\u00e9s. Pon\u00e9 una distinta.');
+
+  const boton = byId('cambiarClaveBtn');
+  boton.disabled = true;
+  boton.textContent = 'Cambiando\u2026';
+  hide(cartel);
+
+  try {
+    // Primero se comprueba la ACTUAL. Supabase deja cambiar la clave con solo
+    // tener la sesion abierta, y en un mostrador eso no alcanza: cualquiera
+    // que agarre la compu desatendida dejaria al duenio afuera.
+    const email = (currentUser && currentUser.email) || '';
+    if (!email) throw new Error('No se pudo leer tu usuario. Cerr\u00e1 sesi\u00f3n y volv\u00e9 a entrar.');
+
+    const { error: errorActual } = await sb.auth.signInWithPassword({ email: email, password: actual });
+    if (errorActual) {
+      fallar('La contrase\u00f1a actual no es correcta.');
+      return;
+    }
+
+    const { error } = await sb.auth.updateUser({ password: nueva });
+    if (error) { fallar(error.message); return; }
+
+    hide(byId('cambiarClaveModal'));
+    alert('\u2713 Listo, contrase\u00f1a cambiada.\n\n' +
+          'Segu\u00ed trabajando normalmente. La pr\u00f3xima vez que entres, us\u00e1 la nueva.');
+  } catch (err) {
+    fallar(err && err.message ? err.message : String(err));
+  } finally {
+    boton.disabled = false;
+    boton.textContent = 'Cambiar contrase\u00f1a';
+  }
+});
 
 // ---- Todos los negocios juntos ----
 // El panel OPERA un negocio por vez y eso esta bien: el stock, los pedidos y
