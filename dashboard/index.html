@@ -5705,11 +5705,13 @@ function renderCategorias() {
         '<div class="cat-fila" draggable="true" data-pos="' + i + '">' +
           '<span class="cat-fila-num">' + (i + 1) + '</span>' +
           '<span class="cat-fila-nombre">' + escapeHtml(c) + '</span>' +
+          '<button type="button" class="cat-fila-mover" data-renombrar-cat="' + i + '" ' +
+            'title="Cambiarle el nombre">\u270f\ufe0f</button>' +
           '<button type="button" class="cat-fila-mover" data-subir="' + i + '" title="Subir"' +
             (i === 0 ? ' disabled' : '') + '>\u2191</button>' +
           '<button type="button" class="cat-fila-mover" data-bajar="' + i + '" title="Bajar"' +
             (i === ultima ? ' disabled' : '') + '>\u2193</button>' +
-          '<button type="button" class="cat-fila-x" data-i="' + i + '" title="Quitar de la lista">\u2715</button>' +
+          '<button type="button" class="cat-fila-x" data-i="' + i + '" title="Quitar de la lista (los productos no se tocan)">\u2715</button>' +
         '</div>').join('')
     : '<span style="color:var(--text-mute);font-size:13px;">Todav\u00eda no cargaste ninguna.</span>';
 
@@ -5718,6 +5720,10 @@ function renderCategorias() {
       categoriasEnEdicion.splice(+b.dataset.i, 1);
       renderCategorias();
     });
+  });
+
+  cont.querySelectorAll('button[data-renombrar-cat]').forEach(b => {
+    b.addEventListener('click', () => renombrarCategoria(categoriasEnEdicion[+b.dataset.renombrarCat]));
   });
 
   cont.querySelectorAll('button[data-subir]').forEach(b => {
@@ -6351,31 +6357,87 @@ function renderAcomodar() {
 }
 
 // ---- Acciones ----
+// Todos los caminos que arrancan con ese nombre: el rubro y sus estantes.
+// Renombrar "Reparacion de telefonos" tiene que alcanzar tambien a
+// "Reparacion de telefonos > Pantallas", si no queda un rubro fantasma con
+// medio catalogo adentro.
+function caminosQueEmpiezanEn(nombre) {
+  const clave = claveCat(nombre);
+  const caminos = [];
+  const sumar = (c) => {
+    if (claveCat(c) !== clave && claveCat(rubroDe(c)) !== clave) return;
+    if (!caminos.some(x => claveCat(x) === claveCat(c))) caminos.push(c);
+  };
+  products.forEach(p => categoriasDeProducto(p).forEach(sumar));
+  (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).forEach(c => {
+    if (String(c || '').trim()) sumar(String(c).trim());
+  });
+  return caminos;
+}
+
+// Como queda un camino cuando se renombra la parte de adelante.
+// "Reparacion > Pantallas" con Reparacion -> Celulares da "Celulares > Pantallas".
+function caminoRenombrado(viejo, nombreViejo, nombreNuevo) {
+  return claveCat(viejo) === claveCat(nombreViejo)
+    ? nombreNuevo
+    : unirCategoria(nombreNuevo, subrubroDe(viejo));
+}
+
 async function renombrarCategoria(nombreViejo) {
   if (!puedeOperar()) return;
 
-  const propuesto = window.prompt('Nuevo nombre para \u201c' + nombreViejo + '\u201d:', nombreViejo);
+  const caminos = caminosQueEmpiezanEn(nombreViejo);
+  const estantes = caminos.filter(c => claveCat(c) !== claveCat(nombreViejo));
+
+  const propuesto = window.prompt(
+    'Nuevo nombre para \u201c' + nombreViejo + '\u201d:' +
+    (estantes.length
+      ? '\n\nSe renombra tambi\u00e9n adentro de sus ' + estantes.length +
+        (estantes.length === 1 ? ' subcategor\u00eda:\n' : ' subcategor\u00edas:\n') +
+        estantes.map(c => '  \u00b7 ' + c).join('\n')
+      : ''),
+    nombreViejo);
   if (propuesto === null) return;
   const nuevo = propuesto.trim();
-  if (!nuevo || nuevo === nombreViejo) return;
+  if (!nuevo || claveCat(nuevo) === claveCat(nombreViejo)) return;
 
-  const ids = productosDeCategoria(nombreViejo).map(p => p.id);
+  const cuantos = new Set();
+  caminos.forEach(c => productosDeCategoria(c).forEach(p => cuantos.add(p.id)));
+
   const yaExiste = categoriasEnUso().some(c =>
-    c.nombre !== nombreViejo && c.nombre.trim() && claveCat(c.nombre) === claveCat(nuevo));
+    claveCat(c.nombre) !== claveCat(nombreViejo) && c.nombre.trim() &&
+    claveCat(c.nombre) === claveCat(nuevo));
 
   // Renombrar a algo que ya existe es unificar. No es un error, pero tiene
   // que decirlo antes: son dos categorias que se vuelven una sola.
   if (yaExiste && !confirm(
       'Ya ten\u00e9s una categor\u00eda \u201c' + nuevo + '\u201d.\n\n' +
-      'Se van a juntar en una sola, con estos ' + ids.length + ' productos adentro. \u00bfSeguimos?')) return;
+      'Se van a juntar en una sola, con estos ' + cuantos.size + ' productos adentro. \u00bfSeguimos?')) return;
 
-  const error = await reasignarCategorias(ids, nombreViejo, nuevo, false);
-  if (error) { alert('No se pudo renombrar:\n\n' + error.message); return; }
+  // De a un camino por vez: cada uno cambia por su propio nombre nuevo, y
+  // un producto que esta en dos de ellos se corrige en las dos pasadas.
+  for (const viejo of caminos) {
+    const ids = productosDeCategoria(viejo).map(p => p.id);
+    if (!ids.length) continue;
+    const error = await reasignarCategorias(ids, viejo, caminoRenombrado(viejo, nombreViejo, nuevo), false);
+    if (error) { alert('No se pudo renombrar:\n\n' + error.message); return; }
+  }
 
+  // La lista del perfil (el orden que eligio el vendedor) se renombra en el
+  // lugar: si se sacara y se volviera a agregar, la categoria se iria al
+  // final y perderia el orden que le costo armar.
   const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : [])
-    .filter(c => claveCat(c) !== claveCat(nombreViejo));
-  lista.push(nuevo);
+    .map(c => (claveCat(c) === claveCat(nombreViejo) || claveCat(rubroDe(c)) === claveCat(nombreViejo))
+      ? caminoRenombrado(c, nombreViejo, nuevo) : c);
+  if (!lista.some(c => claveCat(c) === claveCat(nuevo))) lista.push(nuevo);
   await guardarListaCategorias(lista);
+
+  // Lo mismo en la lista que se esta editando en pantalla, sin recargarla:
+  // el vendedor puede tener un orden nuevo sin guardar todavia.
+  categoriasEnEdicion = categoriasEnEdicion
+    .map(c => (claveCat(c) === claveCat(nombreViejo) || claveCat(rubroDe(c)) === claveCat(nombreViejo))
+      ? caminoRenombrado(c, nombreViejo, nuevo) : c);
+  if (byId('listaCategorias')) renderCategorias();
 
   terminarAcomodada();
 }
