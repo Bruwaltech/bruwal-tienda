@@ -969,13 +969,55 @@ async function init(){
 // Las que NO estan en la lista (escritas a mano al cargar un producto) van
 // despues, alfabeticas: un rubro no puede desaparecer de la tienda por no
 // figurar en una lista.
+// Un producto puede estar en varias categorias: `category` es la principal
+// (la que se muestra en su ficha) y `categorias` son las demas vidrieras
+// donde tambien aparece. Un producto sin esa lista se comporta igual que
+// siempre, que es justamente lo que se busco al agregarla aparte.
+// ---- Dos niveles: rubro y subrubro ----
+// "Reparacion de telefonos > Pantallas". El rubro es lo que ve el cliente
+// en la vidriera; el subrubro, los estantes de adentro.
+const rubroDe = (cat) => String(cat == null ? '' : cat).split('>')[0].trim();
+
+const subrubroDe = (cat) => {
+  const partes = String(cat == null ? '' : cat).split('>');
+  return partes.length > 1 ? partes.slice(1).join('>').trim() : '';
+};
+
+function categoriasDeProducto(p){
+  const todas = [];
+  const sumar = (c) => {
+    const t = String(c == null ? '' : c).trim();
+    if (t && !todas.some(x => sinAcentos(x) === sinAcentos(t))) todas.push(t);
+  };
+  sumar(p && p.category);
+  if (Array.isArray(p && p.categorias)) p.categorias.forEach(sumar);
+  return todas;
+}
+
+// Pedir "Reparacion de telefonos" trae TAMBIEN lo que esta en sus
+// subrubros: entrar a un rubro y ver la mitad de lo que anuncia la tarjeta
+// seria peor que no tener subrubros.
+const estaEnCategoria = (p, cat) => {
+  const buscado = sinAcentos(cat);
+  const esRubroSolo = !String(cat == null ? '' : cat).includes('>');
+  return categoriasDeProducto(p).some(c =>
+    sinAcentos(c) === buscado || (esRubroSolo && sinAcentos(rubroDe(c)) === buscado));
+};
+
 function categoriasDeLaTienda(){
-  const enUso = [...new Set(products.map(p => (p.category || '').trim()).filter(Boolean))];
+  const enUso = [];
+  products.forEach(p => categoriasDeProducto(p).forEach(cat => {
+    const c = rubroDe(cat);
+    if (c && !enUso.some(x => sinAcentos(x) === sinAcentos(c))) enUso.push(c);
+  }));
   const orden = Array.isArray(perfilTienda && perfilTienda.categorias) ? perfilTienda.categorias : [];
 
   const ordenadas = [];
   orden.forEach(c => {
-    const real = enUso.find(x => sinAcentos(x) === sinAcentos(c) && ordenadas.indexOf(x) === -1);
+    // La lista del vendedor puede tener el camino entero ("Reparacion >
+    // Pantallas"): para el orden de la portada vale su rubro.
+    const clave = sinAcentos(rubroDe(c));
+    const real = enUso.find(x => sinAcentos(x) === clave && ordenadas.indexOf(x) === -1);
     if (real) ordenadas.push(real);
   });
 
@@ -988,13 +1030,16 @@ function categoriasDeLaTienda(){
 }
 
 const productosDe = (cat) =>
-  products.filter(p => (p.category || '').trim() === cat);
+  products.filter(p => estaEnCategoria(p, cat));
 
 // Los que no tienen categoría. NO van escondidos detrás de una tarjeta
 // "Otros": se muestran directos en la primera pantalla. En una tienda real
 // el combo más caro estaba ahí adentro y nadie lo veía.
+// Sin NINGUNA categoria, ni la principal ni las de mas: uno que solo esta
+// en una de las de mas ya tiene donde aparecer y mostrarlo tambien suelto
+// seria el mismo producto dos veces en la misma pantalla.
 const productosSinCategoria = () =>
-  products.filter(p => !(p.category || '').trim());
+  products.filter(p => !categoriasDeProducto(p).length);
 
 // Vista inicial de una tienda con categorías: una tarjeta por rubro.
 // El cliente elige "Hamburguesas" y recién ahí ve las hamburguesas.
@@ -1112,7 +1157,7 @@ let chipsEnPantalla = [];
 // este en la variante y "muzza" en el nombre. sinAcentos() ya existe mas
 // abajo en este mismo script: acentos y mayusculas no importan.
 function textoBuscableDe(p){
-  const partes = [p.name, p.category, p.description];
+  const partes = [p.name, p.description].concat(categoriasDeProducto(p));
   if (Array.isArray(p.variantes)) {
     p.variantes.forEach(v => Object.values(v.atributos || {}).forEach(x => partes.push(x)));
   }
@@ -1192,6 +1237,41 @@ function ordenar(lista){
 // El atajo cuenta los productos REALES del rubro, no los que se estan
 // viendo en pantalla: buscando "creat" salen 5 combos pero el rubro tiene
 // 7, y el boton lleva a los 7. Poner ahi el 5 prometia algo que no pasaba.
+// Los estantes de adentro de un rubro, en el orden que dejo el vendedor.
+// Los que no tienen subrubro van PRIMERO y sin titulo: son los del rubro a
+// secas, y ponerles un encabezado inventado ("Otros") los haria parecer
+// sobras.
+function subrubrosDe(rubro, lista){
+  const orden = Array.isArray(perfilTienda && perfilTienda.categorias) ? perfilTienda.categorias : [];
+  const posicion = (sub) => {
+    const i = orden.findIndex(c => sinAcentos(rubroDe(c)) === sinAcentos(rubro) &&
+                                   sinAcentos(subrubroDe(c)) === sinAcentos(sub));
+    return i === -1 ? Infinity : i;
+  };
+
+  const sueltos = [];
+  const grupos = [];
+
+  lista.forEach(p => {
+    // Un producto puede estar en varias categorias: adentro de este rubro
+    // manda la suya de este rubro, no la principal de otro lado.
+    const suya = categoriasDeProducto(p).find(c => sinAcentos(rubroDe(c)) === sinAcentos(rubro));
+    const sub = subrubroDe(suya || '');
+    if (!sub){ sueltos.push(p); return; }
+    let g = grupos.find(x => sinAcentos(x.nombre) === sinAcentos(sub));
+    if (!g){ g = { nombre: sub, lista: [] }; grupos.push(g); }
+    g.lista.push(p);
+  });
+
+  grupos.sort((a, b) => {
+    const pa = posicion(a.nombre), pb = posicion(b.nombre);
+    if (pa !== pb) return pa - pb;
+    return a.nombre.localeCompare(b.nombre, 'es');
+  });
+
+  return { sueltos: sueltos, grupos: grupos };
+}
+
 function htmlGrupo(cat, lista, conAtajo){
   const i = gruposEnPantalla.push(cat) - 1;
   const enElRubro = productosDe(cat).length || lista.length;
@@ -1397,10 +1477,40 @@ function renderProducts(){
     hide(volver);
   }
 
+  // Adentro de un rubro con estantes, cada estante con su titulo. Sin
+  // estantes, la grilla de siempre: una tienda de ropa no tiene por que
+  // ver ninguna division que no invento.
+  const partido = selectedCategory ? subrubrosDe(selectedCategory, filteredProducts) : null;
+  if (partido && partido.grupos.length){
+    list.className = '';
+    list.innerHTML =
+      (partido.sueltos.length
+        ? '<div class="products-grid compacta">' + partido.sueltos.map(htmlTarjetaProducto).join('') + '</div>'
+        : '') +
+      partido.grupos.map(g =>
+        '<div class="grupo-cat-titulo"><span>' + escapeHtml(g.nombre) + '</span></div>' +
+        '<div class="products-grid compacta">' + g.lista.map(htmlTarjetaProducto).join('') + '</div>'
+      ).join('');
+    conectarTarjetas(list);
+    return;
+  }
+
   list.className = 'products-grid' + (categorias.length ? ' compacta' : '');
 
   list.innerHTML = filteredProducts.map(htmlTarjetaProducto).join('');
   conectarTarjetas(list);
+}
+
+// El rubro arriba del nombre sirve para ubicarse cuando la pantalla mezcla
+// cosas de todos lados: la portada, los resultados de una busqueda. Adentro
+// de una categoria no: ahi el titulo de arriba ya lo dice, y repetirlo en
+// cada tarjeta es ruido. Peor todavia con un producto que esta ahi de
+// prestado, que mostraba su categoria principal ("ACCESORIOS") debajo del
+// titulo "Pantallas" y parecia un error.
+function etiquetaDeCategoria(p){
+  if (selectedCategory) return '';
+  const cat = (p.category || '').trim();
+  return cat ? '<div class="product-category">' + escapeHtml(cat) + '</div>' : '';
 }
 
 // El HTML de una tarjeta de producto, separado para poder usarlo tanto en
@@ -1491,7 +1601,7 @@ function htmlTarjetaProducto(p){
     return '<div class="product-card" data-id="' + p.id + '">' +
       '<div class="product-photo-container">' + photo + stockBadge + '</div>' +
       '<div class="product-info">' +
-      (p.category ? '<div class="product-category">' + escapeHtml(p.category) + '</div>' : '') +
+      etiquetaDeCategoria(p) +
       '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
       (p.description ? '<div class="product-description">' + escapeHtml(p.description) + '</div>' : '') +
       (ocultaPrecio
@@ -2052,7 +2162,7 @@ function abrirFicha(id) {
 }
 
 function loadCategories(){
-  const categories = [...new Set(products.map(p => p.category).filter(Boolean))];
+  const categories = categoriasDeLaTienda();
   if (categories.length === 0) {
     hide(byId('categoriesSection'));
     return;

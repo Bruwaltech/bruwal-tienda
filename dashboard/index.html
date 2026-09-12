@@ -2696,6 +2696,37 @@ tr:last-child td { border-bottom: none; }
             <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
               Con esto tus clientes filtran el catálogo — arrancar por acá ayuda a que todo quede prolijo y ordenado desde el primer paso.
             </small>
+
+            <!-- El estante de adentro del rubro. Opcional: una tienda de
+                 ropa no tiene por que inventarse divisiones, pero un taller
+                 de celulares necesita separar pantallas de pines de carga. -->
+            <div style="margin-top:12px;">
+              <label style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;">
+                Subcategoría <span style="font-weight:600;text-transform:none;letter-spacing:0;">(opcional)</span>
+              </label>
+              <input type="text" id="pSubcategoria" maxlength="40" autocomplete="off"
+                     placeholder="Ej: Pantallas" style="margin-top:6px;">
+              <div id="pSubSugeridas" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
+              <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+                Un estante adentro del rubro. Tu cliente entra a
+                “Reparación de teléfonos” y ahí adentro ve “Pantallas”, “Pines de carga”…
+              </small>
+            </div>
+
+            <!-- Un producto puede estar en varias. La de arriba es la
+                 principal (la que se ve en la ficha y la que viaja a Mercado
+                 Libre); estas son las demás vidrieras donde también aparece. -->
+            <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);">
+              <label style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;">
+                También aparece en
+              </label>
+              <div id="pCatsExtra" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;"></div>
+              <select id="pCatExtraSel" style="width:100%;"></select>
+              <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+                Sirve para un combo que va en “Combos” y también en su rubro.
+                Aparece en las dos, y es el mismo producto: un solo stock.
+              </small>
+            </div>
           </div>
         </div>
 
@@ -3318,8 +3349,13 @@ tr:last-child td { border-bottom: none; }
       </div>
       <div class="acom-fila hidden" id="acomFilaNueva">
         <label>Nombre</label>
-        <input type="text" id="acomDestinoNueva" maxlength="40" placeholder="Ej: Auriculares">
+        <input type="text" id="acomDestinoNueva" maxlength="60" placeholder="Ej: Auriculares — o “Reparación &gt; Pantallas” para un estante adentro de un rubro">
       </div>
+
+      <label id="acomDejarFila" style="display:flex;align-items:center;gap:9px;margin:2px 0 10px;cursor:pointer;font-size:13.5px;color:var(--text-dark);">
+        <input type="checkbox" id="acomDejar" style="width:16px;height:16px;flex-shrink:0;">
+        <span id="acomDejarTexto">Dejarlos tambi&eacute;n donde est&aacute;n (quedan en las dos)</span>
+      </label>
 
       <button type="button" id="acomMoverBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">
         Mover
@@ -5734,13 +5770,160 @@ function renderCategorias() {
 function refrescarListaDeCategorias() {
   const cont = byId('pCategorySugeridas');
   if (!cont) return;
-  const categorias = categoriasDeLaTienda();
+  const categorias = [];
+  categoriasDeLaTienda().forEach(c => {
+    const r = rubroDe(c);
+    if (r && !categorias.some(x => claveCat(x) === claveCat(r))) categorias.push(r);
+  });
   cont.innerHTML = categorias.map(c =>
     '<button type="button" class="chip-sug" data-cat-sug="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>'
   ).join('');
   cont.querySelectorAll('[data-cat-sug]').forEach(b => {
-    b.addEventListener('click', () => { byId('pCategory').value = b.dataset.catSug; });
+    b.addEventListener('click', () => {
+      byId('pCategory').value = b.dataset.catSug;
+      alCambiarCategoria();
+    });
   });
+}
+
+// Los estantes que ya existen adentro del rubro que esta escrito arriba.
+// Se muestran solos: el que carga el quinto vidrio templado no tiene que
+// acordarse de como escribio el estante las otras cuatro veces.
+function renderSubSugeridas() {
+  const cont = byId('pSubSugeridas');
+  if (!cont) return;
+
+  const rubro = String(byId('pCategory').value || '').trim();
+  const subs = [];
+  if (rubro) {
+    const mirar = (c) => {
+      if (claveCat(rubroDe(c)) !== claveCat(rubro)) return;
+      const t = subrubroDe(c);
+      if (t && !subs.some(x => claveCat(x) === claveCat(t))) subs.push(t);
+    };
+    products.forEach(p => categoriasDeProducto(p).forEach(mirar));
+    (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).forEach(mirar);
+  }
+  subs.sort((a, b) => a.localeCompare(b, 'es'));
+
+  cont.innerHTML = subs.map(c =>
+    '<button type="button" class="chip-sug" data-sub-sug="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>'
+  ).join('');
+
+  cont.querySelectorAll('[data-sub-sug]').forEach(b => {
+    b.addEventListener('click', () => {
+      byId('pSubcategoria').value = b.dataset.subSug;
+      renderCatsExtra();
+    });
+  });
+}
+
+// El rubro y el estante viajan juntos en un solo texto. Es LA forma de leer
+// la categoria del formulario: si algun lugar leyera pCategory a secas, ese
+// producto se guardaria sin su estante.
+function catCompletaDelFormulario() {
+  return unirCategoria(byId('pCategory').value, byId('pSubcategoria') ? byId('pSubcategoria').value : '');
+}
+
+// Cambio el rubro: cambian los estantes sugeridos y las categorias de mas.
+function alCambiarCategoria() {
+  renderSubSugeridas();
+  renderCatsExtra();
+}
+
+// El <select> agrega y se vuelve a poner en blanco: es un boton con lista,
+// no un campo con valor. Dejarlo marcado haria creer que esa es LA categoria.
+byId('pCatExtraSel').addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!v) return;
+  if (v === '__nueva') {
+    const nombre = window.prompt('Nombre de la categor\u00eda nueva:');
+    if (nombre !== null) sumarCatExtra(nombre);
+    renderCatsExtra();
+    return;
+  }
+  sumarCatExtra(v);
+});
+
+// Si escribe la principal a mano, las de abajo se recalculan igual.
+byId('pCategory').addEventListener('input', alCambiarCategoria);
+byId('pSubcategoria').addEventListener('input', renderCatsExtra);
+
+// El campo solo viaja si hace falta: si nadie usa esta funcion, el guardado
+// no manda `categorias` y sigue andando igual aunque la columna todavia no
+// este creada en esa base. Cuando el producto YA tenia categorias de mas hay
+// que mandarlo aunque quede vacio, que es como se vacia la lista.
+function catsExtraPayload() {
+  const limpias = [];
+  catsExtraEnEdicion.forEach(c => {
+    const t = String(c || '').trim();
+    if (t && claveCat(t) !== claveCat(catCompletaDelFormulario()) &&
+        !limpias.some(x => claveCat(x) === claveCat(t))) limpias.push(t);
+  });
+
+  const id = byId('productForm').dataset.id;
+  const antes = id ? products.find(p => String(p.id) === String(id)) : null;
+  const teniaAntes = antes ? catsExtraDe(antes).length > 0 : false;
+
+  return (limpias.length || teniaAntes) ? { categorias: limpias } : {};
+}
+
+// ---- Las categorias de mas del producto que se esta cargando ----
+// Igual que fotosEnEdicion u opcionesEnEdicion: vive en memoria mientras el
+// formulario esta abierto y recien se escribe al guardar.
+let catsExtraEnEdicion = [];
+
+function quitarCatExtra(nombre) {
+  catsExtraEnEdicion = catsExtraEnEdicion.filter(c => claveCat(c) !== claveCat(nombre));
+  renderCatsExtra();
+}
+
+function sumarCatExtra(nombre) {
+  const t = String(nombre || '').trim();
+  if (!t) return;
+  // Ya es la principal: sumarla de nuevo la mostraria dos veces en la misma
+  // tienda. No es un error, simplemente no hay nada que hacer.
+  if (claveCat(t) === claveCat(catCompletaDelFormulario())) return;
+  if (catsExtraEnEdicion.some(c => claveCat(c) === claveCat(t))) return;
+  catsExtraEnEdicion.push(t);
+  renderCatsExtra();
+}
+
+function renderCatsExtra() {
+  const cont = byId('pCatsExtra');
+  const sel = byId('pCatExtraSel');
+  if (!cont || !sel) return;
+
+  const principal = catCompletaDelFormulario();
+
+  // La principal no puede estar tambien en la lista de las de mas: si el
+  // vendedor cambia la de arriba por una que ya tenia abajo, esa se va.
+  catsExtraEnEdicion = catsExtraEnEdicion.filter(c =>
+    c && claveCat(c) !== claveCat(principal));
+
+  cont.innerHTML = catsExtraEnEdicion.length
+    ? catsExtraEnEdicion.map(c =>
+        '<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);' +
+        'border:1px solid var(--line);border-radius:14px;padding:5px 6px 5px 11px;font-size:13px;font-weight:600;">' +
+          escapeHtml(c) +
+          '<button type="button" data-quitar-cat="' + escapeHtml(c) + '" title="Sacarlo de esta categor\u00eda" ' +
+            'style="border:none;background:none;color:var(--text-mute);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;">\u2715</button>' +
+        '</span>').join('')
+    : '<span style="color:var(--text-mute);font-size:13px;">Solo en su categor\u00eda principal.</span>';
+
+  cont.querySelectorAll('[data-quitar-cat]').forEach(b => {
+    b.addEventListener('click', () => quitarCatExtra(b.dataset.quitarCat));
+  });
+
+  const yaEsta = (n) => claveCat(n) === claveCat(principal) ||
+                        catsExtraEnEdicion.some(c => claveCat(c) === claveCat(n));
+  const libres = nombresDeCategoriasDisponibles().filter(n => !yaEsta(n));
+
+  sel.innerHTML =
+    '<option value="">\u2795 Sumarlo a otra categor\u00eda\u2026</option>' +
+    libres.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('') +
+    '<option value="__nueva">Una categor\u00eda nueva\u2026</option>';
+  sel.value = '';
 }
 
 function agregarCategoria(nombre) {
@@ -5809,16 +5992,68 @@ const claveCat = (c) => normalizarTexto(c).trim();
 // todo lo que escribe se hace por id y nunca con .eq('category', ...).
 const catCrudaDe = (p) => (p.category == null ? '' : String(p.category));
 
+// ---- Dos niveles: rubro y subrubro ----
+// "Reparacion de telefonos > Pantallas": el rubro es la vidriera, el
+// subrubro el estante de adentro. Van en el MISMO texto a proposito, para
+// que el acomodador, la vidriera, el buscador, las estadisticas y el cruce
+// con Mercado Libre sigan tratandolo como lo que siempre fue: un nombre.
+const SEPARADOR_SUB = ' > ';
+const rubroDe = (cat) => String(cat == null ? '' : cat).split('>')[0].trim();
+const subrubroDe = (cat) => {
+  const partes = String(cat == null ? '' : cat).split('>');
+  return partes.length > 1 ? partes.slice(1).join('>').trim() : '';
+};
+const unirCategoria = (rubro, sub) => {
+  const r = String(rubro == null ? '' : rubro).trim();
+  const t = String(sub == null ? '' : sub).replace(/>/g, '').trim();
+  if (!r) return '';
+  return t ? r + SEPARADOR_SUB + t : r;
+};
+
+// ---- Un producto en varias categorias ----
+// Un combo de iluminacion tiene que poder estar en "Combos" Y en
+// "Iluminacion". `category` es la principal (la que leen la tienda, Mercado
+// Libre, las estadisticas y el buscador desde siempre) y `categorias` son
+// las demas. Separarlas asi es lo que permite que nada de lo viejo cambie de
+// sentido: un producto sin extras se comporta exactamente igual que antes.
+const catsExtraDe = (p) => (Array.isArray(p && p.categorias)
+  ? p.categorias.map(c => String(c == null ? '' : c).trim()).filter(Boolean)
+  : []);
+
+// Todas las categorias del producto, la principal PRIMERO. El orden importa:
+// si despues hay que reasignar, la primera vuelve a ser la principal.
+function categoriasDeProducto(p) {
+  const todas = [];
+  const sumar = (c) => {
+    const t = String(c == null ? '' : c).trim();
+    if (t && !todas.some(x => claveCat(x) === claveCat(t))) todas.push(t);
+  };
+  sumar(catCrudaDe(p));
+  catsExtraDe(p).forEach(sumar);
+  return todas;
+}
+
+// Por clave, no por texto: "Iluminacion" y "iluminacion" son la misma.
+const estaEnCategoria = (p, cat) =>
+  categoriasDeProducto(p).some(c => claveCat(c) === claveCat(cat));
+
 // Lo que hay CARGADO, no la lista guardada del perfil: interesan tambien
 // las categorias que el vendedor escribio a mano y nunca agrego a la lista.
 // Sin trim a proposito: "Auriculares" y "Auriculares " tienen que verse como
 // dos, que es el problema que hay que mostrar.
 function categoriasEnUso() {
   const mapa = new Map();
+  const contar = (nombre) => {
+    if (!mapa.has(nombre)) mapa.set(nombre, { nombre: nombre, cantidad: 0 });
+    mapa.get(nombre).cantidad++;
+  };
   products.forEach(p => {
     const cruda = catCrudaDe(p);
-    if (!mapa.has(cruda)) mapa.set(cruda, { nombre: cruda, cantidad: 0 });
-    mapa.get(cruda).cantidad++;
+    contar(cruda);
+    // Las categorias de mas cuentan igual: si el combo tambien esta en
+    // Iluminacion, Iluminacion tiene un producto mas. Que el numero de aca
+    // no coincida con lo que ve el cliente seria peor que no mostrarlo.
+    catsExtraDe(p).forEach(c => { if (claveCat(c) !== claveCat(cruda)) contar(c); });
   });
   return [...mapa.values()].sort((a, b) => b.cantidad - a.cantidad);
 }
@@ -5837,7 +6072,13 @@ function categoriasRepetidas() {
   return [...grupos.values()].filter(g => g.length > 1);
 }
 
-const productosDeCategoria = (nombre) => products.filter(p => catCrudaDe(p) === nombre);
+// La de "Sin categoria" (nombre vacio) se compara CRUDA a proposito: null y
+// '' son dos entradas distintas de la lista y hay que poder agarrar cada una
+// por separado para emprolijarlas. Las demas van por clave, y mirando
+// tambien las categorias de mas.
+const productosDeCategoria = (nombre) => (String(nombre || '').trim()
+  ? products.filter(p => estaEnCategoria(p, nombre))
+  : products.filter(p => catCrudaDe(p) === nombre && !catsExtraDe(p).length));
 
 // Los nombres de categoria a los que se puede mandar algo: las que estan en
 // uso Y las que el vendedor cargo en la lista sin usar todavia — mover algo
@@ -5866,6 +6107,55 @@ async function moverProductosA(ids, categoria) {
     // La copia en memoria se actualiza junto con la base: si algo falla a
     // mitad de camino, lo que quedo en pantalla es lo que quedo guardado.
     products.forEach(p => { if (parte.includes(p.id)) p.category = categoria; });
+  }
+  return null;
+}
+
+// Sacar de una categoria y/o poner en otra, respetando las demas.
+//
+// Es la operacion honesta ahora que un producto puede estar en varias:
+// `moverProductosA` pisa la principal y punto, que sirve cuando no hay
+// origen (la seleccion multiple de la lista), pero aca si lo hay. Con
+// dejarEnOrigen en true el producto queda en las dos.
+//
+// destino null = no lo agrega a ningun lado, solo lo saca del origen.
+async function reasignarCategorias(ids, origen, destino, dejarEnOrigen) {
+  // Se agrupan los productos que terminan con EXACTAMENTE la misma
+  // categoria principal y las mismas de mas: casi siempre son todos, y asi
+  // un lote de 132 se escribe en una sola llamada en vez de en 132.
+  const porPayload = new Map();
+
+  ids.forEach(id => {
+    const p = products.find(x => String(x.id) === String(id));
+    if (!p) return;
+
+    let lista = categoriasDeProducto(p);
+    if (!dejarEnOrigen && String(origen || '').trim()) {
+      lista = lista.filter(c => claveCat(c) !== claveCat(origen));
+    }
+    if (destino && !lista.some(c => claveCat(c) === claveCat(destino))) lista.push(destino);
+
+    const payload = { category: lista.length ? lista[0] : null, categorias: lista.slice(1) };
+    const firma = JSON.stringify(payload);
+    if (!porPayload.has(firma)) porPayload.set(firma, { payload: payload, ids: [] });
+    porPayload.get(firma).ids.push(p.id);
+  });
+
+  const LOTE = 50;
+  for (const grupo of porPayload.values()) {
+    for (let i = 0; i < grupo.ids.length; i += LOTE) {
+      const parte = grupo.ids.slice(i, i + LOTE);
+      const { error } = await sb.from('store_products').update(grupo.payload).in('id', parte);
+      if (error) return error;
+      // La copia en memoria va junto con la base: si algo falla a mitad de
+      // camino, lo que queda en pantalla es lo que quedo guardado.
+      products.forEach(p => {
+        if (parte.includes(p.id)) {
+          p.category = grupo.payload.category;
+          p.categorias = grupo.payload.categorias;
+        }
+      });
+    }
   }
   return null;
 }
@@ -5951,6 +6241,24 @@ function productosDelOrigen() {
   return c ? productosDeCategoria(c.nombre) : [];
 }
 
+// El nombre de la categoria de la que se esta sacando, o '' si es la de
+// "Sin categoria". Se usa en tres lugares y siempre tiene que decir lo mismo.
+function origenAcomodar() {
+  const c = acomOrigenes[Number(byId('acomOrigen').value)];
+  return c ? String(c.nombre || '') : '';
+}
+
+// "tambien en Iluminacion" al lado del nombre. Sin esto, mover algo que
+// estaba en dos categorias parece que lo borro de la tienda.
+function otrasCatsDe(p) {
+  const origen = origenAcomodar();
+  const otras = categoriasDeProducto(p).filter(c => claveCat(c) !== claveCat(origen));
+  return otras.length
+    ? ' <small style="color:var(--text-mute);font-weight:400;">tambi\u00e9n en ' +
+      escapeHtml(otras.join(', ')) + '</small>'
+    : '';
+}
+
 function renderAcomLista() {
   const filtro = normalizarTexto(byId('acomFiltro').value).trim();
   const dentro = productosDelOrigen();
@@ -5974,7 +6282,7 @@ function renderAcomLista() {
         '<label class="acom-item">' +
           '<input type="checkbox" data-acom-id="' + escapeHtml(p.id) + '"' +
             (acomMarcados.has(p.id) ? ' checked' : '') + '>' +
-          '<span class="acom-item-nombre">' + escapeHtml(p.name) + '</span>' +
+          '<span class="acom-item-nombre">' + escapeHtml(p.name) + otrasCatsDe(p) + '</span>' +
           '<span class="acom-item-dato">' + money(precioVigente(p)) + '</span>' +
         '</label>').join('')
     : '<div style="padding:18px;text-align:center;color:var(--text-mute);font-size:13.5px;">' +
@@ -6004,10 +6312,24 @@ function renderAcomLista() {
   // Solo cuentan los marcados que siguen en esta categoria: si movio un
   // lote y despues cambio de origen, los de antes ya no existen ac\u00e1.
   const enJuego = dentro.filter(p => acomMarcados.has(p.id)).length;
+
+  // El boton dice lo que va a pasar. "Mover" cuando lo saca de la de origen
+  // y "Sumar" cuando lo deja: son dos cosas distintas y el que aprieta tiene
+  // que saber cual eligio sin volver a mirar la casilla.
+  const dejar = byId('acomDejar') && byId('acomDejar').checked;
+  const verbo = dejar ? 'Sumar' : 'Mover';
   byId('acomMoverBtn').textContent = enJuego
-    ? 'Mover ' + enJuego + (enJuego === 1 ? ' producto' : ' productos')
-    : 'Mover';
+    ? verbo + ' ' + enJuego + (enJuego === 1 ? ' producto' : ' productos')
+    : verbo;
   byId('acomMoverBtn').disabled = !enJuego;
+
+  const cartel = byId('acomDejarTexto');
+  if (cartel) {
+    const nombreOrigen = origenAcomodar().trim();
+    cartel.textContent = nombreOrigen
+      ? 'Dejarlos tambi\u00e9n en \u201c' + nombreOrigen + '\u201d (quedan en las dos)'
+      : 'Dejarlos tambi\u00e9n donde est\u00e1n (quedan en las dos)';
+  }
   byId('acomMoverBtn').style.opacity = enJuego ? '1' : '.55';
 }
 
@@ -6037,7 +6359,7 @@ async function renombrarCategoria(nombreViejo) {
       'Ya ten\u00e9s una categor\u00eda \u201c' + nuevo + '\u201d.\n\n' +
       'Se van a juntar en una sola, con estos ' + ids.length + ' productos adentro. \u00bfSeguimos?')) return;
 
-  const error = await moverProductosA(ids, nuevo);
+  const error = await reasignarCategorias(ids, nombreViejo, nuevo, false);
   if (error) { alert('No se pudo renombrar:\n\n' + error.message); return; }
 
   const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : [])
@@ -6054,11 +6376,16 @@ async function unificarGrupo(indice) {
   if (!g) return;
 
   const principal = g[0].nombre;
-  const ids = [];
-  g.slice(1).forEach(c => productosDeCategoria(c.nombre).forEach(p => ids.push(p.id)));
-  if (!ids.length) return;
 
-  const error = await moverProductosA(ids, principal);
+  // De a una variante por vez: cada una es un origen distinto y hay que
+  // sacar ESE nombre, no el de al lado.
+  let error = null;
+  for (const c of g.slice(1)) {
+    const ids = productosDeCategoria(c.nombre).map(p => p.id);
+    if (!ids.length) continue;
+    error = await reasignarCategorias(ids, c.nombre, principal, false);
+    if (error) break;
+  }
   if (error) { alert('No se pudieron unificar:\n\n' + error.message); return; }
 
   const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : [])
@@ -6101,6 +6428,7 @@ byId('acomOrigen').addEventListener('change', () => {
 });
 
 byId('acomFiltro').addEventListener('input', renderAcomLista);
+byId('acomDejar').addEventListener('change', renderAcomLista);
 
 byId('acomDestino').addEventListener('change', () => {
   const esNueva = byId('acomDestino').value === '__nueva';
@@ -6132,7 +6460,9 @@ byId('acomMoverBtn').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Moviendo\u2026';
 
-  const error = await moverProductosA(ids, destino);
+  const origen = acomOrigenes[Number(byId('acomOrigen').value)];
+  const dejar = !!byId('acomDejar').checked;
+  const error = await reasignarCategorias(ids, origen ? origen.nombre : '', destino, dejar);
 
   btn.disabled = false;
   btn.textContent = textoAntes;
@@ -10611,9 +10941,8 @@ let vidrieraArrastrada = null;
 // mostraria un orden y el cliente veria otro.
 function productosOrdenadosDe(categoria) {
   const dentro = (products || []).filter(p =>
-    esProductoFisico(p) === esProductoFisico(p) &&
     !p.solo_interno &&
-    String(p.category || '').trim() === categoria);
+    estaEnCategoria(p, categoria));
 
   return dentro.sort((a, b) => {
     const oa = Number.isFinite(Number(a.orden)) && a.orden !== null ? Number(a.orden) : Infinity;
@@ -10692,10 +11021,13 @@ function cargarCategoriaVidriera(cat) {
 byId('abrirVidrieraBtn').addEventListener('click', () => {
   hide(byId('categoriasModal'));
 
-  const cats = [...new Set((products || [])
-    .filter(p => !p.solo_interno)
-    .map(p => String(p.category || '').trim())
-    .filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const cats = [];
+  (products || []).filter(p => !p.solo_interno).forEach(p => {
+    categoriasDeProducto(p).forEach(c => {
+      if (!cats.some(x => claveCat(x) === claveCat(c))) cats.push(c);
+    });
+  });
+  cats.sort((a, b) => a.localeCompare(b, 'es'));
 
   const sel = byId('vidrieraCategoria');
   sel.innerHTML = cats.length
@@ -16997,7 +17329,7 @@ async function searchByBarcode() {
   if (coincidencias.length === 0) {
     coincidencias = products.filter(p =>
       pareceALaPalabra(normalizarTexto(p.name), query) ||
-      normalizarTexto(p.category || '').includes(query)
+      normalizarTexto(categoriasDeProducto(p).join(' ')).includes(query)
     );
     huboTipeo = coincidencias.length > 0;
   }
@@ -17978,6 +18310,10 @@ function abrirFormularioNuevo(tipo) {
     renderFotosEnEdicion();
     if (byId('pStock')) byId('pStock').value = '0';
     if (byId('pCategory')) byId('pCategory').value = '';
+    if (byId('pSubcategoria')) byId('pSubcategoria').value = '';
+    catsExtraEnEdicion = [];
+    renderSubSugeridas();
+    renderCatsExtra();
     if (byId('productForm')) byId('productForm').dataset.id = '';
     unidadMedidaEnEdicion = null;
     if (byId('pVentaPorMedida')) byId('pVentaPorMedida').checked = false;
@@ -18627,7 +18963,8 @@ byId('productForm').addEventListener('submit', async (e) => {
     // Solo tiene sentido en un producto por medida: si lo pasan a venderse por
     // unidad, el PLU queda colgado apuntando a una balanza que ya no se usa.
     plu_balanza: unidadAGuardar ? ((byId('pPluBalanza')?.value || '').trim() || null) : null,
-    category: byId('pCategory').value,
+    category: catCompletaDelFormulario(),
+    ...catsExtraPayload(),
     ean: byId('pEan').value || null,
     imei: byId('pImei') ? (byId('pImei').value.trim() || null) : null,
     estado_equipo: byId('pEstadoEquipo') ? (byId('pEstadoEquipo').value.trim() || null) : null,
@@ -18682,8 +19019,11 @@ byId('productForm').addEventListener('submit', async (e) => {
     const falta = msg.match(/Could not find the '([^']+)' column/);
 
     alert(falta
-      ? 'No se pudo guardar: falta la columna "' + falta[1] + '" en la base de datos.\n\n' +
-        'Es una actualización pendiente. Avisale a soporte y mencioná este nombre.'
+      ? (falta[1] === 'categorias'
+          ? 'Falta una actualización en la base para que un producto pueda estar\n' +
+            'en varias categorías.\n\nCorré schema/48-varias-categorias.sql en Supabase.'
+          : 'No se pudo guardar: falta la columna "' + falta[1] + '" en la base de datos.\n\n' +
+            'Es una actualización pendiente. Avisale a soporte y mencioná este nombre.')
       : 'No se pudo guardar el producto:\n\n' + msg);
     return;   // el formulario queda abierto, con todo lo que cargaste
   }
@@ -18759,7 +19099,11 @@ async function editProduct(id) {
   renderUnidadMedidaChips();
   aplicarVentaPorMedida();
   aplicarVentaPorMedidaVisibilidad(p);
-  if (byId('pCategory')) byId('pCategory').value = p.category || '';
+  if (byId('pCategory')) byId('pCategory').value = rubroDe(p.category);
+  if (byId('pSubcategoria')) byId('pSubcategoria').value = subrubroDe(p.category);
+  catsExtraEnEdicion = catsExtraDe(p);
+  renderSubSugeridas();
+  renderCatsExtra();
   if (byId('pEan')) byId('pEan').value = p.ean || '';
   if (byId('pImei')) byId('pImei').value = p.imei || '';
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = p.estado_equipo || '';
@@ -19379,6 +19723,10 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   renderFotosEnEdicion();
   byId('pStock').value = '1';
   byId('pCategory').value = '';
+  if (byId('pSubcategoria')) byId('pSubcategoria').value = '';
+  catsExtraEnEdicion = [];
+  renderSubSugeridas();
+  renderCatsExtra();
   byId('pEan').value = ean;
   byId('productForm').dataset.id = '';
   tipoDeEntrada = null;   // se entró escaneando, no por los botones de carga
