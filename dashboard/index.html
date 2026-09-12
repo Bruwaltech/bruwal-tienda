@@ -6259,13 +6259,22 @@ function otrasCatsDe(p) {
     : '';
 }
 
-function renderAcomLista() {
+// Los que la lista esta mostrando ahora: los de la categoria de origen que
+// pasan el filtro escrito. Una sola definicion, usada tanto para pintar
+// como para mover, para que el boton no pueda decir un numero y hacer otro.
+function productosVisiblesAcomodar() {
   const filtro = normalizarTexto(byId('acomFiltro').value).trim();
   const dentro = productosDelOrigen();
-  const visibles = filtro
+  return filtro
     ? dentro.filter(p => normalizarTexto(p.name).includes(filtro) ||
                          normalizarTexto(p.marca || '').includes(filtro))
     : dentro;
+}
+
+function renderAcomLista() {
+  const filtro = normalizarTexto(byId('acomFiltro').value).trim();
+  const dentro = productosDelOrigen();
+  const visibles = productosVisiblesAcomodar();
 
   const acciones = byId('acomAcciones');
   const marcadosVisibles = visibles.filter(p => acomMarcados.has(p.id)).length;
@@ -6309,9 +6318,10 @@ function renderAcomLista() {
     });
   }
 
-  // Solo cuentan los marcados que siguen en esta categoria: si movio un
-  // lote y despues cambio de origen, los de antes ya no existen ac\u00e1.
-  const enJuego = dentro.filter(p => acomMarcados.has(p.id)).length;
+  // Solo cuenta lo marcado que se esta VIENDO. Antes contaba todo lo marcado
+  // de la categoria, asi que un producto de una busqueda anterior sumaba al
+  // numero sin estar en pantalla -- y despues viajaba con el lote.
+  const enJuego = visibles.filter(p => acomMarcados.has(p.id)).length;
 
   // El boton dice lo que va a pasar. "Mover" cuando lo saca de la de origen
   // y "Sumar" cuando lo deja: son dos cosas distintas y el que aprieta tiene
@@ -6427,7 +6437,12 @@ byId('acomOrigen').addEventListener('change', () => {
   renderAcomLista();
 });
 
-byId('acomFiltro').addEventListener('input', renderAcomLista);
+// Buscar otra cosa es empezar de nuevo: lo que habias marcado para la
+// busqueda anterior se desmarca. Si no, se va con el lote sin que lo veas.
+byId('acomFiltro').addEventListener('input', () => {
+  acomMarcados = new Set();
+  renderAcomLista();
+});
 byId('acomDejar').addEventListener('change', renderAcomLista);
 
 byId('acomDestino').addEventListener('change', () => {
@@ -6439,8 +6454,8 @@ byId('acomDestino').addEventListener('change', () => {
 byId('acomMoverBtn').addEventListener('click', async () => {
   if (!puedeOperar()) return;
 
-  const dentro = productosDelOrigen();
-  const ids = dentro.filter(p => acomMarcados.has(p.id)).map(p => p.id);
+  // Lo que se ve y esta marcado, que es exactamente lo que dice el boton.
+  const ids = productosVisiblesAcomodar().filter(p => acomMarcados.has(p.id)).map(p => p.id);
   if (!ids.length) return;
 
   const valor = byId('acomDestino').value;
@@ -12610,13 +12625,29 @@ function pintarBarraBuscarProductos(mostrados, total) {
 // encabezado y cambiarle la categoria a las 20 de una. Producto por
 // producto eso eran 20 formularios.
 //
-// La seleccion vive aparte del filtro: si busca, tilda 20 y despues borra la
-// busqueda, las 20 siguen tildadas. Lo que SI la limpia es cambiar de solapa
-// (tienda / servicios / interno), porque ahi cambia el universo entero.
+// La seleccion es de lo que se esta VIENDO. Buscar otra cosa la limpia, y
+// cambiar de solapa (tienda / servicios / interno) tambien.
+//
+// Antes sobrevivia al filtro, y eso terminaba mal: marcabas un auricular,
+// buscabas un cable, marcabas el cable y le cambiabas la categoria a los
+// dos. El de la busqueda anterior se iba de polizon, sin estar en pantalla.
 let seleccionProductos = new Set();
 
+// Lo que la tabla muestra ahora mismo: la solapa elegida, el filtro de
+// ofertas y la busqueda. Una sola definicion, para que "seleccionar todo lo
+// que se ve" y "aplicar a lo seleccionado" no puedan discrepar nunca.
+function productosVisibles() {
+  const panel = PANELES_PRODUCTOS[filtroProductosDestino] || PANELES_PRODUCTOS.tienda;
+  const palabras = normalizarTexto(busquedaProductos).trim().split(/\s+/).filter(Boolean);
+  return products.filter(panel.filtro)
+    .filter(p => !soloEnOferta || hayOferta(p))
+    .filter(p => !palabras.length || coincideBusquedaProducto(p, palabras));
+}
+
+// Cinturon y tiradores: aunque algo quedara marcado sin estar en pantalla,
+// las acciones en lote no lo tocan.
 const productosSeleccionados = () =>
-  products.filter(p => seleccionProductos.has(String(p.id)));
+  productosVisibles().filter(p => seleccionProductos.has(String(p.id)));
 
 function limpiarSeleccionProductos() {
   seleccionProductos = new Set();
@@ -12837,10 +12868,7 @@ byId('selCategoriaAplicar').addEventListener('click', async () => {
 function renderProducts() {
   const panel = PANELES_PRODUCTOS[filtroProductosDestino] || PANELES_PRODUCTOS.tienda;
   const enLaSolapa = products.filter(panel.filtro);
-  const palabras = normalizarTexto(busquedaProductos).trim().split(/\s+/).filter(Boolean);
-  const lista = enLaSolapa
-    .filter(p => !soloEnOferta || hayOferta(p))
-    .filter(p => !palabras.length || coincideBusquedaProducto(p, palabras));
+  const lista = productosVisibles();
 
   pintarBarraBuscarProductos(lista.length, enLaSolapa.length);
 
@@ -13039,7 +13067,11 @@ function renderProducts() {
   byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
   byId('productsBody').querySelectorAll('[data-oferta]').forEach(b => b.addEventListener('click', () => abrirOferta(b.getAttribute('data-oferta'))));
   const chip = byId('chipOfertas');
-  if (chip) chip.addEventListener('click', () => { soloEnOferta = !soloEnOferta; renderProducts(); });
+  if (chip) chip.addEventListener('click', () => {
+    soloEnOferta = !soloEnOferta;
+    seleccionProductos = new Set();   // cambia lo que se ve, se arranca limpio
+    renderProducts();
+  });
   byId('productsBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(b.getAttribute('data-del'))));
   byId('productsBody').querySelectorAll('[data-pausar]').forEach(b => b.addEventListener('click', () => alternarPausado(b.getAttribute('data-pausar'))));
   // Con variantes hay que elegir talle/color antes de sumar stock; sin
@@ -19678,13 +19710,18 @@ byId('buscarProductos').addEventListener('input', (e) => {
   // Un respiro corto: con 408 productos, repintar la tabla entera en cada
   // tecla se traba al escribir.
   temporizadorBuscarProductos = setTimeout(() => {
-    busquedaProductos = e.target.value.trim();
+    const nuevo = e.target.value.trim();
+    // Buscar otra cosa es empezar de nuevo. La barra de seleccion desaparece
+    // sola, asi que se ve que paso: no es magia silenciosa.
+    if (nuevo !== busquedaProductos) seleccionProductos = new Set();
+    busquedaProductos = nuevo;
     renderProducts();
   }, 180);
 });
 
 byId('limpiarBuscarProductos').addEventListener('click', () => {
   clearTimeout(temporizadorBuscarProductos);
+  seleccionProductos = new Set();   // vuelve a verse todo: se arranca limpio
   busquedaProductos = '';
   byId('buscarProductos').value = '';
   renderProducts();
