@@ -365,7 +365,10 @@ async function pedirAAds(ruta, token, version) {
   return { ok: r.ok, status: r.status, datos: datos };
 }
 
-async function accionPublicidad(slug) {
+// diasMetricas: sobre cuantos dias se piden las metricas. 30 para mirar, que
+// es lo que se muestra en pantalla; 7 para DECIDIR si apagar, porque un mes
+// arrastra historia que capaz ya no aplica (ver accionSaludAds).
+async function accionPublicidad(slug, diasMetricas) {
   const cuenta = await cuentaDeTienda(slug);
   if (!cuenta) return { conectado: false };
 
@@ -425,8 +428,9 @@ async function accionPublicidad(slug) {
   // Ademas Mercado Libre actualiza estos numeros a las 10 de la manana
   // (GMT-3): el dia de hoy siempre viene incompleto.
   const hoy = new Date();
+  const dias = Math.max(1, Number(diasMetricas) || 30);
   const hasta = hoy.toISOString().slice(0, 10);
-  const desde = new Date(hoy.getTime() - 29 * 86400000).toISOString().slice(0, 10);
+  const desde = new Date(hoy.getTime() - (dias - 1) * 86400000).toISOString().slice(0, 10);
   const METRICAS = 'clicks,prints,ctr,cost,cpc,acos,cvr,roas,units_quantity,total_amount,direct_amount,indirect_amount';
   const conMetricas = '/search?limit=50&date_from=' + desde + '&date_to=' + hasta +
                       '&metrics=' + METRICAS;
@@ -493,6 +497,19 @@ async function accionPublicidad(slug) {
 const MINIMO_CLICS = 40;
 const PASADA_DE_ACOS = 1.5;
 
+// Dias de gracia despues de que el vendedor toca una campana. Si acaba de
+// cambiarle el presupuesto, el ACOS o de ponerle una promocion, hay que
+// dejar que el cambio se note antes de juzgarla. Sin esto, el automatico
+// apagaria justo lo que alguien acaba de arreglar.
+const DIAS_DE_GRACIA = 7;
+
+function tocadaHacePoco(c) {
+  const cuando = c && (c.last_updated || c.date_created);
+  if (!cuando) return false;
+  const ms = Date.now() - new Date(cuando).getTime();
+  return isFinite(ms) && ms >= 0 && ms < DIAS_DE_GRACIA * 86400000;
+}
+
 function saludDeCampana(c) {
   const m = (c && (c.metrics || c.metrics_summary)) || {};
   const invertido = Number(m.cost) || 0;
@@ -503,7 +520,14 @@ function saludDeCampana(c) {
 
   if (clics < MINIMO_CLICS || invertido <= 0) {
     return { estado: 'sin_datos', motivo: 'Todavia no hay suficiente movimiento para juzgarla (' +
-             clics + ' clics).' };
+             clics + ' clics en la ultima semana).' };
+  }
+
+  // Recien tocada: se mira, no se apaga. El vendedor cambio algo y merece
+  // ver el resultado antes de que una regla decida por el.
+  if (tocadaHacePoco(c)) {
+    return { estado: 'ajustada',
+             motivo: 'La cambiaste hace poco: se le da una semana antes de juzgarla.' };
   }
 
   if (vendido <= 0) {
@@ -530,7 +554,16 @@ function saludDeCampana(c) {
 // sentido despues de cambiar algo -- el precio, la publicacion, el ACOS
 // objetivo -- y eso lo decide una persona, no una regla.
 async function accionSaludAds(slug, aplicar) {
-  const datos = await accionPublicidad(slug);
+  // 7 dias y no 30: para DECIDIR si apagar interesa como viene ahora. Un mes
+  // arrastra historia que capaz ya no aplica — el caso real fue una campana
+  // con numeros malos porque el producto estuvo sin stock.
+  const datos = await accionPublicidad(slug, 7);
+
+  // La ultima palabra la tiene el vendedor: lo que este en esta lista no se
+  // toca, digan lo que digan los numeros.
+  const perfil = await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) +
+                          '&select=ml_ads_no_tocar&limit=1');
+  const noTocar = ((perfil && perfil[0] && perfil[0].ml_ads_no_tocar) || []).map(String);
   if (!datos.conectado) return { conectado: false };
   if (!datos.disponible) return { conectado: true, disponible: false, motivo: datos.motivo };
   if (!datos.campanas_ok) {
@@ -539,13 +572,19 @@ async function accionSaludAds(slug, aplicar) {
   }
 
   const lista = (datos.campanas && datos.campanas.results) || [];
-  const revisadas = lista.map((c) => ({
-    id: c.id,
-    nombre: c.name || String(c.id),
-    estado: c.status,
-    presupuesto: Number(c.daily_budget) || 0,
-    salud: saludDeCampana(c)
-  }));
+  const revisadas = lista.map((c) => {
+    const excluida = noTocar.includes(String(c.id));
+    return {
+      id: c.id,
+      nombre: c.name || String(c.id),
+      estado: c.status,
+      presupuesto: Number(c.daily_budget) || 0,
+      excluida: excluida,
+      salud: excluida
+        ? { estado: 'excluida', motivo: 'La marcaste para que no se toque.' }
+        : saludDeCampana(c)
+    };
+  });
 
   const aPausar = revisadas.filter((c) => c.salud.estado === 'quemando' && c.estado === 'active');
 
@@ -563,6 +602,28 @@ async function accionSaludAds(slug, aplicar) {
 
   return { conectado: true, disponible: true, ok: true, aplicado: true,
            campanas: revisadas, pausadas: pausadas, errores: errores };
+}
+
+// Marcar o desmarcar una campana como "no la toques".
+async function accionNoTocarCampana(slug, campanaId, valor) {
+  if (!campanaId) return { ok: false, motivo: 'Falta la campana.' };
+
+  const perfil = await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) +
+                          '&select=ml_ads_no_tocar&limit=1');
+  const actual = ((perfil && perfil[0] && perfil[0].ml_ads_no_tocar) || []).map(String);
+
+  const id = String(campanaId);
+  const nueva = valor
+    ? (actual.includes(id) ? actual : actual.concat([id]))
+    : actual.filter((x) => x !== id);
+
+  await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug), {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: { ml_ads_no_tocar: nueva }
+  });
+
+  return { ok: true, excluidas: nueva };
 }
 
 async function accionAutoAds(slug, activo) {
@@ -1216,6 +1277,9 @@ module.exports = async (req, res) => {
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
     if (accion === 'salud_ads') return res.status(200).json(await accionSaludAds(tienda.slug, !!cuerpo.aplicar));
     if (accion === 'auto_ads') return res.status(200).json(await accionAutoAds(tienda.slug, cuerpo.activo));
+    if (accion === 'ads_no_tocar') {
+      return res.status(200).json(await accionNoTocarCampana(tienda.slug, cuerpo.campana_id, cuerpo.valor));
+    }
     if (accion === 'stock_ml') return res.status(200).json(await accionStockEnMl(tienda.slug));
     if (accion === 'sincronizar_stock') {
       return res.status(200).json(await accionSincronizarStock(

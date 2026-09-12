@@ -9431,7 +9431,13 @@ function tablaDeCampanas(campanas) {
 // Mercado Libre actualiza las metricas UNA vez por dia, a las 10 de la
 // manana. Revisar mas seguido seria preguntar por numeros que no cambiaron.
 
-const ICONO_SALUD = { quemando: '\ud83d\udd25', sana: '\u2705', sin_datos: '\u23f3' };
+const ICONO_SALUD = {
+  quemando: '\ud83d\udd25',   // gasta y no rinde
+  sana: '\u2705',
+  sin_datos: '\u23f3',         // todavia no arranco
+  ajustada: '\ud83d\udd27',   // la tocaron hace poco: se le da tiempo
+  excluida: '\ud83d\udd12'    // el vendedor dijo que no se toque
+};
 
 function pintarSaludAds(r) {
   const caja = byId('saludAdsResultado');
@@ -9464,12 +9470,35 @@ function pintarSaludAds(r) {
               (c.estado !== 'active' ? ' <span style="display:inline;color:var(--text-mute);font-size:11.5px;">(pausada)</span>' : '') +
               '<span>' + escapeHtml(c.salud.motivo) + '</span>' +
             '</div>' +
+            // Marcarla para que el automatico no la toque. Ninguna regla
+            // puede saber que los numeros malos eran por falta de stock y
+            // que ya se arreglo: eso lo sabe el vendedor y nadie mas.
+            '<button type="button" class="sx-accion" style="padding:5px 10px;font-size:11.5px;" ' +
+              'data-notocar="' + escapeHtml(String(c.id)) + '" data-valor="' + (c.excluida ? '0' : '1') + '">' +
+              (c.excluida ? 'Dejar que la revise' : 'No tocar esta') + '</button>' +
           '</div>').join('')
       : '') +
     (quemando.length && !r.aplicado
       ? '<div style="margin-top:10px;font-size:12.5px;color:var(--danger);">' +
         'Hay ' + quemando.length + ' quemando plata. Prend\u00e9 el autom\u00e1tico o pausalas a mano en la tabla de abajo.</div>'
-      : '');
+      : '') +
+    '<div style="margin-top:10px;font-size:11.5px;color:var(--text-mute);line-height:1.6;">' +
+      'Se juzga por los <strong>\u00faltimos 7 d\u00edas</strong>, no por el mes: para decidir si apagar ' +
+      'interesa c\u00f3mo viene ahora. Una campa\u00f1a que tocaste hace poco no se juzga hasta ' +
+      'que pase una semana.</div>';
+
+  caja.querySelectorAll('[data-notocar]').forEach(b => {
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await llamarApiMl('ads_no_tocar', { campana_id: b.dataset.notocar, valor: b.dataset.valor === '1' });
+        await revisarSaludAds(false);
+      } catch (err) {
+        alert('No se pudo guardar:\n\n' + err.message);
+        b.disabled = false;
+      }
+    });
+  });
 }
 
 async function revisarSaludAds(aplicar) {
