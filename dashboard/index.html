@@ -684,6 +684,28 @@ tr.fila-elegida > td { background:#EAF4FD; }
 
 .app-user b { color: var(--navy); }
 
+/* ---- Salud de las campanas ---- */
+.sal-caja { border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; background: var(--bg); }
+.sal-linea { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
+.sal-texto { flex: 1; min-width: 200px; font-size: 13px; line-height: 1.55; color: var(--navy); }
+.sal-texto small { display: block; color: var(--text-mute); font-size: 12px; margin-top: 2px; }
+.sal-switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13px; font-weight: 700; color: var(--navy); }
+.sal-switch input { width: 17px; height: 17px; cursor: pointer; accent-color: var(--celeste); }
+.sal-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid var(--line); border-left-width: 4px; border-radius: 9px;
+  padding: 10px 12px; margin-top: 8px; background: #fff;
+}
+.sal-item.quemando { border-left-color: var(--danger); }
+.sal-item.sana { border-left-color: var(--stock); }
+.sal-item.sin_datos { border-left-color: var(--line); }
+.sal-item-txt { flex: 1; min-width: 0; font-size: 13px; }
+.sal-item-txt b { color: var(--navy); }
+.sal-item-txt span { display: block; font-size: 12.5px; margin-top: 2px; line-height: 1.5; }
+.sal-item.quemando .sal-item-txt span { color: var(--danger); }
+.sal-item.sana .sal-item-txt span { color: var(--text-mute); }
+.sal-item.sin_datos .sal-item-txt span { color: var(--text-mute); }
+
 /* ---- Cruce de stock con Mercado Libre ---- */
 .sx-fila {
   display: flex; align-items: flex-start; gap: 11px;
@@ -2477,6 +2499,26 @@ tr:last-child td { border-bottom: none; }
           <span>📢 Publicidad</span>
           <button type="button" id="mlPublicidadBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Consultar campañas</button>
         </div>
+        <!-- El interruptor va ARRIBA de las campanas: es una decision sobre
+             ellas, y esconderlo abajo de una tabla larga es esconderlo. -->
+        <div class="sal-caja" id="saludAdsCaja" style="margin:12px 14px;">
+          <div class="sal-linea">
+            <div class="sal-texto">
+              <label class="sal-switch">
+                <input type="checkbox" id="autoPausarAdsChk">
+                Pausar solas las campañas que queman plata
+              </label>
+              <small>Pausa las que gastan sin vender o se pasan por mucho del ACOS objetivo.
+                     Nunca las reactiva: volver a prenderla es decisión tuya.</small>
+            </div>
+            <button type="button" id="revisarAdsBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">
+              Revisar ahora
+            </button>
+          </div>
+          <div id="saludAdsResultado"></div>
+        </div>
+
         <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
           Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
         </div>
@@ -9381,6 +9423,107 @@ function tablaDeCampanas(campanas) {
     '</tbody></table></div>';
 }
 
+// ---- Salud de las campanas de Ads ----
+// La regla la aplica el servidor (ver saludDeCampana en api/mercadolibre.js).
+// Aca solo se muestra y se prende el automatico.
+//
+// El automatico corre al abrir la solapa de Mercado Libre, y con eso alcanza:
+// Mercado Libre actualiza las metricas UNA vez por dia, a las 10 de la
+// manana. Revisar mas seguido seria preguntar por numeros que no cambiaron.
+
+const ICONO_SALUD = { quemando: '\ud83d\udd25', sana: '\u2705', sin_datos: '\u23f3' };
+
+function pintarSaludAds(r) {
+  const caja = byId('saludAdsResultado');
+  if (!caja) return;
+
+  if (!r || !r.ok) { caja.innerHTML = ''; return; }
+
+  const campanas = r.campanas || [];
+  const quemando = campanas.filter(c => c.salud.estado === 'quemando');
+
+  const pausadasAhora = (r.pausadas || []).length
+    ? '<div style="margin-top:10px;background:#FDECEC;border:1px solid #F5B5B5;border-radius:9px;padding:10px 12px;font-size:13px;color:var(--navy);line-height:1.55;">' +
+        '<strong>Se pausaron ' + r.pausadas.length + ':</strong> ' +
+        r.pausadas.map(p => escapeHtml(p.nombre)).join(', ') + '.' +
+      '</div>'
+    : '';
+
+  const errores = (r.errores || []).length
+    ? '<div style="margin-top:8px;font-size:12.5px;color:var(--danger);">' +
+        r.errores.map(e => escapeHtml(e.nombre + ': ' + e.motivo)).join('<br>') + '</div>'
+    : '';
+
+  caja.innerHTML = pausadasAhora + errores +
+    (campanas.length
+      ? campanas.map(c =>
+          '<div class="sal-item ' + c.salud.estado + '">' +
+            '<span>' + (ICONO_SALUD[c.salud.estado] || '') + '</span>' +
+            '<div class="sal-item-txt">' +
+              '<b>' + escapeHtml(c.nombre) + '</b>' +
+              (c.estado !== 'active' ? ' <span style="display:inline;color:var(--text-mute);font-size:11.5px;">(pausada)</span>' : '') +
+              '<span>' + escapeHtml(c.salud.motivo) + '</span>' +
+            '</div>' +
+          '</div>').join('')
+      : '') +
+    (quemando.length && !r.aplicado
+      ? '<div style="margin-top:10px;font-size:12.5px;color:var(--danger);">' +
+        'Hay ' + quemando.length + ' quemando plata. Prend\u00e9 el autom\u00e1tico o pausalas a mano en la tabla de abajo.</div>'
+      : '');
+}
+
+async function revisarSaludAds(aplicar) {
+  const caja = byId('saludAdsResultado');
+  const boton = byId('revisarAdsBtn');
+  if (boton) { boton.disabled = true; boton.textContent = 'Revisando\u2026'; }
+  if (caja) caja.innerHTML = '<div style="margin-top:8px;font-size:12.5px;">Mirando c\u00f3mo vienen\u2026</div>';
+
+  try {
+    const r = await llamarApiMl('salud_ads', { aplicar: !!aplicar });
+    if (!r.conectado || !r.disponible) {
+      if (caja) caja.innerHTML = '';
+      byId('saludAdsCaja').classList.add('hidden');
+      return null;
+    }
+    pintarSaludAds(r);
+    return r;
+  } catch (err) {
+    if (caja) caja.innerHTML = '<div style="margin-top:8px;font-size:12.5px;color:var(--danger);">' +
+      escapeHtml(err.message) + '</div>';
+    return null;
+  } finally {
+    if (boton) { boton.disabled = false; boton.textContent = 'Revisar ahora'; }
+  }
+}
+
+byId('revisarAdsBtn').addEventListener('click', () => revisarSaludAds(false));
+
+byId('autoPausarAdsChk').addEventListener('change', async (e) => {
+  if (!puedeOperar()) { e.target.checked = !e.target.checked; return; }
+  const activo = e.target.checked;
+
+  // Prenderlo apaga publicidad en vivo: se pregunta antes.
+  if (activo && !confirm('\u00bfPausar solas las campa\u00f1as que queman plata?\n\n' +
+      'Se pausan las que gastaron sin vender, o las que se pasan un 50% del ACOS que vos pusiste.\n' +
+      'Nunca se reactivan solas.')) {
+    e.target.checked = false;
+    return;
+  }
+
+  e.target.disabled = true;
+  try {
+    const r = await llamarApiMl('auto_ads', { activo: activo });
+    if (currentStore) currentStore.ml_auto_pausar_ads = !!activo;
+    if (r.primeraPasada) pintarSaludAds(r.primeraPasada);
+    if (!activo) byId('saludAdsResultado').innerHTML = '';
+  } catch (err) {
+    alert('No se pudo guardar:\n\n' + err.message);
+    e.target.checked = !activo;
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
 // Activar una campana hace que Mercado Libre empiece a gastar plata de la
 // cuenta. Por eso se pregunta antes Y se dice cuanto puede gastar por dia:
 // "\u00bfActivar?" a secas no alcanza para una decision que cuesta plata.
@@ -9526,6 +9669,16 @@ function mostrarVistaMercadoLibre() {
   byId('mercadoLibreView').classList.add('visible');
   renderMercadoLibre();
   cargarEstadoMl();
+
+  // El interruptor refleja lo guardado, y si esta prendido se hace la pasada.
+  // Alcanza con una por apertura: Mercado Libre actualiza las metricas una
+  // vez por dia (10 de la manana), asi que revisar mas seguido es preguntar
+  // por numeros que no cambiaron.
+  const chk = byId('autoPausarAdsChk');
+  if (chk) {
+    chk.checked = !!(currentStore && currentStore.ml_auto_pausar_ads);
+    if (chk.checked) revisarSaludAds(true);
+  }
 }
 
 // ---------- Mercado Libre: publicaciones y vínculos ----------

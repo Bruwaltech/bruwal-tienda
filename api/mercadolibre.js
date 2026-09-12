@@ -476,6 +476,109 @@ async function accionPublicidad(slug) {
 }
 
 
+// ---------- Salud de las campanas ----------
+//
+// Cuando una campana esta quemando plata. Dos umbrales, y los dos existen
+// para NO equivocarse apagando:
+//
+//   MINIMO_CLICS: sin trafico no hay nada que juzgar. Una campana con 5
+//   clics y sin ventas no esta fallando, todavia no arranco.
+//
+//   PASADA_DE_ACOS: no alcanza con pasarse un poco del objetivo. El ACOS se
+//   mueve solo dia a dia, y apagar por un 26% contra un 25% seria apagar
+//   campanas sanas. 1.5 veces el objetivo ya no es ruido.
+//
+// Pausar corta ventas. Ante la duda se deja andando: una campana dudosa
+// cuesta plata, una campana sana apagada cuesta plata Y ventas.
+const MINIMO_CLICS = 40;
+const PASADA_DE_ACOS = 1.5;
+
+function saludDeCampana(c) {
+  const m = (c && (c.metrics || c.metrics_summary)) || {};
+  const invertido = Number(m.cost) || 0;
+  const vendido = Number(m.total_amount) || 0;
+  const clics = Number(m.clicks) || 0;
+  const acos = Number(m.acos) || 0;
+  const objetivo = Number(c.acos_target) || 0;
+
+  if (clics < MINIMO_CLICS || invertido <= 0) {
+    return { estado: 'sin_datos', motivo: 'Todavia no hay suficiente movimiento para juzgarla (' +
+             clics + ' clics).' };
+  }
+
+  if (vendido <= 0) {
+    return { estado: 'quemando', invertido: invertido,
+             motivo: 'Gasto ' + Math.round(invertido) + ' y no vendio nada en ' + clics + ' clics.' };
+  }
+
+  if (objetivo > 0 && acos > objetivo * PASADA_DE_ACOS) {
+    return { estado: 'quemando', invertido: invertido,
+             motivo: 'ACOS ' + acos.toFixed(1) + '% contra un objetivo de ' + objetivo.toFixed(1) + '%.' };
+  }
+
+  return { estado: 'sana',
+           motivo: objetivo > 0 && acos > 0
+             ? 'ACOS ' + acos.toFixed(1) + '% contra un objetivo de ' + objetivo.toFixed(1) + '%.'
+             : 'Viene vendiendo.' };
+}
+
+// Mira las campanas y, si `aplicar` viene en true, pausa las que estan
+// quemando plata.
+//
+// NO reactiva nada, y no es un olvido: una campana pausada deja de generar
+// metricas, asi que nunca puede "mejorar" sola. Volver a prenderla tiene
+// sentido despues de cambiar algo -- el precio, la publicacion, el ACOS
+// objetivo -- y eso lo decide una persona, no una regla.
+async function accionSaludAds(slug, aplicar) {
+  const datos = await accionPublicidad(slug);
+  if (!datos.conectado) return { conectado: false };
+  if (!datos.disponible) return { conectado: true, disponible: false, motivo: datos.motivo };
+  if (!datos.campanas_ok) {
+    return { conectado: true, disponible: true, ok: false,
+             motivo: 'No se pudieron leer las campanas (' + datos.campanas_status + ').' };
+  }
+
+  const lista = (datos.campanas && datos.campanas.results) || [];
+  const revisadas = lista.map((c) => ({
+    id: c.id,
+    nombre: c.name || String(c.id),
+    estado: c.status,
+    presupuesto: Number(c.daily_budget) || 0,
+    salud: saludDeCampana(c)
+  }));
+
+  const aPausar = revisadas.filter((c) => c.salud.estado === 'quemando' && c.estado === 'active');
+
+  if (!aplicar) {
+    return { conectado: true, disponible: true, ok: true, aplicado: false,
+             campanas: revisadas, aPausar: aPausar.length };
+  }
+
+  const pausadas = [], errores = [];
+  for (const c of aPausar) {
+    const r = await accionPublicidadEstado(slug, c.id, 'paused');
+    if (r.ok) pausadas.push({ nombre: c.nombre, motivo: c.salud.motivo, ahorro: c.presupuesto });
+    else errores.push({ nombre: c.nombre, motivo: r.motivo || ('estado ' + r.status) });
+  }
+
+  return { conectado: true, disponible: true, ok: true, aplicado: true,
+           campanas: revisadas, pausadas: pausadas, errores: errores };
+}
+
+async function accionAutoAds(slug, activo) {
+  await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug), {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: { ml_auto_pausar_ads: !!activo }
+  });
+
+  // Al prenderlo se hace una pasada de una. Si no, queda prendido y no pasa
+  // nada visible hasta la proxima vez, y parece que no funciona.
+  const primera = activo ? await accionSaludAds(slug, true) : null;
+  return { ok: true, activo: !!activo, primeraPasada: primera };
+}
+
+
 // Pausar o activar una campana. Este endpoint NO esta en la documentacion
 // publica -- la parte de escritura pide login de Mercado Libre -- asi que se
 // prueban las formas conocidas igual que con la lectura.
@@ -1111,6 +1214,8 @@ module.exports = async (req, res) => {
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
+    if (accion === 'salud_ads') return res.status(200).json(await accionSaludAds(tienda.slug, !!cuerpo.aplicar));
+    if (accion === 'auto_ads') return res.status(200).json(await accionAutoAds(tienda.slug, cuerpo.activo));
     if (accion === 'stock_ml') return res.status(200).json(await accionStockEnMl(tienda.slug));
     if (accion === 'sincronizar_stock') {
       return res.status(200).json(await accionSincronizarStock(
