@@ -10974,9 +10974,22 @@ function moverEnVidriera(desde, hasta) {
   renderVidriera();
 }
 
+// Cual de estos productos le pone la foto a la tarjeta de la categoria en
+// la tienda. Mismo criterio que usa tienda.html: el primero del orden del
+// vendedor que tenga foto, salteando los agotados (que en la tienda caen al
+// final). Si estan todos agotados, el primero con foto igual: mejor una
+// foto de algo sin stock que una tarjeta vacia.
+function portadaDeLaVidriera(lista) {
+  const tieneFoto = (p) => !!(p.image_url || (Array.isArray(p.imagenes) && p.imagenes.length));
+  const agotado = (p) => esProductoFisico(p) && Number(p.stock) <= 0;
+  const conFoto = (lista || []).filter(tieneFoto);
+  return conFoto.find(p => !agotado(p)) || conFoto[0] || null;
+}
+
 function renderVidriera() {
   const lista = byId('vidrieraLista');
   const ultima = vidrieraEnEdicion.length - 1;
+  const portada = portadaDeLaVidriera(vidrieraEnEdicion);
 
   lista.innerHTML = vidrieraEnEdicion.length
     ? vidrieraEnEdicion.map((p, i) =>
@@ -10988,6 +11001,8 @@ function renderVidriera() {
           '<span class="cat-fila-nombre">' + escapeHtml(p.name) +
             (esProductoFisico(p) && Number(p.stock) <= 0
               ? ' <small style="color:var(--danger);font-weight:400;">sin stock</small>' : '') +
+            (portada && String(portada.id) === String(p.id)
+              ? ' <small style="color:var(--celeste);font-weight:700;">\u2b50 foto de la categor\u00eda</small>' : '') +
           '</span>' +
           '<button type="button" class="cat-fila-mover" data-subir="' + i + '"' + (i === 0 ? ' disabled' : '') + '>\u2191</button>' +
           '<button type="button" class="cat-fila-mover" data-bajar="' + i + '"' + (i === ultima ? ' disabled' : '') + '>\u2193</button>' +
@@ -11024,7 +11039,16 @@ function renderVidriera() {
   // despues no se cumple es peor que explicarlo.
   byId('vidrieraAviso').innerHTML = vidrieraEnEdicion.length
     ? 'As\u00ed lo ve tu cliente cuando entra a esta categor\u00eda. Los productos sin stock ' +
-      'caen al final solos, y si \u00e9l elige otro orden (menor precio, ofertas) manda el suyo.'
+      'caen al final solos, y si \u00e9l elige otro orden (menor precio, ofertas) manda el suyo.' +
+      (portada
+        ? '<br><br>\u2b50 La <b>foto de la tarjeta</b> de esta categor\u00eda es la de ' +
+          '<b>' + escapeHtml(portada.name) + '</b>. ' +
+          (String(portada.id) === String((vidrieraEnEdicion[0] || {}).id)
+            ? 'Para cambiarla, sub\u00ed otro producto al primer lugar.'
+            : 'No es el primero de la lista porque los de arriba est\u00e1n sin stock o sin foto. ' +
+              'Para cambiarla, sub\u00ed al primer lugar un producto que tenga las dos cosas.')
+        : '<br><br>Ninguno de estos productos tiene foto, as\u00ed que la tarjeta de la ' +
+          'categor\u00eda sale sin imagen. Con una foto entra mucho mejor por los ojos.')
     : '';
 }
 

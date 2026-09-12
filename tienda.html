@@ -1051,7 +1051,16 @@ function renderTarjetasDeCategoria(categorias){
 
   const htmlRubros = categorias.map(cat => {
     const dentro = productosDe(cat);
-    const conFoto = dentro.find(p => fotosDe(p).length);
+
+    // La foto de la tarjeta es la del primer producto que el cliente va a
+    // ver al entrar: el orden que dejo el vendedor en "Ordenar la vidriera".
+    // NO se usa ordenar(), a proposito: ese respeta el selector del cliente
+    // ("menor precio", "ofertas") y la portada cambiaria sola segun como
+    // estuviera mirando la tienda cada uno.
+    //
+    // Si el primero no tiene foto se sigue buscando: una tarjeta sin foto es
+    // peor que una tarjeta con la foto del segundo.
+    const conFoto = dentro.slice().sort(comoLoOrdenoElVendedor).find(p => fotosDe(p).length);
     const portada = conFoto ? fotosDe(conFoto)[0] : null;
 
     return '<div class="cat-card" data-cat="' + escapeHtml(cat) + '">' +
@@ -1216,21 +1225,28 @@ function ordenar(lista){
     return copia.sort((a, b) =>
       (hayOferta(b) ? porcentajeOff(b) : -1) - (hayOferta(a) ? porcentajeOff(a) : -1));
   // "Recomendados" es el orden del VENDEDOR: lo que el puso primero desde el
-  // panel. Con una sola excepcion, y gana sobre todo lo demas: los agotados
-  // van al final. De nada sirve tener adelante algo que no se puede comprar,
-  // por mas que el vendedor lo haya elegido.
-  return copia.sort((a, b) => {
-    const agotadoA = productoAgotado(a) ? 1 : 0;
-    const agotadoB = productoAgotado(b) ? 1 : 0;
-    if (agotadoA !== agotadoB) return agotadoA - agotadoB;
+  // panel.
+  return copia.sort(comoLoOrdenoElVendedor);
+}
 
-    const posA = posicionEnVidriera(a);
-    const posB = posicionEnVidriera(b);
-    if (posA !== posB) return posA - posB;
+// El orden del vendedor, con una sola excepcion que gana sobre todo lo
+// demas: los agotados van al final. De nada sirve tener adelante algo que no
+// se puede comprar, por mas que el vendedor lo haya elegido.
+//
+// Esta aparte porque lo usan DOS cosas: el listado de adentro de la
+// categoria y la foto de la tarjeta de la portada. Si cada una tuviera su
+// criterio, la tarjeta mostraria una foto y adentro apareceria otro primero.
+function comoLoOrdenoElVendedor(a, b){
+  const agotadoA = productoAgotado(a) ? 1 : 0;
+  const agotadoB = productoAgotado(b) ? 1 : 0;
+  if (agotadoA !== agotadoB) return agotadoA - agotadoB;
 
-    // Los dos sin ordenar: alfabetico, que es un orden estable y previsible.
-    return String(a.name || '').localeCompare(String(b.name || ''), 'es');
-  });
+  const posA = posicionEnVidriera(a);
+  const posB = posicionEnVidriera(b);
+  if (posA !== posB) return posA - posB;
+
+  // Los dos sin ordenar: alfabetico, que es un orden estable y previsible.
+  return String(a.name || '').localeCompare(String(b.name || ''), 'es');
 }
 
 // Un grupo = titulo del rubro + su grilla de productos.
