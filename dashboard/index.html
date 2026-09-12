@@ -3177,6 +3177,36 @@ tr:last-child td { border-bottom: none; }
             style="width:100%;margin-top:10px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
       <i class="fa-solid fa-right-left"></i> Acomodar los productos por categoría
     </button>
+
+    <button type="button" id="abrirVidrieraBtn" class="btn"
+            style="width:100%;margin-top:8px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+      <i class="fa-solid fa-list-ol"></i> Ordenar la vidriera — qué producto va primero
+    </button>
+  </div>
+</div>
+
+<!-- MODAL: ORDENAR LA VIDRIERA -->
+<div class="modal-overlay hidden" id="vidrieraModal">
+  <div class="modal" style="max-width:600px;">
+    <button class="modal-close" id="closeVidrieraModal">✕</button>
+    <h3><i class="fa-solid fa-list-ol" style="color:var(--celeste);"></i> Ordenar la vidriera</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 16px;line-height:1.6;">
+      El orden en que tu cliente ve los productos <strong>dentro de cada categoría</strong>.
+      Arrastrá o usá las flechas. La <b>1</b> es la que aparece primero.
+    </p>
+
+    <div class="acom-fila">
+      <label>Categoría</label>
+      <select id="vidrieraCategoria"></select>
+    </div>
+
+    <div id="vidrieraLista" style="display:flex;flex-direction:column;gap:7px;max-height:46vh;overflow-y:auto;margin:12px 0;"></div>
+
+    <div id="vidrieraAviso" style="font-size:12px;color:var(--text-mute);line-height:1.6;margin-bottom:10px;"></div>
+
+    <button type="button" id="guardarVidrieraBtn" class="btn btn-primary" style="width:100%;">
+      Guardar este orden
+    </button>
   </div>
 </div>
 
@@ -10567,6 +10597,165 @@ function pintarMenuNegocios() {
     abrirCambiarClave();
   });
 }
+
+// ---- Ordenar la vidriera ----
+// Mismo gesto que la lista de categorias: filas numeradas, flechas y
+// arrastre. Que dos cosas parecidas se hagan igual es la mitad de lo
+// prolijo; la otra mitad es que el cliente lo vea en ese orden.
+
+let vidrieraEnEdicion = [];      // los productos de la categoria elegida
+let vidrieraArrastrada = null;
+
+// Como salen hoy en la tienda: primero los que tienen orden puesto, despues
+// los que no, alfabeticos. Misma regla que usa tienda.html, si no el panel
+// mostraria un orden y el cliente veria otro.
+function productosOrdenadosDe(categoria) {
+  const dentro = (products || []).filter(p =>
+    esProductoFisico(p) === esProductoFisico(p) &&
+    !p.solo_interno &&
+    String(p.category || '').trim() === categoria);
+
+  return dentro.sort((a, b) => {
+    const oa = Number.isFinite(Number(a.orden)) && a.orden !== null ? Number(a.orden) : Infinity;
+    const ob = Number.isFinite(Number(b.orden)) && b.orden !== null ? Number(b.orden) : Infinity;
+    if (oa !== ob) return oa - ob;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'es');
+  });
+}
+
+function moverEnVidriera(desde, hasta) {
+  if (hasta < 0 || hasta >= vidrieraEnEdicion.length || desde === hasta) return;
+  const [x] = vidrieraEnEdicion.splice(desde, 1);
+  vidrieraEnEdicion.splice(hasta, 0, x);
+  renderVidriera();
+}
+
+function renderVidriera() {
+  const lista = byId('vidrieraLista');
+  const ultima = vidrieraEnEdicion.length - 1;
+
+  lista.innerHTML = vidrieraEnEdicion.length
+    ? vidrieraEnEdicion.map((p, i) =>
+        '<div class="cat-fila" draggable="true" data-pos="' + i + '">' +
+          '<span class="cat-fila-num">' + (i + 1) + '</span>' +
+          (p.image_url
+            ? '<img src="' + escapeHtml(p.image_url) + '" style="width:30px;height:30px;object-fit:cover;border-radius:5px;flex-shrink:0;">'
+            : '') +
+          '<span class="cat-fila-nombre">' + escapeHtml(p.name) +
+            (esProductoFisico(p) && Number(p.stock) <= 0
+              ? ' <small style="color:var(--danger);font-weight:400;">sin stock</small>' : '') +
+          '</span>' +
+          '<button type="button" class="cat-fila-mover" data-subir="' + i + '"' + (i === 0 ? ' disabled' : '') + '>\u2191</button>' +
+          '<button type="button" class="cat-fila-mover" data-bajar="' + i + '"' + (i === ultima ? ' disabled' : '') + '>\u2193</button>' +
+        '</div>').join('')
+    : '<div style="padding:18px;text-align:center;color:var(--text-mute);font-size:13.5px;">Esta categor\u00eda no tiene productos.</div>';
+
+  lista.querySelectorAll('[data-subir]').forEach(b =>
+    b.addEventListener('click', () => moverEnVidriera(+b.dataset.subir, +b.dataset.subir - 1)));
+  lista.querySelectorAll('[data-bajar]').forEach(b =>
+    b.addEventListener('click', () => moverEnVidriera(+b.dataset.bajar, +b.dataset.bajar + 1)));
+
+  lista.querySelectorAll('.cat-fila').forEach(fila => {
+    fila.addEventListener('dragstart', () => { vidrieraArrastrada = +fila.dataset.pos; fila.classList.add('arrastrando'); });
+    fila.addEventListener('dragend', () => {
+      vidrieraArrastrada = null;
+      lista.querySelectorAll('.cat-fila').forEach(f => f.classList.remove('arrastrando', 'encima'));
+    });
+    fila.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (vidrieraArrastrada !== null && +fila.dataset.pos !== vidrieraArrastrada) fila.classList.add('encima');
+    });
+    fila.addEventListener('dragleave', () => fila.classList.remove('encima'));
+    fila.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (vidrieraArrastrada === null) return;
+      moverEnVidriera(vidrieraArrastrada, +fila.dataset.pos);
+      vidrieraArrastrada = null;
+    });
+  });
+
+  // Lo que el cliente ve NO es exactamente esta lista, y hay que decirlo:
+  // los agotados caen al final solos, y si el cliente elige otro orden
+  // (menor precio, ofertas) manda el suyo. Prometer un orden exacto que
+  // despues no se cumple es peor que explicarlo.
+  byId('vidrieraAviso').innerHTML = vidrieraEnEdicion.length
+    ? 'As\u00ed lo ve tu cliente cuando entra a esta categor\u00eda. Los productos sin stock ' +
+      'caen al final solos, y si \u00e9l elige otro orden (menor precio, ofertas) manda el suyo.'
+    : '';
+}
+
+function cargarCategoriaVidriera(cat) {
+  vidrieraEnEdicion = productosOrdenadosDe(cat).slice();
+  renderVidriera();
+}
+
+byId('abrirVidrieraBtn').addEventListener('click', () => {
+  hide(byId('categoriasModal'));
+
+  const cats = [...new Set((products || [])
+    .filter(p => !p.solo_interno)
+    .map(p => String(p.category || '').trim())
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+
+  const sel = byId('vidrieraCategoria');
+  sel.innerHTML = cats.length
+    ? cats.map(c => '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>').join('')
+    : '<option value="">Todav\u00eda no cargaste categor\u00edas</option>';
+
+  if (cats.length) cargarCategoriaVidriera(cats[0]);
+  else { vidrieraEnEdicion = []; renderVidriera(); }
+
+  show(byId('vidrieraModal'));
+});
+
+byId('vidrieraCategoria').addEventListener('change', (e) => cargarCategoriaVidriera(e.target.value));
+byId('closeVidrieraModal').addEventListener('click', () => hide(byId('vidrieraModal')));
+
+byId('guardarVidrieraBtn').addEventListener('click', async () => {
+  if (!puedeOperar() || !vidrieraEnEdicion.length) return;
+
+  const boton = byId('guardarVidrieraBtn');
+  boton.disabled = true;
+
+  // Solo se escriben los que CAMBIARON de lugar. Mover uno solo en una
+  // categoria de 40 no tiene por que disparar 40 escrituras.
+  const cambios = [];
+  vidrieraEnEdicion.forEach((p, i) => {
+    const nuevo = i + 1;
+    if (Number(p.orden) !== nuevo) cambios.push({ id: p.id, orden: nuevo });
+  });
+
+  if (!cambios.length) {
+    boton.disabled = false;
+    hide(byId('vidrieraModal'));
+    return;
+  }
+
+  try {
+    for (let i = 0; i < cambios.length; i++) {
+      boton.textContent = 'Guardando\u2026 ' + (i + 1) + ' de ' + cambios.length;
+      const { error } = await sb.from('store_products')
+        .update({ orden: cambios[i].orden }).eq('id', cambios[i].id);
+      if (error) throw error;
+
+      // La copia en memoria se actualiza junto con la base: si algo falla a
+      // mitad de camino, lo que queda en pantalla es lo que quedo guardado.
+      const local = products.find(x => String(x.id) === String(cambios[i].id));
+      if (local) local.orden = cambios[i].orden;
+    }
+
+    hide(byId('vidrieraModal'));
+    renderProducts();
+  } catch (err) {
+    const msg = String(err && err.message ? err.message : err);
+    alert(msg.includes('orden')
+      ? 'Falta la columna "orden" en la base.\n\nCorr\u00e9 schema/47-orden-productos.sql en Supabase.'
+      : 'No se pudo guardar el orden:\n\n' + msg);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = 'Guardar este orden';
+  }
+});
 
 // ---- Cambiar la contrasena estando adentro ----
 function abrirCambiarClave() {

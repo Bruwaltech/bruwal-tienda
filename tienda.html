@@ -1146,6 +1146,16 @@ function precioParaOrdenar(p){
 // Un servicio nunca se agota; un producto fisico sin stock si.
 const productoAgotado = (p) => esProductoFisico(p) && !(Number(p.stock) > 0);
 
+// El orden que puso el vendedor desde el panel (Categorias -> Ordenar la
+// vidriera). null = no lo ordeno: esos van DESPUES de los ordenados,
+// alfabeticos entre ellos. Si los sin ordenar valieran 0 quedarian todos
+// primeros, y ordenar tres productos mandaria el resto del catalogo al
+// frente sin que nadie lo pida.
+const posicionEnVidriera = (p) => {
+  const n = Number(p && p.orden);
+  return (p && p.orden !== null && p.orden !== undefined && isFinite(n)) ? n : Infinity;
+};
+
 // OJO: siempre sobre una COPIA. sort() ordena en el lugar, y ordenar
 // `products` directo dejaria la tienda ordenada para siempre -- volver a
 // "Recomendados" ya no podria recuperar el orden original.
@@ -1160,9 +1170,22 @@ function ordenar(lista){
   if (ordenElegido === 'ofertas')
     return copia.sort((a, b) =>
       (hayOferta(b) ? porcentajeOff(b) : -1) - (hayOferta(a) ? porcentajeOff(a) : -1));
-  // Recomendados = como los trae la tienda, pero con los agotados al final:
-  // lo primero que ve el cliente tiene que ser algo que pueda comprar.
-  return copia.sort((a, b) => (productoAgotado(a) ? 1 : 0) - (productoAgotado(b) ? 1 : 0));
+  // "Recomendados" es el orden del VENDEDOR: lo que el puso primero desde el
+  // panel. Con una sola excepcion, y gana sobre todo lo demas: los agotados
+  // van al final. De nada sirve tener adelante algo que no se puede comprar,
+  // por mas que el vendedor lo haya elegido.
+  return copia.sort((a, b) => {
+    const agotadoA = productoAgotado(a) ? 1 : 0;
+    const agotadoB = productoAgotado(b) ? 1 : 0;
+    if (agotadoA !== agotadoB) return agotadoA - agotadoB;
+
+    const posA = posicionEnVidriera(a);
+    const posB = posicionEnVidriera(b);
+    if (posA !== posB) return posA - posB;
+
+    // Los dos sin ordenar: alfabetico, que es un orden estable y previsible.
+    return String(a.name || '').localeCompare(String(b.name || ''), 'es');
+  });
 }
 
 // Un grupo = titulo del rubro + su grilla de productos.
