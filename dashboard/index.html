@@ -11165,6 +11165,209 @@ function pintarMenuNegocios() {
   });
 }
 
+// ---- La imagen del producto, para una historia o un estado ----
+// 1080x1350 es el formato vertical de Instagram y el que mejor entra en un
+// estado de WhatsApp: ocupa la pantalla del telefono casi entera.
+
+const IMG_ANCHO = 1080;
+const IMG_ALTO = 1350;
+
+// La foto viene de otro dominio (el storage). Sin crossOrigin el canvas
+// queda "manchado" y exportarlo tira error: el navegador no deja sacar
+// pixeles de una imagen de otro lado sin permiso. El storage lo da
+// (Access-Control-Allow-Origin: *), pero hay que pedirlo explicitamente.
+function cargarImagen(url){
+  return new Promise((resolve) => {
+    if (!url) return resolve(null);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);   // sin foto se arma igual
+    img.src = url;
+  });
+}
+
+// Texto que no entra en el ancho: se parte en lineas y, si se pasa del
+// maximo, la ultima termina en puntos suspensivos. Un nombre largo cortado
+// a lo bruto se lee como un error.
+function partirTexto(ctx, texto, ancho, maxLineas){
+  const palabras = String(texto || '').split(/\s+/).filter(Boolean);
+  const lineas = [];
+  let actual = '';
+
+  palabras.forEach((palabra) => {
+    const prueba = actual ? actual + ' ' + palabra : palabra;
+    if (ctx.measureText(prueba).width <= ancho || !actual) {
+      actual = prueba;
+    } else {
+      lineas.push(actual);
+      actual = palabra;
+    }
+  });
+  if (actual) lineas.push(actual);
+
+  if (lineas.length > maxLineas) {
+    const ultima = lineas[maxLineas - 1];
+    let recortada = ultima;
+    while (recortada && ctx.measureText(recortada + '\u2026').width > ancho) {
+      recortada = recortada.slice(0, -1);
+    }
+    lineas.length = maxLineas;
+    lineas[maxLineas - 1] = recortada + '\u2026';
+  }
+  return lineas;
+}
+
+// La foto entra recortada, no deformada: una pava estirada para llenar el
+// cuadrado se ve mal y no la comparte nadie.
+function dibujarCubriendo(ctx, img, x, y, ancho, alto){
+  const escala = Math.max(ancho / img.width, alto / img.height);
+  const w = img.width * escala;
+  const h = img.height * escala;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, ancho, alto);
+  ctx.clip();
+  ctx.drawImage(img, x + (ancho - w) / 2, y + (alto - h) / 2, w, h);
+  ctx.restore();
+}
+
+async function armarImagenDelProducto(p){
+  const lienzo = document.createElement('canvas');
+  lienzo.width = IMG_ANCHO;
+  lienzo.height = IMG_ALTO;
+  const ctx = lienzo.getContext('2d');
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, IMG_ANCHO, IMG_ALTO);
+
+  // --- la foto, cuadrada arriba
+  // Acá la foto sale del producto directo: fotosDe() es de la tienda.
+  const portada = (Array.isArray(p.imagenes) && p.imagenes.length) ? p.imagenes[0] : (p.image_url || null);
+  const img = await cargarImagen(portada);
+  // 880 y no 1080: abajo tienen que entrar el nombre (hasta dos lineas), el
+  // precio y el pie. Con 270px de alto el precio terminaba dibujado encima
+  // del nombre del negocio.
+  const altoFoto = 880;
+  if (img) {
+    dibujarCubriendo(ctx, img, 0, 0, IMG_ANCHO, altoFoto);
+  } else {
+    ctx.fillStyle = '#E8EEF4';
+    ctx.fillRect(0, 0, IMG_ANCHO, altoFoto);
+    ctx.fillStyle = '#8FA3B5';
+    ctx.font = '600 56px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Sin foto', IMG_ANCHO / 2, altoFoto / 2);
+    ctx.textAlign = 'left';
+  }
+
+  // --- el cartel de oferta, arriba a la izquierda
+  if (hayOferta(p)) {
+    const off = porcentajeOff(p);
+    if (off > 0) {
+      ctx.fillStyle = '#DC2626';
+      ctx.fillRect(40, 40, 230, 92);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 52px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(off + '% OFF', 155, 104);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // --- abajo: nombre, precio y de quien es
+  const margen = 56;
+  let y = altoFoto + 86;
+
+  ctx.fillStyle = '#0F2740';
+  ctx.font = '700 54px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  partirTexto(ctx, p.name, IMG_ANCHO - margen * 2, 2).forEach((linea) => {
+    ctx.fillText(linea, margen, y);
+    y += 62;
+  });
+
+  // Las estrellas, si las tiene. Es lo que mas empuja a entrar y ocupa una
+  // linea: por eso va entre el nombre y el precio, no perdida en un rincon.
+  if (p.ml_nota != null && Number(p.ml_nota) > 0 && Number(p.ml_opiniones) > 0) {
+    ctx.font = '600 38px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.fillStyle = '#B8860B';
+    ctx.fillText('\u2605 ' + Number(p.ml_nota).toFixed(1).replace('.', ',') +
+                 '  (' + Number(p.ml_opiniones) + ' opiniones)', margen, y + 8);
+    y += 46;
+  }
+
+  y += 26;
+  if (p.mostrar_precio === false) {
+    ctx.fillStyle = '#2F8FE0';
+    ctx.font = '800 60px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.fillText('Consultar precio', margen, y);
+  } else {
+    const conVariantes = p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length;
+    const texto = (conVariantes ? 'Desde ' : '') + money(precioVigente(p));
+    ctx.fillStyle = '#2F8FE0';
+    ctx.font = '800 72px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.fillText(texto, margen, y);
+
+    // El precio de antes, tachado al lado: la oferta se entiende sola.
+    if (hayOferta(p)) {
+      const anchoPrecio = ctx.measureText(texto).width;
+      const viejo = money(Number(p.price));
+      ctx.font = '600 42px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.fillStyle = '#8FA3B5';
+      const x = margen + anchoPrecio + 24;
+      ctx.fillText(viejo, x, y);
+      const ancho = ctx.measureText(viejo).width;
+      ctx.fillRect(x, y - 14, ancho, 3);
+    }
+  }
+
+  // --- el pie: de que negocio es. Sin esto la imagen viaja sola y nadie
+  //     sabe a quien pedirsela.
+  const negocio = (currentStore && (currentStore.business_name || currentStore.name)) || '';
+  ctx.fillStyle = '#5A6B7B';
+  ctx.font = '600 36px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.fillText(negocio ? negocio.slice(0, 42) : 'Ped\u00edmelo por WhatsApp', margen, IMG_ALTO - 60);
+
+  return new Promise((resolve) => lienzo.toBlob(resolve, 'image/jpeg', 0.92));
+}
+
+// Compartir de verdad (el menu del telefono) cuando se puede, y si no,
+// descargar. En la compu casi nunca se puede compartir un archivo, y
+// descargarlo es lo que sirve: de ahi se sube a Instagram.
+async function compartirImagenDelProducto(p){
+  const blob = await armarImagenDelProducto(p);
+  if (!blob) { alert('No se pudo armar la imagen.'); return; }
+
+  const nombre = String(p.name || 'producto')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 40);
+  const archivo = new File([blob], (nombre || 'producto') + '.jpg', { type: 'image/jpeg' });
+
+  if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+    try {
+      // El link va en el texto: la imagen sola no lleva a ningun lado, y el
+      // que la ve tiene que poder entrar a comprar.
+      const link = window.location.origin + '/' + encodeURIComponent(currentStore.slug) +
+                   '?p=' + encodeURIComponent(p.id);
+      await navigator.share({
+        files: [archivo],
+        text: p.name + ' \u2014 ' + money(precioVigente(p)) + '\n' + link
+      });
+      return;
+    } catch (e) { return; }   // lo cancelo, no es un error
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = archivo.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  alert('\u2713 Imagen descargada.\n\nSub\u00edla a tu historia o a tu estado de WhatsApp.');
+}
+
 // ---- Ordenar la vidriera ----
 // Mismo gesto que la lista de categorias: filas numeradas, flechas y
 // arrastre. Que dos cosas parecidas se hagan igual es la mitad de lo
@@ -13183,6 +13386,7 @@ function renderProducts() {
         ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
         : '') +
       '<button class="icon-btn" data-etiqueta="' + p.id + '" title="Imprimir etiqueta" style="color:var(--celeste);">🏷️</button>' +
+      '<button class="icon-btn" data-imagen-redes="' + p.id + '" title="Imagen para tu historia o tu estado" style="color:#C13584;">📷</button>' +
       '<button class="icon-btn" data-oferta="' + p.id + '" title="Poner o sacar oferta" style="color:#1B7F4B;">' +
         (hayOferta(p) ? '−' + porcentajeOff(p) + '%' : '% Oferta') + '</button>' +
       '<button class="icon-btn" data-edit="' + p.id + '">Editar</button>' +
@@ -13281,6 +13485,7 @@ function renderProducts() {
           ? '<button class="icon-btn" data-reponer="' + p.id + '" title="Sumar mercadería nueva al stock" style="color:var(--stock);">+ Reponer</button>'
           : '') +
         '<button class="icon-btn" data-etiqueta="' + p.id + '" title="Imprimir etiqueta" style="color:var(--celeste);">🏷️</button>' +
+        '<button class="icon-btn" data-imagen-redes="' + p.id + '" title="Imagen para tu historia o tu estado" style="color:#C13584;">📷</button>' +
         '<button class="icon-btn" data-oferta="' + p.id + '" title="Poner o sacar oferta" style="color:#1B7F4B;">' +
           (hayOferta(p) ? '−' + porcentajeOff(p) + '%' : '% Oferta') + '</button>' +
         '<button class="icon-btn" data-edit="' + p.id + '">Editar</button><button class="icon-btn danger" data-del="' + p.id + '">Eliminar</button></div></td>' +
@@ -13329,6 +13534,24 @@ function renderProducts() {
   }));
   // Con variantes hay que elegir cuál combinación exacta se está
   // etiquetando (ej: "Buzo negro XL") antes de poder imprimir.
+  // Armar la imagen tarda un segundo (hay que bajar la foto y dibujarla),
+  // asi que el boton avisa que esta trabajando en vez de parecer colgado.
+  byId('productsBody').querySelectorAll('[data-imagen-redes]').forEach(b => b.addEventListener('click', async () => {
+    const prod = products.find(x => String(x.id) === String(b.getAttribute('data-imagen-redes')));
+    if (!prod) return;
+    const antes = b.textContent;
+    b.disabled = true;
+    b.textContent = '\u23f3';
+    try {
+      await compartirImagenDelProducto(prod);
+    } catch (err) {
+      alert('No se pudo armar la imagen:\n\n' + (err && err.message ? err.message : err));
+    } finally {
+      b.disabled = false;
+      b.textContent = antes;
+    }
+  }));
+
   byId('productsBody').querySelectorAll('[data-etiqueta]').forEach(b => b.addEventListener('click', () => {
     const p = products.find(x => String(x.id) === String(b.getAttribute('data-etiqueta')));
     if (!p) return;
