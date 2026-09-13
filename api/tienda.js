@@ -23,6 +23,21 @@ function escapar(texto) {
     .replace(/'/g, '&#39;');
 }
 
+// Las fotos de nuestro storage se sirven por /api/foto, que las entrega en
+// un tamaño que las vistas previas aceptan: WhatsApp no muestra la imagen
+// cuando pesa de más, y ahí el link se comparte con un recuadro vacío.
+//
+// Una foto de otro lado (alguna cargada por URL) se deja tal cual: no
+// tenemos por qué hacer de proxy de imágenes ajenas.
+const EN_NUESTRO_STORAGE = '/storage/v1/object/public/';
+
+function paraVistaPrevia(url, base) {
+  const corte = String(url || '').indexOf(EN_NUESTRO_STORAGE);
+  if (corte === -1) return url;
+  const objeto = String(url).slice(corte + EN_NUESTRO_STORAGE.length);
+  return base + '/api/foto?o=' + encodeURIComponent(objeto);
+}
+
 module.exports = async (req, res) => {
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const base = 'https://' + host;
@@ -153,7 +168,7 @@ module.exports = async (req, res) => {
           // foto de producto casi nunca tiene esa forma, y declararlas mal
           // hace que WhatsApp la recorte o la estire.
           html = html
-            .replace(/(<meta property="og:image" content=")[^"]*(")/, '$1' + escapar(foto) + '$2')
+            .replace(/(<meta property="og:image" content=")[^"]*(")/, '$1' + escapar(paraVistaPrevia(foto, base)) + '$2')
             .replace(/<meta property="og:image:width" content="[^"]*">\s*/, '')
             .replace(/<meta property="og:image:height" content="[^"]*">\s*/, '');
         }
@@ -185,9 +200,11 @@ module.exports = async (req, res) => {
             ? tienda.description + ' — Mirá el catálogo y pedí por WhatsApp.'
             : 'Mirá el catálogo y pedí por WhatsApp.'
         );
-        // El logo del negocio; si no cargó ninguno, la imagen de BRUWAL
+        // El logo del negocio; si no cargó ninguno, la imagen de BRUWAL.
+        // Por /api/foto igual que las de producto: un logo pesado deja la
+        // vista previa de la tienda sin imagen, con el mismo resultado.
         const imagen = tienda.image_url
-          ? escapar(tienda.image_url)
+          ? escapar(paraVistaPrevia(tienda.image_url, base))
           : base + '/og-tienda.png';
 
         html = html
