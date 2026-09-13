@@ -2542,6 +2542,25 @@ tr:last-child td { border-bottom: none; }
 
       <div class="panel" style="margin-bottom:20px;">
         <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span>⭐ Opiniones de tus publicaciones</span>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="opinionesTexto" maxlength="40" placeholder="Ej: creatina — o vacío para todas"
+                   style="width:auto;min-width:210px;padding:7px 10px;font-size:13px;">
+            <button type="button" id="verOpinionesBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+              Ver
+            </button>
+          </div>
+        </div>
+        <div id="opinionesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+          Las estrellas que tienen tus publicaciones en Mercado Libre, y tu
+          reputación como vendedor. Por ahora <strong>solo se miran acá</strong>:
+          todavía no se muestran en tu tienda.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:20px;">
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
           <span>🧾 Lo que te cobra Mercado Libre</span>
           <button type="button" id="verFacturacionBtn" class="btn"
                   style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
@@ -9205,6 +9224,86 @@ function diferenciasDeStock(datos) {
 
   return filas.sort((a, b) => a.orden - b.orden);
 }
+
+// Las opiniones de las publicaciones, tal como las devuelve Mercado Libre.
+//
+// Esta pantalla es una PRUEBA con cara de funcion: muestra lo que vino, sin
+// interpretarlo de mas, porque lo que hay que decidir despues es si ese dato
+// da para ponerlo en la tienda. Los campos crudos se muestran a proposito.
+async function verOpiniones() {
+  const cuerpo = byId('opinionesCuerpo');
+  const boton = byId('verOpinionesBtn');
+  boton.disabled = true;
+  cuerpo.textContent = 'Preguntando a Mercado Libre\u2026';
+
+  try {
+    const r = await llamarApiMl('opiniones', { texto: byId('opinionesTexto').value.trim() });
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conect\u00e1 tu cuenta en <strong>Configuraci\u00f3n \u2192 Mercado Libre</strong>.';
+      return;
+    }
+
+    const v = r.vendedor || {};
+    // La reputacion del VENDEDOR habla de tu atencion; la nota de cada
+    // publicacion habla del producto. Son dos cosas distintas y van
+    // separadas para que no se lean como una sola.
+    const bloqueVendedor = v.error
+      ? '<div style="color:var(--danger);margin-bottom:12px;">Tu reputaci\u00f3n no se pudo leer: ' +
+        escapeHtml(v.error) + '</div>'
+      : '<div style="background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:14px;">' +
+          '<div style="font-weight:700;color:var(--navy);">Tu reputaci\u00f3n como vendedor</div>' +
+          '<div>' + (v.ventas || 0) + ' ventas' +
+            (v.positivas != null ? ' \u00b7 ' + Math.round(v.positivas * 100) + '% positivas' : '') +
+            (v.nivel ? ' \u00b7 nivel ' + escapeHtml(String(v.nivel)) : '') + '</div>' +
+          '<div style="font-size:12px;color:var(--text-mute);margin-top:4px;">' +
+            'Esto habla de tu atenci\u00f3n, no de un producto.</div>' +
+        '</div>';
+
+    const pubs = r.publicaciones || [];
+    if (!pubs.length) {
+      cuerpo.innerHTML = bloqueVendedor +
+        (r.motivo ? escapeHtml(r.motivo) : 'Ninguna publicaci\u00f3n coincide con ese texto.');
+      return;
+    }
+
+    const filas = pubs.map(p =>
+      '<tr>' +
+        '<td style="padding:6px 8px;">' + escapeHtml(p.titulo || p.item) +
+          '<div style="font-size:11px;color:var(--text-mute);">' + escapeHtml(p.item) + '</div></td>' +
+        '<td style="padding:6px 8px;text-align:center;white-space:nowrap;">' +
+          (p.error ? '<span style="color:var(--danger);">' + escapeHtml(p.error) + '</span>'
+                   : (p.nota != null ? '\u2b50 ' + p.nota.toFixed(1) : '\u2014')) + '</td>' +
+        '<td style="padding:6px 8px;text-align:center;">' + (p.error ? '' : (p.cuantas || 0)) + '</td>' +
+        '<td style="padding:6px 8px;font-size:11px;color:var(--text-mute);">' +
+          escapeHtml((p.campos || []).join(', ')) + '</td>' +
+      '</tr>').join('');
+
+    const conNota = pubs.filter(p => p.nota != null).length;
+
+    cuerpo.innerHTML = bloqueVendedor +
+      '<div style="margin-bottom:10px;">' +
+        'Consultadas <b>' + r.consultadas + '</b> de <b>' + r.vinculadas + '</b> publicaciones vinculadas. ' +
+        '<b>' + conNota + '</b> con nota.' +
+      '</div>' +
+      '<div style="overflow-x:auto;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="text-align:left;color:var(--text-mute);font-size:11px;text-transform:uppercase;">' +
+          '<th style="padding:6px 8px;">Publicaci\u00f3n</th>' +
+          '<th style="padding:6px 8px;text-align:center;">Nota</th>' +
+          '<th style="padding:6px 8px;text-align:center;">Opiniones</th>' +
+          '<th style="padding:6px 8px;">Campos que devolvi\u00f3 ML</th>' +
+        '</tr></thead><tbody>' + filas + '</tbody></table></div>';
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">' +
+      escapeHtml(err && err.message ? err.message : String(err)) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+byId('verOpinionesBtn').addEventListener('click', verOpiniones);
+byId('opinionesTexto').addEventListener('keydown', (e) => { if (e.key === 'Enter') verOpiniones(); });
 
 async function verStockCruzado() {
   const cuerpo = byId('stockCruzadoCuerpo');

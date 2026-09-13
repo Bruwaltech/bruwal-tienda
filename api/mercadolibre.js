@@ -1170,6 +1170,94 @@ async function accionImportarVenta(slug, mlOrderId) {
 
 // ---------- Acciones ----------
 
+// Las opiniones de las publicaciones vinculadas.
+//
+// DOS COSAS DISTINTAS, y conviene no mezclarlas:
+//
+//  - La nota de la PUBLICACION (/reviews/item) habla del producto. Si la
+//    publicacion va por catalogo, esas opiniones pueden ser de gente que le
+//    compro a OTRO vendedor: sirven para el producto, no para vos.
+//  - La reputacion del VENDEDOR (/users) habla de tu atencion: cuantas
+//    ventas y que porcentaje salio bien. Eso si es tuyo.
+//
+// `texto` filtra por titulo para poder probar con dos o tres publicaciones
+// sin esperar cuarenta llamadas.
+const TOPE_OPINIONES = 15;
+
+async function accionOpiniones(slug, texto) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+
+  const vinculos = await sb('/rest/v1/store_ml_vinculos?store_slug=eq.' + encodeURIComponent(slug) +
+                            '&select=ml_item_id,titulo_ml,product_id');
+  if (!vinculos || !vinculos.length) {
+    return { conectado: true, ok: true, publicaciones: [], motivo: 'No hay publicaciones vinculadas.' };
+  }
+
+  const buscado = String(texto || '').trim().toLowerCase();
+  const filtrados = buscado
+    ? vinculos.filter((v) => String(v.titulo_ml || '').toLowerCase().includes(buscado))
+    : vinculos;
+
+  // Una publicacion con variantes tiene un vinculo por variante: las
+  // opiniones son de la publicacion, no de cada variante.
+  const vistos = new Map();
+  filtrados.forEach((v) => {
+    const id = String(v.ml_item_id);
+    if (!vistos.has(id)) vistos.set(id, v.titulo_ml || id);
+  });
+  const ids = [...vistos.keys()].slice(0, TOPE_OPINIONES);
+
+  const publicaciones = [];
+  for (const id of ids) {
+    try {
+      const r = await pedirAMl('/reviews/item/' + encodeURIComponent(id), token);
+      publicaciones.push({
+        item: id,
+        titulo: vistos.get(id),
+        nota: (r && r.rating_average != null) ? Number(r.rating_average) : null,
+        cuantas: Number((r && r.paging && r.paging.total) != null ? r.paging.total : (r && r.reviews ? r.reviews.length : 0)) || 0,
+        // Se devuelven los nombres de los campos que vinieron: con eso se ve
+        // la forma real de la respuesta sin tener que adivinarla.
+        campos: r && typeof r === 'object' ? Object.keys(r) : [],
+        muestra: (r && Array.isArray(r.reviews) && r.reviews[0]) ? r.reviews[0] : null
+      });
+    } catch (err) {
+      // Una publicacion que falla no puede tirar abajo a las otras: lo que
+      // interesa de esta prueba es justamente cual anda y cual no.
+      publicaciones.push({ item: id, titulo: vistos.get(id), error: String(err && err.message || err) });
+    }
+  }
+
+  // La reputacion del vendedor, que es una sola llamada para toda la tienda.
+  let vendedor = null;
+  try {
+    const u = await pedirAMl('/users/' + encodeURIComponent(cuenta.ml_user_id), token);
+    const rep = (u && u.seller_reputation) || {};
+    const t = (rep.transactions) || {};
+    vendedor = {
+      nickname: u && u.nickname,
+      nivel: rep.level_id || null,
+      ventas: Number(t.total) || 0,
+      positivas: (t.ratings && t.ratings.positive != null) ? Number(t.ratings.positive) : null,
+      negativas: (t.ratings && t.ratings.negative != null) ? Number(t.ratings.negative) : null
+    };
+  } catch (err) {
+    vendedor = { error: String(err && err.message || err) };
+  }
+
+  return {
+    conectado: true,
+    ok: true,
+    vinculadas: vistos.size,
+    consultadas: ids.length,
+    publicaciones: publicaciones,
+    vendedor: vendedor
+  };
+}
+
 async function accionEstado(slug) {
   const filas = await sb('/rest/v1/store_ml_cuenta?store_slug=eq.' + encodeURIComponent(slug) +
                          '&select=ml_user_id,nickname,conectado_en');
@@ -1279,6 +1367,9 @@ module.exports = async (req, res) => {
     if (accion === 'auto_ads') return res.status(200).json(await accionAutoAds(tienda.slug, cuerpo.activo));
     if (accion === 'ads_no_tocar') {
       return res.status(200).json(await accionNoTocarCampana(tienda.slug, cuerpo.campana_id, cuerpo.valor));
+    }
+    if (accion === 'opiniones') {
+      return res.status(200).json(await accionOpiniones(tienda.slug, cuerpo.texto || (req.query || {}).texto));
     }
     if (accion === 'stock_ml') return res.status(200).json(await accionStockEnMl(tienda.slug));
     if (accion === 'sincronizar_stock') {
