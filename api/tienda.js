@@ -48,25 +48,38 @@ module.exports = async (req, res) => {
 
   try {
     if (slug && idProducto) {
-      const consultaProd = SUPABASE_URL + '/rest/v1/store_products' +
+      // Los campos de siempre y los que se fueron sumando, separados a
+      // proposito: PostgREST rechaza la consulta ENTERA si UNO solo del
+      // select no existe (42703). Con los dos grupos aparte se puede
+      // reintentar sin los nuevos y que la vista previa salga igual.
+      const CAMPOS_BASE = 'name,description,price,precio_oferta,image_url,imagenes,mostrar_precio,solo_interno';
+      const CAMPOS_EXTRA = 'stock,tipo,ml_nota,ml_opiniones';
+
+      const pedirProducto = (campos) => fetch(
+        SUPABASE_URL + '/rest/v1/store_products' +
         '?id=eq.' + encodeURIComponent(idProducto) +
         '&store_slug=eq.' + encodeURIComponent(slug) +
-        '&select=name,description,price,precio_oferta,image_url,imagenes,mostrar_precio,solo_interno' +
-        ',marca,category,stock,tipo,ml_nota,ml_opiniones';
+        '&select=' + campos,
+        { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } }
+      ).then((r) => r.json()).catch(() => null);
 
       // Las dos consultas juntas: el nombre del negocio va en la vista
       // previa y pedirlo despues seria un viaje mas contra el reloj de la
       // funcion.
-      const [rp, rt] = await Promise.all([
-        fetch(consultaProd, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } }),
+      const [filasPrimeras, filasTienda] = await Promise.all([
+        pedirProducto(CAMPOS_BASE + ',' + CAMPOS_EXTRA),
         fetch(SUPABASE_URL + '/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) +
               '&select=business_name', {
           headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
-        })
+        }).then((r) => r.json()).catch(() => null)
       ]);
-      const filasProd = await rp.json();
+
+      // Si algun campo nuevo no existe todavia en esta base, se vuelve a
+      // pedir con los de siempre. Una migracion pendiente puede dejar la
+      // vista previa mas pobre; no puede dejarla rota.
+      const filasProd = Array.isArray(filasPrimeras) ? filasPrimeras : await pedirProducto(CAMPOS_BASE);
+
       const prod = Array.isArray(filasProd) ? filasProd[0] : null;
-      const filasTienda = await rt.json().catch(() => null);
       const nombreTienda = (Array.isArray(filasTienda) && filasTienda[0] && filasTienda[0].business_name) || '';
 
       // solo_interno son repuestos que el duenio usa desde el panel y que
@@ -96,8 +109,6 @@ module.exports = async (req, res) => {
         if (oferta > 0 && lista > 0 && oferta < lista) {
           partes.push('\u00a1OFERTA! Antes $' + lista.toLocaleString('es-AR'));
         }
-        if (prod.marca) partes.push(String(prod.marca));
-
         // "Sin stock" no se dice: en una vista previa espanta antes de que
         // el cliente vea el producto, y para cuando la abre puede haber
         // entrado mercaderia. Solo se habla cuando hay algo bueno que decir.
