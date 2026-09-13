@@ -2550,12 +2550,18 @@ tr:last-child td { border-bottom: none; }
                     style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
               Ver
             </button>
+            <button type="button" id="guardarOpinionesBtn" class="btn btn-primary"
+                    style="width:auto;padding:8px 14px;font-size:13px;">
+              Mostrarlas en mi tienda
+            </button>
           </div>
         </div>
         <div id="opinionesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
           Las estrellas que tienen tus publicaciones en Mercado Libre, y tu
-          reputación como vendedor. Por ahora <strong>solo se miran acá</strong>:
-          todavía no se muestran en tu tienda.
+          reputación como vendedor. <strong>Ver</strong> no cambia nada;
+          <strong>Mostrarlas en mi tienda</strong> las guarda y salen en la
+          ficha de cada producto. Conviene repetirlo cada tanto para que no
+          queden viejas.
         </div>
       </div>
 
@@ -9302,6 +9308,61 @@ async function verOpiniones() {
   }
 }
 
+// Guardar la foto para que la tienda la muestre. Es lo unico de esta caja
+// que escribe: por eso es un boton aparte y dice lo que hace.
+async function guardarOpiniones() {
+  if (!puedeOperar()) return;
+
+  const cuerpo = byId('opinionesCuerpo');
+  const boton = byId('guardarOpinionesBtn');
+  const antes = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Guardando\u2026';
+  cuerpo.textContent = 'Pidiendo las opiniones y guard\u00e1ndolas\u2026';
+
+  try {
+    const r = await llamarApiMl('guardar_opiniones');
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conect\u00e1 tu cuenta en <strong>Configuraci\u00f3n \u2192 Mercado Libre</strong>.';
+      return;
+    }
+    if (r.motivo) { cuerpo.textContent = r.motivo; return; }
+
+    const v = r.vendedor || {};
+    const fallas = (r.fallas || []).length;
+
+    cuerpo.innerHTML =
+      '<div style="color:var(--stock);font-weight:700;margin-bottom:8px;">\u2705 Listo.</div>' +
+      '<div>Se revisaron <b>' + r.publicaciones + '</b> publicaciones y se actualizaron <b>' +
+        r.guardados + '</b> productos. <b>' + r.conNota + '</b> quedaron con estrellas en tu tienda.</div>' +
+      (r.conNota === 0
+        ? '<div style="margin-top:8px;color:var(--text-mute);">Ninguna publicaci\u00f3n tiene opiniones todav\u00eda, as\u00ed que ' +
+          'en la tienda no se muestra nada \u2014 que es mejor que mostrar cero estrellas.</div>'
+        : '') +
+      (!v.error && v.ventas
+        ? '<div style="margin-top:8px;">Tu reputaci\u00f3n tambi\u00e9n se guard\u00f3: <b>' + v.ventas + ' ventas</b>' +
+          (v.positivas != null ? ' \u00b7 ' + Math.round(v.positivas * 100) + '% positivas' : '') + '.</div>'
+        : '') +
+      (fallas
+        ? '<div style="margin-top:8px;color:var(--text-mute);">' + fallas +
+          (fallas === 1 ? ' publicaci\u00f3n no se pudo leer' : ' publicaciones no se pudieron leer') +
+          ' y qued\u00f3 como estaba.</div>'
+        : '');
+
+    // El catalogo en memoria tiene los datos viejos: sin esto, la lista de
+    // productos del panel seguiria mostrando lo de antes hasta recargar.
+    await refreshData();
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">' +
+      escapeHtml(err && err.message ? err.message : String(err)) + '</span>';
+  } finally {
+    boton.disabled = false;
+    boton.textContent = antes;
+  }
+}
+
+byId('guardarOpinionesBtn').addEventListener('click', guardarOpiniones);
 byId('verOpinionesBtn').addEventListener('click', verOpiniones);
 byId('opinionesTexto').addEventListener('keydown', (e) => { if (e.key === 'Enter') verOpiniones(); });
 

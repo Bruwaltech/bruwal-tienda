@@ -324,6 +324,14 @@
   .ficha-mini{width:56px;height:56px;flex-shrink:0;border-radius:8px;object-fit:cover;
     border:2px solid transparent;cursor:pointer;transition:border-color .2s ease;}
   .ficha-mini.activa{border-color:var(--celeste);}
+  .estrellas{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-mute);}
+  .estrellas b{color:var(--navy);font-weight:700;}
+  .estrellas .est-icono{color:#FBBC04;}
+  .op-caja{background:var(--bg);border:1px solid var(--line);border-radius:10px;
+           padding:11px 13px;margin:12px 0;font-size:13px;line-height:1.6;}
+  .op-caja .op-nota{font-size:20px;font-weight:800;color:var(--navy);}
+  .op-caja .op-de-donde{font-size:11.5px;color:var(--text-mute);margin-top:5px;}
+  .op-caja a{color:var(--celeste);font-weight:700;text-decoration:none;}
   .ficha-cat{display:inline-block;background:#EAF4FD;color:var(--navy);font-size:11px;
     font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:9px;}
   /* Encabezado de la ficha: el rubro a la izquierda, compartir a la derecha */
@@ -1517,6 +1525,69 @@ function renderProducts(){
   conectarTarjetas(list);
 }
 
+// ---- Opiniones de Mercado Libre ----
+// El dato lo guarda el panel cada tanto (no se le pregunta a Mercado Libre
+// en cada visita: la tienda no tiene el token y seria una llamada por
+// producto). Aca solo se muestra lo que ya esta guardado.
+
+// 4,8 y no 4.8: un decimal con punto se lee como de otro lado.
+const notaMl = (p) => Number(p.ml_nota).toFixed(1).replace('.', ',');
+
+const tieneOpinionesMl = (p) =>
+  !!(p && p.ml_nota != null && Number(p.ml_nota) > 0 && Number(p.ml_opiniones) > 0);
+
+// La estrellita de la tarjeta. Sin nota devuelve vacio: NO un hueco, ni un
+// "0 opiniones" -- un producto que no esta publicado en Mercado Libre no
+// tiene por que parecer peor que el de al lado.
+function estrellasDe(p){
+  if (!tieneOpinionesMl(p)) return '';
+  return '<div class="estrellas">' +
+    '<span class="est-icono">\u2605</span>' +
+    '<b>' + notaMl(p) + '</b>' +
+    '<span>(' + Number(p.ml_opiniones) + ')</span>' +
+  '</div>';
+}
+
+// El bloque de la ficha. Dice de donde salen las opiniones, que no es un
+// detalle legal sino de confianza: si la publicacion va por catalogo, las
+// escribio gente que compro ESE producto, no necesariamente a este negocio.
+function bloqueOpinionesMl(p){
+  if (!tieneOpinionesMl(p)) return '';
+  const cuantas = Number(p.ml_opiniones);
+  const link = p.ml_link
+    ? '<a href="' + escapeHtml(p.ml_link) + '" target="_blank" rel="noopener">' +
+      (cuantas === 1 ? 'Leer la opini\u00f3n' : 'Leer las ' + cuantas + ' opiniones') + ' \u2197</a>'
+    : '';
+
+  return '<div class="op-caja">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+        '<span class="op-nota"><span style="color:#FBBC04;">\u2605</span> ' +
+          notaMl(p) + '</span>' +
+        '<span>' + cuantas + (cuantas === 1 ? ' opini\u00f3n' : ' opiniones') + '</span>' +
+        (link ? '<span style="margin-left:auto;">' + link + '</span>' : '') +
+      '</div>' +
+      '<div class="op-de-donde">' +
+        (p.ml_es_catalogo
+          ? 'Opiniones <b>del producto</b> en Mercado Libre. Las escribieron compradores de este producto, no siempre a este negocio.'
+          : 'Opiniones de esta publicaci\u00f3n en Mercado Libre.') +
+      '</div>' +
+    '</div>';
+}
+
+// La reputacion del vendedor es del NEGOCIO, no de un producto: cuantas
+// ventas hizo y cuantas salieron bien. Va en la ficha, abajo, porque es lo
+// que responde "y este, atiende bien?".
+function bloqueReputacionMl(){
+  const r = perfilTienda && perfilTienda.ml_reputacion;
+  if (!r || !r.ventas || r.positivas == null) return '';
+  const pct = Math.round(Number(r.positivas) * 100);
+  // Menos de 20 ventas no es una reputacion, es una anecdota.
+  if (Number(r.ventas) < 20) return '';
+  return '<div class="op-de-donde" style="margin-top:10px;">' +
+    '\u2714 ' + Number(r.ventas).toLocaleString('es-AR') + ' ventas en Mercado Libre \u00b7 ' +
+    pct + '% de las opiniones fueron positivas</div>';
+}
+
 // El rubro arriba del nombre sirve para ubicarse cuando la pantalla mezcla
 // cosas de todos lados: la portada, los resultados de una busqueda. Adentro
 // de una categoria no: ahi el titulo de arriba ya lo dice, y repetirlo en
@@ -1619,6 +1690,7 @@ function htmlTarjetaProducto(p){
       '<div class="product-info">' +
       etiquetaDeCategoria(p) +
       '<div class="product-name">' + escapeHtml(p.name) + '</div>' +
+      estrellasDe(p) +
       (p.description ? '<div class="product-description">' + escapeHtml(p.description) + '</div>' : '') +
       (ocultaPrecio
         ? '<div class="product-price">Consultar precio</div>'
@@ -1839,6 +1911,8 @@ function abrirFicha(id) {
             ? '<div class="ficha-precio" id="fichaPrecio">Desde ' + money(rango.min) + '</div>' + etiquetaOferta(p)
             : '<div class="ficha-precio" id="fichaPrecio">' + money(rango.min) + '</div>' + etiquetaOferta(p) + precioOriginal(p);
         })()) +
+    bloqueOpinionesMl(p) +
+    bloqueReputacionMl() +
     '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
       (campos.length
         ? 'Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') +

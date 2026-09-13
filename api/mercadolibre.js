@@ -1258,6 +1258,134 @@ async function accionOpiniones(slug, texto) {
   };
 }
 
+// Sacar la foto de las opiniones y guardarla.
+//
+// Se guarda POR PRODUCTO, no por publicacion: la tienda muestra productos y
+// no tiene por que saber que existe Mercado Libre. Un producto con varias
+// variantes vinculadas a la misma publicacion comparte la nota, que es lo
+// correcto: la opinion es de la publicacion, no del talle.
+async function accionGuardarOpiniones(slug) {
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+
+  const vinculos = await sb('/rest/v1/store_ml_vinculos?store_slug=eq.' + encodeURIComponent(slug) +
+                            '&select=ml_item_id,product_id');
+  if (!vinculos || !vinculos.length) {
+    return { conectado: true, ok: true, guardados: 0, motivo: 'No hay publicaciones vinculadas.' };
+  }
+
+  const ids = [...new Set(vinculos.map((v) => String(v.ml_item_id)))];
+
+  // 1) El link y si va por catalogo salen de /items, que acepta 20 de una.
+  //    Una sola llamada cada 20 publicaciones en vez de una por publicacion.
+  const datosItem = new Map();
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    try {
+      const detalle = await pedirAMl('/items?ids=' + lote.join(',') +
+        '&attributes=id,permalink,catalog_listing,catalog_product_id', token);
+      (detalle || []).forEach((d) => {
+        const b = d.body || d;
+        if (!b || !b.id) return;
+        datosItem.set(String(b.id), {
+          link: b.permalink || null,
+          catalogo: !!(b.catalog_listing || b.catalog_product_id)
+        });
+      });
+    } catch (err) {
+      // Sin el link igual se puede guardar la nota: el link es un plus.
+    }
+  }
+
+  // 2) La nota, que si o si es una llamada por publicacion.
+  const notas = new Map();
+  const fallas = [];
+  for (const id of ids) {
+    try {
+      const r = await pedirAMl('/reviews/item/' + encodeURIComponent(id), token);
+      const cuantas = Number(r && r.paging && r.paging.total != null
+        ? r.paging.total
+        : (r && Array.isArray(r.reviews) ? r.reviews.length : 0)) || 0;
+      const nota = (r && r.rating_average != null) ? Number(r.rating_average) : null;
+      // Sin opiniones no hay nota: guardar un 0 lo mostraria como si el
+      // producto fuera malisimo, que es lo contrario de lo que pasa.
+      notas.set(id, { nota: (cuantas > 0 && isFinite(nota) && nota > 0) ? nota : null, cuantas: cuantas });
+    } catch (err) {
+      fallas.push({ item: id, motivo: String(err && err.message || err) });
+    }
+  }
+
+  // 3) A cada producto. Un producto puede tener mas de una publicacion
+  //    vinculada (variantes): gana la que mas opiniones tenga, que es la
+  //    que de verdad dice algo.
+  const porProducto = new Map();
+  vinculos.forEach((v) => {
+    const id = String(v.ml_item_id);
+    const n = notas.get(id);
+    if (!n) return;
+    const item = datosItem.get(id) || {};
+    const actual = porProducto.get(v.product_id);
+    if (actual && Number(actual.ml_opiniones || 0) >= n.cuantas) return;
+    porProducto.set(v.product_id, {
+      ml_nota: n.nota,
+      ml_opiniones: n.cuantas,
+      ml_link: item.link || null,
+      ml_es_catalogo: item.catalogo === undefined ? null : item.catalogo,
+      ml_opiniones_al: new Date().toISOString()
+    });
+  });
+
+  // sb() ya arma el JSON del cuerpo: el body va como objeto. Y un PATCH
+  // con return=minimal contesta 204, asi que el exito es que NO explote.
+  let guardados = 0;
+  for (const [productId, campos] of porProducto.entries()) {
+    await sb('/rest/v1/store_products?id=eq.' + encodeURIComponent(productId), {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: campos
+    });
+    guardados++;
+  }
+
+  // 4) La reputacion del vendedor, que es del negocio y va una sola vez.
+  let vendedor = null;
+  try {
+    const u = await pedirAMl('/users/' + encodeURIComponent(cuenta.ml_user_id), token);
+    const rep = (u && u.seller_reputation) || {};
+    const t = rep.transactions || {};
+    vendedor = {
+      nickname: (u && u.nickname) || null,
+      nivel: rep.level_id || null,
+      ventas: Number(t.total) || 0,
+      positivas: (t.ratings && t.ratings.positive != null) ? Number(t.ratings.positive) : null,
+      al: new Date().toISOString()
+    };
+    // Solo se guarda si tiene ventas: un 0% positivas por falta de datos
+    // en la tienda se lee como "este vendedor es un desastre".
+    if (vendedor.ventas > 0) {
+      await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug), {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: { ml_reputacion: vendedor }
+      });
+    }
+  } catch (err) {
+    vendedor = { error: String(err && err.message || err) };
+  }
+
+  return {
+    conectado: true,
+    ok: true,
+    publicaciones: ids.length,
+    guardados: guardados,
+    conNota: [...porProducto.values()].filter((c) => c.ml_nota != null).length,
+    fallas: fallas,
+    vendedor: vendedor
+  };
+}
+
 async function accionEstado(slug) {
   const filas = await sb('/rest/v1/store_ml_cuenta?store_slug=eq.' + encodeURIComponent(slug) +
                          '&select=ml_user_id,nickname,conectado_en');
@@ -1367,6 +1495,9 @@ module.exports = async (req, res) => {
     if (accion === 'auto_ads') return res.status(200).json(await accionAutoAds(tienda.slug, cuerpo.activo));
     if (accion === 'ads_no_tocar') {
       return res.status(200).json(await accionNoTocarCampana(tienda.slug, cuerpo.campana_id, cuerpo.valor));
+    }
+    if (accion === 'guardar_opiniones') {
+      return res.status(200).json(await accionGuardarOpiniones(tienda.slug));
     }
     if (accion === 'opiniones') {
       return res.status(200).json(await accionOpiniones(tienda.slug, cuerpo.texto || (req.query || {}).texto));
