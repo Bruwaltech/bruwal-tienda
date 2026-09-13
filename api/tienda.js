@@ -134,10 +134,12 @@ module.exports = async (req, res) => {
 
         // og:type product y el precio aparte: Facebook y Telegram los leen
         // y muestran el precio como dato, no como texto suelto.
+        // REEMPLAZA el que ya trae el HTML, no agrega otro: con dos
+        // og:site_name el robot se queda con el primero, que decia BRUWAL.
+        // El dueño de la vista previa es el negocio, no nosotros.
         if (nombreTienda) {
-          html = html.replace('<meta property="og:title"',
-            '<meta property="og:site_name" content="' + escapar(nombreTienda) + '">\n  ' +
-            '<meta property="og:title"');
+          html = html.replace(/(<meta property="og:site_name" content=")[^"]*(")/,
+                              '$1' + escapar(nombreTienda) + '$2');
         }
         if (precioTexto !== 'Consultar precio') {
           html = html.replace('<meta property="og:title"',
