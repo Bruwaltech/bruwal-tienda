@@ -51,13 +51,23 @@ module.exports = async (req, res) => {
       const consultaProd = SUPABASE_URL + '/rest/v1/store_products' +
         '?id=eq.' + encodeURIComponent(idProducto) +
         '&store_slug=eq.' + encodeURIComponent(slug) +
-        '&select=name,description,price,precio_oferta,image_url,imagenes,mostrar_precio,solo_interno';
+        '&select=name,description,price,precio_oferta,image_url,imagenes,mostrar_precio,solo_interno' +
+        ',marca,category,stock,tipo,ml_nota,ml_opiniones';
 
-      const rp = await fetch(consultaProd, {
-        headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
-      });
+      // Las dos consultas juntas: el nombre del negocio va en la vista
+      // previa y pedirlo despues seria un viaje mas contra el reloj de la
+      // funcion.
+      const [rp, rt] = await Promise.all([
+        fetch(consultaProd, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } }),
+        fetch(SUPABASE_URL + '/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) +
+              '&select=business_name', {
+          headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
+        })
+      ]);
       const filasProd = await rp.json();
       const prod = Array.isArray(filasProd) ? filasProd[0] : null;
+      const filasTienda = await rt.json().catch(() => null);
+      const nombreTienda = (Array.isArray(filasTienda) && filasTienda[0] && filasTienda[0].business_name) || '';
 
       // solo_interno son repuestos que el duenio usa desde el panel y que
       // nunca deberian poder comprarse: tampoco se comparten.
@@ -74,10 +84,35 @@ module.exports = async (req, res) => {
           ? prod.imagenes[0]
           : (prod.image_url || null);
 
-        const titulo = escapar(prod.name || 'Producto');
-        const bajada = escapar(
-          precioTexto + (prod.description ? ' \u2014 ' + String(prod.description).slice(0, 140) : '')
-        );
+        // El precio EN EL TITULO. La bajada la corta cada aplicacion donde
+        // quiere, el titulo no: si el precio esta solo abajo, la mitad de
+        // las veces no se ve. Y el precio es lo que hace que alguien abra.
+        const tituloCrudo = (prod.name || 'Producto') +
+          (precioTexto !== 'Consultar precio' ? ' \u2014 ' + precioTexto : '');
+
+        // Lo que de verdad decide una compra, en orden de peso.
+        const partes = [];
+
+        if (oferta > 0 && lista > 0 && oferta < lista) {
+          partes.push('\u00a1OFERTA! Antes $' + lista.toLocaleString('es-AR'));
+        }
+        if (prod.marca) partes.push(String(prod.marca));
+
+        // "Sin stock" no se dice: en una vista previa espanta antes de que
+        // el cliente vea el producto, y para cuando la abre puede haber
+        // entrado mercaderia. Solo se habla cuando hay algo bueno que decir.
+        const esServicio = (prod.tipo || 'producto') === 'servicio';
+        if (!esServicio && Number(prod.stock) > 0) partes.push('Disponible');
+
+        if (prod.ml_nota && Number(prod.ml_opiniones) > 0) {
+          partes.push('\u2b50 ' + Number(prod.ml_nota).toFixed(1).replace('.', ',') +
+                      ' (' + Number(prod.ml_opiniones) + ')');
+        }
+        if (prod.description) partes.push(String(prod.description).slice(0, 120));
+        if (nombreTienda) partes.push('En ' + nombreTienda);
+
+        const titulo = escapar(tituloCrudo);
+        const bajada = escapar(partes.join(' \u00b7 '));
 
         html = html
           .replace(/(<meta property="og:title" content=")[^"]*(")/,       '$1' + titulo + '$2')
@@ -85,6 +120,20 @@ module.exports = async (req, res) => {
           .replace(/(<meta property="og:url" content=")[^"]*(")/,
                    '$1' + base + '/' + escapar(slug) + '?p=' + escapar(idProducto) + '$2')
           .replace(/<title>[^<]*<\/title>/, '<title>' + titulo + '</title>');
+
+        // og:type product y el precio aparte: Facebook y Telegram los leen
+        // y muestran el precio como dato, no como texto suelto.
+        if (nombreTienda) {
+          html = html.replace('<meta property="og:title"',
+            '<meta property="og:site_name" content="' + escapar(nombreTienda) + '">\n  ' +
+            '<meta property="og:title"');
+        }
+        if (precioTexto !== 'Consultar precio') {
+          html = html.replace('<meta property="og:title"',
+            '<meta property="product:price:amount" content="' + vigente + '">\n  ' +
+            '<meta property="product:price:currency" content="ARS">\n  ' +
+            '<meta property="og:title"');
+        }
 
         if (foto) {
           // Las medidas fijas de 1200x630 son de la imagen de BRUWAL: una
