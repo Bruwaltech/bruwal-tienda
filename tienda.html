@@ -25,6 +25,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- La imagen del producto para historias y estados. El mismo archivo que
+     usa el panel: si se cambia el diseno, se cambia en un solo lado. -->
+<script src="/imagen-producto.js"></script>
 <style>
   :root{
     --navy:#15294D; --celeste:#2F8FE0; --celeste-soft:#5DAEF0;
@@ -1899,8 +1902,13 @@ function abrirFicha(id) {
       : '') +
     '<div class="ficha-encabezado">' +
       (p.category ? '<span class="ficha-cat">' + escapeHtml(p.category) + '</span>' : '<span></span>') +
-      '<button type="button" class="ficha-compartir" id="compartirProducto">' +
-        '<i class="fa-solid fa-share-nodes"></i> Compartir</button>' +
+      '<span style="display:inline-flex;gap:6px;">' +
+        '<button type="button" class="ficha-compartir" id="compartirProducto">' +
+          '<i class="fa-solid fa-share-nodes"></i> Compartir</button>' +
+        '<button type="button" class="ficha-compartir" id="imagenProducto" ' +
+          'title="Una imagen del producto, lista para tu historia o tu estado">' +
+          '<i class="fa-solid fa-image"></i> Imagen</button>' +
+      '</span>' +
     '</div>' +
     '<h3 style="margin:0;">' + escapeHtml(p.name) + '</h3>' +
     (p.mostrar_precio === false
@@ -2225,6 +2233,44 @@ function abrirFicha(id) {
   // Compartir este producto: en el celular abre el menu de siempre (WhatsApp,
   // estado, Instagram); en la compu, que no tiene navigator.share, copia el
   // link. El texto y el link son los mismos en los dos casos.
+  // Los datos de la imagen, con las cuentas de la tienda: el precio de acá
+  // contempla variantes y ofertas, y el del panel no se calcula igual.
+  const datosParaImagen = () => {
+    const rango = rangoPrecioVariantes(p);
+    return {
+      nombre: p.name,
+      precio: (p.mostrar_precio === false)
+        ? 'Consultar precio'
+        : (rango.min !== rango.max ? 'Desde ' : '') + money(rango.min),
+      precioAnterior: (p.mostrar_precio !== false && hayOferta(p)) ? money(Number(p.price)) : null,
+      off: hayOferta(p) ? porcentajeOff(p) : 0,
+      foto: fotosDe(p)[0] || null,
+      nota: p.ml_nota,
+      opiniones: p.ml_opiniones,
+      negocio: (perfilTienda && (perfilTienda.business_name || perfilTienda.name)) || ''
+    };
+  };
+
+  const btnImagen = byId('imagenProducto');
+  if (btnImagen) {
+    btnImagen.addEventListener('click', async () => {
+      const antes = btnImagen.innerHTML;
+      btnImagen.disabled = true;
+      btnImagen.innerHTML = '<i class="fa-solid fa-image"></i> Armando\u2026';
+      try {
+        const como = await BruwalImagen.compartir(
+          datosParaImagen(),
+          textoDeProducto(p) + '\n' + linkDeProducto(p));
+        if (como === 'descargado') mostrarAviso('Imagen descargada \u2014 sub\u00edla a tu historia');
+      } catch (e) {
+        mostrarAviso('No se pudo armar la imagen');
+      } finally {
+        btnImagen.disabled = false;
+        btnImagen.innerHTML = antes;
+      }
+    });
+  }
+
   const btnCompartirProd = byId('compartirProducto');
   if (btnCompartirProd) {
     btnCompartirProd.addEventListener('click', async () => {
