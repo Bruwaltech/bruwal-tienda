@@ -637,6 +637,13 @@ tr.fila-elegida > td { background:#EAF4FD; }
 .btn-primary:hover { filter: brightness(1.15); }
 .btn-primary:disabled { opacity: 0.6; }
 
+.auth-error.exito {
+  /* Un "¡Cuenta creada!" dentro de la caja roja de errores se lee, por un
+     segundo, como que algo salio mal. La caja es la misma; el color no. */
+  background: #E8F6F1;
+  border-color: #BFE5DA;
+  color: #10614F;
+}
 .auth-error {
   background: #FEF2F2;
   border: 1px solid #FCA5A5;
@@ -4889,6 +4896,31 @@ function renderTrialBar() {
 
   show(bar);
   aplicarModoSoloLectura(estado === 'vencido');
+  ofrecerPlanesLaPrimeraVez(estado);
+}
+
+// El ultimo paso del alta: elegir plan. Al que reci\u00e9n llega y todavia no
+// tiene ninguno se le abren los planes SOLOS, porque si no queda adentro de
+// un panel donde no puede cargar nada y el motivo es un cartel mas.
+//
+// UNA SOLA VEZ, y por negocio: si lo cierra es porque quiere mirar primero,
+// y volver a abrirlo en cada pantalla seria insoportable. Despues queda el
+// boton "Ver planes" de siempre, que no se movio de lugar.
+function ofrecerPlanesLaPrimeraVez(estado) {
+  if (estado !== 'vencido') return;         // ya paga, o esta en la prueba
+  if (!currentStore || !nuncaTuvoPrueba()) return;   // no es alguien reci\u00e9n llegado
+
+  const clave = 'bruwal_planes_ofrecidos_' + currentStore.slug;
+  try {
+    if (localStorage.getItem(clave)) return;
+    localStorage.setItem(clave, '1');
+  } catch (e) {
+    return;   // sin localStorage no se insiste: mejor callado que repetido
+  }
+
+  // Un respiro para que el panel termine de pintarse: abrirlo encima de una
+  // pantalla a medio dibujar se ve como un error.
+  setTimeout(() => { if (typeof abrirPlanes === 'function') abrirPlanes(); }, 900);
 }
 
 // Atenua visualmente lo que no se puede usar. El bloqueo real lo hace
@@ -8521,6 +8553,8 @@ byId('recuperarForm').addEventListener('submit', async (e) => {
 
   // A proposito no distinguimos si el mail existe o no: decirlo permitiria
   // averiguar quien tiene cuenta en la plataforma.
+  // Acá la caja sirve para las dos noticias, así que el color sigue al caso.
+  byId('authError').classList.toggle('exito', !error);
   byId('authError').innerHTML = error
     ? '<span style="color:var(--danger);">No se pudo enviar el mail. Probá de nuevo en un rato.</span>'
     : '<span style="color:var(--stock);">Listo. Si ese email tiene una cuenta, te va a llegar el link en unos minutos. Revisá también el correo no deseado.</span>';
@@ -8546,6 +8580,7 @@ byId('nuevaClaveForm').addEventListener('submit', async (e) => {
   const c2 = byId('nuevaClave2').value;
 
   if (c1 !== c2) {
+  byId('authError').classList.remove('exito');
     byId('authError').innerHTML = '<span style="color:var(--danger);">Las contraseñas no coinciden.</span>';
     show(byId('authError'));
     return;
@@ -8554,6 +8589,7 @@ byId('nuevaClaveForm').addEventListener('submit', async (e) => {
   const { error } = await sb.auth.updateUser({ password: c1 });
 
   if (error) {
+  byId('authError').classList.remove('exito');
     byId('authError').innerHTML = '<span style="color:var(--danger);">' + escapeHtml(error.message) + '</span>';
     show(byId('authError'));
     return;
@@ -8724,6 +8760,7 @@ byId('registerForm').addEventListener('submit', async (e) => {
   const rubro_manual = rubroElegidoRegistro;
 
   if (!rubro_manual) {
+  byId('authError').classList.remove('exito');
     byId('authError').textContent = 'Elegí qué vendés para configurarte las funciones de tu rubro.';
     show(byId('authError'));
     byId('regRubroOpciones').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -8754,7 +8791,33 @@ byId('registerForm').addEventListener('submit', async (e) => {
   }
 
   boton.disabled = false;
-  byId('authError').innerHTML = '<span style="color:var(--stock);">¡Cuenta creada! Revisá tu email (y el correo no deseado) para confirmarla.</span>';
+
+  // El alta no termina con la cuenta creada: para poder cargar productos y
+  // vender hace falta un plan. Decirlo ACA, con los pasos a la vista, evita
+  // que entre y se encuentre con un panel donde no puede hacer nada.
+  const paso = (n, titulo, detalle, estado) =>
+    '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px;">' +
+      '<div style="flex-shrink:0;width:24px;height:24px;border-radius:50%;display:flex;' +
+        'align-items:center;justify-content:center;font-size:12px;font-weight:800;' +
+        (estado === 'hecho'
+          ? 'background:var(--stock);color:#fff;">\u2713'
+          : 'background:var(--celeste);color:#fff;">' + n) +
+      '</div>' +
+      '<div><div style="font-weight:700;color:var(--navy);font-size:13.5px;">' + titulo + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-mute);line-height:1.5;">' + detalle + '</div></div>' +
+    '</div>';
+
+  byId('authError').classList.add('exito');
+  byId('authError').innerHTML =
+    '<div style="text-align:left;">' +
+      '<div style="font-weight:800;color:var(--stock);margin-bottom:14px;font-size:15px;">' +
+        '\u00a1Cuenta creada! Te faltan dos pasos.</div>' +
+      paso(1, 'Tus datos', 'Listo, ya los tenemos.', 'hecho') +
+      paso(2, 'Confirm\u00e1 tu email',
+           'Te mandamos un correo a <b>' + escapeHtml(email) + '</b>. Si no lo ves, revis\u00e1 el correo no deseado.') +
+      paso(3, 'Eleg\u00ed tu plan',
+           'Es lo que te habilita a cargar productos y registrar ventas. Apenas entres te mostramos las opciones.') +
+    '</div>';
   show(byId('authError'));
 });
 
