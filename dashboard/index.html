@@ -235,7 +235,20 @@ h1, h2, h3 {
      sin overflow propio — nunca puede volver a atrapar el scroll vertical
      de la página, pase lo que pase adentro. */
   .panel table {
-    min-width: 560px;          /* obliga a desbordar en vez de aplastarse */
+    /* El ancho del que scrollea tiene que ser EL QUE SE VE. Antes habia un
+       min-width de 560px "para obligar a desbordar en vez de aplastarse", y
+       eso era justamente el bug: en un telefono de 375px el panel mide unos
+       350, la tabla media 560, y el overflow:hidden del .panel recortaba los
+       210 sobrantes. El area que scrollea existia, pero la parte de la
+       derecha quedaba TAPADA por el panel: se deslizaba y nunca aparecian
+       Editar ni Eliminar. Medido: la ultima columna terminaba fuera de la
+       pantalla aun con el scroll al final.
+
+       El min-width no hacia falta para nada: las celdas ya tienen
+       white-space:nowrap mas abajo, y con eso el contenido desborda solo
+       (1023px medidos con 7 columnas). Con width:100% el que scrollea mide
+       lo mismo que el panel y el dedo alcanza hasta la ultima columna. */
+    width: 100%;
     display: block;            /* para que overflow-x tenga efecto en un <table> */
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
