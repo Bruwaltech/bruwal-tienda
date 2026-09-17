@@ -5024,7 +5024,7 @@ function abrirPlanes() {
       ${accion}
       ${p.nota ? `<div class="plan-nota">${escapeHtml(p.nota)}</div>` : ''}
     </div>`;
-  }).join('') + tarjetaBotPedidos() + '</div>';
+  }).join('') + tarjetaBotPedidos() + '</div>' + franjaPlanAMedida();
 
   // El selector se cablea despues de escribir el HTML, igual que el resto
   // de los botones que se arman por string en este archivo.
@@ -5036,6 +5036,36 @@ function abrirPlanes() {
   });
 
   show(byId('planesModal'));
+}
+
+// Los dos planes cubren a la mayoria, pero no a todos: un taller no necesita
+// lo mismo que una rotiseria, y el que ve dos cajas cerradas y no se
+// reconoce en ninguna se va sin escribir. Esta es la tercera puerta.
+//
+// SOBRE EL TEXTO: dice "pagas por lo que usas" y NO "cuidamos tu bolsillo".
+// Debajo de dos precios concretos, las palabras que hablan de plata se leen
+// como "estos precios son negociables", y el que iba a pagar Basic escribe
+// para pedir descuento. El ahorro queda igual de claro; lo que se ofrece es
+// que el plan ENCAJE, que es lo que de verdad no tienen hoy.
+function franjaPlanAMedida() {
+  const negocio = (currentStore && currentStore.business_name) || 'mi negocio';
+  const msg = 'Hola! Soy de ' + negocio + '. Vi los planes y quiero contarles cómo trabajo ' +
+              'para ver cuál me conviene o si me pueden armar uno a medida.';
+
+  return '<div style="margin-top:22px;background:var(--bg);border:1px solid var(--line);' +
+      'border-radius:var(--radius);padding:20px;text-align:center;">' +
+    '<div style="font-size:26px;margin-bottom:6px;">💬</div>' +
+    '<div style="font-weight:700;color:var(--navy);margin-bottom:6px;">' +
+      '¿Ninguno te cierra del todo?</div>' +
+    '<div style="color:var(--text-mute);font-size:13.5px;line-height:1.6;max-width:460px;margin:0 auto 14px;">' +
+      'Contanos cómo trabajás y armamos el plan que te sirve: pagás por lo que usás, ' +
+      'no por lo que no. Te atiende una persona, no un bot.</div>' +
+    '<a class="btn" style="display:inline-block;text-decoration:none;background:#25D366;color:#fff;' +
+      'font-weight:700;padding:11px 22px;width:auto;" ' +
+      'href="https://wa.me/' + WHATSAPP_BRUWAL + '?text=' + encodeURIComponent(msg) + '" ' +
+      'target="_blank" rel="noopener">' +
+      '<i class="fa-brands fa-whatsapp"></i> Hablar por WhatsApp</a>' +
+  '</div>';
 }
 
 // El detalle de cada plan va agrupado por modulo ("Productos y stock",
