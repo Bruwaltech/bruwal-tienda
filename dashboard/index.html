@@ -2564,6 +2564,22 @@ tr:last-child td { border-bottom: none; }
 
       <div class="panel" style="margin-bottom:20px;">
         <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span>🎯 Qué conviene publicitar</span>
+          <button type="button" id="verAsesorAdsBtn" class="btn btn-primary"
+                  style="width:auto;padding:8px 14px;font-size:13px;">
+            Analizar
+          </button>
+        </div>
+        <div id="asesorAdsCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+          Cruza lo que gastás en campañas con lo que te deja cada producto
+          después de costo, comisión, envío e impuestos. Te dice
+          <strong>hasta qué ACOS te conviene pagar</strong> en cada uno, cuáles
+          están pasados y a cuáles todavía no les hiciste campaña y valdría la pena.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:20px;">
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
           <span>⭐ Opiniones de tus publicaciones</span>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <input type="text" id="opinionesTexto" maxlength="40" placeholder="Ej: creatina — o vacío para todas"
@@ -11272,6 +11288,266 @@ function pintarMenuNegocios() {
     abrirCambiarClave();
   });
 }
+
+// ---- El asesor de campanas ----
+//
+// LA IDEA, en una linea: el ACOS que te conviene pagar NO es un numero que
+// se elige a ojo, es tu margen. Gastar en publicidad mas de lo que te deja
+// el producto es vender perdiendo, por mas que la campana "venda".
+
+// Debajo de esto no se publicita: lo que deja menos de 12% no aguanta ni el
+// mejor ACOS, y la campana se come la ganancia entera.
+const MARGEN_MINIMO_PARA_ADS = 12;
+
+// De cada peso de margen, cuanto se deja ir en publicidad. 70% deja 30% de
+// ganancia real; en 100% se empata y no se gana nada.
+const PARTE_DEL_MARGEN_PARA_ADS = 0.70;
+
+// Para saber si una campana funciona hacen falta clics, no dias: con 5 clics
+// no se sabe nada. Es el mismo numero que usa la auto-pausa.
+const CLICS_PARA_DECIDIR = 40;
+
+// Cuanto deja Mercado Libre de cada peso vendido, sacado de TUS ventas
+// reales: comision, envio e impuestos ya descontados. No es una tabla
+// generica -- es lo que te paso a vos en las ultimas ventas.
+function porcentajeQueQuedaEnMl() {
+  let bruto = 0, neto = 0;
+  (mlOrdenes || []).forEach((o) => {
+    const c = costosDeOrdenMl(o);
+    if (c.bruto > 0 && c.envio !== null) { bruto += c.bruto; neto += c.neto; }
+  });
+  // Sin ventas propias todavia: 0.87 es una estimacion prudente (comision
+  // tipica de ML en Argentina). Se avisa en pantalla que es estimado.
+  return bruto > 0 ? (neto / bruto) : 0.87;
+}
+
+// El margen de un producto vendiendo por Mercado Libre, en porcentaje.
+// null = no se puede saber (falta el costo), y eso NO se rellena con un
+// numero inventado: un margen imaginario lleva a un presupuesto imaginario.
+function margenEnMlDe(p, quedaEnMl) {
+  const precio = precioVigente(p);
+  const costo = costoDeProducto(p);
+  if (!(precio > 0) || !(costo > 0)) return null;
+  const netoPorVenta = precio * quedaEnMl;
+  if (netoPorVenta <= costo) return 0;
+  return ((netoPorVenta - costo) / precio) * 100;
+}
+
+// Cuantas unidades vendio por Mercado Libre en los ultimos `dias`.
+function unidadesVendidasEnMl(productId, dias) {
+  const desde = Date.now() - dias * 86400000;
+  let unidades = 0;
+  (mlOrdenes || []).forEach((o) => {
+    const cuando = comoFecha(o.creado_en || o.fecha || o.created_at);
+    if (!cuando || cuando.getTime() < desde) return;
+    const lineas = (o.detalle && o.detalle.order_items) || [];
+    lineas.forEach((li) => {
+      const itemId = li.item && li.item.id;
+      const vinculo = mlVinculosPrevios.find((v) => v.ml_item_id === String(itemId));
+      if (vinculo && vinculo.product_id === productId) unidades += Number(li.quantity) || 0;
+    });
+  });
+  return unidades;
+}
+
+// Los productos que valen una campana: ya venden solos (alguien los quiere),
+// tienen stock para aguantarla y dejan margen suficiente.
+//
+// "Ya vende solo" es el filtro que mas plata ahorra: publicitar algo que
+// nunca vendio es pagar para averiguar si gusta. Sale mas barato averiguarlo
+// con los que ya demostraron que si.
+function candidatosParaCampana(quedaEnMl, conCampana) {
+  const yaTiene = new Set((conCampana || []).map(String));
+
+  return (products || [])
+    .filter((p) => esProductoFisico(p) && !p.solo_interno && !p.pausado)
+    .filter((p) => Number(p.stock) > 0)
+    .filter((p) => !yaTiene.has(String(p.id)))
+    .map((p) => {
+      const margen = margenEnMlDe(p, quedaEnMl);
+      const unidades = unidadesVendidasEnMl(p.id, 30);
+      const gananciaPorVenta = margen === null ? 0 : precioVigente(p) * (margen / 100);
+      return { p, margen, unidades, gananciaPorVenta,
+               // Lo que podria dejar el mes que viene si se mantiene el ritmo
+               potencial: gananciaPorVenta * unidades };
+    })
+    .filter((c) => c.margen !== null && c.margen >= MARGEN_MINIMO_PARA_ADS && c.unidades > 0)
+    .sort((a, b) => b.potencial - a.potencial);
+}
+
+// Cuanta plata hace falta para SABER si una campana sirve. No es un numero
+// de la galera: son los clics que hacen falta para juzgarla, por lo que te
+// cuesta cada clic. Si no hay campanas previas de donde sacar el CPC, se
+// dice que no se sabe en vez de inventar uno.
+function presupuestoSugerido(candidato, cpc) {
+  if (!(cpc > 0)) return null;
+  const paraAprender = CLICS_PARA_DECIDIR * cpc;   // lo que cuesta la prueba entera
+  const porDia = Math.ceil(paraAprender / 7 / 10) * 10;
+
+  // Techo: nunca mas de lo que el producto deja. Si con el presupuesto de
+  // aprendizaje ya se pasa del margen de lo que vende en una semana, la
+  // campana nace perdiendo.
+  const dejaPorSemana = candidato.gananciaPorVenta * (candidato.unidades / 30) * 7;
+  const tope = Math.floor((dejaPorSemana * PARTE_DEL_MARGEN_PARA_ADS) / 7 / 10) * 10;
+
+  return { paraAprender, porDia, tope: tope > 0 ? tope : null,
+           alcanza: !(tope > 0) || tope >= porDia };
+}
+
+async function verAsesorAds() {
+  const cuerpo = byId('asesorAdsCuerpo');
+  const boton = byId('verAsesorAdsBtn');
+  boton.disabled = true;
+  cuerpo.textContent = 'Mirando tus campanas y tus numeros\u2026';
+
+  try {
+    const r = await llamarApiMl('publicidad');
+
+    if (!r.conectado) {
+      cuerpo.innerHTML = 'Primero conect\u00e1 tu cuenta en <strong>Configuraci\u00f3n \u2192 Mercado Libre</strong>.';
+      return;
+    }
+
+    const campanas = (r.campanas_ok && Array.isArray(r.campanas)) ? r.campanas : [];
+    const quedaEnMl = porcentajeQueQuedaEnMl();
+    const conVentasPropias = (mlOrdenes || []).some((o) => costosDeOrdenMl(o).envio !== null);
+
+    // --- lo que estas gastando
+    let invertido = 0, vendido = 0, clics = 0;
+    campanas.forEach((c) => {
+      const m = (c.metrics || c.metrics_summary) || {};
+      invertido += Number(m.cost) || 0;
+      vendido += Number(m.total_amount) || 0;
+      clics += Number(m.clicks) || 0;
+    });
+    const cpc = clics > 0 ? invertido / clics : 0;
+    const acosGeneral = vendido > 0 ? (invertido / vendido) * 100 : null;
+
+    // El techo: cuanto de cada venta te queda DESPUES de Mercado Libre y del
+    // costo. Publicitar por encima de eso es poner plata.
+    const margenes = (products || [])
+      .map((p) => margenEnMlDe(p, quedaEnMl))
+      .filter((m) => m !== null && m > 0);
+    const margenTipico = margenes.length
+      ? margenes.sort((a, b) => a - b)[Math.floor(margenes.length / 2)]   // la mediana, no el promedio
+      : null;
+    const techoAcos = margenTipico === null ? null : margenTipico * PARTE_DEL_MARGEN_PARA_ADS;
+
+    const plata = (n) => money(Math.round(n));
+
+    let html = '';
+
+    // ---------- 1. cuanto estas gastando
+    html += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:14px;">' +
+      '<div style="font-weight:800;color:var(--navy);margin-bottom:6px;">Lo que est\u00e1s gastando</div>' +
+      (campanas.length
+        ? '<div><b>' + plata(invertido) + '</b> en ' + campanas.length +
+          (campanas.length === 1 ? ' campa\u00f1a' : ' campa\u00f1as') +
+          ' \u00b7 vendiste <b>' + plata(vendido) + '</b> con ellas' +
+          (acosGeneral !== null
+            ? ' \u00b7 ACOS <b>' + acosGeneral.toFixed(1) + '%</b>'
+            : '') + '</div>' +
+          (cpc > 0 ? '<div style="font-size:12px;color:var(--text-mute);">Cada clic te sale ' + plata(cpc) + '.</div>' : '')
+        : '<div>Todav\u00eda no ten\u00e9s campa\u00f1as corriendo.</div>') +
+    '</div>';
+
+    // ---------- 2. el techo, que es lo que nadie te dice
+    if (techoAcos === null) {
+      html += '<div style="background:#FFF6E5;border:1px solid #F0D9A8;border-radius:10px;padding:13px;margin-bottom:14px;">' +
+        '<b>No puedo calcular hasta cu\u00e1nto te conviene pagar.</b><br>' +
+        'Para saberlo hace falta el <b>costo</b> de tus productos, y todav\u00eda no hay ninguno cargado. ' +
+        'Es el dato que Mercado Libre no tiene y sin \u00e9l la publicidad se maneja a ciegas.</div>';
+    } else {
+      const pasado = acosGeneral !== null && acosGeneral > techoAcos;
+      html += '<div style="background:' + (pasado ? '#FDECEC' : '#E8F6F1') +
+        ';border:1px solid ' + (pasado ? '#F5C6C6' : '#BFE5DA') + ';border-radius:10px;padding:13px;margin-bottom:14px;">' +
+        '<div style="font-weight:800;color:var(--navy);margin-bottom:6px;">' +
+          'Hasta cu\u00e1nto te conviene pagar</div>' +
+        '<div>De cada venta en Mercado Libre te queda <b>' + margenTipico.toFixed(0) + '%</b> ' +
+          'despu\u00e9s de la comisi\u00f3n, el env\u00edo, los impuestos y el costo. ' +
+          'Por eso tu ACOS no deber\u00eda pasar de <b>' + techoAcos.toFixed(0) + '%</b>: ' +
+          'ah\u00ed te queda ' + (100 - PARTE_DEL_MARGEN_PARA_ADS * 100).toFixed(0) + '% de ganancia. ' +
+          'Arriba de <b>' + margenTipico.toFixed(0) + '%</b> cada venta publicitada te hace perder plata.</div>' +
+        (pasado
+          ? '<div style="margin-top:7px;color:var(--danger);font-weight:700;">' +
+            'Est\u00e1s en ' + acosGeneral.toFixed(1) + '%: pasado. Mir\u00e1 cu\u00e1les con \u201cRevisar la salud\u201d.</div>'
+          : (acosGeneral !== null
+              ? '<div style="margin-top:7px;color:var(--stock);font-weight:700;">Est\u00e1s en ' +
+                acosGeneral.toFixed(1) + '%: dentro de lo que te conviene.</div>'
+              : '')) +
+        (!conVentasPropias
+          ? '<div style="font-size:11.5px;color:var(--text-mute);margin-top:7px;">' +
+            'Estimado: todav\u00eda no hay ventas tuyas de Mercado Libre con el env\u00edo cargado, ' +
+            'as\u00ed que se us\u00f3 una comisi\u00f3n t\u00edpica. Con las primeras ventas el n\u00famero se afina solo.</div>'
+          : '') +
+      '</div>';
+    }
+
+    // ---------- 3. a cual hacerle campana, y con cuanto
+    const candidatos = candidatosParaCampana(quedaEnMl, []).slice(0, 5);
+
+    html += '<div style="font-weight:800;color:var(--navy);margin-bottom:8px;">A cu\u00e1les les har\u00eda campa\u00f1a</div>';
+
+    if (!candidatos.length) {
+      html += '<div style="color:var(--text-mute);">' +
+        'Ninguno junta las tres condiciones: que <b>ya venda solo</b> en Mercado Libre, que tenga ' +
+        '<b>stock</b> y que deje m\u00e1s de ' + MARGEN_MINIMO_PARA_ADS + '% de margen. ' +
+        'Publicitar algo que todav\u00eda no vendi\u00f3 nunca es pagar para averiguar si gusta: ' +
+        'sale m\u00e1s barato averiguarlo con los que ya demostraron que s\u00ed.</div>';
+    } else {
+      html += '<div style="font-size:12.5px;color:var(--text-mute);margin-bottom:10px;">' +
+        'Los que <b>ya venden solos</b> (alguien los quiere), tienen <b>stock</b> y dejan margen. ' +
+        'El presupuesto es lo que cuesta juntar los ' + CLICS_PARA_DECIDIR +
+        ' clics que hacen falta para saber si funciona.</div>';
+
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="text-align:left;color:var(--text-mute);font-size:11px;text-transform:uppercase;">' +
+          '<th style="padding:6px 8px;">Producto</th>' +
+          '<th style="padding:6px 8px;text-align:center;">Vendi\u00f3 (30d)</th>' +
+          '<th style="padding:6px 8px;text-align:center;">Te deja</th>' +
+          '<th style="padding:6px 8px;text-align:center;">ACOS m\u00e1ximo</th>' +
+          '<th style="padding:6px 8px;">Presupuesto</th>' +
+        '</tr></thead><tbody>';
+
+      candidatos.forEach((c) => {
+        const pre = presupuestoSugerido(c, cpc);
+        html += '<tr>' +
+          '<td style="padding:6px 8px;"><b>' + escapeHtml(c.p.name) + '</b></td>' +
+          '<td style="padding:6px 8px;text-align:center;">' + c.unidades + '</td>' +
+          '<td style="padding:6px 8px;text-align:center;">' + plata(c.gananciaPorVenta) +
+            '<div style="font-size:11px;color:var(--text-mute);">' + c.margen.toFixed(0) + '%</div></td>' +
+          '<td style="padding:6px 8px;text-align:center;font-weight:700;">' +
+            (c.margen * PARTE_DEL_MARGEN_PARA_ADS).toFixed(0) + '%</td>' +
+          '<td style="padding:6px 8px;">' +
+            (pre
+              ? plata(pre.porDia) + ' por d\u00eda' +
+                '<div style="font-size:11px;color:var(--text-mute);">' +
+                  plata(pre.paraAprender) + ' en total para saber si sirve' +
+                  (pre.alcanza ? '' : ' \u2014 <span style="color:var(--danger);">es m\u00e1s de lo que deja</span>') +
+                '</div>'
+              : '<span style="color:var(--text-mute);">Falta una campa\u00f1a andando para saber cu\u00e1nto sale el clic</span>') +
+          '</td></tr>';
+      });
+
+      html += '</tbody></table></div>';
+    }
+
+    // ---------- lo que esta pantalla NO sabe
+    html += '<div style="font-size:11.5px;color:var(--text-mute);margin-top:14px;line-height:1.6;">' +
+      'Los candidatos no descuentan los que <b>ya tienen campa\u00f1a</b>: Mercado Libre no devuelve ' +
+      'qu\u00e9 publicaciones tiene cada una en la misma consulta. Si alguno de la lista ya est\u00e1 ' +
+      'publicitado, salte\u00e1lo.</div>';
+
+    cuerpo.innerHTML = html;
+  } catch (err) {
+    cuerpo.innerHTML = '<span style="color:var(--danger);">' +
+      escapeHtml(err && err.message ? err.message : String(err)) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+byId('verAsesorAdsBtn').addEventListener('click', verAsesorAds);
 
 // ---- Ordenar la vidriera ----
 // Mismo gesto que la lista de categorias: filas numeradas, flechas y
