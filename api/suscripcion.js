@@ -74,6 +74,21 @@ async function tiendaDelUsuario(userId, slugPedido) {
 
 // Todas las suscripciones que Mercado Pago tenga con este slug como
 // referencia. El slug viaja en external_reference desde el link del panel.
+// TODAS las suscripciones de un plan nuestro, sin filtrar por slug.
+//
+// Sirve para contestar la unica pregunta que importa cuando alguien "pago y
+// no se activo": esa suscripcion, ¿existe en Mercado Pago? ¿Con que estado?
+// ¿Y trae el external_reference que nosotros mandamos en el link?
+async function suscripcionesDelPlan(planId) {
+  const r = await fetch(MP_API + '/preapproval/search?preapproval_plan_id=' +
+                        encodeURIComponent(planId) + '&limit=50',
+    { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } });
+
+  const datos = await r.json().catch(() => null);
+  if (!r.ok) return { ok: false, status: r.status, crudo: datos };
+  return { ok: true, resultados: (datos && datos.results) || [] };
+}
+
 async function suscripcionesDeSlug(slug) {
   const r = await fetch(MP_API + '/preapproval/search?external_reference=' + encodeURIComponent(slug),
     { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } });
@@ -102,6 +117,55 @@ module.exports = async (req, res) => {
   // mirando, no la del primer negocio que tenga el usuario.
   const tienda = await tiendaDelUsuario(usuario.id, (req.body || {}).slug);
   if (!tienda) return res.status(403).json({ error: 'Este usuario no tiene tienda' });
+
+  // ---- Modo diagnostico: mira y cuenta, no toca nada ----
+  if ((req.body || {}).accion === 'diagnostico') {
+    const porPlan = {};
+    let conSlug = 0, sinSlug = 0;
+
+    for (const [planId, nombre] of Object.entries(PLAN_POR_PREAPPROVAL_ID)) {
+      const r = await suscripcionesDelPlan(planId);
+      if (!r.ok) {
+        porPlan[nombre] = { error: 'Mercado Pago contesto ' + r.status, crudo: r.crudo };
+        continue;
+      }
+      porPlan[nombre] = r.resultados.map((p) => {
+        const ref = p.external_reference || '';
+        if (ref) conSlug++; else sinSlug++;
+        return {
+          id: p.id,
+          estado: p.status,
+          // La pregunta del millon: ¿llego el slug que mandamos en el link?
+          external_reference: ref || null,
+          es_de_esta_tienda: ref === tienda.slug,
+          desde: p.date_created || null,
+          proximo_cobro: p.next_payment_date ||
+            (p.auto_recurring && p.auto_recurring.next_payment_date) || null,
+          monto: (p.auto_recurring && p.auto_recurring.transaction_amount) || null,
+          // Si el plan tuviera prueba gratis, el primer cobro se difiere y
+          // desde afuera se ve como "se suscribio y no le cobraron".
+          prueba_gratis: (p.auto_recurring && p.auto_recurring.free_trial) || null
+        };
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      diagnostico: true,
+      tienda: tienda.slug,
+      plan_en_bruwal: tienda.plan,
+      con_slug: conSlug,
+      sin_slug: sinSlug,
+      // El veredicto, en una linea, para no tener que interpretar el JSON.
+      veredicto: (conSlug + sinSlug) === 0
+        ? 'Mercado Pago no tiene NINGUNA suscripcion de estos planes.'
+        : (conSlug === 0
+            ? 'HAY suscripciones pero NINGUNA trae el slug: Mercado Pago no guarda el ' +
+              'external_reference que mandamos en el link, y por eso no las encontramos.'
+            : 'El external_reference SI llega (' + conSlug + ' de ' + (conSlug + sinSlug) + ').'),
+      por_plan: porPlan
+    });
+  }
 
   try {
     const busqueda = await suscripcionesDeSlug(tienda.slug);

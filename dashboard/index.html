@@ -4203,6 +4203,10 @@ tr:last-child td { border-bottom: none; }
          Pago. Si ese aviso no llega, el cliente paga y sigue bloqueado. Esto
          le pregunta a Mercado Pago directamente. -->
     <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;text-align:center;">
+      <button type="button" id="diagnosticoMpBtn" class="btn"
+              style="width:100%;margin-top:8px;background:var(--bg);color:var(--text-mute);border:1px solid var(--line);font-size:12.5px;">
+        🔎 Ver qué dice Mercado Pago (diagnóstico)
+      </button>
       <button type="button" id="verificarPagoBtn" class="btn"
               style="width:auto;padding:9px 16px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
         ✓ Ya pagué — verificar mi suscripción
@@ -19297,6 +19301,66 @@ async function verificarSuscripcion() {
   }
 }
 
+// Que ve Mercado Pago, sin filtrar por nuestro slug.
+//
+// Contesta la pregunta que "Ya pague" no puede contestar: si la suscripcion
+// EXISTE alla pero no la encontramos, o si directamente no existe. Son dos
+// problemas distintos y se arreglan distinto.
+async function diagnosticoMercadoPago() {
+  const caja = byId('verificarPagoResultado');
+  const boton = byId('diagnosticoMpBtn');
+  boton.disabled = true;
+  caja.textContent = 'Revisando todas las suscripciones en Mercado Pago\u2026';
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore && currentStore.slug, accion: 'diagnostico' })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+
+    let html = '<div style="font-weight:700;color:var(--navy);margin-bottom:6px;">' +
+      escapeHtml(d.veredicto || '') + '</div>';
+
+    Object.entries(d.por_plan || {}).forEach(([plan, filas]) => {
+      if (!Array.isArray(filas)) {
+        html += '<div style="color:var(--danger);font-size:12px;">' + escapeHtml(plan) + ': ' +
+                escapeHtml(filas.error || 'error') + '</div>';
+        return;
+      }
+      html += '<div style="margin-top:8px;font-weight:700;font-size:12px;text-transform:uppercase;' +
+              'color:var(--text-mute);">' + escapeHtml(plan) + ' (' + filas.length + ')</div>';
+      filas.slice(0, 12).forEach((f) => {
+        html += '<div style="font-family:monospace;font-size:11px;line-height:1.7;' +
+          (f.es_de_esta_tienda ? 'color:var(--navy);font-weight:700;' : 'color:var(--text-mute);') + '">' +
+          escapeHtml(f.estado) +
+          ' \u00b7 ref: ' + escapeHtml(f.external_reference || '(vacio)') +
+          (f.monto ? ' \u00b7 $' + f.monto : '') +
+          (f.prueba_gratis ? ' \u00b7 CON PRUEBA GRATIS' : '') +
+          (f.proximo_cobro ? ' \u00b7 cobra ' + escapeHtml(String(f.proximo_cobro).slice(0, 10)) : '') +
+          '</div>';
+      });
+    });
+
+    html += '<div style="margin-top:10px;font-size:11.5px;color:var(--text-mute);line-height:1.6;">' +
+      '<b>ref</b> es el slug que mandamos en el link. Si viene <b>(vacio)</b>, Mercado Pago no lo ' +
+      'guarda y por eso no encontramos los pagos. <b>CON PRUEBA GRATIS</b> explicar\u00eda que alguien ' +
+      'se suscriba y no se le cobre todav\u00eda.</div>';
+
+    caja.innerHTML = html;
+  } catch (err) {
+    caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+byId('diagnosticoMpBtn').addEventListener('click', diagnosticoMercadoPago);
 byId('verificarPagoBtn').addEventListener('click', verificarSuscripcion);
 
 byId('closePlanesModal').addEventListener('click', () => hide(byId('planesModal')));
