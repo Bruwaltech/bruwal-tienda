@@ -19327,6 +19327,39 @@ async function diagnosticoMercadoPago() {
     let html = '<div style="font-weight:700;color:var(--navy);margin-bottom:6px;">' +
       escapeHtml(d.veredicto || '') + '</div>';
 
+    // El cruce de cobranza: quien usa el servicio sin que se le cobre. Solo
+    // le llega al admin; a un cliente comun ni siquiera viene en la respuesta.
+    if (Array.isArray(d.cobranza) && d.cobranza.length) {
+      const sinPagar = d.cobranza.filter((c) => !c.paga);
+      html += '<div style="margin:14px 0 6px;font-weight:800;color:var(--navy);">' +
+        'Cobranza — ' + d.cobranza.length + ' con plan pago, ' +
+        '<span style="color:' + (sinPagar.length ? 'var(--danger)' : 'var(--stock)') + ';">' +
+        sinPagar.length + ' sin cobro automático</span></div>';
+
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        '<thead><tr style="text-align:left;color:var(--text-mute);font-size:10.5px;text-transform:uppercase;">' +
+        '<th style="padding:5px 7px;">Negocio</th><th style="padding:5px 7px;">Email</th>' +
+        '<th style="padding:5px 7px;text-align:center;">Cobro</th>' +
+        '<th style="padding:5px 7px;">Próximo</th></tr></thead><tbody>';
+
+      d.cobranza.forEach((c) => {
+        html += '<tr>' +
+          '<td style="padding:5px 7px;"><b>' + escapeHtml(c.negocio) + '</b>' +
+            '<div style="font-size:10.5px;color:var(--text-mute);">' + escapeHtml(c.plan) + '</div></td>' +
+          '<td style="padding:5px 7px;font-size:11px;">' + escapeHtml(c.email || '—') + '</td>' +
+          '<td style="padding:5px 7px;text-align:center;font-weight:700;color:' +
+            (c.paga ? 'var(--stock);">✓ sí' : 'var(--danger);">✗ NO') + '</td>' +
+          '<td style="padding:5px 7px;font-size:11px;">' +
+            (c.proximo_cobro ? escapeHtml(String(c.proximo_cobro).slice(0, 10)) +
+              (c.monto ? ' · $' + c.monto : '') : '—') + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div>' +
+        '<div style="font-size:11px;color:var(--text-mute);margin-top:6px;">' +
+        '✗ NO = tiene el plan activo en BRUWAL pero Mercado Pago no le cobra. ' +
+        'Antes de cortar, fijate si te paga por transferencia o si pagó con otro email.</div>';
+    }
+
     Object.entries(d.por_plan || {}).forEach(([plan, filas]) => {
       if (!Array.isArray(filas)) {
         html += '<div style="color:var(--danger);font-size:12px;">' + escapeHtml(plan) + ': ' +

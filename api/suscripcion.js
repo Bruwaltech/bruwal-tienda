@@ -27,6 +27,17 @@ const PLAN_POR_PREAPPROVAL_ID = {
   '7f3874b7347b43698e4b9daf92a5405b': 'pro'
 };
 
+// Quien puede ver datos de OTRAS tiendas. Sale de una variable de entorno
+// y no del codigo: el dia que cambie no hay que tocar el repositorio.
+//
+// Sin la variable no hay admin. Es el lado seguro para equivocarse: peor que
+// no poder ver el cruce es que un cliente vea los datos de los demas.
+function esAdmin(email) {
+  const lista = String(process.env.ADMIN_EMAILS || '')
+    .split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  return !!email && lista.includes(String(email).toLowerCase());
+}
+
 function faltanVariables() {
   return ['MP_ACCESS_TOKEN', 'SUPABASE_SERVICE_ROLE_KEY'].filter((n) => !process.env[n]);
 }
@@ -167,6 +178,10 @@ module.exports = async (req, res) => {
 
   // ---- Modo diagnostico: mira y cuenta, no toca nada ----
   if ((req.body || {}).accion === 'diagnostico') {
+    // Un cliente comun ve SOLO lo suyo. Antes veia el email y el monto de
+    // todos los demas, que es de lo peor que puede filtrar una plataforma
+    // de cobros.
+    const admin = esAdmin(usuario.email);
     const porPlan = {};
     let conSlug = 0, sinSlug = 0;
 
@@ -176,7 +191,12 @@ module.exports = async (req, res) => {
         porPlan[nombre] = { error: 'Mercado Pago contesto ' + r.status, crudo: r.crudo };
         continue;
       }
-      porPlan[nombre] = r.resultados.map((p) => {
+      const mias = r.resultados.filter((p) =>
+        admin ||
+        p.external_reference === tienda.slug ||
+        String(p.payer_email || '').toLowerCase() === String(usuario.email || '').toLowerCase());
+
+      porPlan[nombre] = mias.map((p) => {
         const ref = p.external_reference || '';
         if (ref) conSlug++; else sinSlug++;
         return {
@@ -199,9 +219,60 @@ module.exports = async (req, res) => {
       });
     }
 
+    // ---- El cruce de cobranza: quien usa el servicio sin pagarlo ----
+    let cobranza = null;
+    if (admin) {
+      // Las tiendas con plan pago en BRUWAL, con el email de su dueno.
+      const conPlan = await sb('/rest/v1/store_profiles?plan=in.(basic,pro)' +
+                               '&select=slug,business_name,plan,user_id&limit=200');
+
+      // Todas las suscripciones de nuestros planes, con su email.
+      const suscripciones = [];
+      for (const planId of Object.keys(PLAN_POR_PREAPPROVAL_ID)) {
+        const r = await suscripcionesDelPlan(planId);
+        if (r.ok) r.resultados.forEach((p) => suscripciones.push(p));
+      }
+      const autorizadas = suscripciones.filter((p) => p.status === 'authorized');
+
+      cobranza = [];
+      for (const t of (conPlan || [])) {
+        // El email del dueno, para poder cruzar cuando la suscripcion nacio
+        // sin slug (que es el caso de casi todas).
+        let email = null;
+        try {
+          const u = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' + encodeURIComponent(t.user_id), {
+            headers: {
+              apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY
+            }
+          });
+          if (u.ok) { const d = await u.json(); email = d && d.email; }
+        } catch (e) { /* sin el email, el cruce por slug igual sirve */ }
+
+        const suya = autorizadas.find((p) =>
+          p.external_reference === t.slug ||
+          (email && String(p.payer_email || '').toLowerCase() === String(email).toLowerCase()));
+
+        cobranza.push({
+          negocio: t.business_name || t.slug,
+          slug: t.slug,
+          plan: t.plan,
+          email: email,
+          paga: !!suya,
+          suscripcion: suya ? suya.id : null,
+          monto: suya && suya.auto_recurring ? suya.auto_recurring.transaction_amount : null,
+          proximo_cobro: suya ? (suya.next_payment_date ||
+            (suya.auto_recurring && suya.auto_recurring.next_payment_date) || null) : null
+        });
+      }
+      cobranza.sort((a, b) => (a.paga === b.paga) ? 0 : (a.paga ? 1 : -1));
+    }
+
     return res.status(200).json({
       ok: true,
       diagnostico: true,
+      admin: admin,
+      cobranza: cobranza,
       tienda: tienda.slug,
       plan_en_bruwal: tienda.plan,
       con_slug: conSlug,
