@@ -89,6 +89,53 @@ async function suscripcionesDelPlan(planId) {
   return { ok: true, resultados: (datos && datos.results) || [] };
 }
 
+// Le escribe nuestro slug a una suscripcion que nacio sin el. Es lo que
+// convierte el arreglo en definitivo: la proxima vez se encuentra por
+// external_reference, como siempre debio ser.
+//
+// Si falla no se corta nada: el plan se activa igual y a lo sumo la proxima
+// vez hay que volver a encontrarla por email.
+async function marcarSuscripcionConSlug(preapprovalId, slug) {
+  try {
+    const r = await fetch(MP_API + '/preapproval/' + encodeURIComponent(preapprovalId), {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ external_reference: slug })
+    });
+    if (!r.ok) {
+      console.warn('No se pudo escribir el external_reference en', preapprovalId, r.status);
+      return false;
+    }
+    console.log('Suscripcion', preapprovalId, 'quedo atada a', slug);
+    return true;
+  } catch (err) {
+    console.warn('Error escribiendo el external_reference:', err && err.message);
+    return false;
+  }
+}
+
+// La suscripcion de quien esta pidiendo, buscada por el EMAIL con el que
+// paga. Es el camino de rescate para las que nacieron sin slug.
+//
+// El email viene de la sesion de Supabase, no del navegador: nadie puede
+// pedir el plan de otro diciendo que es su email.
+async function suscripcionPorEmail(email) {
+  if (!email) return null;
+
+  for (const planId of Object.keys(PLAN_POR_PREAPPROVAL_ID)) {
+    const r = await suscripcionesDelPlan(planId);
+    if (!r.ok) continue;
+    const suya = r.resultados.find((p) =>
+      p.status === 'authorized' &&
+      String(p.payer_email || '').toLowerCase() === String(email).toLowerCase());
+    if (suya) return suya;
+  }
+  return null;
+}
+
 async function suscripcionesDeSlug(slug) {
   const r = await fetch(MP_API + '/preapproval/search?external_reference=' + encodeURIComponent(slug),
     { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } });
@@ -138,6 +185,9 @@ module.exports = async (req, res) => {
           // La pregunta del millon: ¿llego el slug que mandamos en el link?
           external_reference: ref || null,
           es_de_esta_tienda: ref === tienda.slug,
+          // El email es la llave de rescate cuando no hay slug: si no
+          // coincide con el de la cuenta, hay que atarla a mano.
+          payer_email: p.payer_email || null,
           desde: p.date_created || null,
           proximo_cobro: p.next_payment_date ||
             (p.auto_recurring && p.auto_recurring.next_payment_date) || null,
@@ -190,7 +240,32 @@ module.exports = async (req, res) => {
         (p.auto_recurring && p.auto_recurring.next_payment_date) || null
     }));
 
-    const autorizada = vistas.find((p) => p.estado === 'authorized' && p.plan);
+    let autorizada = vistas.find((p) => p.estado === 'authorized' && p.plan);
+
+    // No aparecio por slug. Puede ser que la suscripcion haya nacido SIN el
+    // (Mercado Pago no guarda el external_reference que mandamos en el link
+    // del plan): se la busca por el email del que paga.
+    let rescatadaPorEmail = false;
+    if (!autorizada) {
+      const porEmail = await suscripcionPorEmail(usuario.email);
+      const planDeEsa = porEmail && PLAN_POR_PREAPPROVAL_ID[porEmail.preapproval_plan_id];
+      if (porEmail && planDeEsa) {
+        autorizada = {
+          id: porEmail.id,
+          estado: porEmail.status,
+          plan: planDeEsa,
+          plan_id: porEmail.preapproval_plan_id,
+          desde: porEmail.date_created || null,
+          proximo_cobro: porEmail.next_payment_date ||
+            (porEmail.auto_recurring && porEmail.auto_recurring.next_payment_date) || null
+        };
+        rescatadaPorEmail = true;
+        vistas.push(autorizada);
+
+        // Que no haga falta el rescate la proxima vez.
+        await marcarSuscripcionConSlug(porEmail.id, tienda.slug);
+      }
+    }
 
     if (!autorizada) {
       // Una suscripción autorizada de un plan que no está en el mapa es el
@@ -233,6 +308,7 @@ module.exports = async (req, res) => {
       activado: true,
       plan: autorizada.plan,
       antes: tienda.plan,
+      por_email: rescatadaPorEmail,
       suscripciones: vistas
     });
   } catch (err) {
