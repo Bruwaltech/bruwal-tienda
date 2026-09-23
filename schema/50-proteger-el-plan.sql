@@ -1,58 +1,80 @@
--- Que nadie pueda regalarse un plan desde el navegador.
+-- Una sola protección del plan, y que el multinegocio de Pro funcione.
 --
--- EL AGUJERO: la política sp_editar_propia deja al dueño actualizar TODA su
--- fila de store_profiles (auth.uid() = user_id). Eso incluye las columnas
--- plan, plan_vence y trial_ends_at. Cualquier cliente con la consola del
--- navegador abierta podía hacer:
+-- CÓMO EMPEZÓ: buscando si alguien podía regalarse un plan desde el
+-- navegador. La política sp_editar_propia deja al dueño actualizar toda su
+-- fila de store_profiles, incluida la columna `plan`. Mirando solo las
+-- políticas, el agujero parecía abierto.
 --
---   sb.from('store_profiles').update({ plan: 'pro' }).eq('slug', 'su-tienda')
+-- NO LO ESTABA: ya había un trigger, proteger_campos_plan, que impedía
+-- exactamente eso. No lo vi porque miré las políticas de RLS y no los
+-- triggers. Agregué una segunda protección duplicada que, encima, corría
+-- ANTES que la original y quedaba pisada por ella.
 --
--- y quedarse con el plan Pro sin pagar. Lo mismo estirándose el trial.
+-- LO QUE SÍ FALTABA, y es lo que arregla este archivo:
 --
--- Y por el lado del INSERT: "Agregar tienda" (una función del plan Pro)
--- inserta con `plan: currentStore.plan`. La validación de que sea Pro estaba
--- solo en el panel, o sea en la computadora del cliente, o sea en ningún
--- lado: bastaba con insertar una tienda nueva con plan 'pro' a mano.
+-- 1. El trigger original forzaba plan='trial' en TODO insert. Un Pro que
+--    agregaba un segundo negocio lo veía nacer bloqueado.
 --
--- POR QUÉ UN TRIGGER Y NO PERMISOS POR COLUMNA: con GRANTs por columna hay
--- que enumerar todas las columnas que SÍ se pueden escribir, y este esquema
--- gana columnas seguido (categorias, ml_reputacion, orden...). Cada columna
--- nueva quedaría fuera del permiso y el panel dejaría de poder guardarla, en
--- silencio. El trigger no se entera de las columnas nuevas: protege tres y
--- deja pasar el resto.
+-- 2. Había un UNIQUE en user_id (una tienda por usuario) que quedó de
+--    cuando la relación era 1 a 1. Con él, "Agregar tienda" fallaba con
+--    "duplicate key value violates unique constraint". Es parte de lo que
+--    se vende con Pro y no podía funcionar de ninguna manera.
+--
+-- El índice sale y en su lugar va la regla de negocio de verdad: UNA tienda
+-- para todos, VARIAS solo con Pro. Un índice no puede expresar eso; el
+-- trigger sí, y encima puede explicar por qué cuando dice que no.
 
-create or replace function public.proteger_campos_de_plan()
+drop index if exists public.store_profiles_user_id_unico;
+
+-- Restos del intento duplicado.
+drop trigger  if exists tr_proteger_campos_de_plan on public.store_profiles;
+drop function if exists public.proteger_campos_de_plan();
+
+create or replace function public.proteger_campos_plan()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
-as $$
+set search_path to 'public'
+as $function$
 declare
-  rol   text := coalesce(current_setting('request.jwt.claims', true)::jsonb ->> 'role', '');
-  mejor text;
+  claims  text := nullif(current_setting('request.jwt.claims', true), '');
+  rol_jwt text := '';
+  mejor   text;
+  cuantas integer;
 begin
-  -- Solo se protege contra los roles del navegador. El servidor
-  -- (service_role), las migraciones y el SQL directo somos nosotros: ahí el
-  -- plan se toca a propósito, y es el único camino que verifica el pago
-  -- contra Mercado Pago.
-  if rol not in ('authenticated', 'anon') then
-    return new;
+  -- OJO CON ESTO, que costó un rato: la función es SECURITY DEFINER para
+  -- poder leer la tabla sin depender de las políticas. Eso hace que
+  -- current_user sea el dueño (postgres) y NO el rol del navegador, así que
+  -- la guarda original ("current_user not in ('authenticated','anon')")
+  -- dejaba pasar todo. Medido: con esa versión el cliente se auto-asignaba
+  -- 'pro'. Por eso el rol se mira por las dos puntas.
+  --
+  -- Y el claims se lee con red: si viene vacío o ilegible, el cast a jsonb
+  -- tira error y el trigger abortaría la operación entera — nadie podría
+  -- guardar nada en store_profiles.
+  if claims is not null then
+    begin
+      rol_jwt := coalesce((claims::jsonb) ->> 'role', '');
+    exception when others then
+      rol_jwt := '';
+    end;
+  end if;
+
+  if current_user not in ('authenticated', 'anon')
+     and rol_jwt   not in ('authenticated', 'anon') then
+    return new;   -- el servidor o una migración: ahí el plan se toca a propósito
   end if;
 
   if tg_op = 'UPDATE' then
-    -- Los tres campos quedan como estaban, pase lo que pase. Ningún flujo
-    -- legítimo del panel los escribe desde el navegador: se comprobó.
-    new.plan          := old.plan;
-    new.plan_vence    := old.plan_vence;
-    new.trial_ends_at := old.trial_ends_at;
+    new.plan              := old.plan;
+    new.trial_ends_at     := old.trial_ends_at;
+    new.plan_vence        := old.plan_vence;
+    new.mp_preapproval_id := old.mp_preapproval_id;
+    new.plan_updated_at   := old.plan_updated_at;
     return new;
   end if;
 
-  -- INSERT. El caso legítimo es el Pro que agrega un segundo negocio y le
-  -- hereda su plan. Entonces el plan de la tienda nueva no se toma de lo que
-  -- mande el navegador, sino del que ese usuario YA tiene en otra tienda
-  -- suya: el Pro sigue funcionando igual y el que no tiene nada no puede
-  -- inventarse uno.
+  -- INSERT. El mejor plan que este usuario ya tiene en otra tienda suya.
   select p.plan into mejor
     from public.store_profiles p
    where p.user_id = new.user_id
@@ -64,18 +86,34 @@ begin
             end
    limit 1;
 
-  new.plan          := coalesce(mejor, 'trial');
-  new.plan_vence    := null;
-  new.trial_ends_at := now();   -- igual que el default: nace sin prueba
+  select count(*) into cuantas
+    from public.store_profiles p
+   where p.user_id = new.user_id;
+
+  -- Varios negocios son de Pro (y de cortesía, que tiene todo). El mensaje
+  -- se le muestra tal cual al que lo intenta.
+  if cuantas > 0 and coalesce(mejor, '') not in ('pro', 'cortesia') then
+    raise exception 'Tu plan permite un solo negocio. Con el plan Pro podes tener varios en la misma cuenta.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- El plan del negocio nuevo sale del que el usuario YA tiene, nunca de lo
+  -- que mande el navegador. Sin ninguno, nace en prueba.
+  new.plan              := coalesce(mejor, 'trial');
+  new.trial_ends_at     := now();
+  new.plan_vence        := null;
+  new.mp_preapproval_id := null;
+  new.plan_updated_at   := null;
   return new;
 end;
-$$;
+$function$;
 
-drop trigger if exists tr_proteger_campos_de_plan on public.store_profiles;
+comment on function public.proteger_campos_plan() is
+  'Única protección del plan: plan, plan_vence, trial_ends_at, mp_preapproval_id y plan_updated_at no se escriben desde el navegador. En un negocio nuevo el plan se hereda del que el usuario ya tiene, y tener más de uno requiere Pro.';
 
-create trigger tr_proteger_campos_de_plan
-  before insert or update on public.store_profiles
-  for each row execute function public.proteger_campos_de_plan();
-
-comment on function public.proteger_campos_de_plan() is
-  'Impide que plan, plan_vence y trial_ends_at se escriban desde el navegador. Solo el servidor (service_role), que verifica el pago contra Mercado Pago, puede cambiarlos.';
+-- Verificación (probado contra la base real simulando el rol del navegador):
+--   Pro agrega 2do negocio ......... nace con 'pro'
+--   Sin Pro agrega 2do ............. rechazado con el mensaje
+--   Cliente se pone 'pro' solo ..... queda como estaba
+--   Cliente estira su prueba ....... queda como estaba
+--   Servidor activa un plan ........ puede
