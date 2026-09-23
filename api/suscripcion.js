@@ -73,7 +73,7 @@ async function usuarioDeToken(token) {
 // api/mercadolibre.js.
 async function tiendaDelUsuario(userId, slugPedido) {
   const filas = await sb('/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) +
-                         '&select=slug,plan,plan_vence&order=created_at.asc');
+                         '&select=slug,plan,plan_vence,mp_preapproval_id&order=created_at.asc');
   if (!filas || !filas.length) return null;
 
   if (slugPedido) {
@@ -195,6 +195,67 @@ module.exports = async (req, res) => {
   // mirando, no la del primer negocio que tenga el usuario.
   const tienda = await tiendaDelUsuario(usuario.id, (req.body || {}).slug);
   if (!tienda) return res.status(403).json({ error: 'Este usuario no tiene tienda' });
+
+  // ---- Revisar que el que tiene plan SIGA pagando ----
+  //
+  // Sin esto el ciclo queda abierto por la mitad: al pagar se activa, pero
+  // si despues deja de pagar nadie se entera nunca. El webhook de Mercado
+  // Pago podria avisar, pero su propia documentacion dice que la
+  // configuracion de webhooks no aplica a Suscripciones, asi que ese aviso
+  // puede no llegar jamas.
+  //
+  // Solo se revisa a quien tiene mp_preapproval_id, o sea a quien se activo
+  // POR Mercado Pago. Al que le pusiste el plan a mano (paga por
+  // transferencia, es una cortesia) no se lo toca: cortarle a ese seria
+  // peor que no cortar a nadie.
+  if ((req.body || {}).accion === 'revisar') {
+    if (!tienda.mp_preapproval_id) {
+      return res.status(200).json({ ok: true, revisado: false,
+        motivo: 'Este plan no lo sostiene una suscripcion de Mercado Pago.' });
+    }
+
+    const r = await fetch(MP_API + '/preapproval/' + encodeURIComponent(tienda.mp_preapproval_id),
+      { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } });
+
+    // Si Mercado Pago no contesta, NO se toca nada. Un problema de red no
+    // puede dejar sin sistema a alguien que esta pagando.
+    if (!r.ok) {
+      return res.status(200).json({ ok: true, revisado: false,
+        motivo: 'Mercado Pago contesto ' + r.status + '. No se cambio nada.' });
+    }
+
+    const sus = await r.json().catch(() => null);
+    if (!sus || !sus.status) {
+      return res.status(200).json({ ok: true, revisado: false,
+        motivo: 'Respuesta ilegible de Mercado Pago. No se cambio nada.' });
+    }
+
+    if (sus.status === 'authorized') {
+      return res.status(200).json({ ok: true, revisado: true, sigue: true,
+        proximo_cobro: sus.next_payment_date || null });
+    }
+
+    // Dejo de estar autorizada. El acceso NO se corta de golpe: dura hasta
+    // la fecha del proximo cobro que ya estaba paga. Mismo criterio que usa
+    // el webhook cuando alguien cancela.
+    const hasta = sus.next_payment_date ||
+      (sus.auto_recurring && sus.auto_recurring.next_payment_date) || null;
+    const fecha = hasta ? String(hasta).slice(0, 10) : new Date().toISOString().slice(0, 10);
+
+    if (tienda.plan_vence === fecha) {
+      return res.status(200).json({ ok: true, revisado: true, sigue: false, fecha: fecha, ya: true });
+    }
+
+    await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(tienda.slug), {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: { plan_vence: fecha, plan_updated_at: new Date().toISOString() }
+    });
+
+    console.log('Suscripcion', sus.status, 'en', tienda.slug, '- acceso hasta', fecha);
+    return res.status(200).json({ ok: true, revisado: true, sigue: false,
+      estado: sus.status, fecha: fecha });
+  }
 
   // ---- Modo diagnostico: mira y cuenta, no toca nada ----
   if ((req.body || {}).accion === 'diagnostico') {
@@ -415,7 +476,17 @@ module.exports = async (req, res) => {
     await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(tienda.slug), {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
-      body: { plan: autorizada.plan, plan_vence: null }
+      body: {
+        plan: autorizada.plan,
+        plan_vence: null,
+        // De QUE suscripcion vino este plan. Es lo que despues permite
+        // revisarla: sin esto no hay forma de saber si un plan activo lo
+        // sostiene un debito automatico o lo puso alguien a mano, y por lo
+        // tanto no se puede cortar al que dejo de pagar sin arriesgarse a
+        // cortarle tambien al que paga por transferencia.
+        mp_preapproval_id: autorizada.id || null,
+        plan_updated_at: new Date().toISOString()
+      }
     });
 
     console.log('Plan activado a mano desde el panel:', tienda.slug, '->', autorizada.plan);

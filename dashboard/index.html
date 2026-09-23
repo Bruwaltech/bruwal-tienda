@@ -9150,6 +9150,7 @@ async function onLoggedIn() {
   // Si esta bloqueado, capaz ya pago y el aviso de Mercado Pago no llego.
   // Va sin await: que no demore la carga del panel.
   chequearSuscripcionAlEntrar();
+  revisarSuscripcionDeVezEnCuando();
 
   avisarVueltaDeMl();
 
@@ -19279,6 +19280,51 @@ byId('pedirPruebaBtn').addEventListener('click', pedirPrueba);
 // que ya esta operando no se le agrega ni una consulta. Si Mercado Pago dice
 // que no pago, no pasa nada y no se le muestra ningun cartel: no hace falta
 // contarle al usuario una consulta que dio negativo.
+// El otro lado del ciclo: al que TIENE plan pago se le revisa cada tanto que
+// la suscripcion siga viva. Sin esto, el que deja de pagar se queda con el
+// sistema para siempre -- se activa al pagar y despues nadie vuelve a mirar.
+//
+// Una vez por dia y por negocio: el estado de una suscripcion no cambia mas
+// seguido que eso, y no tiene sentido gastar una llamada por pantalla.
+//
+// El servidor solo revisa a quien se activo POR Mercado Pago. Al que tiene
+// el plan puesto a mano no lo toca.
+async function revisarSuscripcionDeVezEnCuando() {
+  if (!currentStore) return;
+  if (!PLANES_ACTIVOS.includes(currentStore.plan)) return;
+  if (currentStore.plan === 'cortesia') return;
+
+  const clave = 'bruwal_revision_plan_' + currentStore.slug;
+  try {
+    const ultima = Number(localStorage.getItem(clave) || 0);
+    if (Date.now() - ultima < 86400000) return;
+    localStorage.setItem(clave, String(Date.now()));
+  } catch (e) {
+    return;   // sin localStorage no se insiste en cada carga
+  }
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return;
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore.slug, accion: 'revisar' })
+    });
+    if (!r.ok) return;
+    const d = await r.json().catch(() => null);
+
+    // Dejo de pagar: ya quedo la fecha de corte puesta del lado del
+    // servidor. Se recarga para que el cartel de arriba lo diga.
+    if (d && d.revisado && d.sigue === false && !d.ya) {
+      window.location.reload();
+    }
+  } catch (e) {
+    // Sin conexion no pasa nada: es una revision, no un requisito.
+  }
+}
+
 async function chequearSuscripcionAlEntrar() {
   if (!currentStore) return;
   if (estadoSuscripcion() !== 'vencido') return;

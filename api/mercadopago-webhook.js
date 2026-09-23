@@ -80,6 +80,45 @@ async function consultarPreapproval(id) {
   return r.json();
 }
 
+// El slug de la tienda que cumpla el filtro, o null.
+async function buscarStore(filtro) {
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/store_profiles?' + filtro + '&select=slug&limit=1', {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY
+      }
+    });
+    if (!r.ok) return null;
+    const filas = await r.json();
+    return (Array.isArray(filas) && filas[0] && filas[0].slug) || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// La tienda de quien paga, buscada por su email. Es el rescate para las
+// suscripciones que nacieron sin external_reference.
+async function slugPorEmail(email) {
+  try {
+    const r = await fetch(SUPABASE_URL + '/auth/v1/admin/users?per_page=200', {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY
+      }
+    });
+    if (!r.ok) return null;
+    const datos = await r.json();
+    const usuarios = (datos && datos.users) || [];
+    const buscado = String(email).toLowerCase();
+    const u = usuarios.find((x) => String(x.email || '').toLowerCase() === buscado);
+    if (!u) return null;
+    return await buscarStore('user_id=eq.' + encodeURIComponent(u.id));
+  } catch (err) {
+    return null;
+  }
+}
+
 module.exports = async (req, res) => {
   // Mercado Pago no exige validar una URL por GET como Meta, pero conviene
   // no fallar si alguien la abre en el navegador para chusmear.
@@ -137,8 +176,26 @@ module.exports = async (req, res) => {
 
   try {
     const preapproval = await consultarPreapproval(dataId);
-    const slug = preapproval.external_reference;
     const plan = PLAN_POR_PREAPPROVAL_ID[preapproval.preapproval_plan_id];
+
+    // Mercado Pago NO guarda el external_reference que mandamos en la URL
+    // del checkout cuando la suscripcion nace del link de un plan: medido
+    // contra la cuenta real, todas venian con el campo vacio. Sin este
+    // rescate, el aviso de un cliente que cancela no se puede atribuir a
+    // ninguna tienda y se pierde -- o sea que nunca se le cortaria.
+    //
+    // Se busca por dos caminos: la suscripcion ya anotada en la tienda, y
+    // el email del que paga.
+    let slug = preapproval.external_reference;
+
+    if (!slug && dataId) {
+      const porId = await buscarStore('mp_preapproval_id=eq.' + encodeURIComponent(dataId));
+      if (porId) slug = porId;
+    }
+    if (!slug && preapproval.payer_email) {
+      const porMail = await slugPorEmail(preapproval.payer_email);
+      if (porMail) slug = porMail;
+    }
 
     if (!slug || !plan) {
       console.warn('Preapproval sin slug o plan reconocido:', dataId, slug, preapproval.preapproval_plan_id);
@@ -169,7 +226,12 @@ module.exports = async (req, res) => {
 
       // plan_vence en null: si venía de una cancelación anterior y se
       // volvió a suscribir, esto le saca cualquier fecha de baja pendiente.
-      await actualizarStore(slug, { plan, plan_vence: null });
+      await actualizarStore(slug, {
+        plan,
+        plan_vence: null,
+        mp_preapproval_id: dataId || null,
+        plan_updated_at: new Date().toISOString()
+      });
       console.log('Plan activado por Mercado Pago:', slug, '->', plan,
                   '(' + (cobros === null ? 'sin dato de cobros' : cobros + ' cobros') + ')');
       res.statusCode = 200;
