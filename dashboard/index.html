@@ -4881,6 +4881,15 @@ function puedeOperar() {
   return false;
 }
 
+// Cuantos dias faltan para que se corte un plan CON fecha de corte. null =
+// no tiene fecha, o sea que no se corta solo.
+function diasParaElCorte() {
+  if (!currentStore || !currentStore.plan_vence) return null;
+  const corte = venceEnHoraArgentina(currentStore.plan_vence);
+  if (!corte) return null;
+  return Math.ceil((corte.getTime() - Date.now()) / 86400000) - 1;
+}
+
 function renderTrialBar() {
   const bar = byId('trialBar');
   const texto = byId('trialTexto');
@@ -4890,11 +4899,26 @@ function renderTrialBar() {
   bar.classList.remove('ok', 'pronto', 'vencido', 'activo');
 
   if (estado === 'activo') {
-    bar.classList.add('activo');
-    texto.textContent = currentStore.plan === 'cortesia'
-      ? '★ Cuenta de cortesía: acceso completo sin cargo, sin vencimiento.'
-      : `✓ Plan ${nombrePlan(currentStore.plan)} activo. ¡Gracias por confiar en BRUWAL!`;
-    byId('verPlanesBtn').textContent = 'Ver mi plan';
+    // Un plan con fecha de corte cercana tiene que AVISAR. Sin esto, el que
+    // tiene el acceso puesto a mano (o pago por fuera) se entera de que se
+    // le termino el dia que no puede cargar una venta, en el mostrador y
+    // con gente esperando. Y para nosotros es peor: el que se habria
+    // suscripto si le avisabamos, se va enojado.
+    const diasHastaElCorte = diasParaElCorte();
+
+    if (diasHastaElCorte !== null && diasHastaElCorte <= 7) {
+      bar.classList.add('pronto');
+      texto.textContent = diasHastaElCorte <= 0
+        ? `Hoy es el último día de tu plan ${nombrePlan(currentStore.plan)}. Activá el débito automático para seguir cargando ventas.`
+        : `Tu plan ${nombrePlan(currentStore.plan)} vence en ${diasHastaElCorte} día${diasHastaElCorte === 1 ? '' : 's'}. Activá el débito automático para no quedarte afuera.`;
+      byId('verPlanesBtn').textContent = 'Activar el pago';
+    } else {
+      bar.classList.add('activo');
+      texto.textContent = currentStore.plan === 'cortesia'
+        ? '★ Cuenta de cortesía: acceso completo sin cargo, sin vencimiento.'
+        : `✓ Plan ${nombrePlan(currentStore.plan)} activo. ¡Gracias por confiar en BRUWAL!`;
+      byId('verPlanesBtn').textContent = 'Ver mi plan';
+    }
   } else if (estado === 'vencido') {
     bar.classList.add('vencido');
     // Puede llegar acá por dos caminos distintos: nunca activó un plan (la
