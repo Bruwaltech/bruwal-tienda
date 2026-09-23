@@ -223,7 +223,16 @@ module.exports = async (req, res) => {
         ? null
         : Number(resumen.charged_quantity) || 0;
 
-      if (cobros === 0) {
+      // El plan Pro tiene 7 dias de prueba configurados en Mercado Pago:
+      // el cliente deja la tarjeta y recien al octavo dia le cobran.
+      // Durante esos dias TIENE que poder usar el sistema, si no la prueba
+      // no existe -- dejo la tarjeta y no puede entrar.
+      const ar = preapproval.auto_recurring || {};
+      const proximo = preapproval.next_payment_date || ar.next_payment_date || null;
+      const enPrueba = !!ar.free_trial &&
+        (!proximo || new Date(proximo).getTime() > Date.now());
+
+      if (cobros === 0 && !enPrueba) {
         console.log('Suscripcion autorizada pero todavia sin cobrar:', slug,
                     '- primer cobro', preapproval.next_payment_date || '(sin fecha)');
         res.statusCode = 200;
@@ -239,7 +248,9 @@ module.exports = async (req, res) => {
         plan_updated_at: new Date().toISOString()
       });
       console.log('Plan activado por Mercado Pago:', slug, '->', plan,
-                  '(' + (cobros === null ? 'sin dato de cobros' : cobros + ' cobros') + ')');
+                  '(' + (enPrueba ? 'en prueba gratis'
+                       : cobros === null ? 'sin dato de cobros'
+                       : cobros + ' cobros') + ')');
       res.statusCode = 200;
       return res.end('ok');
     }

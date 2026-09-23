@@ -173,6 +173,27 @@ function cobrosDe(p) {
   return Number(s.charged_quantity) || 0;
 }
 
+// ¿Esta suscripcion esta dentro de sus dias de prueba gratis?
+//
+// El plan Pro tiene 7 dias de prueba configurados en Mercado Pago: el
+// cliente se suscribe, deja su tarjeta, y recien al octavo dia le cobran.
+// Durante esos 7 dias TIENE que poder usar el sistema -- si no, la prueba
+// no existe: dejo la tarjeta y no puede entrar, que es la peor combinacion
+// posible.
+//
+// Mercado Pago lo marca con auto_recurring.free_trial. Mientras el primer
+// cobro este en el futuro, esta en prueba.
+function enPruebaGratis(p) {
+  const ar = (p && p.auto_recurring) || null;
+  if (!ar || !ar.free_trial) return false;
+
+  const proximo = p.next_payment_date || ar.next_payment_date || null;
+  if (!proximo) return true;   // hay prueba y no sabemos cuando cobra: se le da
+
+  const cuando = new Date(proximo).getTime();
+  return isFinite(cuando) && cuando > Date.now();
+}
+
 async function suscripcionesDeSlug(slug) {
   const r = await fetch(MP_API + '/preapproval/search?external_reference=' + encodeURIComponent(slug),
     { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } });
@@ -397,6 +418,7 @@ module.exports = async (req, res) => {
       plan_id: p.preapproval_plan_id,
       desde: p.date_created || null,
       cobros: cobrosDe(p),
+      en_prueba: enPruebaGratis(p),
       ultimo_cobro: (p.summarized && p.summarized.last_charged_date) || null,
       proximo_cobro: p.next_payment_date ||
         (p.auto_recurring && p.auto_recurring.next_payment_date) || null
@@ -405,16 +427,20 @@ module.exports = async (req, res) => {
     // El plan se activa cuando la plata ENTRO, no cuando el medio de pago
     // quedo autorizado. cobros === null es "no se pudo saber": ahi se activa
     // igual, porque el dato que falta es nuestro, no una deuda del cliente.
+    // Tiene derecho a usar el sistema si ya pago, O si esta dentro de los
+    // dias de prueba que le prometimos en el checkout.
     const yaPago = (p) => p.estado === 'authorized' && p.plan &&
-                          (p.cobros === null || p.cobros > 0);
+                          (p.cobros === null || p.cobros > 0 || p.en_prueba);
 
     let autorizada = vistas.find(yaPago);
 
     // Autorizada pero todavia sin cobrar: no se activa, y se dice CUANDO se
     // va a activar. Un "no encontramos tu pago" a alguien que acaba de dejar
     // su tarjeta es la forma mas rapida de perderlo.
+    // Autorizada, sin cobrar y SIN prueba: ese es el que espera el primer
+    // cobro. El que esta en prueba ya entro por yaPago().
     const esperandoElPrimerCobro = !autorizada &&
-      vistas.find((p) => p.estado === 'authorized' && p.plan && p.cobros === 0);
+      vistas.find((p) => p.estado === 'authorized' && p.plan && p.cobros === 0 && !p.en_prueba);
 
     // No aparecio por slug. Puede ser que la suscripcion haya nacido SIN el
     // (Mercado Pago no guarda el external_reference que mandamos en el link
@@ -424,8 +450,10 @@ module.exports = async (req, res) => {
       const porEmail = await suscripcionPorEmail(usuario.email);
       const planDeEsa = porEmail && PLAN_POR_PREAPPROVAL_ID[porEmail.preapproval_plan_id];
       const cobrosDeEsa = porEmail ? cobrosDe(porEmail) : null;
-      // Misma regla que arriba: sin cobro no se activa.
-      if (porEmail && planDeEsa && (cobrosDeEsa === null || cobrosDeEsa > 0)) {
+      // Misma regla que arriba: sin cobro no se activa, salvo que este
+      // dentro de los dias de prueba.
+      if (porEmail && planDeEsa &&
+          (cobrosDeEsa === null || cobrosDeEsa > 0 || enPruebaGratis(porEmail))) {
         autorizada = {
           id: porEmail.id,
           estado: porEmail.status,
