@@ -147,6 +147,26 @@ async function suscripcionPorEmail(email) {
   return null;
 }
 
+// ¿Esta suscripcion YA COBRO alguna vez?
+//
+// 'authorized' en Mercado Pago significa que el medio de pago quedo
+// autorizado, NO que la plata entro. Con un dia de cobro fijo, alguien se
+// suscribe el 22 y el primer debito cae el 10 del mes siguiente: autorizado
+// y sin pagar un peso. El plan no puede activarse ahi.
+//
+// El dato sale de `summarized.charged_quantity`, que Mercado Pago devuelve
+// en cada suscripcion.
+//
+// SI ESE CAMPO NO VIENE se devuelve null, y quien llama lo trata como "no se
+// puede saber" y activa igual. Es a proposito: bloquear a alguien que
+// autorizo el pago porque a nosotros nos falta un dato seria peor que el
+// problema que se quiere evitar.
+function cobrosDe(p) {
+  const s = p && p.summarized;
+  if (!s || s.charged_quantity === undefined || s.charged_quantity === null) return null;
+  return Number(s.charged_quantity) || 0;
+}
+
 async function suscripcionesDeSlug(slug) {
   const r = await fetch(MP_API + '/preapproval/search?external_reference=' + encodeURIComponent(slug),
     { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } });
@@ -208,6 +228,8 @@ module.exports = async (req, res) => {
           // El email es la llave de rescate cuando no hay slug: si no
           // coincide con el de la cuenta, hay que atarla a mano.
           payer_email: p.payer_email || null,
+          cobros: cobrosDe(p),
+          ultimo_cobro: (p.summarized && p.summarized.last_charged_date) || null,
           desde: p.date_created || null,
           proximo_cobro: p.next_payment_date ||
             (p.auto_recurring && p.auto_recurring.next_payment_date) || null,
@@ -307,11 +329,25 @@ module.exports = async (req, res) => {
       plan: PLAN_POR_PREAPPROVAL_ID[p.preapproval_plan_id] || null,
       plan_id: p.preapproval_plan_id,
       desde: p.date_created || null,
+      cobros: cobrosDe(p),
+      ultimo_cobro: (p.summarized && p.summarized.last_charged_date) || null,
       proximo_cobro: p.next_payment_date ||
         (p.auto_recurring && p.auto_recurring.next_payment_date) || null
     }));
 
-    let autorizada = vistas.find((p) => p.estado === 'authorized' && p.plan);
+    // El plan se activa cuando la plata ENTRO, no cuando el medio de pago
+    // quedo autorizado. cobros === null es "no se pudo saber": ahi se activa
+    // igual, porque el dato que falta es nuestro, no una deuda del cliente.
+    const yaPago = (p) => p.estado === 'authorized' && p.plan &&
+                          (p.cobros === null || p.cobros > 0);
+
+    let autorizada = vistas.find(yaPago);
+
+    // Autorizada pero todavia sin cobrar: no se activa, y se dice CUANDO se
+    // va a activar. Un "no encontramos tu pago" a alguien que acaba de dejar
+    // su tarjeta es la forma mas rapida de perderlo.
+    const esperandoElPrimerCobro = !autorizada &&
+      vistas.find((p) => p.estado === 'authorized' && p.plan && p.cobros === 0);
 
     // No aparecio por slug. Puede ser que la suscripcion haya nacido SIN el
     // (Mercado Pago no guarda el external_reference que mandamos en el link
@@ -320,7 +356,9 @@ module.exports = async (req, res) => {
     if (!autorizada) {
       const porEmail = await suscripcionPorEmail(usuario.email);
       const planDeEsa = porEmail && PLAN_POR_PREAPPROVAL_ID[porEmail.preapproval_plan_id];
-      if (porEmail && planDeEsa) {
+      const cobrosDeEsa = porEmail ? cobrosDe(porEmail) : null;
+      // Misma regla que arriba: sin cobro no se activa.
+      if (porEmail && planDeEsa && (cobrosDeEsa === null || cobrosDeEsa > 0)) {
         autorizada = {
           id: porEmail.id,
           estado: porEmail.status,
@@ -347,7 +385,15 @@ module.exports = async (req, res) => {
         ok: false,
         plan_actual: tienda.plan,
         suscripciones: vistas,
-        motivo: desconocida
+        esperando_cobro: !!esperandoElPrimerCobro,
+        proximo_cobro: esperandoElPrimerCobro ? esperandoElPrimerCobro.proximo_cobro : null,
+        motivo: esperandoElPrimerCobro
+          ? 'Tu suscripción está confirmada, pero Mercado Pago todavía no hizo el primer cobro' +
+            (esperandoElPrimerCobro.proximo_cobro
+              ? ' (está previsto para el ' + String(esperandoElPrimerCobro.proximo_cobro).slice(0, 10) + ')'
+              : '') +
+            '. Apenas entre el pago se te activa el plan solo.'
+          : desconocida
           ? 'Hay una suscripción autorizada pero su plan (' + desconocida.plan_id +
             ') no está en la lista del sistema. Avisale a soporte con este código.'
           : (vistas.length

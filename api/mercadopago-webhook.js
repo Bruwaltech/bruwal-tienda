@@ -147,10 +147,31 @@ module.exports = async (req, res) => {
     }
 
     if (preapproval.status === 'authorized') {
+      // 'authorized' significa que el medio de pago quedo autorizado, NO que
+      // la plata entro. Con un dia de cobro fijo alguien se suscribe el 22 y
+      // el primer debito cae el 10 del mes siguiente: autorizado y sin pagar
+      // un peso. El plan no se activa hasta que cobro al menos una vez.
+      //
+      // summarized.charged_quantity lo dice. Si ese campo NO viene, se
+      // activa igual: el dato que falta es nuestro, no una deuda del
+      // cliente, y dejar afuera a alguien que autorizo el pago es peor.
+      const resumen = preapproval.summarized || {};
+      const cobros = (resumen.charged_quantity === undefined || resumen.charged_quantity === null)
+        ? null
+        : Number(resumen.charged_quantity) || 0;
+
+      if (cobros === 0) {
+        console.log('Suscripcion autorizada pero todavia sin cobrar:', slug,
+                    '- primer cobro', preapproval.next_payment_date || '(sin fecha)');
+        res.statusCode = 200;
+        return res.end('autorizada, esperando el primer cobro');
+      }
+
       // plan_vence en null: si venía de una cancelación anterior y se
       // volvió a suscribir, esto le saca cualquier fecha de baja pendiente.
       await actualizarStore(slug, { plan, plan_vence: null });
-      console.log('Plan activado por Mercado Pago:', slug, '->', plan);
+      console.log('Plan activado por Mercado Pago:', slug, '->', plan,
+                  '(' + (cobros === null ? 'sin dato de cobros' : cobros + ' cobros') + ')');
       res.statusCode = 200;
       return res.end('ok');
     }
