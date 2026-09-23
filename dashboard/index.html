@@ -4821,6 +4821,15 @@ const nombrePlan = (plan) =>
 
 // Estado de la suscripcion de la tienda actual.
 // Devuelve: 'activo' (pago o cortesia), 'prueba', 'vencido'
+// Una fecha de vencimiento sin hora, leida como medianoche de Argentina.
+// -03:00 es el huso del pais y no cambia con horario de verano desde 2009.
+function venceEnHoraArgentina(fecha) {
+  const texto = String(fecha || '').trim();
+  const soloDia = /^\d{4}-\d{2}-\d{2}$/.test(texto);
+  const d = soloDia ? new Date(texto + 'T00:00:00-03:00') : new Date(texto);
+  return isNaN(d) ? null : d;
+}
+
 function estadoSuscripcion() {
   if (!currentStore) return 'prueba';
 
@@ -4831,7 +4840,14 @@ function estadoSuscripcion() {
     // cancela o se le pausa el cobro: ya pagó ese período, así que sigue
     // activo hasta esa fecha — recién después pasa a modo solo-lectura,
     // mismo criterio que la prueba gratis vencida.
-    const vence = currentStore.plan_vence ? new Date(currentStore.plan_vence) : null;
+    // plan_vence es una FECHA sin hora ("2026-10-01"). new Date() sobre eso
+    // da medianoche UTC, que en Argentina son las 21:00 del dia ANTERIOR: a
+    // una pizzeria se le cortaba el panel el 30 a las nueve de la noche, en
+    // plena venta, cuando lo que decia la fecha era "hasta el 30 inclusive".
+    //
+    // Se lee como medianoche de Argentina: el acceso dura todo el dia previo
+    // y corta cuando empieza el dia que figura en la fecha.
+    const vence = currentStore.plan_vence ? venceEnHoraArgentina(currentStore.plan_vence) : null;
     if (!vence || isNaN(vence)) return 'activo';
     return Date.now() < vence.getTime() ? 'activo' : 'vencido';
   }
