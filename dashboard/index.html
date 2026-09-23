@@ -5030,8 +5030,24 @@ function abrirPlanes() {
       accion = `<a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
                    href="https://wa.me/${WHATSAPP_BRUWAL}?text=${encodeURIComponent(msg)}"
                    target="_blank" rel="noopener">Hablar con un asesor</a>`;
-    } else if (currentStore?.plan === id) {
-      accion = `<div class="btn" style="text-align:center;background:var(--bg);color:var(--text-mute);cursor:default;">Tu plan actual</div>`;
+    } else if (currentStore?.plan === id && estadoSuscripcion() === 'activo') {
+      // "Tu plan actual" NO puede ser un callejon sin salida. Tener el plan
+      // puesto en la base no significa estar pagandolo: a varios se les
+      // activo a mano, o se les rescato un pago viejo. Cuando esos quieren
+      // dejar el debito automatico andando, se encontraban con un cartel
+      // gris y sin boton -- el sistema les decia "ya lo tenes" y no los
+      // dejaba pagar. El unico camino que les quedaba era suscribirse al
+      // plan de arriba, que no es el que querian.
+      const link = planesPeriodo === 'anual' ? LINKS_ANUALES[id] : p.link;
+      const sep = link && link.includes('?') ? '&' : '?';
+      accion =
+        `<div class="btn" style="text-align:center;background:var(--bg);color:var(--stock);cursor:default;font-weight:700;">✓ Tu plan actual</div>` +
+        (link
+          ? `<a href="${link}${sep}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
+                target="_blank" rel="noopener"
+                style="display:block;text-align:center;margin-top:8px;font-size:12.5px;color:var(--celeste);font-weight:600;">
+               ¿No tenés el débito automático? Activalo acá</a>`
+          : '');
     } else if (planesPeriodo === 'anual' && !LINKS_ANUALES[id]) {
       // Todavía no hay suscripción anual cargada en Mercado Pago. Antes de
       // mandar a alguien a un checkout que le cobraría el precio mensual,
