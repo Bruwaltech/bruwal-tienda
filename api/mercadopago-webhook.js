@@ -21,7 +21,13 @@ const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 // actualizar este mapa junto con dashboard/index.html.
 const PLAN_POR_PREAPPROVAL_ID = {
   '558bf71f6d62460797b95829fc767e0d': 'basic',
-  '7f3874b7347b43698e4b9daf92a5405b': 'pro'
+  '7f3874b7347b43698e4b9daf92a5405b': 'pro',
+  // "Promo Bruwal": el plan Pro a $40.000 en vez de $70.000. NO figura en
+  // el modal de planes a proposito -- se pasa por WhatsApp a quien se le
+  // ofrece. Pero el id TIENE que estar aca igual: si no, el cliente paga,
+  // la suscripcion queda autorizada en Mercado Pago, y el sistema no sabe
+  // que plan darle. Le pasaria justo el dia que se le corta el acceso.
+  '069a67b8a5c84460ae58975932328106': 'pro'
 };
 
 function faltanVariables() {
