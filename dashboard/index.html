@@ -19496,9 +19496,69 @@ async function diagnosticoMercadoPago() {
       'guarda y por eso no encontramos los pagos. <b>CON PRUEBA GRATIS</b> explicar\u00eda que alguien ' +
       'se suscriba y no se le cobre todav\u00eda.</div>';
 
+    // Estado del correo. Solo para el admin: a un cliente no le dice nada
+    // y ademas no tendria como arreglarlo.
+    if (d.admin) {
+      html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);">' +
+        '<div style="font-weight:800;color:var(--navy);margin-bottom:4px;">Correo</div>' +
+        '<div style="font-size:12px;line-height:1.6;margin-bottom:9px;color:' +
+          (d.correo_configurado ? 'var(--stock)' : 'var(--danger)') + ';">' +
+          (d.correo_configurado
+            ? 'Resend configurado. El mail de bienvenida sale solo cuando se activa un plan.'
+            : 'Falta RESEND_API_KEY en Vercel — el mail de bienvenida NO se está mandando.') +
+        '</div>' +
+        '<button id="probarMailBtn" class="btn btn-ghost" style="font-size:12px;padding:7px 14px;">' +
+        'Mandarme el de bienvenida</button>' +
+        '<span id="probarMailEstado" style="font-size:12px;margin-left:10px;"></span>' +
+        '</div>';
+    }
+
     caja.innerHTML = html;
+
+    // El boton nace recién ahora, con el innerHTML: el addEventListener
+    // tiene que ir después o se engancha a un elemento que no existe.
+    const botonMail = byId('probarMailBtn');
+    if (botonMail) botonMail.addEventListener('click', probarMailDeBienvenida);
   } catch (err) {
     caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// Se manda el mail de bienvenida a la propia casilla, para verlo llegar sin
+// tener que esperar a que se suscriba un cliente.
+async function probarMailDeBienvenida() {
+  const boton = byId('probarMailBtn');
+  const estado = byId('probarMailEstado');
+  if (!boton || !estado) return;
+
+  boton.disabled = true;
+  estado.style.color = 'var(--text-mute)';
+  estado.textContent = 'Mandando…';
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Volvé a iniciar sesión.');
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore && currentStore.slug, accion: 'probar-mail' })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+
+    if (d.ok) {
+      estado.style.color = 'var(--stock)';
+      estado.textContent = 'Enviado a ' + (d.para || 'tu casilla') + '. Fijate también en spam.';
+    } else {
+      estado.style.color = 'var(--danger)';
+      estado.textContent = d.motivo || 'No salió.';
+    }
+  } catch (err) {
+    estado.style.color = 'var(--danger)';
+    estado.textContent = err.message;
   } finally {
     boton.disabled = false;
   }

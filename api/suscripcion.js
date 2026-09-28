@@ -369,6 +369,39 @@ module.exports = async (req, res) => {
   }
 
   // ---- Modo diagnostico: mira y cuenta, no toca nada ----
+  // ---- Mandarse el correo de bienvenida, para verlo de verdad ----
+  //
+  // No recibe direccion de destino: sale al email de la sesion y a ninguno
+  // mas. Un boton que aceptara un destinatario seria una forma comoda de
+  // mandar correo con nuestro dominio a cualquiera.
+  //
+  // Saltea la marca bienvenida_enviada_en a proposito: es una prueba y tiene
+  // que poder repetirse.
+  if ((req.body || {}).accion === 'probar-mail') {
+    if (!esAdmin(usuario.email)) {
+      return res.status(403).json({ error: 'Solo para la cuenta de soporte' });
+    }
+    if (!mail.hayComoMandar()) {
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Falta RESEND_API_KEY en Vercel. Cargala y hace un redeploy.'
+      });
+    }
+
+    const base = 'https://' + (req.headers['x-forwarded-host'] || req.headers.host);
+    const salio = await mail.bienvenida({
+      base,
+      para: usuario.email,
+      nombre: tienda.business_name || tienda.slug
+    });
+
+    return res.status(200).json({
+      ok: salio,
+      para: usuario.email,
+      motivo: salio ? null : 'Resend no lo acepto. Mira los logs de la funcion en Vercel.'
+    });
+  }
+
   if ((req.body || {}).accion === 'diagnostico') {
     // Un cliente comun ve SOLO lo suyo. Antes veia el email y el monto de
     // todos los demas, que es de lo peor que puede filtrar una plataforma
@@ -487,6 +520,7 @@ module.exports = async (req, res) => {
       version: VERSION,
       diagnostico: true,
       admin: admin,
+      correo_configurado: mail.hayComoMandar(),
       cobranza: cobranza,
       tienda: tienda.slug,
       plan_en_bruwal: tienda.plan,
