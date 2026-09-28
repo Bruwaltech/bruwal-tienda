@@ -1,0 +1,160 @@
+<!-- Mail de bienvenida: sale cuando alguien se suscribe y el pago entra.
+     ==================================================================
+
+     POR QU&#201; EST&#193; ESCRITO "MAL" (tablas, estilos pegados a cada etiqueta,
+     nada de flex ni grid): los clientes de correo no son navegadores.
+     Outlook renderiza con el motor de Word, Gmail borra el <style> del
+     head, y ninguno entiende flexbox. Lo que en una web ser&#237;a un desastre,
+     ac&#225; es lo &#250;nico que se ve igual en todos lados.
+
+     TIENE QUE FUNCIONAR SIN IM&#193;GENES. Gmail y Outlook bloquean las fotos
+     hasta que el lector aprieta "mostrar im&#225;genes", y mucha gente no lo
+     aprieta nunca. Por eso el logo es una caja de color con una letra &#8212;
+     no un archivo &#8212; y todo lo que importa es texto.
+
+     El ancho de 600px no es capricho: es lo que entra en el panel de
+     lectura de Outlook sin scroll horizontal.
+
+     Las partes entre {{ }} las reemplaza quien manda el mail.        -->
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:#F4F8FC;margin:0;padding:24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+             style="width:100%;max-width:600px;background:#FFFFFF;border-radius:14px;overflow:hidden;border:1px solid #DCE6F0;">
+
+        <!-- Encabezado. El degradado no lo muestra Outlook, por eso abajo
+             va un color s&#243;lido de respaldo: si el degradado no carga, el
+             encabezado sigue siendo azul y no un rect&#225;ngulo blanco. -->
+        <tr>
+          <td style="background:#15294D;background-image:linear-gradient(135deg,#15294D 0%,#2F8FE0 100%);padding:38px 32px;text-align:center;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+              <tr>
+                <td style="width:56px;height:56px;background:#FFFFFF;border-radius:14px;text-align:center;vertical-align:middle;font-size:30px;font-weight:800;color:#15294D;font-family:Georgia,'Times New Roman',serif;">B</td>
+              </tr>
+            </table>
+            <div style="color:#FFFFFF;font-size:23px;font-weight:800;margin-top:18px;letter-spacing:-0.3px;">
+              Bienvenido al mundo del emprendedor moderno
+            </div>
+            <div style="color:#C9DEF5;font-size:15px;margin-top:8px;line-height:1.5;">
+              Tu negocio, ordenado y online. Desde hoy.
+            </div>
+          </td>
+        </tr>
+
+        <!-- Cuerpo -->
+        <tr>
+          <td style="padding:34px 32px 8px;">
+
+            <p style="margin:0 0 18px;font-size:16px;color:#15294D;line-height:1.6;">
+              Hola <strong>{{NOMBRE}}</strong>,
+            </p>
+
+            <p style="margin:0 0 18px;font-size:15px;color:#5C6B82;line-height:1.7;">
+              Gracias por suscribirte. Sabemos que confiar el manejo de tu negocio
+              a una plataforma no es una decisi&#243;n menor, y la tomamos en serio:
+              de ahora en m&#225;s, tu stock, tus ventas y tu tienda online viven en un
+              solo lugar y trabajan para vos.
+            </p>
+
+            <p style="margin:0 0 26px;font-size:15px;color:#5C6B82;line-height:1.7;">
+              Ya ten&#233;s todo habilitado. Si quer&#233;s empezar por alg&#250;n lado, estos
+              tres pasos son los que m&#225;s r&#225;pido se notan:
+            </p>
+
+            <!-- Los pasos, como tabla: una lista con n&#250;meros y sangr&#237;a se
+                 desarma en Outlook. -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background:#F4F8FC;border:1px solid #DCE6F0;border-radius:10px;margin-bottom:26px;">
+              <tr>
+                <td style="padding:20px 22px;">
+
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="30" valign="top" style="font-size:17px;padding-bottom:14px;">&#128230;</td>
+                      <td valign="top" style="padding-bottom:14px;">
+                        <div style="font-size:14.5px;font-weight:700;color:#15294D;">Carg&#225; tus productos</div>
+                        <div style="font-size:13.5px;color:#5C6B82;line-height:1.55;">Con foto y precio. Si ten&#233;s muchos, se suben todos juntos desde un Excel.</div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td width="30" valign="top" style="font-size:17px;padding-bottom:14px;">&#127978;</td>
+                      <td valign="top" style="padding-bottom:14px;">
+                        <div style="font-size:14.5px;font-weight:700;color:#15294D;">Compart&#237; tu tienda</div>
+                        <div style="font-size:13.5px;color:#5C6B82;line-height:1.55;">Ten&#233;s un link propio para mandar por WhatsApp o poner en tu Instagram.</div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td width="30" valign="top" style="font-size:17px;">&#128181;</td>
+                      <td valign="top">
+                        <div style="font-size:14.5px;font-weight:700;color:#15294D;">Registr&#225; tu primera venta</div>
+                        <div style="font-size:13.5px;color:#5C6B82;line-height:1.55;">El stock se descuenta solo y la caja te queda cuadrada al cierre.</div>
+                      </td>
+                    </tr>
+                  </table>
+
+                </td>
+              </tr>
+            </table>
+
+            <!-- El bot&#243;n. Va como tabla con fondo propio: un <a> con
+                 padding no se ve como bot&#243;n en Outlook. -->
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 30px;">
+              <tr>
+                <td style="background:#2F8FE0;border-radius:9px;text-align:center;">
+                  <a href="{{LINK_PANEL}}"
+                     style="display:inline-block;padding:14px 34px;color:#FFFFFF;font-size:15.5px;font-weight:700;text-decoration:none;">
+                    Entrar a mi panel
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Lo que pidi&#243; el vendedor: que se sepa que hay alguien
+                 atr&#225;s. Va destacado y con el WhatsApp clickeable. -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background:#E8F6F1;border:1px solid #BFE5DA;border-radius:10px;margin-bottom:8px;">
+              <tr>
+                <td style="padding:20px 22px;">
+                  <div style="font-size:15px;font-weight:700;color:#10614F;margin-bottom:6px;">
+                    &#191;Alguna duda? Escribinos.
+                  </div>
+                  <div style="font-size:13.5px;color:#3A6B5E;line-height:1.65;">
+                    No dudes en consultarnos lo que necesites, por m&#225;s chico que te parezca.
+                    Estamos para ayudarte a que esto te funcione, y te contesta una
+                    persona &#8212; no un bot.
+                  </div>
+                  <div style="margin-top:14px;">
+                    <a href="https://wa.me/{{WHATSAPP}}"
+                       style="display:inline-block;background:#25D366;color:#FFFFFF;font-size:14px;font-weight:700;text-decoration:none;padding:11px 22px;border-radius:8px;">
+                      Escribirnos por WhatsApp
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+
+        <!-- Pie -->
+        <tr>
+          <td style="padding:24px 32px 30px;text-align:center;border-top:1px solid #DCE6F0;">
+            <div style="font-size:13px;color:#5C6B82;line-height:1.6;">
+              Gracias por elegirnos.<br>
+              <strong style="color:#15294D;">El equipo de BRUWAL</strong>
+            </div>
+            <div style="font-size:11.5px;color:#93A3B8;margin-top:16px;line-height:1.6;">
+              Recib&#237;s este correo porque activaste tu plan en BRUWAL.<br>
+              <a href="{{LINK_PANEL}}" style="color:#2F8FE0;text-decoration:none;">bruwaltech.com.ar</a>
+            </div>
+          </td>
+        </tr>
+
+      </table>
+
+    </td>
+  </tr>
+</table>
