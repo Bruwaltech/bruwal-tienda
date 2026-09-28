@@ -140,17 +140,50 @@ async function marcarSuscripcionConSlug(preapprovalId, slug) {
 // El email viene de la sesion de Supabase, no del navegador: nadie puede
 // pedir el plan de otro diciendo que es su email.
 async function suscripcionPorEmail(email) {
-  if (!email) return null;
+  const buscado = String(email || '').trim().toLowerCase();
+  if (!buscado || !buscado.includes('@')) return null;
 
   for (const planId of Object.keys(PLAN_POR_PREAPPROVAL_ID)) {
     const r = await suscripcionesDelPlan(planId);
     if (!r.ok) continue;
-    const suya = r.resultados.find((p) =>
-      p.status === 'authorized' &&
-      String(p.payer_email || '').toLowerCase() === String(email).toLowerCase());
+
+    const suya = r.resultados.find((p) => {
+      if (p.status !== 'authorized') return false;
+
+      // EL EMAIL DEL PAGADOR TIENE QUE EXISTIR DE VERDAD.
+      //
+      // Sin esta guarda paso lo peor que puede pasar en un sistema de
+      // cobros: UNA suscripcion terminó activando el plan de CUATRO
+      // cuentas de cuatro duenios distintos. Tres estaban usando el
+      // sistema con el pago de la cuarta.
+      //
+      // El agujero es que la comparacion de antes convertia los dos lados
+      // a texto: si Mercado Pago no devuelve payer_email en la busqueda
+      // (viene undefined), quedaba '' de un lado, y cualquier cosa que
+      // tambien diera '' del otro hacia juego. Comparar dos vacios y
+      // darlos por iguales es regalar el acceso.
+      const suyo = String(p.payer_email || '').trim().toLowerCase();
+      if (!suyo || !suyo.includes('@')) return false;
+
+      return suyo === buscado;
+    });
+
     if (suya) return suya;
   }
   return null;
+}
+
+// Antes de atar una suscripcion a una tienda: ¿ya esta atada a OTRA?
+//
+// Es la segunda red, y es la que de verdad cierra el problema: aunque un
+// dia falle la comparacion de emails, una misma suscripcion no puede
+// sostener dos cuentas. Devuelve el slug de la duenia, o null si esta libre.
+async function tiendaQueYaUsaEsaSuscripcion(preapprovalId, slugPropio) {
+  if (!preapprovalId) return null;
+  const filas = await sb('/rest/v1/store_profiles?mp_preapproval_id=eq.' +
+                         encodeURIComponent(preapprovalId) + '&select=slug&limit=2');
+  const otra = (filas || []).find((t) => t.slug !== slugPropio);
+  return otra ? otra.slug : null;
 }
 
 // ¿Esta suscripcion YA COBRO alguna vez?
@@ -452,7 +485,16 @@ module.exports = async (req, res) => {
       const cobrosDeEsa = porEmail ? cobrosDe(porEmail) : null;
       // Misma regla que arriba: sin cobro no se activa, salvo que este
       // dentro de los dias de prueba.
-      if (porEmail && planDeEsa &&
+      // Aunque el email haya dado juego, si esa suscripcion ya sostiene
+      // otra cuenta NO se activa: una suscripcion, una tienda.
+      const yaEsDeOtra = porEmail
+        ? await tiendaQueYaUsaEsaSuscripcion(porEmail.id, tienda.slug)
+        : null;
+
+      if (yaEsDeOtra) {
+        console.warn('La suscripcion', porEmail.id, 'ya es de', yaEsDeOtra,
+                     '- no se activa', tienda.slug);
+      } else if (porEmail && planDeEsa &&
           (cobrosDeEsa === null || cobrosDeEsa > 0 || enPruebaGratis(porEmail))) {
         autorizada = {
           id: porEmail.id,
