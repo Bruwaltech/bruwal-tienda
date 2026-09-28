@@ -19,6 +19,12 @@
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const MP_API = 'https://api.mercadopago.com';
 
+// Version de este archivo. Sube con cada cambio de logica y viaja en cada
+// respuesta. Sin esto, cuando algo falla no hay forma de saber si lo que
+// esta corriendo tiene el arreglo o es el codigo viejo todavia cacheado:
+// se pierde media hora discutiendo contra un fantasma.
+const VERSION = 3;
+
 // El mismo mapa que usa el webhook. Si algún día se recrea un plan en
 // Mercado Pago (cambia el precio y sale un id nuevo), hay que actualizar los
 // DOS lugares: acá y en api/mercadopago-webhook.js.
@@ -149,6 +155,13 @@ async function suscripcionPorEmail(email) {
 
     const suya = r.resultados.find((p) => {
       if (p.status !== 'authorized') return false;
+
+      // Cada intento queda escrito con los dos emails a la vista. Este
+      // rescate ya fallo DOS veces repartiendo el pago de uno entre varios,
+      // y las dos veces se perdio tiempo adivinando por que. Con el log,
+      // la proxima se lee.
+      console.log('rescate por email: compara', JSON.stringify(p.payer_email),
+                  'contra', JSON.stringify(buscado), '| suscripcion', p.id);
 
       // EL EMAIL DEL PAGADOR TIENE QUE EXISTIR DE VERDAD.
       //
@@ -413,6 +426,7 @@ module.exports = async (req, res) => {
 
     return res.status(200).json({
       ok: true,
+      version: VERSION,
       diagnostico: true,
       admin: admin,
       cobranza: cobranza,
@@ -487,6 +501,11 @@ module.exports = async (req, res) => {
       // dentro de los dias de prueba.
       // Aunque el email haya dado juego, si esa suscripcion ya sostiene
       // otra cuenta NO se activa: una suscripcion, una tienda.
+      //
+      // Esto dejo de ser una precaucion teorica: paso dos veces. La segunda
+      // fue un socio probando con la cuenta de la Pañalera, a quien el
+      // sistema le ofrecio la suscripcion de Fabricio -- dos emails que no
+      // se parecen en nada. Lo unico que lo freno fue el indice de la base.
       const yaEsDeOtra = porEmail
         ? await tiendaQueYaUsaEsaSuscripcion(porEmail.id, tienda.slug)
         : null;
@@ -520,6 +539,7 @@ module.exports = async (req, res) => {
       const desconocida = vistas.find((p) => p.estado === 'authorized' && !p.plan);
       return res.status(200).json({
         ok: false,
+        version: VERSION,
         plan_actual: tienda.plan,
         suscripciones: vistas,
         esperando_cobro: !!esperandoElPrimerCobro,
@@ -549,6 +569,12 @@ module.exports = async (req, res) => {
     // plan_vence en null: si venía de una baja anterior y volvió a
     // suscribirse, esto le saca la fecha de corte pendiente. Mismo criterio
     // que el webhook.
+    // La escritura va con red: si la base la rechaza, el cliente NO puede
+    // recibir el error crudo de Postgres. Le paso a un vendedor de verdad:
+    // apreto "Ya pague" y le aparecio
+    //   'Supabase 409: {"code":"23505","details":"Key (mp_preapproval_id)...'
+    // Eso no le dice nada y parece que la plataforma se rompio.
+    try {
     await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(tienda.slug), {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
@@ -564,11 +590,38 @@ module.exports = async (req, res) => {
         plan_updated_at: new Date().toISOString()
       }
     });
+    } catch (err) {
+      const texto = String((err && err.message) || err);
+
+      // 23505 = la suscripcion ya esta tomada por otra cuenta. Es el indice
+      // que impide que un pago sostenga dos tiendas. No es un error del
+      // cliente ni de la plataforma: es que ese pago no es suyo.
+      if (texto.includes('23505') || texto.includes('store_profiles_una_suscripcion_una_tienda')) {
+        console.warn('Se quiso atar a', tienda.slug, 'una suscripcion que ya es de otra cuenta:',
+                     autorizada.id);
+        return res.status(200).json({
+          ok: false,
+          suscripcion_de_otro: true,
+          suscripciones: vistas,
+          motivo: 'El pago que encontramos ya está asociado a otra cuenta, así que no es de ' +
+                  'esta tienda. Si pagaste recién, escribinos y lo revisamos: puede ser que hayas ' +
+                  'pagado con un mail distinto al de tu cuenta.'
+        });
+      }
+
+      console.error('No se pudo activar el plan de', tienda.slug, texto);
+      return res.status(200).json({
+        ok: false,
+        suscripciones: vistas,
+        motivo: 'No pudimos activar el plan en este momento. Probá de nuevo en un rato o escribinos.'
+      });
+    }
 
     console.log('Plan activado a mano desde el panel:', tienda.slug, '->', autorizada.plan);
 
     return res.status(200).json({
       ok: true,
+      version: VERSION,
       activado: true,
       plan: autorizada.plan,
       antes: tienda.plan,
