@@ -13,6 +13,7 @@
 // alguien que todavía tiene días pagos.
 
 const crypto = require('crypto');
+const mail = require('./_mail');
 
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 
@@ -61,6 +62,56 @@ function firmaValida(dataId, requestId, cabeceraSignature) {
     .update(manifest).digest('hex');
 
   return igualdadSegura(esperada, partes.v1);
+}
+
+// El correo de bienvenida cuando el plan lo activa Mercado Pago.
+//
+// La direccion NO sale del aviso: payer_email viene vacio en casi todas las
+// suscripciones que nacen del link de un plan (medido contra la cuenta
+// real). Sale del dueno de la tienda en Supabase, que ademas es la casilla
+// con la que entra al panel -- que es donde tiene que llegarle.
+async function bienvenidaDelWebhook(req, slug) {
+  try {
+    if (!mail.hayComoMandar()) return false;
+
+    const clave = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    // Pedir la marca primero: si el cliente ya apreto "Ya pague" y el mail
+    // salio por ese lado, aca no sale de nuevo.
+    const r = await fetch(SUPABASE_URL + '/rest/v1/store_profiles?slug=eq.' +
+                          encodeURIComponent(slug) + '&bienvenida_enviada_en=is.null', {
+      method: 'PATCH',
+      headers: {
+        apikey: clave,
+        Authorization: 'Bearer ' + clave,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+      },
+      body: JSON.stringify({ bienvenida_enviada_en: new Date().toISOString() })
+    });
+    if (!r.ok) return false;
+
+    const filas = await r.json();
+    if (!Array.isArray(filas) || !filas.length) return false;   // ya habia salido
+
+    const fila = filas[0];
+    let para = null;
+    try {
+      const u = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' +
+                            encodeURIComponent(fila.user_id), {
+        headers: { apikey: clave, Authorization: 'Bearer ' + clave }
+      });
+      if (u.ok) { const d = await u.json(); para = d && d.email; }
+    } catch (e) { /* sin casilla no hay a donde mandarlo */ }
+    if (!para) return false;
+
+    const base = 'https://' + (req.headers['x-forwarded-host'] || req.headers.host);
+    return await mail.bienvenida({ base, para, nombre: fila.business_name });
+  } catch (err) {
+    console.warn('No se pudo mandar la bienvenida de', slug,
+                 String((err && err.message) || err));
+    return false;
+  }
 }
 
 async function actualizarStore(slug, campos) {
@@ -247,6 +298,9 @@ module.exports = async (req, res) => {
         mp_preapproval_id: dataId || null,
         plan_updated_at: new Date().toISOString()
       });
+      // Despues de escribir el plan, y sin poder romperlo.
+      await bienvenidaDelWebhook(req, slug);
+
       console.log('Plan activado por Mercado Pago:', slug, '->', plan,
                   '(' + (enPrueba ? 'en prueba gratis'
                        : cobros === null ? 'sin dato de cobros'

@@ -16,6 +16,8 @@
 // suscripción autorizada, no se activa nada. O sea: no se puede usar para
 // darse un plan a uno mismo.
 
+const mail = require('./_mail');
+
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const MP_API = 'https://api.mercadopago.com';
 
@@ -72,6 +74,41 @@ async function sb(ruta, opciones) {
   return texto ? JSON.parse(texto) : null;
 }
 
+// El correo de bienvenida, UNA sola vez por tienda.
+//
+// La marca se pide ANTES de mandar, con un PATCH que solo agarra si la
+// columna sigue vacia. Los dos caminos que activan un plan (este boton y el
+// webhook de Mercado Pago) pueden correr con segundos de diferencia; asi
+// uno se queda con la marca y el otro no manda nada. El cliente recibe un
+// mail, no dos.
+//
+// No tira hacia afuera por ningun motivo: cuando esto corre el plan YA esta
+// activo, y un problema de correo no puede hacer parecer que el pago fallo.
+async function mandarBienvenidaUnaVez({ req, slug, para, nombre }) {
+  try {
+    if (!mail.hayComoMandar() || !para) return false;
+
+    const marcadas = await sb(
+      '/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) +
+      '&bienvenida_enviada_en=is.null',
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: { bienvenida_enviada_en: new Date().toISOString() }
+      });
+
+    // Vacio = la marca ya estaba puesta, o sea que el mail ya salio.
+    if (!Array.isArray(marcadas) || !marcadas.length) return false;
+
+    const base = 'https://' + (req.headers['x-forwarded-host'] || req.headers.host);
+    return await mail.bienvenida({ base, para, nombre });
+  } catch (err) {
+    console.warn('No se pudo mandar la bienvenida a', para,
+                 String((err && err.message) || err));
+    return false;
+  }
+}
+
 async function usuarioDeToken(token) {
   const r = await fetch(SUPABASE_URL + '/auth/v1/user', {
     headers: { Authorization: 'Bearer ' + token, apikey: process.env.SUPABASE_SERVICE_ROLE_KEY }
@@ -85,7 +122,8 @@ async function usuarioDeToken(token) {
 // api/mercadolibre.js.
 async function tiendaDelUsuario(userId, slugPedido) {
   const filas = await sb('/rest/v1/store_profiles?user_id=eq.' + encodeURIComponent(userId) +
-                         '&select=slug,plan,plan_vence,mp_preapproval_id&order=created_at.asc');
+                         '&select=slug,business_name,plan,plan_vence,mp_preapproval_id' +
+                         '&order=created_at.asc');
   if (!filas || !filas.length) return null;
 
   if (slugPedido) {
@@ -638,6 +676,14 @@ module.exports = async (req, res) => {
     }
 
     console.log('Plan activado a mano desde el panel:', tienda.slug, '->', autorizada.plan);
+
+    // Recien ahora, con el plan ya escrito.
+    await mandarBienvenidaUnaVez({
+      req,
+      slug: tienda.slug,
+      para: usuario.email,
+      nombre: tienda.business_name
+    });
 
     return res.status(200).json({
       ok: true,
