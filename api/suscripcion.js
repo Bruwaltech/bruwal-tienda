@@ -380,7 +380,7 @@ module.exports = async (req, res) => {
     if (admin) {
       // Las tiendas con plan pago en BRUWAL, con el email de su dueno.
       const conPlan = await sb('/rest/v1/store_profiles?plan=in.(basic,pro)' +
-                               '&select=slug,business_name,plan,user_id&limit=200');
+                               '&select=slug,business_name,plan,user_id,mp_preapproval_id&limit=200');
 
       // Todas las suscripciones de nuestros planes, con su email.
       const suscripciones = [];
@@ -405,9 +405,22 @@ module.exports = async (req, res) => {
           if (u.ok) { const d = await u.json(); email = d && d.email; }
         } catch (e) { /* sin el email, el cruce por slug igual sirve */ }
 
+        // EL CAMPO QUE FALTABA MIRAR, y daba un falso "no paga" a dos
+        // clientes que si pagan: la suscripcion que la tienda YA tiene
+        // anotada. Es el unico dato confiable de los tres, porque los
+        // otros dos dependen de Mercado Pago:
+        //
+        //  - external_reference viene vacio SIEMPRE (no lo guarda);
+        //  - payer_email no viene en la busqueda de suscripciones.
+        //
+        // Con el cruce mirando solo esos dos, el panel decia "✗ NO" para
+        // todos. Alguien podria haber cortado el servicio a dos clientes
+        // al dia por creerle a esa tabla.
         const suya = autorizadas.find((p) =>
-          p.external_reference === t.slug ||
-          (email && String(p.payer_email || '').toLowerCase() === String(email).toLowerCase()));
+          (t.mp_preapproval_id && String(p.id) === String(t.mp_preapproval_id)) ||
+          (p.external_reference && p.external_reference === t.slug) ||
+          (email && p.payer_email &&
+           String(p.payer_email).toLowerCase() === String(email).toLowerCase()));
 
         cobranza.push({
           negocio: t.business_name || t.slug,
@@ -415,6 +428,13 @@ module.exports = async (req, res) => {
           plan: t.plan,
           email: email,
           paga: !!suya,
+          // Como se supo que paga. Si manana el cruce vuelve a equivocarse,
+          // esto dice por cual de los tres caminos entro.
+          por: suya
+            ? (t.mp_preapproval_id && String(suya.id) === String(t.mp_preapproval_id) ? 'suscripcion guardada'
+               : suya.external_reference === t.slug ? 'slug'
+               : 'email')
+            : null,
           suscripcion: suya ? suya.id : null,
           monto: suya && suya.auto_recurring ? suya.auto_recurring.transaction_amount : null,
           proximo_cobro: suya ? (suya.next_payment_date ||
