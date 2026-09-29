@@ -124,6 +124,15 @@
   .ficha-precio + .fila-oferta{margin-top:-2px;}
   .product-stock{font-size:12px;color:var(--text-mute);margin-bottom:12px;}
   .product-controls{display:flex;gap:8px;margin-top:auto;}
+  .por-mayor{background:var(--bg);border:1px solid var(--line,#DCE6F0);border-radius:10px;padding:12px 14px;margin:10px 0 14px;}
+  .por-mayor-titulo{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--navy);margin-bottom:8px;}
+  .por-mayor-fila{display:flex;align-items:baseline;gap:6px;padding:3px 0;font-size:14px;}
+  .por-mayor-cant{font-weight:800;color:var(--navy);min-width:30px;text-align:right;}
+  .por-mayor-x{color:var(--text-mute);font-size:12px;}
+  .por-mayor-precio{font-weight:700;color:var(--navy);}
+  .por-mayor-cu{color:var(--text-mute);font-size:12px;}
+  .por-mayor-pie{font-size:11.5px;color:var(--text-mute);margin-top:8px;line-height:1.5;}
+  .linea-mayorista{font-size:11.5px;color:var(--stock,#1FA088);font-weight:700;margin-top:2px;}
   .qty-controls{display:flex;align-items:center;gap:8px;flex:1;background:var(--bg);border-radius:8px;padding:4px;}
   .qty-controls button{width:32px;height:32px;border-radius:6px;border:none;background:#fff;font-size:16px;cursor:pointer;color:var(--celeste);font-weight:700;transition:all 0.2s;}
   .qty-controls button:hover{background:var(--celeste);color:#fff;}
@@ -727,6 +736,33 @@ function etiquetaOferta(p){
   '</div>';
 }
 
+// ---- Precio por mayor ----
+// Cuantas unidades de ESTE producto hay en el carrito, sumando TODAS sus
+// lineas. Un revendedor que lleva 5 de menta y 5 de sandia lleva 10 vapes:
+// contarlos por sabor separado lo dejaria afuera del precio por mayor justo
+// cuando mas claro esta que esta comprando por mayor.
+function unidadesDelProductoEnCarrito(productoId){
+  return Object.values(cart).reduce((s, l) =>
+    String(l.productId) === String(productoId) ? s + Number(l.qty || 0) : s, 0);
+}
+
+// Los escalones cargados, limpios y ordenados de menor a mayor.
+//
+// Se filtran las filas a medio cargar (sin cantidad o sin precio): una fila
+// vacia que el vendedor dejo abierta no puede cambiarle el precio a nadie.
+function escalonesDe(p){
+  return (Array.isArray(p && p.precios_por_cantidad) ? p.precios_por_cantidad : [])
+    .map(e => ({ desde: Number(e && e.desde), precio: Number(e && e.precio) }))
+    .filter(e => e.desde > 1 && e.precio > 0)
+    .sort((a, b) => a.desde - b.desde);
+}
+
+// El escalon que corresponde a esa cantidad, o null.
+function escalonPorCantidad(p, unidades){
+  const suben = escalonesDe(p).filter(e => unidades >= e.desde);
+  return suben.length ? suben[suben.length - 1] : null;
+}
+
 function precioDeVariante(p, v){
   return (v && v.precio != null) ? Number(v.precio) : precioBase(p);
 }
@@ -739,6 +775,32 @@ function rangoPrecioVariantes(p){
   const precios = p.variantes.map(v => precioDeVariante(p, v));
   return { min: Math.min(...precios), max: Math.max(...precios) };
 }
+// La tabla de precios por cantidad, con el mismo formato que el vendedor
+// usa en WhatsApp: "5 X 25.000 c/u". La primera fila es su precio normal,
+// para que se vea el salto.
+//
+// No se muestra si no hay escalones cargados: una tienda que no vende por
+// mayor no tiene que ver una seccion vacia.
+function bloquePorMayor(p){
+  const escalones = escalonesDe(p);
+  if (!escalones.length || p.mostrar_precio === false) return '';
+
+  const unidad = precioBase(p);
+  const filas = (unidad > 0 ? [{ desde: 1, precio: unidad }] : []).concat(escalones);
+
+  return '<div class="por-mayor">' +
+    '<div class="por-mayor-titulo">Precio por cantidad</div>' +
+    filas.map(e =>
+      '<div class="por-mayor-fila">' +
+        '<span class="por-mayor-cant">' + e.desde + '</span>' +
+        '<span class="por-mayor-x">&times;</span>' +
+        '<span class="por-mayor-precio">' + money(e.precio) + '</span>' +
+        '<span class="por-mayor-cu">c/u</span>' +
+      '</div>').join('') +
+    '<div class="por-mayor-pie">El precio se ajusta solo al llegar a la cantidad.</div>' +
+  '</div>';
+}
+
 function escapeHtml(str){
   const d = document.createElement('div');
   d.textContent = str == null ? '' : String(str);
@@ -1919,6 +1981,7 @@ function abrirFicha(id) {
             ? '<div class="ficha-precio" id="fichaPrecio">Desde ' + money(rango.min) + '</div>' + etiquetaOferta(p)
             : '<div class="ficha-precio" id="fichaPrecio">' + money(rango.min) + '</div>' + etiquetaOferta(p) + precioOriginal(p);
         })()) +
+    bloquePorMayor(p) +
     bloqueOpinionesMl(p) +
     bloqueReputacionMl() +
     '<div id="fichaDisponibilidad" style="font-size:13px;color:var(--text-mute);margin-bottom:12px;">' +
@@ -2443,6 +2506,20 @@ const precioUnitario = (linea) => {
       }
     }
   }
+
+  // El precio por mayor, despues de la variante para que un sabor con
+  // precio propio no quede pisado por el escalon si es mas barato.
+  //
+  // Solo se aplica si MEJORA el precio. Mismo criterio que la oferta: un
+  // escalon mal cargado no puede terminar cobrandole de mas al cliente.
+  //
+  // La media pizza queda afuera a proposito: ahi el precio ya viene con el
+  // recargo de la mitad suelta adentro y pisarlo lo descuadraria.
+  if (!esVarianteMitad(linea.variante)) {
+    const escalon = escalonPorCantidad(p, unidadesDelProductoEnCarrito(linea.productId));
+    if (escalon && escalon.precio < base) base = escalon.precio;
+  }
+
   return base + extras;
 };
 
@@ -2650,6 +2727,15 @@ function renderDetalleCarrito(){
         (porMedida
           ? '<div class="carrito-linea-detalle">' + escapeHtml(formatearCantidad(l.qty, p)) + '</div>'
           : '') +
+        (() => {
+          // El escalon se calcula sobre el total del producto en el
+          // carrito, no sobre esta linea: por eso se avisa aca aunque esta
+          // linea sola no llegue a la cantidad.
+          const esc = escalonPorCantidad(p, unidadesDelProductoEnCarrito(l.productId));
+          return esc && esc.precio < precioBase(p)
+            ? '<div class="linea-mayorista">Precio por cantidad: ' + money(esc.precio) + ' c/u</div>'
+            : '';
+        })() +
       '</div>' +
       (porMedida
         ? ''

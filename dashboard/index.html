@@ -2908,6 +2908,38 @@ tr:last-child td { border-bottom: none; }
             Si lo cargás, en la tienda se ve el precio de arriba tachado y este como precio nuevo, con el % de descuento. Para sacar la oferta, borrá el campo.
           </small>
         </div>
+        <div class="field" id="campoPorMayor">
+          <label>📦 Precio por cantidad <span style="font-weight:400;color:var(--text-mute);">(opcional &mdash; venta por mayor)</span></label>
+          <small style="display:block;margin:2px 0 10px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
+            Un solo producto, un solo stock. El precio baja solo cuando el cliente llega a la cantidad.
+          </small>
+
+          <div id="porMayorFilas"></div>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <button type="button" id="porMayorAgregar" class="btn-action"
+                    style="background:var(--bg);color:var(--navy);border:1px solid var(--line);font-size:12.5px;">
+              + Agregar escal&oacute;n
+            </button>
+            <button type="button" id="porMayorPegarBtn" class="btn-action"
+                    style="background:var(--bg);color:var(--navy);border:1px solid var(--line);font-size:12.5px;">
+              📋 Pegar lista de WhatsApp
+            </button>
+          </div>
+
+          <div id="porMayorPegarCaja" class="hidden" style="margin-top:10px;">
+            <textarea id="porMayorPegarTexto" rows="5" placeholder="5 X 25.000 c/u&#10;10 X 23.000 c/u&#10;25 X 19.500 c/u"
+                      style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;"></textarea>
+            <div style="display:flex;gap:8px;margin-top:6px;">
+              <button type="button" id="porMayorLeer" class="btn-action"
+                      style="background:var(--navy);color:#fff;border:none;font-size:12.5px;">Leer la lista</button>
+              <button type="button" id="porMayorCancelar" class="btn-action"
+                      style="background:var(--bg);color:var(--text-mute);border:1px solid var(--line);font-size:12.5px;">Cancelar</button>
+            </div>
+            <small id="porMayorPegarAviso" style="display:block;margin-top:6px;font-size:11.5px;line-height:1.5;"></small>
+          </div>
+        </div>
+
         <div class="field">
           <!-- El costo SIEMPRE es por unidad: la valoracion de stock hace
                costo x stock y el margen hace costo x cantidad vendida. Poner
@@ -19114,6 +19146,8 @@ function abrirFormularioNuevo(tipo) {
     if (byId('pModeloSugeridas')) byId('pModeloSugeridas').innerHTML = '';
     if (byId('pPrice')) byId('pPrice').value = '';
     if (byId('pPrecioOferta')) byId('pPrecioOferta').value = '';
+    escalonesEnEdicion = [];
+    renderEscalones();
     if (byId('pPriceMoneda')) byId('pPriceMoneda').value = 'ARS';
     if (byId('pPriceHint')) hide(byId('pPriceHint'));
     if (byId('pEan')) byId('pEan').value = '';
@@ -19861,6 +19895,140 @@ byId('pImageFile').addEventListener('change', async (e) => {
   renderFotosEnEdicion();
 });
 
+// ---- Precio por cantidad (venta por mayor) ----
+//
+// Vive fuera del DOM, como fotosEnEdicion: el estado real es este array y
+// los inputs son nada mas la forma de verlo. Leer los escalones del HTML al
+// guardar obligaria a que el orden de las filas y el de los datos coincidan
+// siempre, que es justo lo que se rompe cuando se borra una del medio.
+let escalonesEnEdicion = [];
+
+// Un numero escrito a la argentina: 25.000 son veinticinco mil, y 19,50 son
+// diecinueve con cincuenta.
+//
+// Se distingue por la FORMA, no adivinando: punto cada tres digitos es
+// separador de miles; coma al final con uno o dos digitos es decimal. Sin
+// esta distincion, "19.500" entraria como diecinueve con cinco y el
+// vendedor estaria regalando el producto.
+function numeroArgentino(txt) {
+  const limpio = String(txt || '').replace(/[^\d.,]/g, '');
+  if (!limpio) return NaN;
+  if (/^\d{1,3}(\.\d{3})+$/.test(limpio)) return Number(limpio.replace(/\./g, ''));
+  if (/,\d{1,2}$/.test(limpio)) return Number(limpio.replace(/\./g, '').replace(',', '.'));
+  return Number(limpio.replace(/,/g, ''));
+}
+
+// Lee la lista tal cual la escribe en WhatsApp: "10 X 23.000 c/u".
+// Tolera la equis en minuscula, el simbolo de multiplicar, el signo $ y que
+// no haya espacios.
+function leerEscalonesDeTexto(texto) {
+  const filas = [];
+  String(texto || '').split(/[\r\n]+/).forEach((linea) => {
+    const m = linea.match(/^\s*(\d+)\s*[x\u00d7X]\s*\$?\s*([\d.,]+)/);
+    if (!m) return;
+    const desde  = Number(m[1]);
+    const precio = numeroArgentino(m[2]);
+    if (desde > 0 && precio > 0) filas.push({ desde, precio });
+  });
+  return filas;
+}
+
+function renderEscalones() {
+  const caja = byId('porMayorFilas');
+  if (!caja) return;
+
+  if (!escalonesEnEdicion.length) {
+    caja.innerHTML = '<div style="font-size:12px;color:var(--text-mute);padding:6px 0;">' +
+      'Sin precios por cantidad. Este producto se vende siempre al precio de arriba.</div>';
+    return;
+  }
+
+  caja.innerHTML = escalonesEnEdicion.map((e, i) =>
+    '<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">' +
+      '<span style="font-size:12px;color:var(--text-mute);">Desde</span>' +
+      '<input type="number" min="2" step="1" data-esc-desde="' + i + '" value="' + (e.desde || '') + '" ' +
+        'style="width:74px;padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">' +
+      '<span style="font-size:12px;color:var(--text-mute);">u. \u2192 $</span>' +
+      '<input type="number" min="0" step="0.01" data-esc-precio="' + i + '" value="' + (e.precio || '') + '" ' +
+        'style="flex:1;min-width:90px;padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">' +
+      '<span style="font-size:12px;color:var(--text-mute);">c/u</span>' +
+      '<button type="button" data-esc-quitar="' + i + '" title="Quitar" ' +
+        'style="width:28px;height:28px;border-radius:6px;border:1px solid var(--line);background:var(--bg);' +
+        'color:var(--danger);cursor:pointer;line-height:1;flex-shrink:0;">\u2715</button>' +
+    '</div>').join('');
+
+  caja.querySelectorAll('[data-esc-desde]').forEach(inp => inp.addEventListener('input', () => {
+    escalonesEnEdicion[+inp.dataset.escDesde].desde = Number(inp.value);
+  }));
+  caja.querySelectorAll('[data-esc-precio]').forEach(inp => inp.addEventListener('input', () => {
+    escalonesEnEdicion[+inp.dataset.escPrecio].precio = Number(inp.value);
+  }));
+  caja.querySelectorAll('[data-esc-quitar]').forEach(b => b.addEventListener('click', () => {
+    escalonesEnEdicion.splice(+b.dataset.escQuitar, 1);
+    renderEscalones();
+  }));
+}
+
+// Lo que se guarda: filas completas, ordenadas, sin la de "1" -- esa es el
+// precio normal del producto y ya vive en price. null cuando no hay
+// ninguna, para no dejar un array vacio dando vueltas en la base.
+function escalonesParaGuardar() {
+  const limpios = escalonesEnEdicion
+    .map(e => ({ desde: Number(e.desde), precio: Number(e.precio) }))
+    .filter(e => e.desde > 1 && e.precio > 0)
+    .sort((a, b) => a.desde - b.desde);
+  return limpios.length ? limpios : null;
+}
+
+byId('porMayorAgregar')?.addEventListener('click', () => {
+  escalonesEnEdicion.push({ desde: '', precio: '' });
+  renderEscalones();
+});
+
+byId('porMayorPegarBtn')?.addEventListener('click', () => {
+  show(byId('porMayorPegarCaja'));
+  byId('porMayorPegarTexto').focus();
+});
+
+byId('porMayorCancelar')?.addEventListener('click', () => {
+  hide(byId('porMayorPegarCaja'));
+  byId('porMayorPegarTexto').value = '';
+  byId('porMayorPegarAviso').textContent = '';
+});
+
+byId('porMayorLeer')?.addEventListener('click', () => {
+  const leidos = leerEscalonesDeTexto(byId('porMayorPegarTexto').value);
+  const aviso = byId('porMayorPegarAviso');
+
+  if (!leidos.length) {
+    aviso.style.color = 'var(--danger)';
+    aviso.textContent = 'No encontramos ninguna linea con el formato "10 X 23.000". ' +
+                        'Fijate que cada escalon este en su propio renglon.';
+    return;
+  }
+
+  // La linea de "1" es el precio normal, no un escalon: se ofrece para el
+  // campo de arriba en vez de guardarla aparte, que lo duplicaria.
+  const unitario = leidos.find(e => e.desde === 1);
+  escalonesEnEdicion = leidos.filter(e => e.desde > 1);
+  renderEscalones();
+
+  // Solo si el precio esta vacio: si ya habia uno cargado, pisarlo seria
+  // cambiarle el precio al producto sin que lo haya pedido.
+  let puso = false;
+  if (unitario && byId('pPrice') && !byId('pPrice').value) {
+    byId('pPrice').value = unitario.precio;
+    puso = true;
+  }
+
+  aviso.style.color = 'var(--stock)';
+  aviso.textContent = 'Listo: ' + escalonesEnEdicion.length + ' escalon' +
+    (escalonesEnEdicion.length === 1 ? '' : 'es') +
+    (puso ? ', y el precio por unidad quedo en $' + unitario.precio.toLocaleString('es-AR') : '') +
+    '. Revisalos abajo antes de guardar.';
+  byId('porMayorPegarTexto').value = '';
+});
+
 byId('productForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!puedeOperar()) return;
@@ -20004,6 +20172,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     description: byId('pDesc').value,
     price: precioConv.monto_ars,
     precio_oferta: ofertaAGuardar,
+    precios_por_cantidad: escalonesParaGuardar(),
     moneda: precioConv.moneda,
     precio_original: precioConv.monto_original,
     cotizacion: precioConv.cotizacion,
@@ -20140,6 +20309,10 @@ async function editProduct(id) {
   if (byId('pPriceMoneda')) byId('pPriceMoneda').value = p.moneda || 'ARS';
   if (byId('pPrice')) byId('pPrice').value = p.moneda ? p.precio_original : p.price;
   if (byId('pPrecioOferta')) byId('pPrecioOferta').value = (p.precio_oferta != null ? p.precio_oferta : '');
+  escalonesEnEdicion = Array.isArray(p.precios_por_cantidad)
+    ? p.precios_por_cantidad.map(x => ({ desde: Number(x.desde), precio: Number(x.precio) }))
+    : [];
+  renderEscalones();
   actualizarHintMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
   if (byId('pStock')) byId('pStock').value = p.stock;
   unidadMedidaEnEdicion = seVendePorMedida(p) ? p.unidad_medida : null;
@@ -20771,6 +20944,8 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   byId('modalTitle').textContent = 'Carga tu stock (escaneado)';
   byId('pName').value = byId('pDesc').value = byId('pPrice').value = '';
   if (byId('pPrecioOferta')) byId('pPrecioOferta').value = '';
+  escalonesEnEdicion = [];
+  renderEscalones();
   if (byId('pMarca')) byId('pMarca').value = '';
   if (byId('pModelo')) byId('pModelo').value = '';
   if (byId('pModeloSugeridas')) byId('pModeloSugeridas').innerHTML = '';
