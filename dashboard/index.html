@@ -1770,7 +1770,7 @@ tr:last-child td { border-bottom: none; }
           Elegí el que más se parezca. Después lo podés cambiar.
         </small>
       </div>
-      <div class="field"><label>Logo/Imagen de tu tienda</label><input type="file" id="regLogo" accept="image/*"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Max 2MB</small></div>
+      <div class="field"><label>Logo/Imagen de tu tienda</label><input type="file" id="regLogo" accept="image/*"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. La achicamos sola si es muy grande.</small></div>
       <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
@@ -3198,7 +3198,7 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
-        <div class="field"><label>Fotos del producto (hasta 4)</label><input type="file" id="pImageFile" accept="image/*" multiple style="cursor:pointer;"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Máx 2MB cada una. La primera es la principal.</small></div>
+        <div class="field"><label>Fotos del producto (hasta 4)</label><input type="file" id="pImageFile" accept="image/*" multiple style="cursor:pointer;"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. Las achicamos solas. La primera es la principal.</small></div>
         </div>
 
         <div style="display:flex;gap:8px;margin-top:8px;">
@@ -4272,7 +4272,7 @@ tr:last-child td { border-bottom: none; }
           </div>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Se ve de fondo en el encabezado de tu tienda. Una foto apaisada y
-            sin texto encima queda mejor. Máx 2MB.
+            sin texto encima queda mejor. Si es muy grande la achicamos sola.
           </small>
         </div>
 
@@ -19719,6 +19719,30 @@ function comprimirImagen(file, maxDim = 1600, calidad = 0.82) {
   });
 }
 
+// Insiste hasta que la foto entre en el tope.
+//
+// comprimirImagen hace UNA pasada. Una foto de celular puede quedar en
+// 2,1MB y ser rechazada por 100KB, con un cartel que no le dice al vendedor
+// que le faltaba poquito. Aca se vuelve a intentar bajando resolucion y
+// calidad.
+//
+// La primera pasada es exactamente la de siempre, asi que para las fotos
+// que ya entraban no cambia nada: las vueltas extra corren solo cuando la
+// foto iba a ser rechazada igual.
+async function achicarHastaQueEntre(file, tope = 2 * 1024 * 1024) {
+  if (!file || !String(file.type || '').startsWith('image/')) return file;
+
+  let mejor = await comprimirImagen(file);
+
+  for (const [dim, calidad] of [[1400, 0.7], [1100, 0.6], [900, 0.5]]) {
+    if (mejor.size <= tope) break;
+    const chica = await comprimirImagen(file, dim, calidad);
+    if (chica.size < mejor.size) mejor = chica;
+  }
+
+  return mejor;
+}
+
 function renderFotosEnEdicion() {
   const caja = byId('imagePreview');
 
@@ -19759,10 +19783,18 @@ byId('pImageFile').addEventListener('change', async (e) => {
   }
 
   for (const archivo of elegidos.slice(0, lugar)) {
-    const comprimido = await comprimirImagen(archivo);
+    const comprimido = await achicarHastaQueEntre(archivo);
 
     if (comprimido.size > 2 * 1024 * 1024) {
-      alert('"' + archivo.name + '" sigue pesando mucho incluso comprimida. Probá con otra foto.');
+      // Llegar aca casi siempre significa que el navegador no pudo abrir la
+      // imagen (los HEIC del iPhone son el caso tipico) y por eso quedo el
+      // archivo original: no es que la foto sea enorme, es que no se pudo
+      // achicar. Sacarle una captura de pantalla la convierte en algo que
+      // el navegador si entiende, y es lo unico que el vendedor puede hacer
+      // sin instalar nada.
+      alert('No pudimos achicar "' + archivo.name + '".' + '\n\n' +
+            'Suele pasar con fotos del iPhone en formato HEIC. Una forma rapida de ' +
+            'resolverlo: abrí la foto, sacale una captura de pantalla y subí la captura.');
       continue;
     }
 
@@ -22245,18 +22277,24 @@ function pintarPortada(url) {
   }
 }
 
-byId('configPortadaInput').addEventListener('change', (e) => {
+byId('configPortadaInput').addEventListener('change', async (e) => {
   const f = e.target.files?.[0];
   if (!f) return;
-  if (f.size > 2 * 1024 * 1024) {
-    alert('La portada debe pesar menos de 2MB');
+
+  // Se achica ANTES de mirar el tamanio. Antes esto rebotaba cualquier foto
+  // de celular (8-12MB) con un cartel que no explicaba como arreglarlo, y
+  // la misma foto entraba sin problema como foto de producto.
+  const chica = await achicarHastaQueEntre(f);
+  if (chica.size > 2 * 1024 * 1024) {
+    alert('La portada sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra imagen.');
     e.target.value = '';
     return;
   }
+
   quitarPortada = false;
   const lector = new FileReader();
   lector.onload = (ev) => pintarPortada(ev.target.result);
-  lector.readAsDataURL(f);
+  lector.readAsDataURL(chica);
 });
 
 byId('quitarPortadaBtn').addEventListener('click', () => {
@@ -22699,13 +22737,19 @@ async function guardarConfiguracion() {
   let imageUrl = null;
 
   if (logoFile) {
-    if (logoFile.size > 2 * 1024 * 1024) {
-      alert('La imagen debe pesar menos de 2MB');
+    // Mismo tratamiento que las fotos de producto: se achica en el
+    // navegador y recien ahi se mira cuanto pesa.
+    const logoChico = await achicarHastaQueEntre(logoFile);
+    if (logoChico.size > 2 * 1024 * 1024) {
+      alert('La imagen sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra.');
       return;
     }
 
-    const fileName = 'logos/' + currentStore.slug + '-' + Date.now() + logoFile.name.slice(-4);
-    const { data, error: uploadError } = await sb.storage.from('product-images').upload(fileName, logoFile, { upsert: true });
+    // La extension sale del archivo YA comprimido: comprimirImagen devuelve
+    // un .jpg. Tomandola del original, un PNG de 9MB se subia como .png
+    // cuando en realidad el contenido ya era jpeg.
+    const fileName = 'logos/' + currentStore.slug + '-' + Date.now() + logoChico.name.slice(-4);
+    const { data, error: uploadError } = await sb.storage.from('product-images').upload(fileName, logoChico, { upsert: true });
 
     if (uploadError) {
       alert('Error al subir la imagen: ' + uploadError.message);
@@ -22720,13 +22764,14 @@ async function guardarConfiguracion() {
   let portadaUrl = null;
 
   if (portadaFile) {
-    if (portadaFile.size > 2 * 1024 * 1024) {
-      alert('La portada debe pesar menos de 2MB');
+    const portadaChica = await achicarHastaQueEntre(portadaFile);
+    if (portadaChica.size > 2 * 1024 * 1024) {
+      alert('La portada sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra.');
       return;
     }
-    const nombre = 'portadas/' + currentStore.slug + '-' + Date.now() + portadaFile.name.slice(-4);
+    const nombre = 'portadas/' + currentStore.slug + '-' + Date.now() + portadaChica.name.slice(-4);
     const { error: errPortada } = await sb.storage.from('product-images')
-      .upload(nombre, portadaFile, { upsert: true });
+      .upload(nombre, portadaChica, { upsert: true });
 
     if (errPortada) {
       alert('Error al subir la portada: ' + errPortada.message);
