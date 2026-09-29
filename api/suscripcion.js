@@ -183,44 +183,54 @@ async function marcarSuscripcionConSlug(preapprovalId, slug) {
 //
 // El email viene de la sesion de Supabase, no del navegador: nadie puede
 // pedir el plan de otro diciendo que es su email.
-async function suscripcionPorEmail(email) {
+async function suscripcionPorEmail(email, slugPropio) {
   const buscado = String(email || '').trim().toLowerCase();
   if (!buscado || !buscado.includes('@')) return null;
 
+  // Las candidatas: autorizadas y de alguno de nuestros planes.
+  const candidatas = [];
   for (const planId of Object.keys(PLAN_POR_PREAPPROVAL_ID)) {
     const r = await suscripcionesDelPlan(planId);
     if (!r.ok) continue;
-
-    const suya = r.resultados.find((p) => {
-      if (p.status !== 'authorized') return false;
-
-      // Cada intento queda escrito con los dos emails a la vista. Este
-      // rescate ya fallo DOS veces repartiendo el pago de uno entre varios,
-      // y las dos veces se perdio tiempo adivinando por que. Con el log,
-      // la proxima se lee.
-      console.log('rescate por email: compara', JSON.stringify(p.payer_email),
-                  'contra', JSON.stringify(buscado), '| suscripcion', p.id);
-
-      // EL EMAIL DEL PAGADOR TIENE QUE EXISTIR DE VERDAD.
-      //
-      // Sin esta guarda paso lo peor que puede pasar en un sistema de
-      // cobros: UNA suscripcion terminó activando el plan de CUATRO
-      // cuentas de cuatro duenios distintos. Tres estaban usando el
-      // sistema con el pago de la cuarta.
-      //
-      // El agujero es que la comparacion de antes convertia los dos lados
-      // a texto: si Mercado Pago no devuelve payer_email en la busqueda
-      // (viene undefined), quedaba '' de un lado, y cualquier cosa que
-      // tambien diera '' del otro hacia juego. Comparar dos vacios y
-      // darlos por iguales es regalar el acceso.
-      const suyo = String(p.payer_email || '').trim().toLowerCase();
-      if (!suyo || !suyo.includes('@')) return false;
-
-      return suyo === buscado;
-    });
-
-    if (suya) return suya;
+    r.resultados.forEach((p) => { if (p.status === 'authorized') candidatas.push(p); });
   }
+
+  for (const p of candidatas) {
+    // Si el email vino en la busqueda se usa y nos ahorramos la consulta,
+    // pero en la practica viene null en todas.
+    let suyo = String(p.payer_email || '').trim().toLowerCase();
+
+    if (!suyo || !suyo.includes('@')) {
+      // Antes de gastar una consulta: si esa suscripcion ya sostiene otra
+      // tienda, no hace falta ni preguntar de quien es.
+      const yaEsDeOtra = await tiendaQueYaUsaEsaSuscripcion(p.id, slugPropio);
+      if (yaEsDeOtra) continue;
+
+      const detalle = await detalleDeSuscripcion(p.id);
+      suyo = String((detalle && detalle.payer_email) || '').trim().toLowerCase();
+    }
+
+    // Cada intento queda escrito con los dos emails a la vista. Este rescate
+    // ya fallo DOS veces repartiendo el pago de uno entre varios, y las dos
+    // veces se perdio tiempo adivinando por que. Con el log, la proxima se
+    // lee.
+    console.log('rescate por email: compara', JSON.stringify(suyo),
+                'contra', JSON.stringify(buscado), '| suscripcion', p.id);
+
+    // EL EMAIL DEL PAGADOR TIENE QUE EXISTIR DE VERDAD.
+    //
+    // Sin esta guarda paso lo peor que puede pasar en un sistema de cobros:
+    // UNA suscripcion terminó activando el plan de CUATRO cuentas de cuatro
+    // duenios distintos. Tres estaban usando el sistema con el pago de la
+    // cuarta.
+    //
+    // El agujero era comparar dos vacios y darlos por iguales. Si no se
+    // pudo averiguar de quien es, no se activa nada: es preferible que el
+    // cliente tenga que escribir a soporte antes que darle el pago de otro.
+    if (!suyo || !suyo.includes('@')) continue;
+    if (suyo === buscado) return p;
+  }
+
   return null;
 }
 
@@ -284,7 +294,47 @@ async function suscripcionesDeSlug(slug) {
 
   const datos = await r.json().catch(() => null);
   if (!r.ok) return { ok: false, status: r.status, crudo: datos };
-  return { ok: true, resultados: (datos && datos.results) || [] };
+
+  // MERCADO PAGO IGNORA ESTE FILTRO. Medido: pidiendo
+  // external_reference=vap-sanlo-import devolvio las TRES suscripciones de
+  // la cuenta. Como mas abajo se agarra "la primera autorizada", a un
+  // cliente nuevo le tocaba la suscripcion de otro, y lo unico que lo freno
+  // fue el indice unico de la base.
+  //
+  // Asi que el filtro se hace aca. Si algun dia Mercado Pago lo respeta,
+  // esto no molesta: filtrar lo ya filtrado da la misma lista.
+  const todas = (datos && datos.results) || [];
+  const suyas = todas.filter((p) => p.external_reference === slug);
+
+  if (todas.length !== suyas.length) {
+    console.warn('MP devolvio', todas.length, 'suscripciones para el slug', slug,
+                 'y solo', suyas.length, 'lo traen de verdad. Filtrado de este lado.');
+  }
+
+  return { ok: true, resultados: suyas };
+}
+
+// El detalle de UNA suscripcion.
+//
+// POR QUE HACE FALTA: la BUSQUEDA no devuelve payer_email -- verificado
+// contra la cuenta real, viene null en las tres. El detalle de a una si lo
+// trae (es el mismo dato que lee el webhook desde siempre). Sin esto no hay
+// ninguna forma de saber de quien es una suscripcion, porque el
+// external_reference tampoco llega.
+async function detalleDeSuscripcion(id) {
+  try {
+    const r = await fetch(MP_API + '/preapproval/' + encodeURIComponent(id), {
+      headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN }
+    });
+    if (!r.ok) {
+      console.warn('No se pudo leer el detalle de', id, r.status);
+      return null;
+    }
+    return await r.json();
+  } catch (err) {
+    console.warn('Error leyendo el detalle de', id, err && err.message);
+    return null;
+  }
 }
 
 module.exports = async (req, res) => {
@@ -446,6 +496,31 @@ module.exports = async (req, res) => {
       });
     }
 
+    // ---- De quien es cada suscripcion, preguntado de a una ----
+    //
+    // La busqueda devuelve payer_email en null siempre. Esto pide el
+    // detalle, que es el unico lugar donde el dato aparece. Solo para el
+    // admin: son una consulta por suscripcion.
+    let duenios = null;
+    if (admin) {
+      duenios = [];
+      for (const planId of Object.keys(PLAN_POR_PREAPPROVAL_ID)) {
+        const r = await suscripcionesDelPlan(planId);
+        if (!r.ok) continue;
+        for (const p of r.resultados) {
+          if (p.status !== 'authorized') continue;
+          if (duenios.some((d) => d.id === p.id)) continue;
+          const detalle = await detalleDeSuscripcion(p.id);
+          duenios.push({
+            id: p.id,
+            en_la_busqueda: p.payer_email || null,
+            en_el_detalle: (detalle && detalle.payer_email) || null,
+            ref: (detalle && detalle.external_reference) || null
+          });
+        }
+      }
+    }
+
     // ---- El cruce de cobranza: quien usa el servicio sin pagarlo ----
     let cobranza = null;
     if (admin) {
@@ -520,6 +595,7 @@ module.exports = async (req, res) => {
       version: VERSION,
       diagnostico: true,
       admin: admin,
+      duenios: duenios,
       correo_configurado: mail.hayComoMandar(),
       cobranza: cobranza,
       tienda: tienda.slug,
@@ -586,7 +662,7 @@ module.exports = async (req, res) => {
     // del plan): se la busca por el email del que paga.
     let rescatadaPorEmail = false;
     if (!autorizada) {
-      const porEmail = await suscripcionPorEmail(usuario.email);
+      const porEmail = await suscripcionPorEmail(usuario.email, tienda.slug);
       const planDeEsa = porEmail && PLAN_POR_PREAPPROVAL_ID[porEmail.preapproval_plan_id];
       const cobrosDeEsa = porEmail ? cobrosDe(porEmail) : null;
       // Misma regla que arriba: sin cobro no se activa, salvo que este
