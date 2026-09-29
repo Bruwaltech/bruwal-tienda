@@ -2506,6 +2506,7 @@ tr:last-child td { border-bottom: none; }
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" id="mlBeneficiosBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">✨ Beneficios de tenerlo acá</button>
             <button type="button" id="mlPublicacionesBtn2" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Publicaciones y vínculos</button>
+            <button type="button" id="mlEmbudoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">📊 Embudo</button>
             <button type="button" id="mlPreguntasBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">💬 Preguntas<span id="mlPreguntasBadge" class="hidden" style="margin-left:7px;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;"></span></button>
           </div>
         </div>
@@ -3648,6 +3649,32 @@ tr:last-child td { border-bottom: none; }
     <div id="mlLista" style="max-height:340px;overflow:auto;margin-bottom:14px;"></div>
 
     <button type="button" id="aplicarMlBtn" class="btn btn-primary hidden" style="width:100%;">Aplicar</button>
+  </div>
+</div>
+
+<!-- MODAL EMBUDO DE CONVERSION -->
+<div class="modal-overlay hidden" id="mlEmbudoModal">
+  <div class="modal" style="max-width:900px;">
+    <button class="modal-close" id="closeMlEmbudoModal">✕</button>
+    <h3><i class="fa-solid fa-filter" style="color:var(--stock);"></i> Embudo por publicación</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.6;">
+      Cuánta gente mira cada publicación y cuánta compra. Es lo que dice dónde estás
+      perdiendo plata: si la miran y no compran, el problema no es publicidad — es el
+      precio, la foto o la ficha.
+    </p>
+
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+      <select id="mlEmbudoDias" style="padding:9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+        <option value="7">Últimos 7 días</option>
+        <option value="30" selected>Últimos 30 días</option>
+      </select>
+      <button type="button" id="sincronizarEmbudoBtn" class="btn" style="width:auto;padding:9px 16px;font-size:13px;">
+        <i class="fa-solid fa-rotate"></i> Actualizar
+      </button>
+      <span id="mlEmbudoEstado" style="font-size:12.5px;color:var(--text-mute);line-height:1.5;"></span>
+    </div>
+
+    <div id="mlEmbudoLista" style="max-height:460px;overflow:auto;"></div>
   </div>
 </div>
 
@@ -19968,6 +19995,185 @@ async function abrirMlPreguntas() {
     '<div style="text-align:center;color:var(--text-mute);font-size:13px;padding:20px;">Cargando…</div>';
   await cargarMlPreguntasGuardadas();
 }
+
+// ---- Embudo de conversion por publicacion ----
+//
+// Lo trae la Edge Function ml-embudo. Desde el navegador la tabla solo se
+// LEE (RLS), igual que las preguntas: si el cliente pudiera escribir,
+// podria maquillar sus propios numeros.
+let mlEmbudo = [];
+
+function renderMlEmbudo() {
+  const caja = byId('mlEmbudoLista');
+  if (!caja) return;
+
+  if (!mlEmbudo.length) {
+    caja.innerHTML = '<div style="text-align:center;color:var(--text-mute);font-size:13.5px;padding:26px 10px;line-height:1.6;">' +
+      'Todavía no medimos nada.<br>Tocá <b>Actualizar</b> para traer las visitas de Mercado Libre.</div>';
+    return;
+  }
+
+  const conv = (f) => (f.visitas > 0 ? Number(f.conversion) || 0 : null);
+
+  // Los promedios de LA TIENDA, no numeros inventados: lo que para una
+  // cuenta es "poco trafico" para otra es mucho.
+  const conVisitas = mlEmbudo.filter((f) => f.visitas > 0);
+  const promVisitas = conVisitas.length
+    ? conVisitas.reduce((a, f) => a + f.visitas, 0) / conVisitas.length : 0;
+  const vendedoras = conVisitas.filter((f) => f.ventas > 0);
+  const promConv = vendedoras.length
+    ? vendedoras.reduce((a, f) => a + conv(f), 0) / vendedoras.length : 0;
+
+  // Convierte mejor que el promedio y la ve menos gente que el promedio:
+  // algo que funciona y nadie esta viendo.
+  const paraPublicitar = (f) =>
+    f.ventas > 0 && conv(f) > promConv && f.visitas < promVisitas;
+
+  const orden = (a, b) => {
+    const aPierde = a.visitas > 0 && a.ventas === 0;
+    const bPierde = b.visitas > 0 && b.ventas === 0;
+    if (aPierde !== bPierde) return aPierde ? -1 : 1;     // las que no venden, primero
+    if (aPierde) return b.visitas - a.visitas;            // y de mayor trafico a menor
+    if (a.visitas === 0 || b.visitas === 0) return b.visitas - a.visitas;
+    return conv(b) - conv(a);                             // el resto por conversion
+  };
+
+  const filas = [...mlEmbudo].sort(orden);
+  const sinVender = filas.filter((f) => f.visitas > 0 && f.ventas === 0);
+  const visitasPerdidas = sinVender.reduce((a, f) => a + f.visitas, 0);
+
+  let html = '';
+  if (sinVender.length) {
+    html += '<div style="background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;border-radius:10px;' +
+      'padding:11px 14px;margin-bottom:14px;font-size:13px;line-height:1.55;">' +
+      '<b>' + visitasPerdidas + ' personas</b> miraron ' + sinVender.length +
+      (sinVender.length === 1 ? ' publicación' : ' publicaciones') + ' y no compraron nada. ' +
+      'Ahí no falta publicidad: falta revisar precio, fotos o descripción.</div>';
+  }
+
+  html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+    '<thead><tr style="text-align:left;color:var(--text-mute);font-size:11.5px;text-transform:uppercase;">' +
+      '<th style="padding:6px 4px;">Publicación</th>' +
+      '<th style="padding:6px 4px;text-align:right;">Visitas</th>' +
+      '<th style="padding:6px 4px;text-align:right;">Ventas</th>' +
+      '<th style="padding:6px 4px;text-align:right;">Conversión</th>' +
+      '<th style="padding:6px 4px;text-align:right;">Facturado</th>' +
+    '</tr></thead><tbody>';
+
+  filas.forEach((f) => {
+    const c = conv(f);
+    const pierde = f.visitas > 0 && f.ventas === 0;
+    const publicitar = paraPublicitar(f);
+
+    html += '<tr style="border-top:1px solid var(--line);">' +
+      '<td style="padding:9px 4px;line-height:1.45;">' +
+        '<div style="color:var(--navy);font-weight:' + (pierde ? '700' : '400') + ';">' +
+          escapeHtml(f.titulo || f.ml_item_id) + '</div>' +
+        (pierde
+          ? '<div style="font-size:11.5px;color:var(--danger);font-weight:700;margin-top:2px;">' +
+            'La miran y no compran</div>'
+          : '') +
+        (publicitar
+          ? '<div style="font-size:11.5px;color:var(--stock);font-weight:700;margin-top:2px;">' +
+            'Convierte bien y la ve poca gente — candidata a publicitar</div>'
+          : '') +
+        (f.visitas === 0
+          ? '<div style="font-size:11.5px;color:var(--text-mute);margin-top:2px;">Sin visitas en el período</div>'
+          : '') +
+      '</td>' +
+      '<td style="padding:9px 4px;text-align:right;font-variant-numeric:tabular-nums;">' + f.visitas + '</td>' +
+      '<td style="padding:9px 4px;text-align:right;font-variant-numeric:tabular-nums;">' + f.ventas + '</td>' +
+      '<td style="padding:9px 4px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:' +
+        (c === null ? 'var(--text-mute)' : pierde ? 'var(--danger)' : 'var(--navy)') + ';">' +
+        (c === null ? '—' : c.toFixed(2) + '%') + '</td>' +
+      '<td style="padding:9px 4px;text-align:right;font-variant-numeric:tabular-nums;">' +
+        (f.facturado > 0 ? money(f.facturado) : '—') + '</td>' +
+    '</tr>';
+  });
+
+  html += '</tbody></table>' +
+    '<div style="font-size:11.5px;color:var(--text-mute);margin-top:12px;line-height:1.6;">' +
+    '<b>Conversión</b> = unidades vendidas sobre visitas. Una orden de 3 unidades cuenta como ' +
+    'una venta y tres unidades. El promedio de tu cuenta es ' + promConv.toFixed(2) + '%.</div>';
+
+  caja.innerHTML = html;
+}
+
+async function cargarEmbudoGuardado() {
+  if (!currentStore) return;
+  const dias = Number(byId('mlEmbudoDias').value) || 30;
+
+  // Solo la foto MAS RECIENTE de esa ventana: la tabla guarda una por dia
+  // para poder comparar, pero acá se muestra la de hoy.
+  const { data, error } = await sb.from('store_ml_embudo')
+    .select('*').eq('store_slug', currentStore.slug).eq('dias', dias)
+    .order('fecha_corte', { ascending: false });
+
+  if (error) {
+    byId('mlEmbudoLista').innerHTML =
+      '<div style="color:var(--danger);font-size:13px;">No pudimos leer el embudo: ' +
+      escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  const filas = data || [];
+  const ultima = filas.length ? filas[0].fecha_corte : null;
+  mlEmbudo = filas.filter((f) => f.fecha_corte === ultima);
+  renderMlEmbudo();
+}
+
+async function sincronizarMlEmbudo() {
+  const boton = byId('sincronizarEmbudoBtn');
+  const estado = byId('mlEmbudoEstado');
+  if (!boton || !estado) return;
+
+  const dias = Number(byId('mlEmbudoDias').value) || 30;
+  boton.disabled = true;
+  estado.style.color = 'var(--text-mute)';
+  // Se avisa que tarda: Mercado Libre obliga a pedir las visitas de a una
+  // publicacion, asi que son N consultas y no una.
+  estado.textContent = 'Midiendo en Mercado Libre… puede tardar unos segundos.';
+
+  try {
+    const { data, error } = await sb.functions.invoke('ml-embudo', {
+      body: { store_slug: currentStore && currentStore.slug, dias }
+    });
+
+    if (error) {
+      const motivo = await motivoDeFuncion(error);
+      const ayuda = ayudaDelError(motivo);
+      estado.style.color = 'var(--danger)';
+      estado.innerHTML = (ayuda ? '<b>' + escapeHtml(ayuda) + '</b><br>' : '') +
+        '<span style="color:var(--text-mute);">' + escapeHtml(motivo) + '</span>';
+      return;
+    }
+
+    await cargarEmbudoGuardado();
+    estado.style.color = (data && data.aviso) ? 'var(--danger)' : 'var(--stock)';
+    estado.textContent = (data && data.aviso)
+      ? data.aviso
+      : 'Listo: ' + ((data && data.publicaciones) || 0) + ' publicaciones medidas.';
+  } catch (err) {
+    estado.style.color = 'var(--danger)';
+    estado.textContent = (err && err.message) || 'No se pudo medir.';
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+async function abrirMlEmbudo() {
+  if (!puedeOperar()) return;
+  show(byId('mlEmbudoModal'));
+  byId('mlEmbudoEstado').textContent = '';
+  byId('mlEmbudoLista').innerHTML =
+    '<div style="text-align:center;color:var(--text-mute);font-size:13px;padding:20px;">Cargando…</div>';
+  await cargarEmbudoGuardado();
+}
+
+byId('mlEmbudoBtn')?.addEventListener('click', abrirMlEmbudo);
+byId('sincronizarEmbudoBtn')?.addEventListener('click', sincronizarMlEmbudo);
+byId('mlEmbudoDias')?.addEventListener('change', cargarEmbudoGuardado);
+byId('closeMlEmbudoModal')?.addEventListener('click', () => hide(byId('mlEmbudoModal')));
 
 byId('mlPreguntasBtn')?.addEventListener('click', abrirMlPreguntas);
 byId('sincronizarPreguntasBtn')?.addEventListener('click', sincronizarMlPreguntas);
