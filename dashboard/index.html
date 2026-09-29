@@ -4337,6 +4337,7 @@ tr:last-child td { border-bottom: none; }
             <option value="servicios">Peluquería / servicios con turno</option>
             <option value="comida">Comida</option>
             <option value="bebidas">Bebidas / cafetería</option>
+            <option value="vape">Vape / cigarrillo electrónico</option>
             <option value="otro">Otro (sin categoría especial)</option>
           </select>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -7475,6 +7476,24 @@ const ATRIBUTOS_SUGERIDOS_BEBIDA = [
   { nombre: 'Formato', valores: ['Botella', 'Lata', 'Pack x6'] }
 ];
 
+// Un vape no se vende por talle ni por tamanio: se vende por SABOR, y el
+// sabor es lo primero que pregunta el cliente. Despues vienen las pitadas
+// (lo que dura) y la nicotina.
+//
+// La lista es de arranque nomas: el vendedor borra los sabores que no
+// trabaja y agrega los suyos, igual que en todos los demas rubros.
+const ATRIBUTOS_SUGERIDOS_VAPE = [
+  { nombre: 'Sabor', valores: [
+    'Menta', 'Menta fria', 'Frutilla', 'Sandia', 'Mango', 'Uva', 'Banana',
+    'Frutos rojos', 'Durazno', 'Arandano', 'Manzana verde', 'Maracuya',
+    'Limonada', 'Cereza', 'Coco', 'Chicle', 'Vainilla', 'Tabaco'
+  ] },
+  { nombre: 'Pitadas', valores: [
+    '600', '800', '1500', '2500', '5000', '6000', '10000', '20000'
+  ] },
+  { nombre: 'Nicotina', valores: ['0 mg (sin nicotina)', '20 mg (2%)', '50 mg (5%)'] }
+];
+
 const ATRIBUTOS_SUGERIDOS_PIZZERIA = [
   { nombre: 'Tamaño',   valores: ['Porción', 'Media', 'Grande'] },
   { nombre: 'Masa',     valores: ['A la piedra', 'Al molde'] },
@@ -7580,7 +7599,37 @@ byId('pModelo').addEventListener('input', actualizarNombreDesdeMarcaModelo);
 // rubro que no es ninguno de los dos (comida, servicios...) no hereda
 // las sugerencias de indumentaria por default — no ve ninguna, así no se
 // mezclan datos de un rubro con otro.
+// Un local de vapes.
+//
+// Primero manda lo que el vendedor eligio a mano en Configuracion, que es
+// el dato confiable. Si no eligio nada, se mira el nombre y la descripcion
+// de la tienda Y TAMBIEN lo que esta escribiendo en el producto.
+//
+// Lo segundo no es de mas: el nombre de la tienda puede no decir nada del
+// rubro -- paso con vap.sanlo.import, que vende vapes y no tiene la
+// palabra en ningun lado. En el producto si aparece, porque ahi escribe la
+// marca o el sabor.
+//
+// 'vap' cubre vape, vaper, vapeo y vaporizador de una. Podria dar un falso
+// positivo con una palabra como "vapor", y para eso esta el selector de
+// rubro en Configuracion, que pisa esto por completo.
+function esVape() {
+  if (currentStore?.rubro_manual === 'vape') return true;
+  if (currentStore?.rubro_manual) return false;   // eligio otro rubro a mano
+
+  const texto = normalizarTexto(
+    (currentStore?.description || '') + ' ' + (currentStore?.business_name || '') + ' ' +
+    (byId('pCategory')?.value || '') + ' ' + (byId('pName')?.value || ''));
+
+  return ['vap', 'puff', 'elf bar', 'elfbar', 'ignite', 'oxbar', 'lost mary',
+          'nicotina', 'e-liquid', 'eliquid', 'cigarrillo electronico']
+    .some(k => texto.includes(k));
+}
+
 function grupoAtributosSugeridos() {
+  // Va primero: un vape con sabor "jugo de mango" no tiene que caer en las
+  // sugerencias de bebida, y un local de vapes no es electronica.
+  if (esVape()) return ATRIBUTOS_SUGERIDOS_VAPE;
   if (rubroEsElectronica()) return ATRIBUTOS_SUGERIDOS_ELECTRONICA;
   if (categoriaDeRubro() === 'indumentaria') return ATRIBUTOS_SUGERIDOS_INDUMENTARIA;
   // La bebida manda sobre el rubro: una gaseosa se carga igual en una
@@ -8822,6 +8871,8 @@ const RUBROS_REGISTRO = [
     ayuda: 'Vas a poder sumarle agregados a cada plato (cheddar, panceta, sin cebolla).' },
   { valor: 'bebidas',      icono: '☕', texto: 'Bebidas / cafetería',
     ayuda: 'Vas a poder sumarle opciones a cada pedido (con hielo, con limón).' },
+  { valor: 'vape',         icono: '💨', texto: 'Vape / cigarrillo electrónico',
+    ayuda: 'Vas a poder cargar los sabores de cada vape, con stock y precio propio para cada uno.' },
   { valor: 'otro',         icono: '🏪', texto: 'Otro rubro',
     ayuda: 'Kiosco, ferretería, forrajería, librería... Tenés todo lo básico y podés vender por metro o por kilo.' }
 ];
