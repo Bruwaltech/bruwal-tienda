@@ -9232,7 +9232,9 @@ async function onLoggedIn() {
 
   // Si esta bloqueado, capaz ya pago y el aviso de Mercado Pago no llego.
   // Va sin await: que no demore la carga del panel.
-  chequearSuscripcionAlEntrar();
+  // Primero el ID que trae la vuelta del pago: es el dato exacto. Si
+  // activo el plan, la pagina se recarga y el chequeo de abajo ni corre.
+  atarSuscripcionDeLaVuelta().then((listo) => { if (!listo) chequearSuscripcionAlEntrar(); });
   revisarSuscripcionDeVezEnCuando();
 
   avisarVueltaDeMl();
@@ -19408,6 +19410,60 @@ async function revisarSuscripcionDeVezEnCuando() {
   } catch (e) {
     // Sin conexion no pasa nada: es una revision, no un requisito.
   }
+}
+
+// Cuando Mercado Pago devuelve al cliente despues de pagar, lo manda al
+// back_url del plan con ?preapproval_id=... en la direccion.
+//
+// Ese ID es la unica forma confiable de saber que suscripcion es de quien:
+// llega en el navegador del que acaba de pagar, con su sesion abierta. Todo
+// lo demas hay que adivinarlo, y adivinar en cobranza termina siempre con
+// alguien usando el pago de otro.
+//
+// Corre ANTES que chequearSuscripcionAlEntrar y le gana: si hay ID, no hace
+// falta salir a buscar nada.
+async function atarSuscripcionDeLaVuelta() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('preapproval_id');
+  if (!id || !currentStore) return false;
+
+  // La direccion se limpia SIEMPRE, salga como salga. Si quedara pegada, un
+  // F5 volveria a intentar lo mismo, y peor: el cliente podria compartir esa
+  // direccion sin darse cuenta de que lleva el identificador de su pago.
+  const limpia = () => {
+    params.delete('preapproval_id');
+    const resto = params.toString();
+    history.replaceState({}, '', location.pathname + (resto ? '?' + resto : ''));
+  };
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { limpia(); return false; }
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore.slug, accion: 'atar', preapproval_id: id })
+    });
+    const d = await r.json().catch(() => ({}));
+    limpia();
+
+    if (d && d.ok && d.activado) {
+      alert('\u00a1Listo! Se activo tu plan ' + nombrePlan(d.plan) + '.\n\n' +
+            'Ya podes usar todo el panel.');
+      window.location.reload();
+      return true;
+    }
+
+    // Que no se active no siempre es un problema: el caso mas comun es que
+    // Mercado Pago todavia no hizo el primer cobro. Se le dice, en vez de
+    // dejarlo mirando un panel bloqueado despues de haber pagado.
+    if (d && d.motivo) alert(d.motivo);
+  } catch (e) {
+    limpia();
+    // Sin conexion: queda el boton "Ya pague" y el chequeo al entrar.
+  }
+  return false;
 }
 
 async function chequearSuscripcionAlEntrar() {

@@ -419,6 +419,147 @@ module.exports = async (req, res) => {
   }
 
   // ---- Modo diagnostico: mira y cuenta, no toca nada ----
+  // ---- Atar la suscripcion con el ID que devuelve Mercado Pago ----
+  //
+  // Es el unico camino que NO adivina. Mercado Pago no da forma de saber de
+  // quien es una suscripcion (no guarda el external_reference, ignora el
+  // filtro de la busqueda, y no devuelve payer_email ni en la busqueda ni
+  // en el detalle -- las tres cosas medidas). Pero al terminar el pago
+  // devuelve al cliente a nuestra pagina con ?preapproval_id=... y ese ID
+  // llega en el navegador del que acaba de pagar, con su sesion abierta.
+  //
+  // Quien es sale de la sesion. Que suscripcion es sale de la URL. Nada se
+  // deduce.
+  if ((req.body || {}).accion === 'atar') {
+    const pedido = String((req.body || {}).preapproval_id || '').trim();
+
+    // Los ids de Mercado Pago son 32 caracteres hexadecimales. Cualquier
+    // otra cosa ni se consulta.
+    if (!/^[0-9a-f]{32}$/i.test(pedido)) {
+      return res.status(400).json({ error: 'Identificador de suscripcion invalido' });
+    }
+
+    const detalle = await detalleDeSuscripcion(pedido);
+    if (!detalle || !detalle.id) {
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Mercado Pago no reconoce esa suscripcion. Si acabas de pagar, espera un ' +
+                'minuto y volve a entrar.'
+      });
+    }
+
+    const plan = PLAN_POR_PREAPPROVAL_ID[detalle.preapproval_plan_id];
+    if (!plan) {
+      console.warn('Intento de atar una suscripcion de un plan desconocido:',
+                   pedido, detalle.preapproval_plan_id);
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Esa suscripcion es de un plan que el sistema no reconoce (' +
+                detalle.preapproval_plan_id + '). Avisale a soporte con ese codigo.'
+      });
+    }
+
+    if (detalle.status !== 'authorized') {
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Mercado Pago todavia no confirmo esa suscripcion (figura ' +
+                detalle.status + '). Apenas la confirme se activa sola.'
+      });
+    }
+
+    // GUARDA 1: tiene que ser recien hecha.
+    //
+    // El ID viaja en una direccion y cualquiera puede escribir una
+    // direccion. Con esta ventana, un ID que alguien haya conseguido de
+    // otro lado no sirve para nada: para cuando lo tenga, ya vencio.
+    const nacio = Date.parse(detalle.date_created || '');
+    const horas = isNaN(nacio) ? Infinity : (Date.now() - nacio) / 3600000;
+    if (!(horas >= -1 && horas < 6)) {
+      console.warn('Se quiso atar una suscripcion vieja:', pedido,
+                   'creada hace', Math.round(horas), 'horas, tienda', tienda.slug);
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Esa suscripcion no es de este pago. Si ya pagaste y tu plan sigue sin ' +
+                'activarse, escribinos y lo resolvemos a mano.'
+      });
+    }
+
+    // GUARDA 2: que no sea de otra tienda.
+    const yaEsDeOtra = await tiendaQueYaUsaEsaSuscripcion(detalle.id, tienda.slug);
+    if (yaEsDeOtra) {
+      console.warn('Se quiso atar a', tienda.slug, 'la suscripcion', detalle.id,
+                   'que ya es de', yaEsDeOtra);
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Ese pago ya esta asociado a otra cuenta. Si pagaste recien, escribinos ' +
+                'y lo revisamos.'
+      });
+    }
+
+    // GUARDA 3: que la plata haya entrado, o que este dentro de la prueba
+    // que le prometimos en el checkout.
+    const cobros = cobrosDe(detalle);
+    if (!(cobros === null || cobros > 0 || enPruebaGratis(detalle))) {
+      const proximo = detalle.next_payment_date ||
+        (detalle.auto_recurring && detalle.auto_recurring.next_payment_date) || null;
+      return res.status(200).json({
+        ok: false,
+        esperando_cobro: true,
+        proximo_cobro: proximo,
+        motivo: 'Tu suscripcion quedo confirmada, pero Mercado Pago todavia no hizo el ' +
+                'primer cobro' +
+                (proximo ? ' (esta previsto para el ' + String(proximo).slice(0, 10) + ')' : '') +
+                '. Apenas entre el pago se te activa el plan solo.'
+      });
+    }
+
+    try {
+      await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(tienda.slug), {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: {
+          plan,
+          plan_vence: null,
+          mp_preapproval_id: detalle.id,
+          plan_updated_at: new Date().toISOString()
+        }
+      });
+    } catch (err) {
+      const texto = String((err && err.message) || err);
+      if (texto.includes('23505')) {
+        return res.status(200).json({
+          ok: false,
+          motivo: 'Ese pago ya esta asociado a otra cuenta. Si pagaste recien, escribinos ' +
+                  'y lo revisamos.'
+        });
+      }
+      console.error('No se pudo atar la suscripcion de', tienda.slug, texto);
+      return res.status(200).json({
+        ok: false,
+        motivo: 'No pudimos activar el plan en este momento. Probá de nuevo en un rato.'
+      });
+    }
+
+    console.log('Plan activado por el ID de vuelta de Mercado Pago:',
+                tienda.slug, '->', plan, '(' + detalle.id + ')');
+
+    // Que quede atada tambien del lado de Mercado Pago. Si el PUT no anda,
+    // no importa: ya la tenemos guardada en mp_preapproval_id.
+    await marcarSuscripcionConSlug(detalle.id, tienda.slug);
+
+    await mandarBienvenidaUnaVez({
+      req, slug: tienda.slug, para: usuario.email, nombre: tienda.business_name
+    });
+
+    return res.status(200).json({
+      ok: true,
+      activado: true,
+      atada: true,
+      plan,
+      antes: tienda.plan
+    });
+  }
+
   // ---- Mandarse el correo de bienvenida, para verlo de verdad ----
   //
   // No recibe direccion de destino: sale al email de la sesion y a ninguno
