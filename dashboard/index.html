@@ -19424,13 +19424,36 @@ async function revisarSuscripcionDeVezEnCuando() {
 // falta salir a buscar nada.
 async function atarSuscripcionDeLaVuelta() {
   const params = new URLSearchParams(location.search);
-  const id = params.get('preapproval_id');
+
+  // El nombre documentado es preapproval_id, pero no lo pudimos probar de
+  // punta a punta (hace falta un pago real). Si Mercado Pago lo llamara
+  // distinto, buscarlo por nombre fallaria en silencio y nos enterariamos
+  // con un cliente trabado. Por eso, si no esta el nombre esperado, se
+  // busca cualquier parametro cuyo VALOR tenga forma de id de MP: 32
+  // caracteres hexadecimales.
+  const pareceId = (v) => /^[0-9a-f]{32}$/i.test(String(v || ''));
+
+  let id = params.get('preapproval_id');
+  let comoVino = 'preapproval_id';
+
+  if (!pareceId(id)) {
+    id = null;
+    for (const [clave, valor] of params.entries()) {
+      if (pareceId(valor)) { id = valor; comoVino = clave; break; }
+    }
+  }
+
   if (!id || !currentStore) return false;
+  if (comoVino !== 'preapproval_id') {
+    console.warn('Mercado Pago devolvio el identificador como "' + comoVino +
+                 '" y no como "preapproval_id".');
+  }
 
   // La direccion se limpia SIEMPRE, salga como salga. Si quedara pegada, un
   // F5 volveria a intentar lo mismo, y peor: el cliente podria compartir esa
   // direccion sin darse cuenta de que lleva el identificador de su pago.
   const limpia = () => {
+    params.delete(comoVino);
     params.delete('preapproval_id');
     const resto = params.toString();
     history.replaceState({}, '', location.pathname + (resto ? '?' + resto : ''));
