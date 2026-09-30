@@ -299,6 +299,67 @@ async function registrarComision(slug, orden) {
   return comision;
 }
 
+// Reclama la orden ANTES de hacer el trabajo caro.
+//
+// POR QUE ASI Y NO PREGUNTANDO PRIMERO: Mercado Libre manda varios avisos
+// por la misma orden casi simultaneos. Con un "?ya existe?" seguido de un
+// "entonces la registro", los tres avisos leen que no existe, los tres
+// registran la venta y descuentan stock, y recien al final la clave
+// primaria deja pasar a uno. Los otros dos ya dejaron su duplicado.
+//
+// Paso de verdad: NOVALIS termino con 33 ventas fantasma sobre 98, tres de
+// ellas separadas por 321 y 201 milisegundos.
+//
+// El insert ES el candado: ml_order_id es clave primaria y solo deja entrar
+// a uno. Se insertan los campos minimos; el resto se completa despues, ya
+// sin competencia.
+async function reclamarOrden(slug, orden) {
+  try {
+    await sb('/rest/v1/store_ml_ordenes', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: [{
+        ml_order_id: String(orden.id),
+        store_slug: slug,
+        estado: orden.status,
+        total: Number(orden.total_amount) || 0,
+        comprador: (orden.buyer && orden.buyer.nickname) || null,
+        detalle: orden
+      }]
+    });
+    return { nuestra: true };
+  } catch (err) {
+    const texto = String((err && err.message) || err);
+
+    // 23505 = clave duplicada. No es un error: es otro aviso que llego
+    // primero, que es exactamente lo que este candado tiene que detectar.
+    if (texto.includes('23505') || texto.includes('duplicate key')) {
+      let previa = null;
+      try {
+        const filas = await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' +
+          encodeURIComponent(String(orden.id)) + '&select=stock_descontado');
+        previa = filas && filas[0];
+      } catch (e) { /* alcanza con saber que no es nuestra */ }
+      return { nuestra: false, stock_descontado: previa ? previa.stock_descontado : null };
+    }
+
+    throw err;
+  }
+}
+
+// Suelta el reclamo cuando el registro fallo despues de haberlo tomado.
+//
+// Sin esto quedaria una fila reclamada SIN venta, y el reintento de Mercado
+// Pago la veria como "repetida" y la saltearia: la venta se perderia para
+// siempre. Cambiar ventas duplicadas por ventas perdidas seria peor de lo
+// que teniamos.
+async function soltarReclamo(orden) {
+  await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' +
+    encodeURIComponent(String(orden.id)), {
+    method: 'DELETE', headers: { Prefer: 'return=minimal' }
+  });
+}
+
 async function registrarPedido(slug, orden, items, resumen) {
   // Solo si Mercado Libre mando una orden sin lineas, que no deberia pasar.
   // Antes esto se cumplia tambien cuando ninguna linea estaba vinculada, y
@@ -424,31 +485,41 @@ module.exports = async (req, res) => {
     if (!r.ok) throw new Error('ML ' + r.status + ' al leer la orden');
     const orden = await r.json();
 
-    const previas = await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' +
-      encodeURIComponent(String(orden.id)) + '&select=ml_order_id,stock_descontado');
-    const previa = previas && previas[0];
-
     const pagada = orden.status === 'paid';
 
-    // Ya la vimos: solo se refresca el estado. El stock NO se vuelve a tocar.
-    if (previa) {
+    // PRIMERO SE RECLAMA, DESPUES SE TRABAJA. Ver reclamarOrden: el insert
+    // es el candado. Preguntar antes y registrar despues dejaba que tres
+    // avisos simultaneos registraran la misma venta tres veces.
+    const reclamo = await reclamarOrden(slug, orden);
+
+    // Otro aviso la tiene: solo se refresca el estado. El stock NO se
+    // vuelve a tocar y no se crea ninguna venta.
+    if (!reclamo.nuestra) {
       await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' + encodeURIComponent(String(orden.id)), {
         method: 'PATCH',
         headers: { Prefer: 'return=minimal' },
         body: { estado: orden.status, detalle: orden, actualizado_en: new Date().toISOString() }
       });
-      return res.status(200).json({ ok: true, repetida: true, stock_descontado: previa.stock_descontado });
+      return res.status(200).json({ ok: true, repetida: true, stock_descontado: reclamo.stock_descontado });
     }
 
     let resumen = { descontados: 0, porFull: 0, comision: 0, sinVinculo: [], sinProducto: [], sinVariante: [] };
     let items = [];
     let idPedido = null;
 
-    if (pagada) {
-      const hecho = await registrarOrdenEnBruwal(slug, orden, token, aviso.user_id);
-      resumen = hecho.resumen;
-      items = hecho.items;
-      idPedido = hecho.idPedido;
+    try {
+      if (pagada) {
+        const hecho = await registrarOrdenEnBruwal(slug, orden, token, aviso.user_id);
+        resumen = hecho.resumen;
+        items = hecho.items;
+        idPedido = hecho.idPedido;
+      }
+    } catch (err) {
+      // Se suelta el reclamo para que el reintento de Mercado Libre pueda
+      // volver a intentarlo. Si quedara reclamada y sin venta, el reintento
+      // la veria como "repetida" y la saltearia: la venta se perderia.
+      await soltarReclamo(orden).catch(() => {});
+      throw err;
     }
 
     const fila = {
@@ -466,22 +537,25 @@ module.exports = async (req, res) => {
       detalle: orden
     };
 
+    // La fila YA existe: la creo reclamarOrden. Aca se completa con lo que
+    // salio del registro. Por eso es PATCH y no POST -- un segundo insert
+    // chocaria contra la clave primaria que nosotros mismos tomamos.
+    fila.actualizado_en = new Date().toISOString();
+    const rutaFila = '/rest/v1/store_ml_ordenes?ml_order_id=eq.' +
+                     encodeURIComponent(String(orden.id));
+
     // Si todavia no se corrio la migracion 45, `costo_envio` no existe y
-    // Supabase contesta PGRST204. Eso, sin este catch, tira la venta ENTERA
-    // a la basura: es el mismo bug de la columna `notes` que arreglamos hoy.
-    // Perder el dato del envio es molesto; perder la venta es grave.
+    // Supabase contesta PGRST204. Eso, sin este catch, tiraba la venta
+    // ENTERA a la basura: es el mismo bug de la columna `notes`. Perder el
+    // dato del envio es molesto; perder la venta es grave.
     try {
-      await sb('/rest/v1/store_ml_ordenes', {
-        method: 'POST', headers: { Prefer: 'return=minimal' }, body: [fila]
-      });
+      await sb(rutaFila, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: fila });
     } catch (err) {
       if (!String(err.message || '').includes('costo_envio')) throw err;
       console.warn('Falta la columna costo_envio (correr schema/45-ml-costo-envio.sql). ' +
                    'La venta se guarda sin ese dato.');
       delete fila.costo_envio;
-      await sb('/rest/v1/store_ml_ordenes', {
-        method: 'POST', headers: { Prefer: 'return=minimal' }, body: [fila]
-      });
+      await sb(rutaFila, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: fila });
     }
 
     return res.status(200).json({
