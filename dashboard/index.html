@@ -8213,6 +8213,7 @@ function actualizarTextoVariantes() {
 
   const parentesis = byId('variTipoParentesis');
   if (parentesis) parentesis.textContent =
+    esVape() ? '(sabor, pitadas...)'    :
     esElec   ? '(modelo de equipo...)' :
     esComida ? '(tamaño, porción...)'  :
     esRopa   ? '(talle, color...)'      : '(tamaño, color...)';
@@ -8222,6 +8223,9 @@ function actualizarTextoVariantes() {
   // pizzas grandes "tiene" en stock.
   const ayuda = byId('variTipoAyuda');
   if (ayuda) ayuda.textContent =
+    // El sabor es lo primero que pregunta el que compra un vape, y es lo
+    // que se agota de a uno: podes tener 20 y ninguno de menta.
+    esVape() ? 'Cada sabor lleva su propio stock. Si se te acaba la menta, la menta queda sin stock y los demás se siguen vendiendo.' :
     esElec   ? 'Cada combinación lleva su propio stock. "Pantalla iPhone 13" y "Pantalla iPhone 14" se agotan por separado.' :
     esComida ? 'Cada tamaño lleva su propio precio, en una sola ficha: chica $8.000, grande $12.000. El cliente elige al pedir.' :
     esRopa   ? 'Cada combinación lleva su propio stock. "Remera talle M" y "Remera talle L" se agotan por separado.' :
