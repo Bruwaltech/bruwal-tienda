@@ -7138,7 +7138,18 @@ function seleccionarTipoTab(tab) {
     b.style.borderColor = activo ? 'var(--celeste)' : 'var(--line)';
     b.style.background = activo ? '#EAF4FD' : '#fff';
   });
-  byId('subTipoTabs').classList.toggle('hidden', esInterno || !!tipoDeEntrada);
+  // NO se esconde cuando se entro por un boton de la barra.
+  //
+  // Antes si: la idea era "ya elegiste al tocar el boton". Pero los radios
+  // de verdad viven en un div oculto, asi que esconder esto dejaba al
+  // vendedor SIN NINGUNA forma de cambiar. El que en una peluqueria tocaba
+  // "+ Nuevo producto" queriendo cargar un corte tenia que cerrar el
+  // formulario y volver a entrar por el otro boton.
+  //
+  // La pestania correcta ya viene preseleccionada desde seleccionarTipoTab,
+  // asi que dejarlo a la vista no pregunta de nuevo: muestra lo que se
+  // eligio y deja corregirlo.
+  byId('subTipoTabs').classList.toggle('hidden', esInterno);
   byId('campoMostrarPrecio').classList.toggle('hidden', esInterno);
 
   // Un servicio va a la tienda y punto: preguntarle "¿para tu tienda o
