@@ -19738,8 +19738,32 @@ async function diagnosticoMercadoPago() {
         '</div>' +
         '<button id="probarMailBtn" class="btn btn-ghost" style="font-size:12px;padding:7px 14px;">' +
         'Mandarme el de bienvenida</button>' +
-        '<span id="probarMailEstado" style="font-size:12px;margin-left:10px;"></span>' +
+        '<span id="probarMailEstado" style="font-size:12px;margin-left:10px;"></span>';
+
+      // Las tiendas que se activaron a mano y nunca recibieron la
+      // bienvenida. El camino normal la manda solo, asi que si aparece
+      // alguien aca es porque lo activamos nosotros.
+      if (Array.isArray(d.sin_bienvenida) && d.sin_bienvenida.length) {
+        html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);">' +
+          '<div style="font-size:12.5px;color:var(--danger);font-weight:700;margin-bottom:8px;">' +
+            d.sin_bienvenida.length +
+            (d.sin_bienvenida.length === 1
+              ? ' tienda con plan pago nunca recibi\u00f3 la bienvenida'
+              : ' tiendas con plan pago nunca recibieron la bienvenida') +
+          '</div>' +
+          d.sin_bienvenida.map((t) =>
+            '<div style="display:flex;align-items:center;gap:9px;justify-content:space-between;' +
+                 'padding:7px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;">' +
+              '<span style="font-size:13px;color:var(--navy);">' + escapeHtml(t.negocio) +
+                ' <span style="color:var(--text-mute);font-size:11.5px;">' + escapeHtml(t.plan) + '</span></span>' +
+              '<button class="btn btn-ghost" data-bienvenida="' + escapeHtml(t.slug) + '" ' +
+                'style="font-size:12px;padding:6px 12px;">Mandar bienvenida</button>' +
+            '</div>').join('') +
+          '<div id="bienvenidaEstado" style="font-size:12px;margin-top:9px;"></div>' +
         '</div>';
+      }
+
+      html += '</div>';
     }
 
     caja.innerHTML = html;
@@ -19748,9 +19772,54 @@ async function diagnosticoMercadoPago() {
     // tiene que ir después o se engancha a un elemento que no existe.
     const botonMail = byId('probarMailBtn');
     if (botonMail) botonMail.addEventListener('click', probarMailDeBienvenida);
+
+    caja.querySelectorAll('[data-bienvenida]').forEach((b) =>
+      b.addEventListener('click', () => mandarBienvenidaA(b.dataset.bienvenida, b)));
   } catch (err) {
     caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
   } finally {
+    boton.disabled = false;
+  }
+}
+
+// Le manda la bienvenida a una tienda que se activo a mano.
+//
+// El destinatario lo resuelve el servidor buscando al dueno de esa tienda:
+// desde aca solo viaja el slug. No sirve para mandarle un correo a una
+// direccion cualquiera.
+async function mandarBienvenidaA(slug, boton) {
+  const estado = byId('bienvenidaEstado');
+  if (!estado) return;
+
+  boton.disabled = true;
+  estado.style.color = 'var(--text-mute)';
+  estado.textContent = 'Mandando\u2026';
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore && currentStore.slug,
+                             accion: 'bienvenida', slug_destino: slug })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+
+    if (d.ok) {
+      estado.style.color = 'var(--stock)';
+      estado.textContent = 'Enviado a ' + (d.para || 'su casilla') + '.';
+      boton.textContent = 'Enviado';
+    } else {
+      estado.style.color = 'var(--danger)';
+      estado.textContent = d.motivo || 'No sali\u00f3.';
+      boton.disabled = false;
+    }
+  } catch (err) {
+    estado.style.color = 'var(--danger)';
+    estado.textContent = err.message;
     boton.disabled = false;
   }
 }

@@ -84,6 +84,27 @@ async function sb(ruta, opciones) {
 //
 // No tira hacia afuera por ningun motivo: cuando esto corre el plan YA esta
 // activo, y un problema de correo no puede hacer parecer que el pago fallo.
+// El email con el que el dueno entra al panel.
+//
+// Es el unico que sirve para escribirle: el de Mercado Pago puede ser otro
+// (paso con la Panalera) y ademas MP no lo devuelve.
+async function emailDelDuenio(userId) {
+  if (!userId) return null;
+  try {
+    const r = await fetch(SUPABASE_URL + '/auth/v1/admin/users/' + encodeURIComponent(userId), {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY
+      }
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return (d && d.email) || null;
+  } catch (err) {
+    return null;
+  }
+}
+
 async function mandarBienvenidaUnaVez({ req, slug, para, nombre }) {
   try {
     if (!mail.hayComoMandar() || !para) return false;
@@ -568,6 +589,52 @@ module.exports = async (req, res) => {
   //
   // Saltea la marca bienvenida_enviada_en a proposito: es una prueba y tiene
   // que poder repetirse.
+  // ---- Mandarle la bienvenida a una tienda que se activo a mano ----
+  //
+  // Solo admin. El destinatario NO viene del navegador: viene de buscar al
+  // dueno de esa tienda en Supabase. Lo unico que se recibe es el slug, asi
+  // que esto no sirve para mandarle un correo a una direccion cualquiera.
+  //
+  // Respeta bienvenida_enviada_en: si ya la recibio, no se le manda de
+  // nuevo por mas que se apriete el boton dos veces.
+  if ((req.body || {}).accion === 'bienvenida') {
+    if (!esAdmin(usuario.email)) {
+      return res.status(403).json({ error: 'Solo para la cuenta de soporte' });
+    }
+
+    const destino = String((req.body || {}).slug_destino || '').trim();
+    if (!destino) return res.status(400).json({ error: 'Falta la tienda' });
+
+    const filas = await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(destino) +
+                           '&select=slug,business_name,user_id,plan,bienvenida_enviada_en');
+    const otra = filas && filas[0];
+    if (!otra) return res.status(404).json({ error: 'No existe esa tienda' });
+
+    if (otra.bienvenida_enviada_en) {
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Esa tienda ya recibio la bienvenida el ' +
+                String(otra.bienvenida_enviada_en).slice(0, 10) + '.'
+      });
+    }
+
+    const para = await emailDelDuenio(otra.user_id);
+    if (!para) {
+      return res.status(200).json({ ok: false, motivo: 'No encontramos el email de esa cuenta.' });
+    }
+
+    const salio = await mandarBienvenidaUnaVez({
+      req, slug: otra.slug, para, nombre: otra.business_name
+    });
+
+    return res.status(200).json({
+      ok: salio,
+      para,
+      negocio: otra.business_name || otra.slug,
+      motivo: salio ? null : 'No se pudo enviar. Revisa los logs de la funcion en Vercel.'
+    });
+  }
+
   if ((req.body || {}).accion === 'probar-mail') {
     if (!esAdmin(usuario.email)) {
       return res.status(403).json({ error: 'Solo para la cuenta de soporte' });
@@ -635,6 +702,17 @@ module.exports = async (req, res) => {
           prueba_gratis: (p.auto_recurring && p.auto_recurring.free_trial) || null
         };
       });
+    }
+
+    // ---- A quienes les falta la bienvenida ----
+    let sinBienvenida = null;
+    if (admin) {
+      const pendientes = await sb('/rest/v1/store_profiles' +
+        '?plan=in.(basic,pro)&bienvenida_enviada_en=is.null' +
+        '&select=slug,business_name,plan&order=slug&limit=50');
+      sinBienvenida = (pendientes || []).map((t) => ({
+        slug: t.slug, negocio: t.business_name || t.slug, plan: t.plan
+      }));
     }
 
     // ---- De quien es cada suscripcion, preguntado de a una ----
@@ -738,6 +816,10 @@ module.exports = async (req, res) => {
       admin: admin,
       duenios: duenios,
       correo_configurado: mail.hayComoMandar(),
+      // Quienes tienen plan pago y NUNCA recibieron la bienvenida. Son los
+      // que se activaron a mano: el camino normal la manda solo. Sin esta
+      // lista hay que acordarse de cada uno, y no te acordas.
+      sin_bienvenida: admin ? sinBienvenida : null,
       cobranza: cobranza,
       tienda: tienda.slug,
       plan_en_bruwal: tienda.plan,
