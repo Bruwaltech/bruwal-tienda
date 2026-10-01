@@ -105,6 +105,87 @@ async function emailDelDuenio(userId) {
   }
 }
 
+// Las suscripciones autorizadas que no tiene ninguna tienda.
+//
+// Es el unico rastro de un cliente que pago desde una cuenta de Mercado
+// Pago con otro email. MP no dice de quien es el pago, asi que esto es lo
+// mas cerca que se puede estar de detectarlo.
+async function pagosSinDuenio() {
+  try {
+    const tomadas = await sb('/rest/v1/store_profiles' +
+      '?mp_preapproval_id=not.is.null&select=mp_preapproval_id');
+    const yaSonDeAlguien = new Set((tomadas || []).map((t) => t.mp_preapproval_id));
+
+    const sueltas = [];
+    for (const planId of Object.keys(PLAN_POR_PREAPPROVAL_ID)) {
+      const r = await suscripcionesDelPlan(planId);
+      if (!r.ok) continue;
+      for (const p of r.resultados) {
+        if (p.status !== 'authorized') continue;
+        if (yaSonDeAlguien.has(p.id)) continue;
+        if (sueltas.some((x) => x.id === p.id)) continue;
+        sueltas.push({
+          id: p.id,
+          plan: PLAN_POR_PREAPPROVAL_ID[p.preapproval_plan_id] || null,
+          monto: (p.auto_recurring && p.auto_recurring.transaction_amount) || null,
+          desde: p.date_created || null
+        });
+      }
+    }
+    return sueltas;
+  } catch (err) {
+    console.warn('No se pudieron mirar los pagos sin duenio:', err && err.message);
+    return [];
+  }
+}
+
+// Le avisa al admin que alguien pago y su pago no esta vinculado.
+//
+// EL MOMENTO ES EL BOTON "Ya pague": ahi el cliente nos esta diciendo que
+// pago. Si ademas hay un pago sin duenio, es casi seguro el suyo. Sin
+// esto nos enteramos cuando se queja por WhatsApp, que es lo que paso con
+// EDEN.STUDIO.
+async function avisarPagoSinDuenio({ req, tienda, email, sueltas }) {
+  try {
+    if (!mail.hayComoMandar() || !sueltas.length) return;
+
+    const admins = String(process.env.ADMIN_EMAILS || '')
+      .split(',').map((x) => x.trim()).filter(Boolean);
+    if (!admins.length) return;
+
+    const base = 'https://' + (req.headers['x-forwarded-host'] || req.headers.host);
+    const filas = sueltas.map((p) =>
+      '<li><b>' + (p.plan || '?') + '</b>' +
+      (p.monto ? ' \u2014 $' + Number(p.monto).toLocaleString('es-AR') : '') +
+      (p.desde ? ' \u2014 ' + String(p.desde).slice(0, 10) : '') +
+      '<br><code style="font-size:12px;color:#5C6B82;">' + p.id + '</code></li>').join('');
+
+    for (const para of admins) {
+      await mail.mandar({
+        para,
+        asunto: 'Un cliente pago y su plan no se activo: ' + (tienda.business_name || tienda.slug),
+        html:
+          '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;' +
+               'line-height:1.6;color:#15294D;max-width:560px;">' +
+            '<p><b>' + (tienda.business_name || tienda.slug) + '</b> (' + (email || 'sin email') +
+            ') apret\u00f3 "Ya pagu\u00e9" y no encontramos ninguna suscripci\u00f3n a su nombre.</p>' +
+            '<p>Pero hay ' + sueltas.length + ' pago' + (sueltas.length === 1 ? '' : 's') +
+            ' autorizado' + (sueltas.length === 1 ? '' : 's') + ' que no tiene due\u00f1o:</p>' +
+            '<ul>' + filas + '</ul>' +
+            '<p>Pasa cuando el cliente paga desde una cuenta de Mercado Pago con otro mail. ' +
+            'Se ata desde el panel: <b>Ver mi plan &rarr; Ver qu\u00e9 dice Mercado Pago</b>, ' +
+            'el recuadro amarillo de arriba.</p>' +
+            '<p><a href="' + base + '/dashboard/">Abrir el panel</a></p>' +
+          '</div>'
+      });
+    }
+    console.log('Aviso de pago sin duenio enviado por', tienda.slug);
+  } catch (err) {
+    // Nunca puede romper la respuesta al cliente.
+    console.warn('No se pudo avisar del pago sin duenio:', err && err.message);
+  }
+}
+
 async function mandarBienvenidaUnaVez({ req, slug, para, nombre }) {
   try {
     if (!mail.hayComoMandar() || !para) return false;
@@ -1033,6 +1114,18 @@ module.exports = async (req, res) => {
       // caso peligroso: el cliente paga y nadie se entera de por qué no se
       // activa. Se dice con nombre y apellido.
       const desconocida = vistas.find((p) => p.estado === 'authorized' && !p.plan);
+
+      // ¿Hay algún pago que no tenga dueño? Si lo hay, casi seguro es el de
+      // este cliente: acaba de decirnos que pagó. Se le avisa al admin por
+      // mail en el momento, en vez de esperar a que se queje.
+      let hayPagoSuelto = false;
+      if (!desconocida && !esperandoElPrimerCobro && !vistas.length) {
+        const sueltas = await pagosSinDuenio();
+        hayPagoSuelto = sueltas.length > 0;
+        if (hayPagoSuelto) {
+          await avisarPagoSinDuenio({ req, tienda, email: usuario.email, sueltas });
+        }
+      }
       return res.status(200).json({
         ok: false,
         version: VERSION,
@@ -1049,9 +1142,19 @@ module.exports = async (req, res) => {
           : desconocida
           ? 'Hay una suscripción autorizada pero su plan (' + desconocida.plan_id +
             ') no está en la lista del sistema. Avisale a soporte con este código.'
-          : (vistas.length
-              ? 'Mercado Pago tiene la suscripción pero todavía no figura autorizada.'
-              : 'Mercado Pago no encontró ninguna suscripción para esta tienda.')
+          : vistas.length
+          ? 'Mercado Pago tiene la suscripción pero todavía no figura autorizada.'
+          : hayPagoSuelto
+          // Vemos un pago sin vincular y este cliente dice que pagó: es casi
+          // seguro el suyo. No se le dice de cuánto ni de quién — no son
+          // datos suyos — pero sí que lo estamos viendo y que ya avisamos.
+          ? 'Vemos un pago reciente que todavía no está vinculado a ninguna cuenta. ' +
+            'Pasa cuando se paga desde una cuenta de Mercado Pago con otro mail (la de tu ' +
+            'pareja, la del negocio). Ya le avisamos a soporte y lo activan en minutos. ' +
+            'Si querés apurarlo, escribinos por WhatsApp.'
+          : 'No encontramos ninguna suscripción a nombre de esta cuenta. Si ya pagaste, ' +
+            'puede ser que lo hayas hecho desde una cuenta de Mercado Pago con otro mail: ' +
+            'escribinos por WhatsApp y lo activamos en el momento.'
       });
     }
 
