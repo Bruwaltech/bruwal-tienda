@@ -589,6 +589,86 @@ module.exports = async (req, res) => {
   //
   // Saltea la marca bienvenida_enviada_en a proposito: es una prueba y tiene
   // que poder repetirse.
+  // ---- Atar una suscripcion paga a una tienda, a mano ----
+  //
+  // Solo admin. Es para el caso en que el cliente pago desde una cuenta de
+  // Mercado Pago con otro email: ahi no hay dato que los una y alguien
+  // tiene que decidir de quien es.
+  //
+  // Lo que NO se delega en quien aprieta el boton: que la suscripcion este
+  // autorizada, que sea de un plan nuestro, que haya cobrado (o este en los
+  // dias de prueba) y que no sea de otra tienda. Eso se verifica igual
+  // contra Mercado Pago, aunque lo pida el admin.
+  if ((req.body || {}).accion === 'atar-a-mano') {
+    if (!esAdmin(usuario.email)) {
+      return res.status(403).json({ error: 'Solo para la cuenta de soporte' });
+    }
+
+    const pedido = String((req.body || {}).preapproval_id || '').trim();
+    const destino = String((req.body || {}).slug_destino || '').trim();
+    if (!/^[0-9a-f]{32}$/i.test(pedido)) {
+      return res.status(400).json({ error: 'Identificador de suscripcion invalido' });
+    }
+    if (!destino) return res.status(400).json({ error: 'Falta la tienda' });
+
+    const detalle = await detalleDeSuscripcion(pedido);
+    if (!detalle || !detalle.id) {
+      return res.status(200).json({ ok: false, motivo: 'Mercado Pago no reconoce esa suscripcion.' });
+    }
+
+    const plan = PLAN_POR_PREAPPROVAL_ID[detalle.preapproval_plan_id];
+    if (!plan) {
+      return res.status(200).json({
+        ok: false,
+        motivo: 'Esa suscripcion es de un plan que el sistema no reconoce (' +
+                detalle.preapproval_plan_id + ').'
+      });
+    }
+    if (detalle.status !== 'authorized') {
+      return res.status(200).json({
+        ok: false, motivo: 'Esa suscripcion figura ' + detalle.status + ', no autorizada.'
+      });
+    }
+
+    const cobros = cobrosDe(detalle);
+    if (!(cobros === null || cobros > 0 || enPruebaGratis(detalle))) {
+      return res.status(200).json({
+        ok: false, motivo: 'Esa suscripcion todavia no cobro ni esta en prueba gratis.'
+      });
+    }
+
+    const yaEsDeOtra = await tiendaQueYaUsaEsaSuscripcion(detalle.id, destino);
+    if (yaEsDeOtra) {
+      return res.status(200).json({ ok: false, motivo: 'Esa suscripcion ya es de ' + yaEsDeOtra + '.' });
+    }
+
+    try {
+      await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(destino), {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: {
+          plan,
+          plan_vence: null,
+          mp_preapproval_id: detalle.id,
+          plan_updated_at: new Date().toISOString()
+        }
+      });
+    } catch (err) {
+      const texto = String((err && err.message) || err);
+      if (texto.includes('23505')) {
+        return res.status(200).json({ ok: false, motivo: 'Esa suscripcion ya esta tomada por otra cuenta.' });
+      }
+      console.error('No se pudo atar a mano', destino, texto);
+      return res.status(200).json({ ok: false, motivo: 'No se pudo guardar. Proba de nuevo.' });
+    }
+
+    // Que quede atada tambien del lado de Mercado Pago, para la proxima.
+    await marcarSuscripcionConSlug(detalle.id, destino);
+
+    console.log('Suscripcion atada a mano:', detalle.id, '->', destino, '(' + plan + ')');
+    return res.status(200).json({ ok: true, plan, tienda: destino });
+  }
+
   // ---- Mandarle la bienvenida a una tienda que se activo a mano ----
   //
   // Solo admin. El destinatario NO viene del navegador: viene de buscar al
@@ -715,29 +795,53 @@ module.exports = async (req, res) => {
       }));
     }
 
-    // ---- De quien es cada suscripcion, preguntado de a una ----
+    // ---- Suscripciones pagas que no tiene ninguna tienda ----
     //
-    // La busqueda devuelve payer_email en null siempre. Esto pide el
-    // detalle, que es el unico lugar donde el dato aparece. Solo para el
-    // admin: son una consulta por suscripcion.
-    let duenios = null;
+    // Es el caso que ya aparecio tres veces: el cliente paga desde una
+    // cuenta de Mercado Pago con OTRO email -- la de la mujer, la del
+    // negocio -- y no hay ningun dato que una las dos cuentas. MP no
+    // devuelve el email del pagador ni en la busqueda ni en el detalle
+    // (medido las dos veces). No existe forma automatica.
+    //
+    // Pero si hay UNA suscripcion sin duenio y UNA tienda esperando, el
+    // cruce es obvio. Esto lo pone a la vista para resolverlo desde el
+    // panel en vez de entrar a Mercado Pago y despues tocar la base.
+    let huerfanas = null, candidatas = null;
     if (admin) {
-      duenios = [];
+      const tomadas = await sb('/rest/v1/store_profiles' +
+        '?mp_preapproval_id=not.is.null&select=mp_preapproval_id');
+      const yaSonDeAlguien = new Set((tomadas || []).map((t) => t.mp_preapproval_id));
+
+      huerfanas = [];
       for (const planId of Object.keys(PLAN_POR_PREAPPROVAL_ID)) {
         const r = await suscripcionesDelPlan(planId);
         if (!r.ok) continue;
         for (const p of r.resultados) {
           if (p.status !== 'authorized') continue;
-          if (duenios.some((d) => d.id === p.id)) continue;
-          const detalle = await detalleDeSuscripcion(p.id);
-          duenios.push({
+          if (yaSonDeAlguien.has(p.id)) continue;
+          if (huerfanas.some((h) => h.id === p.id)) continue;
+          huerfanas.push({
             id: p.id,
-            en_la_busqueda: p.payer_email || null,
-            en_el_detalle: (detalle && detalle.payer_email) || null,
-            ref: (detalle && detalle.external_reference) || null
+            plan: PLAN_POR_PREAPPROVAL_ID[p.preapproval_plan_id] || null,
+            monto: (p.auto_recurring && p.auto_recurring.transaction_amount) || null,
+            cobros: cobrosDe(p),
+            en_prueba: enPruebaGratis(p),
+            desde: p.date_created || null,
+            proximo_cobro: p.next_payment_date ||
+              (p.auto_recurring && p.auto_recurring.next_payment_date) || null
           });
         }
       }
+
+      // Las tiendas que podrian ser la duenia: las que todavia no tienen
+      // plan pago. La mas nueva primero, que es casi siempre la que acaba
+      // de pagar.
+      const esperando = await sb('/rest/v1/store_profiles' +
+        '?plan=not.in.(basic,pro,cortesia)' +
+        '&select=slug,business_name,plan,created_at&order=created_at.desc&limit=30');
+      candidatas = (esperando || []).map((t) => ({
+        slug: t.slug, negocio: t.business_name || t.slug, plan: t.plan, desde: t.created_at
+      }));
     }
 
     // ---- El cruce de cobranza: quien usa el servicio sin pagarlo ----
@@ -814,7 +918,8 @@ module.exports = async (req, res) => {
       version: VERSION,
       diagnostico: true,
       admin: admin,
-      duenios: duenios,
+      huerfanas: huerfanas,
+      candidatas: candidatas,
       correo_configurado: mail.hayComoMandar(),
       // Quienes tienen plan pago y NUNCA recibieron la bienvenida. Son los
       // que se activaron a mano: el camino normal la manda solo. Sin esta

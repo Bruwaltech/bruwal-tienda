@@ -19662,7 +19662,50 @@ async function diagnosticoMercadoPago() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
 
-    let html = '<div style="font-weight:700;color:var(--navy);margin-bottom:6px;">' +
+    let html = '';
+
+    // Una suscripcion paga sin duenio es un cliente que pago y no puede
+    // trabajar. Va arriba de todo: es lo mas urgente de esta pantalla.
+    if (Array.isArray(d.huerfanas) && d.huerfanas.length) {
+      const tiendas = Array.isArray(d.candidatas) ? d.candidatas : [];
+      html += '<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:10px;' +
+        'padding:13px 15px;margin-bottom:16px;">' +
+        '<div style="font-weight:800;color:#92400E;font-size:13.5px;margin-bottom:4px;">' +
+          d.huerfanas.length +
+          (d.huerfanas.length === 1
+            ? ' pago sin due\u00f1o'
+            : ' pagos sin due\u00f1o') + '</div>' +
+        '<div style="font-size:12.5px;color:#92400E;line-height:1.55;margin-bottom:11px;">' +
+          'Alguien pag\u00f3 desde una cuenta de Mercado Pago con otro mail, as\u00ed que el sistema ' +
+          'no puede saber de qui\u00e9n es. Eleg\u00ed la tienda y at\u00e1selo.</div>' +
+        d.huerfanas.map((h, i) =>
+          '<div style="background:#fff;border:1px solid #FCD34D;border-radius:8px;padding:11px;' +
+               'margin-bottom:8px;">' +
+            '<div style="font-size:12.5px;color:var(--navy);margin-bottom:8px;">' +
+              '<b>' + escapeHtml(String(h.plan || '?').toUpperCase()) + '</b>' +
+              (h.monto ? ' \u00b7 ' + money(h.monto) : '') +
+              (h.desde ? ' \u00b7 desde ' + escapeHtml(String(h.desde).slice(0, 10)) : '') +
+              (h.cobros ? ' \u00b7 ' + h.cobros + (h.cobros === 1 ? ' cobro' : ' cobros') : '') +
+              (h.en_prueba ? ' \u00b7 en prueba' : '') +
+              '<div style="font-family:monospace;font-size:10.5px;color:var(--text-mute);margin-top:3px;">' +
+                escapeHtml(h.id) + '</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">' +
+              '<select data-huerfana-tienda="' + i + '" style="flex:1;min-width:150px;padding:7px;' +
+                   'border:1px solid var(--line);border-radius:7px;font-size:12.5px;font-family:inherit;">' +
+                '<option value="">\u00bfDe qu\u00e9 tienda es?</option>' +
+                tiendas.map((t) => '<option value="' + escapeHtml(t.slug) + '">' +
+                  escapeHtml(t.negocio) + ' (' + escapeHtml(t.plan) + ')</option>').join('') +
+              '</select>' +
+              '<button data-huerfana-atar="' + escapeHtml(h.id) + '" data-fila="' + i + '" ' +
+                'class="btn btn-ghost" style="font-size:12.5px;padding:7px 13px;">Atar</button>' +
+            '</div>' +
+          '</div>').join('') +
+        '<div id="huerfanaEstado" style="font-size:12px;"></div>' +
+      '</div>';
+    }
+
+    html += '<div style="font-weight:700;color:var(--navy);margin-bottom:6px;">' +
       escapeHtml(d.veredicto || '') + '</div>';
 
     // El cruce de cobranza: quien usa el servicio sin que se le cobre. Solo
@@ -19775,9 +19818,65 @@ async function diagnosticoMercadoPago() {
 
     caja.querySelectorAll('[data-bienvenida]').forEach((b) =>
       b.addEventListener('click', () => mandarBienvenidaA(b.dataset.bienvenida, b)));
+
+    caja.querySelectorAll('[data-huerfana-atar]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const sel = caja.querySelector('[data-huerfana-tienda="' + b.dataset.fila + '"]');
+        atarSuscripcionAMano(b.dataset.huerfanaAtar, sel && sel.value, b);
+      }));
   } catch (err) {
     caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
   } finally {
+    boton.disabled = false;
+  }
+}
+
+// Ata una suscripcion paga a la tienda que el admin elige.
+//
+// El servidor igual verifica todo contra Mercado Pago -- que este
+// autorizada, que sea de un plan nuestro, que haya cobrado y que no sea de
+// otra tienda -- aunque lo pida el admin. Elegir mal de una lista no tiene
+// que poder darle el plan de uno a otro.
+async function atarSuscripcionAMano(preapprovalId, slugDestino, boton) {
+  const estado = byId('huerfanaEstado');
+  if (!estado) return;
+
+  if (!slugDestino) {
+    estado.style.color = 'var(--danger)';
+    estado.textContent = 'Eleg\u00ed primero de qu\u00e9 tienda es.';
+    return;
+  }
+
+  boton.disabled = true;
+  estado.style.color = 'var(--text-mute)';
+  estado.textContent = 'Atando\u2026';
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
+
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore && currentStore.slug, accion: 'atar-a-mano',
+                             preapproval_id: preapprovalId, slug_destino: slugDestino })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+
+    if (d.ok) {
+      estado.style.color = 'var(--stock)';
+      estado.textContent = 'Listo: ' + slugDestino + ' qued\u00f3 con el plan ' + d.plan + '. ' +
+        'Volv\u00e9 a abrir el diagn\u00f3stico para ver c\u00f3mo qued\u00f3 todo.';
+      boton.textContent = 'Atada';
+    } else {
+      estado.style.color = 'var(--danger)';
+      estado.textContent = d.motivo || 'No se pudo atar.';
+      boton.disabled = false;
+    }
+  } catch (err) {
+    estado.style.color = 'var(--danger)';
+    estado.textContent = humano(err);
     boton.disabled = false;
   }
 }
