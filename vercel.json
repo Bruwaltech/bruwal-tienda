@@ -1,9 +1,23 @@
 {
   "rewrites": [
-    { "source": "/api/ml-callback", "destination": "/api/mercadolibre?accion=callback" },
-    { "source": "/:slug", "destination": "/api/tienda?slug=:slug" }
+    {
+      "source": "/api/ml-callback",
+      "destination": "/api/mercadolibre?accion=callback"
+    },
+    {
+      "source": "/:slug",
+      "destination": "/api/tienda?slug=:slug"
+    }
   ],
   "functions": {
-    "api/leer-factura.js": { "maxDuration": 30 }
-  }
+    "api/leer-factura.js": {
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/revisar-suscripciones",
+      "schedule": "0 12 * * *"
+    }
+  ]
 }
