@@ -6237,7 +6237,7 @@ byId('guardarCategoriasBtn').addEventListener('click', async () => {
     .eq('slug', currentStore.slug);
 
   if (error) {
-    alert('No se pudieron guardar las categorías: ' + error.message);
+    alert('No se pudieron guardar las categorías: ' + humano(error));
     return;
   }
 
@@ -6688,7 +6688,7 @@ async function renombrarCategoria(nombreViejo) {
     const ids = productosDeCategoria(viejo).map(p => p.id);
     if (!ids.length) continue;
     const error = await reasignarCategorias(ids, viejo, caminoRenombrado(viejo, nombreViejo, nuevo), false);
-    if (error) { alert('No se pudo renombrar:\n\n' + error.message); return; }
+    if (error) { alert('No se pudo renombrar:\n\n' + humano(error)); return; }
   }
 
   // La lista del perfil (el orden que eligio el vendedor) se renombra en el
@@ -6726,7 +6726,7 @@ async function unificarGrupo(indice) {
     error = await reasignarCategorias(ids, c.nombre, principal, false);
     if (error) break;
   }
-  if (error) { alert('No se pudieron unificar:\n\n' + error.message); return; }
+  if (error) { alert('No se pudieron unificar:\n\n' + humano(error)); return; }
 
   const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : [])
     .filter(c => g.slice(1).every(x => claveCat(c) !== claveCat(x.nombre) || claveCat(c) === claveCat(principal)));
@@ -6812,7 +6812,7 @@ byId('acomMoverBtn').addEventListener('click', async () => {
   btn.disabled = false;
   btn.textContent = textoAntes;
 
-  if (error) { alert('No se pudieron mover:\n\n' + error.message); return; }
+  if (error) { alert('No se pudieron mover:\n\n' + humano(error)); return; }
 
   if (destino) {
     const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).slice();
@@ -9812,7 +9812,7 @@ async function sincronizarStockEnMl(fila, boton) {
     }
     await verStockCruzado();
   } catch (err) {
-    alert('No se pudo:\n\n' + err.message);
+    alert('No se pudo:\n\n' + humano(err));
     boton.disabled = false;
     boton.textContent = 'Poner ' + fila.local + ' en ML';
   }
@@ -10136,7 +10136,7 @@ async function importarVentaMl(idOrden, total, boton) {
     await refreshData();
     await buscarVentasFaltantes();
   } catch (err) {
-    alert('No se pudo traer:\n\n' + err.message);
+    alert('No se pudo traer:\n\n' + humano(err));
     boton.disabled = false;
     boton.textContent = '\u2b07 Traer a BRUWAL';
   }
@@ -10467,7 +10467,7 @@ function pintarSaludAds(r) {
         await llamarApiMl('ads_no_tocar', { campana_id: b.dataset.notocar, valor: b.dataset.valor === '1' });
         await revisarSaludAds(false);
       } catch (err) {
-        alert('No se pudo guardar:\n\n' + err.message);
+        alert('No se pudo guardar:\n\n' + humano(err));
         b.disabled = false;
       }
     });
@@ -10519,7 +10519,7 @@ byId('autoPausarAdsChk').addEventListener('change', async (e) => {
     if (r.primeraPasada) pintarSaludAds(r.primeraPasada);
     if (!activo) byId('saludAdsResultado').innerHTML = '';
   } catch (err) {
-    alert('No se pudo guardar:\n\n' + err.message);
+    alert('No se pudo guardar:\n\n' + humano(err));
     e.target.checked = !activo;
   } finally {
     e.target.disabled = false;
@@ -11037,7 +11037,7 @@ async function aplicarMlPublicaciones() {
           (vinculos.length > aCrear.length + aVincular.length ? ' (' + vinculos.length + ' vínculos con variantes)' : '') + '.' +
           (actualizarPrecios ? '\n' + precios + ' precio' + (precios === 1 ? '' : 's') + ' actualizado' + (precios === 1 ? '' : 's') + '.' : ''));
   } catch (err) {
-    alert('No se pudo aplicar:\n\n' + (err.message || err));
+    alert('No se pudo aplicar:\n\n' + (humano(err) || err));
   } finally {
     boton.disabled = false;
     boton.textContent = textoOriginal;
@@ -11117,7 +11117,7 @@ async function conectarMl() {
   } catch (err) {
     boton.disabled = false;
     boton.textContent = textoOriginal;
-    alert('No se pudo empezar la conexión con Mercado Libre:\n\n' + err.message);
+    alert('No se pudo empezar la conexión con Mercado Libre:\n\n' + humano(err));
   }
 }
 
@@ -11127,7 +11127,7 @@ async function desconectarMl() {
     await llamarApiMl('desconectar');
     await cargarEstadoMl();
   } catch (err) {
-    alert('No se pudo desconectar:\n\n' + err.message);
+    alert('No se pudo desconectar:\n\n' + humano(err));
   }
 }
 
@@ -12170,7 +12170,7 @@ async function agregarNegocio() {
           'Su tienda online es ' + window.location.origin + '/' + slug);
     cambiarDeNegocio(nueva.slug);
   } catch (err) {
-    alert('No se pudo crear el negocio:\n\n' + (err && err.message ? err.message : err));
+    alert('No se pudo crear el negocio:\n\n' + (err && humano(err) ? humano(err) : err));
     if (boton) { boton.disabled = false; boton.textContent = '+ Agregar otro negocio'; }
   }
 }
@@ -12222,7 +12222,7 @@ async function refrescarAhora() {
   } catch (e) {
     // Se avisa, porque el que apreta el boton esta esperando una respuesta:
     // dejarlo sin nada es peor que decirle que no se pudo.
-    alert('No se pudieron traer los datos:\n\n' + (e && e.message ? e.message : e));
+    alert('No se pudieron traer los datos:\n\n' + (e && humano(e) ? humano(e) : e));
   } finally {
     refrescando = false;
     if (boton) { boton.disabled = false; boton.classList.remove('girando'); }
@@ -12870,7 +12870,7 @@ async function guardarTurno() {
   const { error } = await sb.from('store_turnos').insert([payload]);
   if (error) {
     const ocupado = error.code === '23505' || /duplicate|unique/i.test(error.message || '');
-    alert(ocupado ? 'Ese horario ya está ocupado — refrescá la agenda.' : 'No se pudo guardar el turno:\n\n' + error.message);
+    alert(ocupado ? 'Ese horario ya está ocupado — refrescá la agenda.' : 'No se pudo guardar el turno:\n\n' + humano(error));
     return;
   }
 
@@ -13603,7 +13603,7 @@ async function accionSeleccion(accion) {
       if (hayOferta(p)) campos.precio_oferta = Math.round(Number(p.precio_oferta) * factor);
       return campos;
     });
-    if (r.error) { alert('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.error.message); }
+    if (r.error) { alert('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
     else if (r.saltados) { alert('Listo: ' + r.hechos + ' con precio nuevo.\n' + r.saltados + ' sin precio de lista cargado quedaron igual.'); }
     terminarAccionSeleccion();
     return;
@@ -13619,7 +13619,7 @@ async function accionSeleccion(accion) {
       if (!lista) return null;
       return { precio_oferta: Math.round(lista * (1 - pct / 100)) };
     });
-    if (r.error) { alert('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.error.message); }
+    if (r.error) { alert('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
     else if (r.saltados) { alert('Listo: ' + r.hechos + ' en oferta.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
     terminarAccionSeleccion();
     return;
@@ -13627,14 +13627,14 @@ async function accionSeleccion(accion) {
 
   if (accion === 'sacar-oferta') {
     const error = await actualizarEnLote(ids, { precio_oferta: null });
-    if (error) alert('No se pudo:\n\n' + error.message);
+    if (error) alert('No se pudo:\n\n' + humano(error));
     terminarAccionSeleccion();
     return;
   }
 
   if (accion === 'pausar' || accion === 'activar') {
     const error = await actualizarEnLote(ids, { pausado: accion === 'pausar' });
-    if (error) alert('No se pudo:\n\n' + error.message);
+    if (error) alert('No se pudo:\n\n' + humano(error));
     terminarAccionSeleccion();
     return;
   }
@@ -13647,7 +13647,7 @@ async function accionSeleccion(accion) {
     if (!confirm('\u00bfEliminar ' + cuantos + '?\n\n' + muestra + resto + '\n\nEsto no se puede deshacer.')) return;
 
     const error = await borrarEnLote(ids);
-    if (error) { alert('No se pudieron eliminar:\n\n' + error.message); return; }
+    if (error) { alert('No se pudieron eliminar:\n\n' + humano(error)); return; }
     seleccionProductos = new Set();
     await refreshData();
     return;
@@ -13701,7 +13701,7 @@ byId('selCategoriaAplicar').addEventListener('click', async () => {
   btn.disabled = false;
   btn.textContent = 'Cambiar';
 
-  if (error) { alert('No se pudo:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo:\n\n' + humano(error)); return; }
 
   if (destino) {
     const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).slice();
@@ -13962,7 +13962,7 @@ function renderProducts() {
         alert('\u2713 Imagen descargada.\n\nSub\u00edla a tu historia o a tu estado de WhatsApp.');
       }
     } catch (err) {
-      alert('No se pudo armar la imagen:\n\n' + (err && err.message ? err.message : err));
+      alert('No se pudo armar la imagen:\n\n' + (err && humano(err) ? humano(err) : err));
     } finally {
       b.disabled = false;
       b.textContent = antes;
@@ -14074,7 +14074,7 @@ async function sacarOferta() {
 async function grabarPrecioOferta(p, valor) {
   const { error } = await sb.from('store_products').update({ precio_oferta: valor }).eq('id', p.id);
   if (error) {
-    alert('No se pudo guardar la oferta:\n\n' + error.message +
+    alert('No se pudo guardar la oferta:\n\n' + humano(error) +
           '\n\n(Si dice que falta la columna, correr schema/37-precio-oferta.sql en Supabase.)');
     return;
   }
@@ -14098,7 +14098,7 @@ async function alternarPausado(id) {
   const nuevo = !p.pausado;
   const { error } = await sb.from('store_products').update({ pausado: nuevo }).eq('id', id);
   if (error) {
-    alert('No se pudo cambiar: ' + error.message);
+    alert('No se pudo cambiar: ' + humano(error));
     return;
   }
   p.pausado = nuevo;   // se refleja al toque, sin esperar el refresh entero
@@ -14337,7 +14337,7 @@ async function eliminarPedido(id) {
 
   const { error } = await sb.from('orders').delete().eq('id', id);
   if (error) {
-    alert('No se pudo borrar el pedido:\n\n' + error.message);
+    alert('No se pudo borrar el pedido:\n\n' + humano(error));
     return;
   }
   await refreshData();
@@ -14396,7 +14396,7 @@ async function cambiarEstadoPedido(id, nuevo) {
     .select('id');
 
   if (error) {
-    alert('No se pudo actualizar el pedido:\n\n' + error.message);
+    alert('No se pudo actualizar el pedido:\n\n' + humano(error));
     return;
   }
   if (!data || !data.length) {
@@ -14537,7 +14537,7 @@ async function renombrarCliente(actual) {
     .select('id');
 
   if (error) {
-    alert('No se pudo cambiar el nombre:\n\n' + error.message);
+    alert('No se pudo cambiar el nombre:\n\n' + humano(error));
     return;
   }
   if (!data || !data.length) {
@@ -14579,7 +14579,7 @@ async function eliminarCliente(nombre) {
     .eq('customer_name', nombre);
 
   if (error) {
-    alert('No se pudo borrar el cliente:\n\n' + error.message);
+    alert('No se pudo borrar el cliente:\n\n' + humano(error));
     await refreshData();   // el stock ya se devolvió: refrescar para no perder de vista el estado real
     return;
   }
@@ -14765,7 +14765,7 @@ async function guardarEdicionFiado() {
 
   const { error } = await sb.from('orders').update(cambios).eq('id', deuda.id);
   if (error) {
-    alert('No se pudieron guardar los cambios:\n\n' + error.message);
+    alert('No se pudieron guardar los cambios:\n\n' + humano(error));
     return;
   }
 
@@ -16533,7 +16533,7 @@ function abrirVentanaTicket(titulo, contenidoHtml, autoImprimir) {
         marco.contentWindow.focus();
         marco.contentWindow.print();
       } catch (e) {
-        alert('No se pudo abrir la impresión:\n\n' + (e && e.message ? e.message : e));
+        alert('No se pudo abrir la impresión:\n\n' + (e && humano(e) ? humano(e) : e));
       }
     }, 350);
   }
@@ -16641,7 +16641,7 @@ async function fijarDemora(minutos) {
   const { error } = await sb.from('store_profiles')
     .update({ demora_minutos: minutos }).eq('slug', currentStore.slug);
   if (error) {
-    alert('No se pudo guardar la demora:\n\n' + error.message +
+    alert('No se pudo guardar la demora:\n\n' + humano(error) +
           '\n\n(Si dice que falta la columna, correr schema/38-hora-entrega.sql en Supabase.)');
     return;
   }
@@ -17139,7 +17139,7 @@ async function guardarReparacion() {
     ({ error } = await sb.from('store_reparaciones').insert([payload]));
   }
 
-  if (error) { alert('No se pudo guardar la reparación:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo guardar la reparación:\n\n' + humano(error)); return; }
 
   // Solo al crear: si se loguea también al editar, cada corrección de la
   // reparación (cambiar el problema, agregar una nota) sumaría otra línea
@@ -17187,7 +17187,7 @@ async function avanzarReparacion(id) {
     .eq('estado', r.estado)
     .select('id');
 
-  if (error) { alert('No se pudo actualizar el estado:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo actualizar el estado:\n\n' + humano(error)); return; }
   if (!data?.length) { await refreshData(); return; }   // alguien ya lo había avanzado
 
   // Al entregar, el ingreso de la reparación pasa a contar como una venta
@@ -17237,7 +17237,7 @@ async function eliminarReparacion(id) {
   if (!confirm('¿Borrar esta ficha de reparación? No se puede deshacer.')) return;
 
   const { error } = await sb.from('store_reparaciones').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -17322,7 +17322,7 @@ async function guardarGasto() {
     ? await sb.from('store_gastos').update(payload).eq('id', id)
     : await sb.from('store_gastos').insert([payload]);
 
-  if (error) { alert('No se pudo guardar el gasto:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo guardar el gasto:\n\n' + humano(error)); return; }
 
   hide(byId('gastoModal'));
   await refreshData();
@@ -17333,7 +17333,7 @@ async function eliminarGasto(id) {
   if (!confirm('¿Borrar este gasto? No se puede deshacer.')) return;
 
   const { error } = await sb.from('store_gastos').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -17634,7 +17634,7 @@ async function guardarMovimientoCaja() {
     notas: byId('movCajaNotas').value.trim()
   }]);
 
-  if (error) { alert('No se pudo guardar el movimiento:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo guardar el movimiento:\n\n' + humano(error)); return; }
 
   hide(byId('movimientoCajaModal'));
   await refreshData();
@@ -17646,7 +17646,7 @@ async function eliminarMovimientoCaja(id) {
   if (!confirm('¿Borrar este movimiento? No se puede deshacer.')) return;
 
   const { error } = await sb.from('store_movimientos_caja').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -18067,7 +18067,7 @@ async function verHistorialPagos(orderId) {
     .order('created_at', { ascending: true });
 
   if (error) {
-    alert('No se pudo consultar el historial:\n\n' + error.message);
+    alert('No se pudo consultar el historial:\n\n' + humano(error));
     return;
   }
   if (!data || !data.length) {
@@ -18187,7 +18187,7 @@ async function anularVenta(id) {
 
   const { error } = await sb.from('orders').delete().eq('id', venta.id);
   if (error) {
-    alert('No se pudo anular la venta: ' + error.message);
+    alert('No se pudo anular la venta: ' + humano(error));
     return;
   }
 
@@ -18825,7 +18825,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   }]).select('id');
 
   if (error) {
-    alert('Error al registrar la venta:\n\n' + error.message);
+    alert('Error al registrar la venta:\n\n' + humano(error));
     return false;
   }
 
@@ -20334,7 +20334,7 @@ byId('contactForm').addEventListener('submit', async (e) => {
   }).eq('slug', currentStore.slug);
 
   if (error){
-    alert('Error al guardar: ' + error.message);
+    alert('Error al guardar: ' + humano(error));
     return;
   }
 
@@ -20421,6 +20421,49 @@ async function achicarHastaQueEntre(file, tope = 2 * 1024 * 1024) {
   }
 
   return mejor;
+}
+
+// El mensaje que ve el vendedor cuando algo falla.
+//
+// NUNCA el texto crudo del error. "TypeError: Load failed" es lo que dice
+// Safari cuando la peticion no llega a salir del telefono, y a un vendedor
+// que lo lee adelante de un cliente le parece que el sistema se rompio.
+// Paso de verdad: Wally quiso borrar una ficha para mostrarle algo a un
+// cliente y le aparecio eso en pantalla completa.
+//
+// Verificado en los logs de Supabase: esa vez no llego ni un DELETE al
+// servidor en 24 horas. No fue permisos ni la base, fue la senial.
+//
+// Lo que se le dice es lo unico que puede hacer: fijarse si quedo hecho y
+// reintentar. No se promete que "no se cambio nada", porque con la conexion
+// cortada tampoco sabemos si el pedido llego y lo que se perdio fue la
+// respuesta.
+function humano(err) {
+  // Ojo con `err.message || err`: si el mensaje viene vacio cae al objeto
+  // entero y se imprime "[object Object]", que es exactamente lo que esta
+  // funcion existe para evitar.
+  const crudo = (err && err.message) != null ? err.message : err;
+  const texto = String(crudo == null ? '' : crudo).trim();
+
+  // Lo que dicen los navegadores cuando la peticion no sale del aparato.
+  // Safari: "Load failed". Chrome: "Failed to fetch". Firefox:
+  // "NetworkError when attempting to fetch resource".
+  if (/load failed|failed to fetch|networkerror|network request failed|internet connection appears to be offline|connection appears to be offline/i.test(texto)) {
+    return (navigator.onLine === false)
+      ? 'Te quedaste sin internet.\n\nFijate la conexi\u00f3n y prob\u00e1 de nuevo. Actualiz\u00e1 la pantalla antes de repetir, por si lleg\u00f3 a hacerse.'
+      : 'No pudimos conectarnos al servidor \u2014 puede ser la se\u00f1al.\n\nActualiz\u00e1 la pantalla para ver si lleg\u00f3 a hacerse, y si no, prob\u00e1 de nuevo.';
+  }
+
+  if (/aborted|abort/i.test(texto)) {
+    return 'La operaci\u00f3n se cort\u00f3 antes de terminar.\n\nActualiz\u00e1 la pantalla y prob\u00e1 de nuevo.';
+  }
+
+  // Un 23505 crudo tampoco le sirve a nadie.
+  if (texto.includes('23505') || /duplicate key/i.test(texto)) {
+    return 'Eso ya estaba cargado.';
+  }
+
+  return texto || 'Algo sali\u00f3 mal. Prob\u00e1 de nuevo.';
 }
 
 function renderFotosEnEdicion() {
@@ -20724,7 +20767,7 @@ byId('productForm').addEventListener('submit', async (e) => {
         urlsFinales[urlsFinales.indexOf(aSubir[i])] = { tipo: 'url', url };
       }
     } catch (err) {
-      alert('Error subiendo las fotos: ' + (err.message || 'error desconocido'));
+      alert('Error subiendo las fotos: ' + (humano(err) || 'error desconocido'));
       boton.disabled = false;
       boton.textContent = textoOriginal;
       return;
@@ -21005,7 +21048,7 @@ async function reponerStock(id) {
   }).eq('id', id);
 
   if (error) {
-    alert('No se pudo actualizar el stock:\n\n' + error.message);
+    alert('No se pudo actualizar el stock:\n\n' + humano(error));
     return;
   }
   await refreshData();
@@ -21270,7 +21313,7 @@ async function confirmarReponerVariante() {
   const { error } = await sb.from('store_products').update({ variantes, stock: stockTotal }).eq('id', p.id);
 
   if (error) {
-    alert('No se pudo actualizar el stock:\n\n' + error.message);
+    alert('No se pudo actualizar el stock:\n\n' + humano(error));
     return;
   }
 
@@ -21483,7 +21526,7 @@ async function deleteProduct(id) {
 
   const { error } = await sb.from('store_products').delete().eq('id', id);
   if (error) {
-    alert('No se pudo eliminar el producto:\n\n' + error.message);
+    alert('No se pudo eliminar el producto:\n\n' + humano(error));
     return;
   }
   await refreshData();
@@ -22000,7 +22043,7 @@ async function guardarEmpleado() {
     ? await sb.from('store_empleados').update(datos).eq('id', id)
     : await sb.from('store_empleados').insert([datos]);
 
-  if (error) { alert('No se pudo guardar:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo guardar:\n\n' + humano(error)); return; }
 
   hide(byId('empleadoModal'));
   await refreshData();
@@ -22015,7 +22058,7 @@ async function eliminarEmpleado() {
                'Si simplemente dejó de trabajar, mejor destildá "Trabaja actualmente": así las horas viejas se siguen viendo.')) return;
 
   const { error } = await sb.from('store_empleados').delete().eq('id', id);
-  if (error) { alert('No se pudo eliminar:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo eliminar:\n\n' + humano(error)); return; }
 
   hide(byId('empleadoModal'));
   await refreshData();
@@ -22025,7 +22068,7 @@ async function borrarFichada(id) {
   if (!puedeOperar()) return;
   if (!confirm('¿Borrar esta marca?')) return;
   const { error } = await sb.from('store_fichadas').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -22343,7 +22386,7 @@ async function leerTarjetaNfcAlCampo(idCampo, boton) {
       boton.disabled = false;
     };
   } catch (err) {
-    alert('No se pudo leer la tarjeta con el celular: ' + err.message +
+    alert('No se pudo leer la tarjeta con el celular: ' + humano(err) +
       '\n\nSi el teléfono no tiene NFC o el navegador no lo permite, usá un lector USB.');
     boton.textContent = textoOriginal;
     boton.disabled = false;
@@ -22459,7 +22502,7 @@ byId('guardarMarcaManualBtn').addEventListener('click', async () => {
     origen: 'manual'
   }]);
 
-  if (error) { alert('No se pudo guardar la marca:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo guardar la marca:\n\n' + humano(error)); return; }
 
   hide(byId('marcaManualModal'));
   await refreshData();
@@ -23505,7 +23548,7 @@ async function guardarPinCostos() {
 async function guardarPinCostosConfirmado(pin) {
   const hash = await hashPin(pin);
   const { error } = await sb.from('store_profiles').update({ pin_costos: hash }).eq('slug', currentStore.slug);
-  if (error) { alert('No se pudo guardar el PIN:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo guardar el PIN:\n\n' + humano(error)); return; }
 
   currentStore.pin_costos = hash;
   byId('configPinNuevo').value = '';
@@ -23526,7 +23569,7 @@ async function quitarPinCostosConfirmado() {
   if (!confirm('¿Sacar el PIN? Gastos, Costo/Margen y los datos de proveedores van a quedar visibles para cualquiera con acceso al panel, como antes.')) return;
 
   const { error } = await sb.from('store_profiles').update({ pin_costos: null }).eq('slug', currentStore.slug);
-  if (error) { alert('No se pudo quitar el PIN:\n\n' + error.message); return; }
+  if (error) { alert('No se pudo quitar el PIN:\n\n' + humano(error)); return; }
 
   currentStore.pin_costos = null;
   localStorage.removeItem(claveHuellaLS());   // la huella era un atajo del PIN — sin PIN, no tiene sentido dejarla registrada
@@ -23643,7 +23686,7 @@ async function guardarConfiguracion() {
   const { error } = await sb.from('store_profiles').update(updateData).eq('slug', currentStore.slug);
 
   if (error) {
-    alert('Error al guardar: ' + error.message);
+    alert('Error al guardar: ' + humano(error));
     return;
   }
 
