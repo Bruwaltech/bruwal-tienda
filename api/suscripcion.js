@@ -747,7 +747,30 @@ module.exports = async (req, res) => {
     await marcarSuscripcionConSlug(detalle.id, destino);
 
     console.log('Suscripcion atada a mano:', detalle.id, '->', destino, '(' + plan + ')');
-    return res.status(200).json({ ok: true, plan, tienda: destino });
+
+    // Y la bienvenida, igual que por el camino automatico.
+    //
+    // El que llega hasta aca es justo el que mas la merece: pago, su plan
+    // no se activo solo y tuvo que esperar. Dejarlo para un segundo boton
+    // es pedirle al sistema que se olvide.
+    //
+    // mandarBienvenidaUnaVez respeta la marca, asi que atar dos veces no
+    // manda dos mails. Y no puede romper nada: el plan ya quedo activo.
+    let bienvenida = false;
+    const filas = await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(destino) +
+                           '&select=user_id,business_name');
+    const esa = filas && filas[0];
+    const duenio = esa ? await emailDelDuenio(esa.user_id) : null;
+    if (duenio) {
+      // El nombre sale de la TIENDA, no de Mercado Pago: detalle.reason es
+      // la descripcion del plan ("Bruwalstock Basic"), y saludar "Hola
+      // Bruwalstock Basic" seria peor que no saludar.
+      bienvenida = await mandarBienvenidaUnaVez({
+        req, slug: destino, para: duenio, nombre: esa.business_name
+      });
+    }
+
+    return res.status(200).json({ ok: true, plan, tienda: destino, bienvenida });
   }
 
   // ---- Mandarle la bienvenida a una tienda que se activo a mano ----
