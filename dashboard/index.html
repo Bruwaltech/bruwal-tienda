@@ -4923,6 +4923,19 @@ function venceEnHoraArgentina(fecha) {
   return isNaN(d) ? null : d;
 }
 
+// Plan habilitado por nosotros, no suscripto por Mercado Pago. El
+// mp_preapproval_id es la marca: lo escribe el webhook cuando alguien se
+// suscribe de verdad, y no existe en el que pusimos a dedo.
+//
+// Importa para lo que se le DICE: al de a mano no se le puede hablar de
+// "tu suscripcion" ni agradecerle un pago que no hizo.
+function planPuestoAMano() {
+  return !!currentStore &&
+         PLANES_ACTIVOS.includes(currentStore.plan) &&
+         currentStore.plan !== 'cortesia' &&
+         !currentStore.mp_preapproval_id;
+}
+
 function estadoSuscripcion() {
   if (!currentStore) return 'prueba';
 
@@ -5009,8 +5022,12 @@ function renderTrialBar() {
       bar.classList.add('activo');
       texto.textContent = currentStore.plan === 'cortesia'
         ? '★ Cuenta de cortesía: acceso completo sin cargo, sin vencimiento.'
-        : `✓ Plan ${nombrePlan(currentStore.plan)} activo. ¡Gracias por confiar en BRUWAL!`;
-      byId('verPlanesBtn').textContent = 'Ver mi plan';
+        : (planPuestoAMano() && diasHastaElCorte !== null
+            // Esta probando: decirle cuanto le queda le sirve, y
+            // agradecerle un pago que no hizo lo confunde.
+            ? `🎁 Estás probando el plan ${nombrePlan(currentStore.plan)} completo: te ${diasHastaElCorte === 1 ? 'queda' : 'quedan'} ${diasHastaElCorte} día${diasHastaElCorte === 1 ? '' : 's'}.`
+            : `✓ Plan ${nombrePlan(currentStore.plan)} activo. ¡Gracias por confiar en BRUWAL!`);
+      byId('verPlanesBtn').textContent = planPuestoAMano() ? 'Ver planes' : 'Ver mi plan';
     }
   } else if (estado === 'vencido') {
     bar.classList.add('vencido');
@@ -5018,9 +5035,18 @@ function renderTrialBar() {
     // prueba se le venció) o lo tenía activo y se le venció el período ya
     // pagado tras cancelar — el cartel tiene que decir cuál de las dos es,
     // si no "tu prueba terminó" le suena raro a alguien que ya pagaba.
-    const veniaDePlanPago = PLANES_ACTIVOS.includes(currentStore.plan) && currentStore.plan !== 'cortesia';
+    // El que tenia el plan puesto a mano NO tenia suscripcion: decirle que
+    // "se cancelo" lo manda a buscar una baja que nunca existio.
+    const veniaDePlanPago = PLANES_ACTIVOS.includes(currentStore.plan) &&
+                            currentStore.plan !== 'cortesia' &&
+                            !!currentStore.mp_preapproval_id;
+    const seLeAcaboLaPrueba = PLANES_ACTIVOS.includes(currentStore.plan) &&
+                              currentStore.plan !== 'cortesia' &&
+                              !currentStore.mp_preapproval_id;
     texto.textContent = veniaDePlanPago
       ? '🔒 Tu suscripción se canceló y ya venció el período pago. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás reactivar tu plan. Tu tienda pública sigue online.'
+      : seLeAcaboLaPrueba
+        ? '🔒 Se terminó tu prueba del plan ' + nombrePlan(currentStore.plan) + '. Podés ver todo lo que cargaste, pero para seguir registrando ventas hay que activar un plan. Tu tienda pública sigue online.'
       : nuncaTuvoPrueba()
         ? '👋 ¡Bienvenido! Para cargar productos y registrar ventas elegí tu plan. Si querés probarlo primero, pedinos 7 días de prueba.'
         : '🔒 Tu prueba gratis terminó. Podés ver tus datos, pero para cargar productos y registrar ventas necesitás activar un plan. Tu tienda pública sigue online.';
