@@ -5584,13 +5584,26 @@ async function valorConvertido(inputId, selectId) {
       'Queda guardado hasta que lo borres desde Configuración.');
     if (tipeada === null) return null;            // la cerró: no se guarda nada
 
-    const valor = Number(String(tipeada).replace(/[^0-9.,]/g, '').replace(',', '.'));
-    if (!valor || valor <= 0) {
+    // numeroArgentino y no un Number pelado: acá se escribe "1.500" por
+    // mil quinientos, y leer ese punto como decimal daba 1,5 -- un equipo
+    // de 800 dólares quedaba publicado en $1.200 en vez de $1.200.000.
+    const valor = numeroArgentino(tipeada);
+    if (!Number.isFinite(valor) || valor <= 0) {
       alert('Esa cotización no se entiende. Probá de nuevo, o cargá el precio directo en pesos.');
       return null;
     }
+
+    // Se muestra en cuánto queda el producto antes de guardarlo. Si la
+    // cotización se leyó mal -- por este formato o por otro que no
+    // previmos -- se ve acá, en pesos, y no después con el producto ya
+    // publicado a mil veces menos.
+    const enPesos = Math.round(monto * valor);
+    if (!confirm('Tomamos ' + money(valor) + ' por ' + moneda + '.' + '\n\n' +
+                 'Este producto queda en ' + money(enPesos) + '.' + '\n\n' +
+                 '¿Va así?')) return null;
+
     fijarCotizacionManual(moneda, valor);
-    return { monto_ars: Math.round(monto * valor), moneda, monto_original: monto, cotizacion: valor };
+    return { monto_ars: enPesos, moneda, monto_original: monto, cotizacion: valor };
   }
   return { monto_ars: Math.round(monto * cot.venta), moneda, monto_original: monto, cotizacion: cot.venta };
 }
