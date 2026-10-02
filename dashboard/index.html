@@ -18829,6 +18829,21 @@ async function confirmBarcodeVenta() {
   // mandaria la hora sugerida sin que nadie la haya decidido.
   const horaEntrega = rubroEsComida() ? (byId('barcodeHoraEntrega')?.value || '') : '';
 
+  // Sin el medio de pago la caja no cierra por medio, que es justo para lo
+  // que sirve: al final del dia hay que saber cuanto entro en efectivo y
+  // cuanto por transferencia. Arrancaba en "Sin especificar" y se guardaba
+  // vacio, asi que el dato casi nunca estaba.
+  //
+  // No se pide en el fiado puro: ahi todavia no entro plata, y exigir un
+  // medio obligaria a inventar uno que despues ensucia la caja igual.
+  const entraPlata = !esFiado || abonaAhora > 0;
+  if (entraPlata && !medioPago) {
+    alert('Elegí con qué te paga antes de registrar la venta.\n\n' +
+          'Es lo que después te deja cerrar la caja por efectivo, débito y transferencia.');
+    byId('barcodeMedioPago')?.focus();
+    return;
+  }
+
   const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta });
   if (ok) {
     guardarNombreVendedor(vendedor);

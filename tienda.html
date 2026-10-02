@@ -3462,6 +3462,10 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
         items: items,
         total: total,
         aclaraciones: aclaraciones || null,
+        // El cliente ya lo eligio arriba ("Como pagas?") y va en el
+        // WhatsApp, pero no se guardaba: la venta quedaba sin medio de
+        // pago y la caja del panel no podia cerrar por medio.
+        medio_pago: medioDePago || null,
         estado: 'pendiente'
       });
     } catch (e) {
