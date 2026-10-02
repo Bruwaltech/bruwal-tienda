@@ -2902,6 +2902,7 @@ tr:last-child td { border-bottom: none; }
             </select>
           </div>
           <small id="pPriceHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
+          <small id="pMonedaAviso" class="hidden" style="display:block;margin-top:4px;color:var(--text-mute);font-size:11.5px;line-height:1.5;"></small>
         </div>
         <div class="field" id="campoPrecioOferta">
           <label>🏷️ Precio en oferta <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
@@ -5474,6 +5475,7 @@ async function actualizarHintMoneda(inputId, selectId, hintId) {
   const input = byId(inputId), select = byId(selectId), hint = byId(hintId);
   if (!input || !select || !hint) return;
   const moneda = select.value;
+  if (selectId === 'pPriceMoneda') avisarMonedaDelFormulario();
   const monto = Number(input.value) || 0;
   if (!monto) { hide(hint); return; }
 
@@ -5497,6 +5499,37 @@ async function actualizarHintMoneda(inputId, selectId, hintId) {
   const cot = await obtenerCotizacion(moneda);
   if (!cot) { hint.textContent = 'No se pudo consultar la cotización — se va a reintentar al guardar.'; return; }
   hint.textContent = '≈ ' + money(monto * cot.venta) + ' ARS al blue de hoy ($' + cot.venta.toLocaleString('es-AR') + ')';
+}
+
+// El precio en USD se guarda en pesos (columna price) y la moneda queda de
+// memoria. Antes solo se convertia el precio de lista: la oferta, el por
+// mayor y el precio de cada variante se guardaban tal cual se tipearon, o
+// sea US$450 de oferta quedaba en $450 pesos. Ahora todo el formulario
+// habla la misma moneda y se convierte junto, con la misma cotizacion.
+function aPesosConFactor(monto, factor) {
+  if (monto == null || monto === '') return monto;
+  return factor === 1 ? Number(monto) : Math.round(Number(monto) * factor);
+}
+
+function preciosEnPesos(lista, factor) {
+  if (!Array.isArray(lista) || factor === 1) return lista;
+  return lista.map(x => ({ ...x, precio: x.precio == null ? x.precio : aPesosConFactor(x.precio, factor) }));
+}
+
+// Al editar, lo guardado en pesos se vuelve a mostrar en la moneda original.
+function enMonedaDelProducto(pesos, p) {
+  if (pesos == null || !p?.moneda || !(Number(p.cotizacion) > 0)) return pesos;
+  return Math.round(Number(pesos) / Number(p.cotizacion) * 100) / 100;
+}
+
+function avisarMonedaDelFormulario() {
+  const aviso = byId('pMonedaAviso');
+  const moneda = byId('pPriceMoneda')?.value || 'ARS';
+  if (!aviso) return;
+  aviso.textContent = moneda === 'ARS' ? '' :
+    'La oferta, los precios por mayor y los de cada variante también van en ' + moneda +
+    '. Todo se guarda en pesos con la cotización del día, y en la tienda se ve en pesos.';
+  aviso.classList.toggle('hidden', moneda === 'ARS');
 }
 
 function wireSelectorMoneda(inputId, selectId, hintId) {
@@ -5887,6 +5920,19 @@ const CATEGORIAS_SUGERIDAS = {
 };
 
 const CATEGORIAS_GENERICAS = ['Destacados', 'Ofertas', 'Novedades', 'Más vendidos'];
+const CATEGORIAS_VAPE = ['Descartables', 'Pods', 'Líquidos', 'Resistencias', 'Accesorios'];
+const CATEGORIAS_BEBIDAS = ['Cafés', 'Tragos', 'Cervezas', 'Sin alcohol', 'Para picar', 'Promos'];
+
+// Rubro (el mismo que decide variantes y agregados) -> lista de categorias.
+// Asi las sugerencias nunca contradicen al resto del formulario.
+const CATEGORIAS_POR_RUBRO = {
+  electronica:  CATEGORIAS_SUGERIDAS.electronica.lista,
+  indumentaria: CATEGORIAS_SUGERIDAS.indumentaria.lista,
+  servicios:    CATEGORIAS_SUGERIDAS.peluqueria.lista,
+  comida:       CATEGORIAS_SUGERIDAS.comida.lista,
+  bebidas:      CATEGORIAS_BEBIDAS,
+  vape:         CATEGORIAS_VAPE
+};
 
 // Rubros que ofrecemos como autocompletado al crear o configurar la tienda.
 // Escribir uno de estos garantiza que las categorias sugeridas sean las
@@ -5918,6 +5964,12 @@ function sugerenciasParaMiRubro() {
   const rubro = normalizarTexto(
     (currentStore?.description || '') + ' ' + (currentStore?.business_name || '')
   );
+  // El rubro que eligio el vendedor manda: iPhone Store eligio electronica
+  // a mano y su descripcion no dice "celular", asi que veia las genericas.
+  const porRubro = CATEGORIAS_POR_RUBRO[categoriaDeRubro()];
+  if (porRubro) return porRubro;
+  if (currentStore?.rubro_manual === 'vape') return CATEGORIAS_VAPE;
+
   if (!rubro.trim()) return CATEGORIAS_GENERICAS;
 
   for (const g of Object.values(CATEGORIAS_SUGERIDAS)) {
@@ -7350,7 +7402,13 @@ function rubroUsaVariantes() {
   // producto con dos precios, igual que un talle. Antes una pizzeria no
   // veia la casilla y tenia que cargar "Muzzarella chica" y "Muzzarella
   // grande" como dos productos sueltos, con dos fotos y dos fichas.
-  return categoriaDeRubro() === 'indumentaria' || rubroEsElectronica() || rubroEsComida();
+  //
+  // Y el vape, que es el caso mas claro de todos: un modelo tiene cinco o
+  // diez sabores, cada uno con su stock. Se agrego el rubro con sus
+  // sabores sugeridos y sus textos pero NO esta linea, asi que la casilla
+  // no aparecia nunca y todo lo demas quedaba inalcanzable.
+  return categoriaDeRubro() === 'indumentaria' || rubroEsElectronica() ||
+         rubroEsComida() || esVape();
 }
 
 // La comida se comporta distinto en varios lugares (stock, textos,
@@ -7404,6 +7462,9 @@ function rubroEsElectronica() {
   // mismo tiempo, ni siquiera si hace_reparaciones quedó tildado de antes
   // (un dato viejo o cargado mal no alcanza para pisar el rubro real).
   if (cat === 'indumentaria') return false;
+  // Lo mismo para cualquier otro rubro ya definido: una casa de comidas con
+  // el tilde de reparaciones puesto no tiene que ver modelos de iPhone.
+  if (cat && cat !== 'electronica') return false;
 
   // Por palabras clave en el nombre/descripción, O porque lo tildó a mano
   // (al registrarse o después, en Configuración) — cualquiera de las dos
@@ -7709,6 +7770,16 @@ byId('pModelo').addEventListener('input', actualizarNombreDesdeMarcaModelo);
 function esVape() {
   if (currentStore?.rubro_manual === 'vape') return true;
   if (currentStore?.rubro_manual) return false;   // eligio otro rubro a mano
+
+  // Una tienda que ya tiene rubro (celulares, ropa, comida, peluqueria) no
+  // se vuelve "de vapes" porque un producto diga Ignite o puff: antes Wabi
+  // Import cargaba un cargador y le aparecian Sabor, Pitadas y Nicotina.
+  if (categoriaDeRubro()) return false;
+  // Tampoco el que arregla celulares sin haber elegido rubro, ni una tienda
+  // de suplementos (el sabor de una proteina no lleva pitadas ni nicotina).
+  if (rubroEsElectronica()) return false;
+  const textoTienda = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
+  if (['suplement', 'nutric', 'proteina', 'dietet'].some(k => textoTienda.includes(k))) return false;
 
   const texto = normalizarTexto(
     (currentStore?.description || '') + ' ' + (currentStore?.business_name || '') + ' ' +
@@ -8257,6 +8328,8 @@ function cargarVariantesEnFormulario(p) {
     ? p.variante_campos.map(a => ({ nombre: a.nombre, valores: [...(a.valores || [])] }))
     : [];
   variantesEnEdicion = Array.isArray(p?.variantes) ? p.variantes.map(v => ({ ...v })) : [];
+  // Los precios de las variantes se muestran en la misma moneda que el precio.
+  if (p?.moneda) variantesEnEdicion.forEach(v => { if (v.precio != null) v.precio = enMonedaDelProducto(v.precio, p); });
 
   renderAtributosVariante();
   renderGrillaVariantes();
@@ -8321,7 +8394,7 @@ byId('variAgregarAtributo').addEventListener('click', () => {
 // RUBROS_CON_VARIANTES, más abajo.
 const OPCIONES_SUGERIDAS = {
   comida: {
-    claves: ['hamburgues','comida','rotiser','pizz','delivery','resto','cocina','sandwi','lomo','parrilla','empanada'],
+    claves: ['hamburgues','comida','rotiser','pizz','delivery','resto','cocina','sandwi','lomo','parrilla','empanada','catering','vianda'],
     titulo: 'Agregados y opciones',
     ayuda: 'Lo que el cliente puede sumar o sacar: cheddar, panceta, sin cebolla.',
     lista: [['Cheddar',500],['Panceta',700],['Huevo',400],['Lechuga',0],['Tomate',0],
@@ -8376,15 +8449,32 @@ function categoriaDeRubro() {
   // exactamente este motivo hasta que se corrigió.
   const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
 
+  // Un suplemento "deportivo" no es ropa deportiva: sin esto, una tienda de
+  // suplementos caia en indumentaria y le ofrecian talles.
+  if (['suplement', 'nutric', 'proteina', 'dietet'].some(k => texto.includes(k))) return null;
+
+  // Peluqueria, barberia, estetica: antes que comida y bebidas, porque 'bar'
+  // esta adentro de "barberia" y EDEN.STUDIO terminaba como bebidas.
+  if (RUBROS_SERVICIOS.some(k => contieneClaveDeRubro(texto, k))) return 'servicios';
+
   // Se chequea primero: si una tienda dice "moda urbana y cafetería" (caso
   // raro pero posible), gana indumentaria antes que bebidas.
   if (RUBROS_CON_VARIANTES.some(k => texto.includes(k))) return 'indumentaria';
   if (RUBROS_ELECTRONICA.some(k => texto.includes(k))) return 'electronica';
 
   for (const [clave, g] of Object.entries(OPCIONES_SUGERIDAS)) {
-    if (g.claves.some(k => texto.includes(k))) return clave;
+    if (g.claves.some(k => contieneClaveDeRubro(texto, k))) return clave;
   }
   return null;
+}
+
+const RUBROS_SERVICIOS = ['peluquer', 'barber', 'estetica', 'manicur', 'depilacion', 'spa'];
+
+// Una clave corta ('bar') tiene que ser una palabra entera: si no, entra
+// adentro de "barrio" o "embarcaciones". Las largas siguen siendo prefijos.
+function contieneClaveDeRubro(texto, clave) {
+  if (clave.length > 3) return texto.includes(clave);
+  return new RegExp('(^|[^a-z0-9])' + clave + '([^a-z0-9]|$)').test(texto);
 }
 
 let opcionesEnEdicion = [];
@@ -12421,6 +12511,7 @@ function aplicarVisibilidadPorRubro() {
   if (!esElectronica) {
     ['repCostoMoneda', 'repPrecioMoneda', 'pPriceMoneda'].forEach(id => { if (byId(id)) byId(id).value = 'ARS'; });
     ['repCostoHint', 'repPrecioHint', 'pPriceHint'].forEach(id => { if (byId(id)) hide(byId(id)); });
+    avisarMonedaDelFormulario();
   }
 
   const cotizacionBanner = byId('cotizacionBanner');
@@ -19216,6 +19307,7 @@ function abrirFormularioNuevo(tipo) {
     escalonesEnEdicion = [];
     renderEscalones();
     if (byId('pPriceMoneda')) byId('pPriceMoneda').value = 'ARS';
+    avisarMonedaDelFormulario();
     if (byId('pPriceHint')) hide(byId('pPriceHint'));
     if (byId('pEan')) byId('pEan').value = '';
     if (byId('pImei')) byId('pImei').value = '';
@@ -19283,6 +19375,7 @@ const negocioDaServicios = () =>
 // "+ Nuevo producto" y una que ve "🍕 Nueva pizza" no estan usando el
 // mismo sistema, aunque el codigo sea el mismo.
 function iconoDeCarga() {
+  if (!rubroEsComida()) return '+';
   const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
   if (texto.includes('pizz')) return '🍕';
   if (texto.includes('hamburgues') || texto.includes('burger')) return '🍔';
@@ -20825,13 +20918,14 @@ byId('productForm').addEventListener('submit', async (e) => {
   // completarse.
   const precioConv = await valorConvertido('pPrice', 'pPriceMoneda');
   if (!precioConv) return;
+  const factorMoneda = precioConv.moneda ? Number(precioConv.cotizacion) : 1;
 
   // La oferta se guarda solo si es menor al precio de lista. Un numero
   // mayor o igual la tienda lo ignora igual, asi que es mejor avisar aca
   // que dejarlo guardado sin efecto y que despues no se entienda por que
   // no aparece el tachado.
   const ofertaEscrita = (byId('pPrecioOferta')?.value || '').trim();
-  const ofertaAGuardar = ofertaEscrita === '' ? null : Number(ofertaEscrita);
+  const ofertaAGuardar = ofertaEscrita === '' ? null : aPesosConFactor(ofertaEscrita, factorMoneda);
   if (ofertaAGuardar !== null &&
       (!(ofertaAGuardar > 0) || ofertaAGuardar >= Number(precioConv.monto_ars))) {
     alert('El precio en oferta tiene que ser mayor a 0 y menor al precio de lista (' +
@@ -20909,7 +21003,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     description: byId('pDesc').value,
     price: precioConv.monto_ars,
     precio_oferta: ofertaAGuardar,
-    precios_por_cantidad: escalonesParaGuardar(),
+    precios_por_cantidad: preciosEnPesos(escalonesParaGuardar(), factorMoneda),
     moneda: precioConv.moneda,
     precio_original: precioConv.monto_original,
     cotizacion: precioConv.cotizacion,
@@ -20947,7 +21041,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     pendiente_restauracion: byId('pPendienteRestauracion').checked,
     tiene_variantes: tieneVariantes,
     variante_campos: tieneVariantes ? variAtributosEnEdicion.filter(a => a.nombre && a.valores.length) : [],
-    variantes: tieneVariantes ? variantesEnEdicion : []
+    variantes: tieneVariantes ? preciosEnPesos(variantesEnEdicion, factorMoneda) : []
   };
 
   // ID interno para la etiqueta ("P-0123") — igual que el número de
@@ -21045,9 +21139,9 @@ async function editProduct(id) {
   // número ya convertido a pesos — si no, editar "borraría" la moneda.
   if (byId('pPriceMoneda')) byId('pPriceMoneda').value = p.moneda || 'ARS';
   if (byId('pPrice')) byId('pPrice').value = p.moneda ? p.precio_original : p.price;
-  if (byId('pPrecioOferta')) byId('pPrecioOferta').value = (p.precio_oferta != null ? p.precio_oferta : '');
+  if (byId('pPrecioOferta')) byId('pPrecioOferta').value = (p.precio_oferta != null ? enMonedaDelProducto(p.precio_oferta, p) : '');
   escalonesEnEdicion = Array.isArray(p.precios_por_cantidad)
-    ? p.precios_por_cantidad.map(x => ({ desde: Number(x.desde), precio: Number(x.precio) }))
+    ? p.precios_por_cantidad.map(x => ({ desde: Number(x.desde), precio: enMonedaDelProducto(Number(x.precio), p) }))
     : [];
   renderEscalones();
   actualizarHintMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
