@@ -5458,7 +5458,18 @@ async function obtenerCotizacion(moneda) {
 
   const claveLS = 'bruwal_cotizacion_' + moneda;
   try {
-    const resp = await fetch(COTIZACION_ENDPOINTS[moneda]);
+    // Sin limite de tiempo, una señal mala deja el guardado colgado para
+    // siempre: el vendedor aprieta Guardar y no pasa nada. Seis segundos
+    // es de sobra para una consulta que normalmente tarda menos de uno, y
+    // si no llega se cae al plan B de abajo (la ultima guardada).
+    //
+    // AbortController y no AbortSignal.timeout: el iPad de la peluqueria
+    // tiene un Safari viejo donde timeout() no existe.
+    const corte = new AbortController();
+    const reloj = setTimeout(() => corte.abort(), 6000);
+    let resp;
+    try { resp = await fetch(COTIZACION_ENDPOINTS[moneda], { signal: corte.signal }); }
+    finally { clearTimeout(reloj); }
     const data = await resp.json();
     const valor = { venta: Number(data.venta), obtenidoEn: ahora };
     if (!valor.venta) throw new Error('respuesta sin venta');
@@ -5563,8 +5574,23 @@ async function valorConvertido(inputId, selectId) {
 
   const cot = await obtenerCotizacion(moneda);
   if (!cot) {
-    alert('No se pudo consultar la cotización del ' + moneda + ' para convertir el precio. Probá de nuevo en un momento.');
-    return null;
+    // Callejon sin salida si solo avisamos: el vendedor tiene el cliente
+    // enfrente y no puede guardar el producto hasta que vuelva internet.
+    // El panel ya sabe trabajar con una cotizacion cargada a mano, asi
+    // que se la pedimos acá mismo en vez de mandarlo a Configuracion.
+    const tipeada = prompt(
+      'No pudimos consultar la cotización del ' + moneda + ' (puede ser la señal).\n\n' +
+      '¿A cuánto está el ' + moneda + ' hoy? Escribilo y seguimos.\n' +
+      'Queda guardado hasta que lo borres desde Configuración.');
+    if (tipeada === null) return null;            // la cerró: no se guarda nada
+
+    const valor = Number(String(tipeada).replace(/[^0-9.,]/g, '').replace(',', '.'));
+    if (!valor || valor <= 0) {
+      alert('Esa cotización no se entiende. Probá de nuevo, o cargá el precio directo en pesos.');
+      return null;
+    }
+    fijarCotizacionManual(moneda, valor);
+    return { monto_ars: Math.round(monto * valor), moneda, monto_original: monto, cotizacion: valor };
   }
   return { monto_ars: Math.round(monto * cot.venta), moneda, monto_original: monto, cotizacion: cot.venta };
 }
