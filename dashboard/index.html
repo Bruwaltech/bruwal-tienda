@@ -2215,8 +2215,17 @@ tr:last-child td { border-bottom: none; }
                        style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin:4px 0 8px;">
 
                 <label style="font-size:13px;color:var(--text-mute);">¿En cuánto lo tasás? (se descuenta del total)</label>
-                <input type="number" id="barcodeTradeInValor" value="0" min="0" step="1"
-                       style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;margin-top:4px;">
+                <div style="display:flex;gap:6px;margin-top:4px;">
+                  <input type="number" id="barcodeTradeInValor" value="0" min="0" step="1"
+                         style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+                  <select id="barcodeTradeInMoneda"
+                          style="padding:8px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;">
+                    <option value="ARS">ARS</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                  </select>
+                </div>
+                <small id="barcodeTradeInHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
 
                 <label style="font-size:13px;color:var(--text-mute);display:block;margin-top:10px;">¿Cómo lo cargamos al stock?</label>
                 <div style="display:flex;gap:14px;margin-top:4px;">
@@ -18601,12 +18610,70 @@ function calculateTotal() {
   calculateChange();
 }
 
+// ---- La tasacion del equipo tomado, con su moneda ----
+//
+// POR QUE HACE FALTA GUARDAR EL VALOR APARTE: el total de la venta se
+// recalcula a cada tecla y tiene que ser instantaneo, pero convertir pide
+// la cotizacion por internet. Asi que la conversion se hace cuando cambia
+// el monto o la moneda, y lo que queda guardado en pesos es lo que usa el
+// calculo del total.
+//
+// Arranca en 0 y no en null: si algo falla, descontar cero es preferible a
+// descontar un numero inventado.
+let tasacionEnPesos = 0;
+let tasacionOriginal = null;   // { monto, moneda, cotizacion } para el registro
+
+async function recalcularTasacion() {
+  const input = byId('barcodeTradeInValor');
+  const select = byId('barcodeTradeInMoneda');
+  const hint = byId('barcodeTradeInHint');
+  if (!input) return;
+
+  const monto = Number(input.value) || 0;
+  const moneda = select ? select.value : 'ARS';
+
+  if (moneda === 'ARS' || !monto) {
+    tasacionEnPesos = monto;
+    tasacionOriginal = null;
+    if (hint) hide(hint);
+    calculateChange();
+    return;
+  }
+
+  if (hint) { hint.textContent = 'Buscando cotización…'; show(hint); }
+
+  const cot = await obtenerCotizacion(moneda);
+  if (!cot) {
+    // NO se inventa una conversion. Se avisa y se deja el total sin
+    // descontar, que es visible, en vez de descontar un numero inventado,
+    // que no se nota hasta que la caja no cierra.
+    tasacionEnPesos = 0;
+    tasacionOriginal = null;
+    if (hint) hint.textContent = 'No se pudo consultar la cotización. Poné el valor en pesos para seguir.';
+    calculateChange();
+    return;
+  }
+
+  tasacionEnPesos = Math.round(monto * cot.venta);
+  tasacionOriginal = { monto, moneda, cotizacion: cot.venta };
+  if (hint) {
+    hint.textContent = '= ' + money(tasacionEnPesos) + ' al blue de hoy ($' +
+                       cot.venta.toLocaleString('es-AR') + ')';
+  }
+  calculateChange();
+}
+
+byId('barcodeTradeInValor')?.addEventListener('input', recalcularTasacion);
+byId('barcodeTradeInMoneda')?.addEventListener('change', recalcularTasacion);
+
 function calculateChange() {
   const totalEl = byId('barcodeTotal').textContent;
   const total = parseFloat(totalEl.replace('$', '').replace('.', '').replace(',', '.')) || 0;
 
   const tomaEquipo = byId('barcodeTradeIn')?.checked;
-  const tasacion = tomaEquipo ? (Number(byId('barcodeTradeInValor').value) || 0) : 0;
+  // Ya convertido a pesos por recalcularTasacion: el que tasa en dolares
+  // escribia 300 y se le descontaban trescientos PESOS.
+  const tasacion = tomaEquipo ? tasacionEnPesos : 0;
   const aPagar = Math.max(0, total - tasacion);
 
   byId('filaTotalConEquipo').classList.toggle('hidden', !tomaEquipo);
@@ -18701,10 +18768,21 @@ async function confirmBarcodeVenta() {
     byId('barcodeTradeInDesc').focus();
     return;
   }
+  // Si tasó en otra moneda y la cotización no se pudo traer, no se sigue:
+  // descontar cero sin avisar le rompe la venta igual que descontar mal.
+  if (tomaEquipo && byId('barcodeTradeInMoneda')?.value !== 'ARS' &&
+      (Number(byId('barcodeTradeInValor').value) || 0) > 0 && !tasacionEnPesos) {
+    alert('No pudimos convertir la tasación a pesos.\n\nProbá de nuevo, o cargá el valor en pesos.');
+    return;
+  }
+
   const tradeIn = tomaEquipo
     ? {
         descripcion: byId('barcodeTradeInDesc').value.trim(),
-        valor: Number(byId('barcodeTradeInValor').value) || 0,
+        // SIEMPRE en pesos: es lo que se resta del total y lo que queda en
+        // la orden. El monto original va aparte, para el registro.
+        valor: tasacionEnPesos,
+        original: tasacionOriginal,
         listoParaVender: byId('barcodeTradeInListo').checked,
         imei: byId('barcodeTradeInImei').value.trim()
       }
@@ -18761,6 +18839,10 @@ async function confirmBarcodeVenta() {
     byId('barcodeMedioPago').value = '';
     byId('barcodeTradeIn').checked = false;
     byId('campoTradeIn').classList.add('hidden');
+    tasacionEnPesos = 0;
+    tasacionOriginal = null;
+    if (byId('barcodeTradeInMoneda')) byId('barcodeTradeInMoneda').value = 'ARS';
+    if (byId('barcodeTradeInHint')) hide(byId('barcodeTradeInHint'));
     byId('barcodeTradeInDesc').value = '';
     byId('barcodeTradeInValor').value = '0';
     byId('barcodeTradeInImei').value = '';
@@ -18969,6 +19051,13 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
         ' (venta a ' + nombre + ').' +
         (listo ? ' Revisá que el precio te deje margen.' : ' Pendiente de restauración antes de publicarlo.'),
       price: valorEquipo,
+      // Si se tasó en dólares queda registrado con su moneda y la
+      // cotización del día, igual que cualquier producto cargado en
+      // dólares. Sin esto, mañana nadie sabe si esos pesos eran 300 dólares
+      // o un numero que alguien tipeo.
+      moneda: tradeIn.original ? tradeIn.original.moneda : null,
+      precio_original: tradeIn.original ? tradeIn.original.monto : null,
+      cotizacion: tradeIn.original ? tradeIn.original.cotizacion : null,
       stock: listo ? 1 : 0,
       pendiente_restauracion: !listo,
       category: 'Usados / Parte de pago',
