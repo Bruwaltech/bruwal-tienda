@@ -5321,7 +5321,10 @@ function precioDeVentaMostrador(p, variante) {
 // El precio de lo que hay ahora mismo en la pantalla de venta.
 function precioVentaEnPantalla() {
   if (!currentBarcodeProduct) return 0;
-  return precioDeVentaMostrador(currentBarcodeProduct, varianteSeleccionadaVenta);
+  // El equipo puntual manda: dos iPhone de la misma combinacion pueden
+  // valer distinto por la bateria o una marca.
+  const unidad = unidadesDisponiblesVenta().find(u => u.imei === imeiSeleccionadoVenta);
+  return precioDeUnidad(currentBarcodeProduct, varianteSeleccionadaVenta, unidad);
 }
 
 // La fecha de un día (YYYY-MM-DD) tal como la vive el usuario, NO en UTC.
@@ -7549,8 +7552,21 @@ function claveDeCombinacion(atributos) {
 // guardados como texto suelto ("358...") en vez de objeto con los datos
 // extra. Se normalizan al leer para no tener que migrar nada en la base.
 function normalizarUnidadImei(u) {
-  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', color: '', listo: true };
-  return { imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '', estado: u.estado || '', color: u.color || '', listo: u.listo !== false };
+  if (typeof u === 'string') return { imei: u, gb: '', ram: '', bateria: '', estado: '', color: '', listo: true, precio: null };
+  return {
+    imei: u.imei, gb: u.gb || '', ram: u.ram || '', bateria: u.bateria || '',
+    estado: u.estado || '', color: u.color || '', listo: u.listo !== false,
+    // null = vale lo mismo que su combinacion. Solo se carga en el equipo
+    // que de verdad vale distinto (bateria mas gastada, una marca, etc).
+    precio: (u.precio === 0 || u.precio) ? Number(u.precio) : null
+  };
+}
+
+// El precio de UN equipo puntual: el suyo si lo tiene, si no el de su
+// combinacion, si no el general del producto.
+function precioDeUnidad(p, variante, unidad) {
+  if (unidad && unidad.precio != null) return Number(unidad.precio);
+  return precioDeVentaMostrador(p, variante);
 }
 
 // Apple no publica "RAM" como dato del equipo (a diferencia de Android) —
@@ -8094,6 +8110,10 @@ function renderGrillaVariantes() {
               <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Estado / nota</label>
               <input type="text" data-nuevo-estado="${escapeHtml(clave)}" placeholder="Opcional" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
             </div>
+            <div style="width:110px;">
+              <label style="display:block;font-size:10px;color:var(--text-mute);margin-bottom:2px;">Precio de este</label>
+              <input type="number" min="0" step="0.01" data-nuevo-precio="${escapeHtml(clave)}" placeholder="Igual" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            </div>
           </div>
           <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text-mute);">
             <input type="checkbox" data-nuevo-listo="${escapeHtml(clave)}" checked style="width:auto;"> Listo para vender (destildá si necesita reparación antes)
@@ -8172,6 +8192,7 @@ function renderImeisDeVariante(clave) {
           : `<input type="text" data-editar-imei="ram" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.ram || '')}" placeholder="RAM" style="width:60px;${est}">`}
         <input type="text" data-editar-imei="bateria" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.bateria || '')}" placeholder="Batería" style="width:65px;${est}">
         <input type="text" data-editar-imei="estado" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${escapeHtml(u.estado || '')}" placeholder="Estado / nota" style="flex:1;min-width:90px;${est}">
+        <input type="number" min="0" step="0.01" data-editar-imei="precio" data-clave="${escapeHtml(clave)}" data-idx="${i}" value="${u.precio ?? ''}" placeholder="Precio de este" style="width:110px;${est}">
       </div>
       <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:${u.listo === false ? 'var(--danger)' : 'var(--text-mute)'};">
         <input type="checkbox" data-editar-imei="listo" data-clave="${escapeHtml(clave)}" data-idx="${i}" ${u.listo !== false ? 'checked' : ''} style="width:auto;">
@@ -8217,7 +8238,12 @@ function renderImeisDeVariante(clave) {
       const unidad = variante?.imeis?.[Number(el.dataset.idx)];
       if (!unidad) return;
       const campo = el.dataset.editarImei;
-      unidad[campo] = campo === 'listo' ? el.checked : el.value;
+      unidad[campo] =
+        campo === 'listo'  ? el.checked :
+        // Vacio = null, que es "vale lo mismo que su combinacion". Guardar
+        // la cadena vacia lo haria valer cero.
+        campo === 'precio' ? (el.value === '' ? null : Math.max(0, Number(el.value) || 0)) :
+        el.value;
       if (campo === 'listo') renderImeisDeVariante(el.dataset.clave);
     });
   });
@@ -8244,6 +8270,7 @@ function agregarImeiAVariante(clave) {
   const bateriaInput = document.querySelector('[data-nuevo-bateria="' + CSS.escape(clave) + '"]');
   const estadoInput = document.querySelector('[data-nuevo-estado="' + CSS.escape(clave) + '"]');
   const listoInput = document.querySelector('[data-nuevo-listo="' + CSS.escape(clave) + '"]');
+  const precioInput = document.querySelector('[data-nuevo-precio="' + CSS.escape(clave) + '"]');
 
   v.imeis.push({
     imei,
@@ -8252,7 +8279,9 @@ function agregarImeiAVariante(clave) {
     color: (colorInput?.value || '').trim(),
     bateria: (bateriaInput?.value || '').trim(),
     estado: (estadoInput?.value || '').trim(),
-    listo: listoInput ? !!listoInput.checked : true
+    listo: listoInput ? !!listoInput.checked : true,
+    // Vacio = vale lo mismo que su combinacion.
+    precio: (precioInput && precioInput.value !== '') ? Math.max(0, Number(precioInput.value) || 0) : null
   });
   v.stock = v.imeis.length;
   // Al cargar varios equipos seguidos del mismo lote, GB/RAM/batería/estado
@@ -18541,11 +18570,16 @@ function renderUnidadesVenta() {
   cont.innerHTML = '<label style="font-size:11.5px;color:var(--text-mute);display:block;">¿Cuál de los ' + unidades.length + ' equipos estás vendiendo?</label>' +
     unidades.map(u => {
       const meta = [u.gb, esIphone ? u.color : u.ram, u.bateria ? 'Bat. ' + u.bateria : '', u.estado].filter(Boolean).join(' · ');
+      // El precio solo se escribe si ese equipo vale distinto: repetirlo en
+      // todos convierte el dato en ruido y deja de leerse.
+      const suyo = u.precio != null ? ' — ' + money(u.precio) : '';
       const activo = imeiSeleccionadoVenta === u.imei;
       return '<button type="button" data-venta-imei="' + escapeHtml(u.imei) + '" style="text-align:left;padding:7px 10px;border-radius:7px;border:1.5px solid ' +
         (activo ? 'var(--celeste)' : 'var(--line)') + ';background:' + (activo ? '#EAF4FD' : '#fff') +
         ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' +
-        '<b>' + escapeHtml(u.imei) + '</b>' + (meta ? ' — ' + escapeHtml(meta) : '') + '</button>';
+        '<b>' + escapeHtml(u.imei) + '</b>' + (meta ? ' — ' + escapeHtml(meta) : '') +
+        (suyo ? '<span style="color:var(--navy);font-weight:700;">' + escapeHtml(suyo) + '</span>' : '') +
+        '</button>';
     }).join('');
 
   cont.querySelectorAll('[data-venta-imei]').forEach(b => {

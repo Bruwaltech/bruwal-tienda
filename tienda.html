@@ -772,8 +772,26 @@ function precioDeVariante(p, v){
 // muestra un precio único como siempre; si no, "Desde $X".
 function rangoPrecioVariantes(p){
   if (!Array.isArray(p.variantes) || !p.variantes.length) return { min: precioBase(p), max: precioBase(p) };
-  const precios = p.variantes.map(v => precioDeVariante(p, v));
-  return { min: Math.min(...precios), max: Math.max(...precios) };
+
+  // Cada EQUIPO puede valer distinto dentro de la misma combinacion: dos
+  // iPhone 13 negros, uno con la bateria gastada. Si el rango solo mirara
+  // el precio de la combinacion, la tienda mostraria un precio que no es el
+  // de ninguno de los dos.
+  const precios = [];
+  p.variantes.forEach(v => {
+    const dela = precioDeVariante(p, v);
+    const unidades = Array.isArray(v.imeis) ? v.imeis : [];
+    const vendibles = unidades.filter(u => u && u.listo !== false);
+    if (vendibles.length) {
+      vendibles.forEach(u => precios.push(u.precio != null ? Number(u.precio) : dela));
+    } else {
+      precios.push(dela);
+    }
+  });
+
+  const validos = precios.filter(n => Number.isFinite(n) && n > 0);
+  if (!validos.length) return { min: precioBase(p), max: precioBase(p) };
+  return { min: Math.min(...validos), max: Math.max(...validos) };
 }
 // La tabla de precios por cantidad, con el mismo formato que el vendedor
 // usa en WhatsApp: "5 X 25.000 c/u". La primera fila es su precio normal,
