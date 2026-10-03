@@ -2145,6 +2145,7 @@ tr:last-child td { border-bottom: none; }
           <div style="font-size:13px;color:var(--text-mute);margin-bottom:8px;" id="barcodeMatchesTitle"></div>
           <div id="barcodeMatchesList" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;"></div>
         </div>
+        <div id="carritoVentaBox" class="hidden" style="background:#fff;padding:14px 16px;border-radius:8px;margin-bottom:12px;border:2px solid var(--celeste);"></div>
         <div id="barcodeResult" class="hidden" style="background:#fff;padding:16px;border-radius:8px;margin-bottom:12px;border:1px solid var(--line);">
           <div class="fila-resultado-venta">
             <div>
@@ -2245,6 +2246,7 @@ tr:last-child td { border-bottom: none; }
                   <span style="color:var(--text-mute);">Total:</span>
                   <span id="barcodeTotal" style="font-weight:700;color:var(--navy);">$0</span>
                 </div>
+                <div id="barcodeArmadoNota" class="hidden" style="font-size:12.5px;color:#1FA088;font-weight:600;margin:-4px 0 8px;line-height:1.5;"></div>
                 <div class="hidden" id="filaTotalConEquipo" style="display:flex;justify-content:space-between;margin-bottom:8px;">
                   <span style="color:var(--text-mute);">Queda a pagar (con el equipo):</span>
                   <span id="barcodeTotalConEquipo" style="font-weight:700;color:var(--celeste);">$0</span>
@@ -2260,6 +2262,7 @@ tr:last-child td { border-bottom: none; }
                     <option>Efectivo</option><option>Débito</option><option>Crédito</option><option>Transferencia</option><option>Mercado Pago</option>
                   </select>
                 </div>
+                <div id="barcodeAliasBox" class="hidden" style="margin-top:8px;padding:10px 12px;background:#EAF4FD;border-radius:8px;"></div>
                 <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);">
                   <span style="font-weight:700;color:#1FA088;">Vuelto:</span>
                   <span id="barcodeChange" style="font-weight:700;font-size:16px;color:#1FA088;">$0</span>
@@ -2268,6 +2271,7 @@ tr:last-child td { border-bottom: none; }
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-start;">
               <button id="btnRegistrarVenta" onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
+              <button id="btnAgregarAlPedido" type="button" onclick="agregarAlPedidoVenta()" class="btn" style="padding:10px 16px;font-size:14px;white-space:nowrap;background:#fff;color:var(--navy);border:1.5px solid var(--celeste);">➕ Agregar otro producto</button>
               <button onclick="clearBarcodeResult()" class="btn-ghost" style="padding:10px 16px;font-size:14px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Limpiar</button>
             </div>
           </div>
@@ -2317,6 +2321,7 @@ tr:last-child td { border-bottom: none; }
         <input type="date" id="cajaFecha" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;">
         <button type="button" id="cajaHoyBtn" class="btn-ghost" style="width:auto;padding:8px 14px;font-size:13px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Hoy</button>
         <div style="flex:1;"></div>
+        <button type="button" id="cierreCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">🧾 Cierre de caja</button>
         <button type="button" id="nuevoMovimientoCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Movimiento manual</button>
       </div>
 
@@ -4621,6 +4626,16 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="field">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" id="configOfreceEnvio" style="margin:0;cursor:pointer;width:auto;">
+            🛵 Hago envíos a domicilio
+          </label>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Si lo destildás, en tu tienda el cliente solo puede elegir <b>Retiro por el local</b>.
+          </small>
+        </div>
+
+        <div class="field">
           <!-- Etiqueta y ayuda las escribe actualizarTextoRecargoDomicilio():
                en un negocio de turnos (peluquería) esto no es un envío, es ir
                a la casa del cliente a hacer el servicio. -->
@@ -4644,6 +4659,16 @@ tr:last-child td { border-bottom: none; }
           <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Tus clientes van a elegir entre estos al hacer el pedido. Si no marcás
             ninguno se muestran todos.
+          </small>
+        </div>
+        <div class="field">
+          <label>🏦 Datos para transferencia <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <input type="text" id="configAlias" maxlength="60" autocomplete="off" placeholder="Alias — ej: empire.pizzas.mp" style="margin-bottom:6px;">
+          <input type="text" id="configCbu" maxlength="30" autocomplete="off" inputmode="numeric" placeholder="CBU o CVU (opcional)" style="margin-bottom:6px;">
+          <input type="text" id="configTitular" maxlength="80" autocomplete="off" placeholder="A nombre de (opcional)">
+          <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Cuando el cliente elige Transferencia o Mercado Pago, se lo mostramos para que lo copie:
+            en tu tienda, en la venta del mostrador y en el ticket.
           </small>
         </div>
         <button type="button" onclick="guardarConfiguracion()" class="btn btn-primary" style="width:100%;">Guardar cambios</button>
@@ -7074,6 +7099,38 @@ function costoDeInsumos(p) {
 function costoDeProducto(p) {
   const propio = Number(p?.costo || 0);
   return propio > 0 ? propio : costoDeInsumos(p);
+}
+
+// ---- Porciones de pizza ----
+// En gastronomia el costo se carga por la pizza ENTERA, pero se vende por
+// porcion, media o entera. Sin esto, dos porciones de Cherry cargaban el
+// costo de dos pizzas enteras y la caja mostraba "deja $-13.634".
+//
+// Solo se reconocen tamanios con nombre exacto (Porcion, Cuarto, Media,
+// Mitad, Entera): "Media" a secas en otro rubro no se toca porque se
+// pregunta rubroEsComida() primero.
+const PORCIONES_POR_PIZZA = 8;
+const PORCIONES_POR_TAMANIO = { 'porcion': 1, 'cuarto': 2, '1/4': 2, 'media': 4, 'mitad': 4, '1/2': 4, 'entera': 8, 'completa': 8 };
+
+function porcionesDeValor(valor) {
+  const t = String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  return PORCIONES_POR_TAMANIO[t] || null;
+}
+
+// null si la variante no es un tamanio de pizza reconocible (o tiene mas de
+// un atributo: "Media + masa integral" no se arma con porciones sueltas).
+function porcionesDeVariante(variante) {
+  if (!variante || typeof variante !== 'object') return null;
+  const valores = Object.values(variante);
+  if (valores.length !== 1) return null;
+  return porcionesDeValor(valores[0]);
+}
+
+function costoDeItem(p, it) {
+  const base = costoDeProducto(p);
+  if (!base || !rubroEsComida()) return base;
+  const porciones = porcionesDeVariante(it && it.variante);
+  return porciones ? base * porciones / PORCIONES_POR_PIZZA : base;
 }
 
 const seVendePorMedida = (p) => !!(p && p.unidad_medida && UNIDADES_MEDIDA[p.unidad_medida]);
@@ -14501,6 +14558,8 @@ async function aplicarStockDeItem(item, signo) {
 
     const stockTotal = variantes.reduce((s, x) => s + Number(x.stock || 0), 0);
     await sb.from('store_products').update({ variantes, stock: stockTotal }).eq('id', p.id);
+    p.variantes = variantes;
+    p.stock = stockTotal;
     return imeiAfectado;
   }
 
@@ -14509,6 +14568,7 @@ async function aplicarStockDeItem(item, signo) {
   // número se escribiría tal cual en la base).
   const nuevoStock = Math.max(0, redondearMedida(Number(p.stock || 0) + signo * qty));
   await sb.from('store_products').update({ stock: nuevoStock }).eq('id', p.id);
+  p.stock = nuevoStock;
   return null;
 }
 
@@ -16920,6 +16980,9 @@ function armarTicketHtml(d) {
     '<div class="tk-sep"></div>' +
     '<div class="tk-total"><span>TOTAL</span><span>' + money(total) + '</span></div>' +
     (d.medioPago ? '<div class="tk-fila"><span>Pago</span><span>' + escapeHtml(d.medioPago) + '</span></div>' : '') +
+    (d.medioPago && MEDIOS_CON_ALIAS.includes(d.medioPago) && datosTransferencia() && datosTransferencia().alias
+      ? '<div class="tk-fila"><span>Alias</span><span>' + escapeHtml(datosTransferencia().alias) + '</span></div>'
+      : '') +
     // En una venta a fiado el ticket tiene que decir cuanto queda debiendo:
     // es el comprobante que se lleva el cliente.
     (Number(d.debe) > 0
@@ -17625,12 +17688,27 @@ async function renderGastosChart() {
 // venta') para que el historial de pagos del cliente esté completo. Acá
 // se descarta ese pago para no contarlo dos veces: ya está adentro del
 // "cobrado" de la venta.
+// "YYYY-MM-DD" del dia en Argentina para un timestamp de la base.
+function diaARDe(v) {
+  if (!v) return '';
+  const d = comoFecha(v);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: TZ_AR });
+}
+
+// Lo ultimo que pinto la caja, para el ticket de cierre: asi el ticket
+// dice exactamente lo mismo que la pantalla, sin recalcular por otro lado.
+let ultimoResumenCaja = null;
+
 function renderCaja() {
   const cuerpo = byId('cajaMovimientosBody');
   if (!cuerpo) return;
 
   const fecha = byId('cajaFecha').value || fechaLocalISO();
-  const esDelDia = (fechaHora) => (fechaHora || '').slice(0, 10) === fecha;
+  // El dia de la venta EN EL LOCAL. created_at esta en UTC: recortarlo tal
+  // cual mandaba todo lo vendido despues de las 21:00 a la caja de MANIANA
+  // (la caja del dia arrancaba a las 21 de la noche anterior).
+  const esDelDia = (fechaHora) => diaARDe(fechaHora) === fecha;
 
   const movimientos = [];
 
@@ -17643,7 +17721,7 @@ function renderCaja() {
       // negocio quiere ver al lado del precio -- no solo cuanto entro.
       const costo = (Array.isArray(o.items) ? o.items : []).reduce((suma, it) => {
         const p = (products || []).find(x => String(x.id) === String(it.product_id));
-        return suma + costoDeProducto(p) * Number(it.qty || 1);
+        return suma + costoDeItem(p, it) * Number(it.qty || 1);
       }, 0);
 
       movimientos.push({
@@ -17719,7 +17797,7 @@ function renderCaja() {
       const p = (products || []).find(x => String(x.id) === String(it.product_id));
       const qty = Number(it.qty || 1);
       ventaDelDia += Number(it.price ?? p?.price ?? 0) * qty;
-      const c = costoDeProducto(p);
+      const c = costoDeItem(p, it);
       if (c > 0) hayCosto = true;
       costoDelDia += c * qty;
     });
@@ -17750,6 +17828,7 @@ function renderCaja() {
     porMedio[m.medio] = (porMedio[m.medio] || 0) + signo * m.monto;
   });
   const medios = Object.keys(porMedio);
+  ultimoResumenCaja = { fecha, movimientos, ingresos, egresos, porMedio };
   byId('cajaPorMedio').innerHTML = medios.length ? medios.map(m =>
     '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;min-width:140px;">' +
       '<div style="font-size:12px;color:var(--text-mute);">' + escapeHtml(m) + '</div>' +
@@ -17793,6 +17872,7 @@ function renderCaja() {
 }
 
 byId('cajaFecha').addEventListener('change', renderCaja);
+byId('cierreCajaBtn')?.addEventListener('click', imprimirCierreCaja);
 byId('cajaHoyBtn').addEventListener('click', () => {
   byId('cajaFecha').value = fechaLocalISO();
   renderCaja();
@@ -18017,7 +18097,7 @@ function statsProductosYClientes(periodoDias) {
       const key = item.product_id || item.name;
       // costoDeProducto y no p.costo: asi un servicio saca su costo de los
       // insumos que gasta y deja de aparecer como "sin costo" para siempre.
-      const costoUnitario = costoDeProducto(p);
+      const costoUnitario = costoDeItem(p, item);
       if (!porProducto[key]) {
         porProducto[key] = { name: item.name, qty: 0, ingresos: 0, costoTotal: 0, tieneCosto: costoUnitario > 0, product: p || null };
       }
@@ -18390,6 +18470,10 @@ async function anularVenta(id) {
 
 // SCANNER DE CÓDIGOS DE BARRAS
 let currentBarcodeProduct = null;
+// Lo que ya se agrego al pedido en curso (pizza y media = 2 lineas, una
+// sola venta). La linea que esta en pantalla NO esta aca hasta que se
+// toca "Agregar otro producto" o se registra la venta.
+let carritoVenta = [];
 
 async function searchByBarcode() {
   const crudo = byId('barcodeInput').value.trim();
@@ -18543,6 +18627,7 @@ function seleccionarProductoVenta(id, cantidad) {
   if (!byId('barcodeVendedor').value) {
     byId('barcodeVendedor').value = localStorage.getItem(claveUltimoVendedor()) || '';
   }
+  salirDeModoPedido();
   renderVarianteVenta();
   calculateTotal();
   show(byId('barcodeResult'));
@@ -18706,6 +18791,7 @@ function calculateTotal() {
   const qty = cantidadVendida();
   const total = precioVentaEnPantalla() * qty;
   byId('barcodeTotal').textContent = money(total);
+  pintarTotalConCarrito();
   calculateChange();
 }
 
@@ -18767,7 +18853,7 @@ byId('barcodeTradeInMoneda')?.addEventListener('change', recalcularTasacion);
 
 function calculateChange() {
   const totalEl = byId('barcodeTotal').textContent;
-  const total = parseFloat(totalEl.replace('$', '').replace('.', '').replace(',', '.')) || 0;
+  const total = parseFloat(totalEl.replace('$', '').replace(/\./g, '').replace(',', '.')) || 0;
 
   const tomaEquipo = byId('barcodeTradeIn')?.checked;
   // Ya convertido a pesos por recalcularTasacion: el que tasa en dolares
@@ -18784,6 +18870,14 @@ function calculateChange() {
 }
 
 function clearBarcodeResult() {
+  if (carritoVenta.length) {
+    // Con un producto en pantalla, "Limpiar" saca solo ese y deja el pedido.
+    if (currentBarcodeProduct) { entrarEnModoPedido(); return; }
+    if (!confirm('¿Vaciar el pedido en curso (' + carritoVenta.length + ' producto' + (carritoVenta.length === 1 ? '' : 's') + ')?')) return;
+    carritoVenta = [];
+    renderCarritoVenta();
+  }
+  salirDeModoPedido();
   hide(byId('barcodeResult'));
   hide(byId('barcodeMatches'));
   currentBarcodeProduct = null;
@@ -18791,8 +18885,541 @@ function clearBarcodeResult() {
   byId('barcodeInput').focus();
 }
 
+// ============ PEDIDO DE VARIOS PRODUCTOS (CARRITO DE MOSTRADOR) ============
+// "Una pizza y media" son dos lineas (Entera + Media) y UNA venta: un solo
+// cliente, un solo cobro, un solo ticket para la cocina. Antes habia que
+// registrar dos ventas.
+
+// La linea que hay ahora en pantalla, sin avisos (para el total en vivo).
+// null si todavia falta elegir el tamanio.
+function lineaVentaEnPantalla() {
+  const p = currentBarcodeProduct;
+  if (!p) return null;
+  const conVariantes = productoDeVentaTieneVariantes();
+  if (conVariantes && Object.keys(varianteSeleccionadaVenta).length < p.variante_campos.length) return null;
+  const qty = cantidadVendida();
+  if (!(qty > 0)) return null;
+  return {
+    product: p,
+    qty,
+    variante: conVariantes ? { ...varianteSeleccionadaVenta } : null,
+    imei: imeiSeleccionadoVenta,
+    precioUnitario: precioVentaEnPantalla()
+  };
+}
+
+// La misma linea, pero con los controles de la venta de siempre. Avisa y
+// devuelve null si algo falta.
+function validarLineaVentaEnPantalla() {
+  const p = currentBarcodeProduct;
+  if (!p) { alert('Elegí un producto.'); return null; }
+
+  const qty = cantidadVendida();
+  if (qty <= 0) {
+    const u = unidadDe(p);
+    alert('Escribí cuántos ' + (u ? u.plural : 'unidades') + ' estás vendiendo.');
+    byId('barcodeQty').focus();
+    return null;
+  }
+
+  // Lo que ya esta en el pedido de esta misma combinacion cuenta contra el stock.
+  const claveLinea = (prod, v) => String(prod.id) + '|' + claveVariante(v || {});
+  const yaEnPedido = (variante) => carritoVenta
+    .filter(l => claveLinea(l.product, l.variante) === claveLinea(p, variante))
+    .reduce((s, l) => s + Number(l.qty || 0), 0);
+
+  if (seVendePorMedida(p) && !productoDeVentaTieneVariantes()) {
+    const disponible = Number(p.stock || 0) - yaEnPedido(null);
+    if (qty > disponible) {
+      alert('No hay stock suficiente: quedan ' + formatearCantidad(Math.max(0, disponible), p) + '.');
+      return null;
+    }
+  }
+
+  let variante = null;
+  if (productoDeVentaTieneVariantes()) {
+    if (Object.keys(varianteSeleccionadaVenta).length < p.variante_campos.length) {
+      alert('Elegí ' + p.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
+      return null;
+    }
+    variante = { ...varianteSeleccionadaVenta };
+    const disponible = (stockDeVarianteVenta() || 0) - yaEnPedido(variante);
+    if (disponible < qty) {
+      alert('No hay stock suficiente en esa combinación: quedan ' + Math.max(0, disponible) + '.');
+      return null;
+    }
+    if (unidadesDisponiblesVenta().length > 1 && !imeiSeleccionadoVenta) {
+      alert('Elegí cuál de los equipos estás vendiendo.');
+      return null;
+    }
+    if (imeiSeleccionadoVenta && carritoVenta.some(l => l.imei === imeiSeleccionadoVenta)) {
+      alert('Ese equipo ya está en el pedido.');
+      return null;
+    }
+  }
+
+  return { product: p, qty, variante, imei: imeiSeleccionadoVenta, precioUnitario: precioVentaEnPantalla() };
+}
+
+// ---- Armado de porciones ----
+// Cuatro amigos piden un cuarto cada uno (2 porciones x 4 = 8 porciones):
+// eso es UNA pizza entera y se cobra como entera, no 8 x precio de porcion.
+// Se agrupa por producto (mismo gusto) y se busca la combinacion de
+// tamanios mas barata que da exactamente esas porciones. Solo se aplica si
+// le conviene al cliente; si no, se cobra lo de lista.
+function tamaniosDePizza(p) {
+  if (!rubroEsComida() || !p || !p.tiene_variantes) return [];
+  if (!Array.isArray(p.variante_campos) || p.variante_campos.length !== 1) return [];
+  return (Array.isArray(p.variantes) ? p.variantes : [])
+    .map(v => ({ porciones: porcionesDeVariante(v.atributos), precio: Number(v.precio), nombre: Object.values(v.atributos || {})[0] }))
+    .filter(t => t.porciones && t.precio > 0);
+}
+
+// La combinacion mas barata que suma EXACTAMENTE n porciones.
+function armarPorcionesOptimo(n, tamanios) {
+  if (!(n > 0) || n > 2000 || !tamanios.length) return null;
+  const mejor = new Array(n + 1).fill(Infinity);
+  const eleccion = new Array(n + 1).fill(null);
+  mejor[0] = 0;
+  for (let i = 1; i <= n; i++) {
+    tamanios.forEach(t => {
+      if (t.porciones <= i && mejor[i - t.porciones] + t.precio < mejor[i]) {
+        mejor[i] = mejor[i - t.porciones] + t.precio;
+        eleccion[i] = t;
+      }
+    });
+  }
+  if (!isFinite(mejor[n])) return null;
+  const cuenta = {};
+  for (let i = n; i > 0; i -= eleccion[i].porciones) {
+    cuenta[eleccion[i].nombre] = (cuenta[eleccion[i].nombre] || 0) + 1;
+  }
+  // De la mas grande a la mas chica: "1 Entera + 1 Porción"
+  const orden = tamanios.slice().sort((a, b) => b.porciones - a.porciones).map(t => t.nombre);
+  const texto = orden.filter((nom, i) => cuenta[nom] && orden.indexOf(nom) === i)
+    .map(nom => cuenta[nom] + ' ' + nom).join(' + ');
+  return { precio: mejor[n], texto };
+}
+
+// Devuelve las lineas con su importe final y la lista de armados aplicados.
+// lineas: [{ product, qty, variante, precioUnitario, ... }]
+function aplicarArmadoDePorciones(lineas) {
+  const salida = lineas.map(l => ({ ...l, importe: Number(l.precioUnitario) * Number(l.qty), precioCobrado: Number(l.precioUnitario) }));
+  const ajustes = [];
+
+  const grupos = {};
+  salida.forEach((l, i) => {
+    const por = porcionesDeVariante(l.variante);
+    if (!por || !Number.isInteger(Number(l.qty))) return;
+    const id = String(l.product.id);
+    (grupos[id] = grupos[id] || []).push(i);
+  });
+
+  Object.values(grupos).forEach(indices => {
+    const p = salida[indices[0]].product;
+    const tamanios = tamaniosDePizza(p);
+    if (tamanios.length < 2) return;
+    const n = indices.reduce((s, i) => s + porcionesDeVariante(salida[i].variante) * Number(salida[i].qty), 0);
+    const lista = indices.reduce((s, i) => s + salida[i].importe, 0);
+    const armado = armarPorcionesOptimo(n, tamanios);
+    if (!armado || armado.precio >= lista - 0.5) return;
+
+    // Se reparte el precio armado entre las lineas, en proporcion a lo que
+    // valian. La ultima absorbe el redondeo para que la suma de exacto.
+    const factor = armado.precio / lista;
+    let acumulado = 0;
+    indices.forEach((i, k) => {
+      const l = salida[i];
+      const importe = (k === indices.length - 1) ? armado.precio - acumulado : Math.round(l.importe * factor);
+      acumulado += importe;
+      l.importe = importe;
+      l.precioCobrado = Math.round((importe / Number(l.qty)) * 100) / 100;
+    });
+
+    ajustes.push({ nombre: p.name, porciones: n, lista, armado: armado.precio, texto: armado.texto });
+  });
+
+  const total = salida.reduce((s, l) => s + l.importe, 0);
+  return { lineas: salida, total, ajustes };
+}
+
+function resumenVentaActual() {
+  const lineas = carritoVenta.slice();
+  const enPantalla = lineaVentaEnPantalla();
+  if (enPantalla) lineas.push(enPantalla);
+  return aplicarArmadoDePorciones(lineas);
+}
+
+function textoAjustePorciones(a) {
+  return '🍕 ' + a.nombre + ': ' + a.porciones + ' porciones se cobran como ' + a.texto +
+         ' (ahorra ' + money(a.lista - a.armado) + ')';
+}
+
+function nombreDeLineaVenta(l) {
+  return l.product.name + (l.variante
+    ? ' (' + Object.entries(l.variante).map(([k, v]) => k + ': ' + v).join(', ') + ')'
+    : '');
+}
+
+function renderCarritoVenta() {
+  const caja = byId('carritoVentaBox');
+  if (!caja) return;
+  if (!carritoVenta.length) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
+
+  const r = aplicarArmadoDePorciones(carritoVenta);
+  caja.innerHTML =
+    '<div style="font-weight:700;color:var(--navy);margin-bottom:8px;">🛒 Pedido en curso</div>' +
+    r.lineas.map((l, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:14px;">' +
+        '<span style="flex:1;">' + (seVendePorMedida(l.product) ? formatearCantidad(l.qty, l.product) : l.qty) + ' × ' + escapeHtml(nombreDeLineaVenta(l)) + '</span>' +
+        '<b>' + money(l.importe) + '</b>' +
+        '<button type="button" class="icon-btn danger" data-quitar-linea-venta="' + i + '" title="Sacar del pedido">✕</button>' +
+      '</div>').join('') +
+    r.ajustes.map(a => '<div style="font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;">' + escapeHtml(textoAjustePorciones(a)) + '</div>').join('') +
+    '<div style="font-size:12.5px;color:var(--text-mute);margin-top:8px;">Buscá el próximo producto arriba, o completá los datos y tocá <b>Registrar venta</b>.</div>';
+  caja.classList.remove('hidden');
+
+  caja.querySelectorAll('[data-quitar-linea-venta]').forEach(b =>
+    b.addEventListener('click', () => quitarLineaDelPedido(Number(b.dataset.quitarLineaVenta))));
+}
+
+function pintarTotalConCarrito() {
+  const nota = byId('barcodeArmadoNota');
+  const r = resumenVentaActual();
+  const hayPedido = carritoVenta.length > 0 || r.ajustes.length > 0;
+  if (hayPedido) byId('barcodeTotal').textContent = money(r.total);
+  if (nota) {
+    nota.innerHTML = r.ajustes.map(a => escapeHtml(textoAjustePorciones(a))).join('<br>');
+    nota.classList.toggle('hidden', !r.ajustes.length);
+  }
+  renderCarritoVenta();
+}
+
+// Sin producto en pantalla pero con pedido: se ve el formulario de cobro
+// (cliente, medio de pago, total) y se esconde lo que es de un producto.
+function entrarEnModoPedido() {
+  currentBarcodeProduct = null;
+  varianteSeleccionadaVenta = {};
+  imeiSeleccionadoVenta = null;
+  byId('barcodeVarianteBloque').classList.add('hidden');
+  hide(byId('barcodeMatches'));
+  const n = carritoVenta.length;
+  byId('barcodeProductName').textContent = '🛒 Pedido de ' + n + ' producto' + (n === 1 ? '' : 's');
+  [byId('barcodeProductPrice')?.parentElement, byId('barcodeQtyLabel'), byId('barcodeQty')]
+    .forEach(el => el && el.classList.add('hidden'));
+  show(byId('barcodeResult'));
+  pintarTotalConCarrito();
+  calculateChange();
+  byId('barcodeInput').value = '';
+  byId('barcodeInput').focus();
+}
+
+function salirDeModoPedido() {
+  [byId('barcodeProductPrice')?.parentElement, byId('barcodeQtyLabel'), byId('barcodeQty')]
+    .forEach(el => el && el.classList.remove('hidden'));
+}
+
+function agregarAlPedidoVenta() {
+  if (!puedeOperar()) return;
+  if (byId('barcodeTradeIn')?.checked) {
+    alert('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
+    return;
+  }
+  const linea = validarLineaVentaEnPantalla();
+  if (!linea) return;
+  carritoVenta.push(linea);
+  entrarEnModoPedido();
+}
+
+function quitarLineaDelPedido(i) {
+  carritoVenta.splice(i, 1);
+  if (currentBarcodeProduct) { calculateTotal(); return; }
+  if (carritoVenta.length) { entrarEnModoPedido(); return; }
+  renderCarritoVenta();
+  salirDeModoPedido();
+  hide(byId('barcodeResult'));
+}
+
+async function confirmarVentaCarrito() {
+  if (byId('barcodeTradeIn')?.checked) {
+    alert('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
+    return;
+  }
+  let lineas = carritoVenta.slice();
+  if (currentBarcodeProduct) {
+    const linea = validarLineaVentaEnPantalla();
+    if (!linea) return;
+    lineas.push(linea);
+  }
+  if (!lineas.length) { alert('El pedido está vacío.'); return; }
+
+  const cliente = (byId('barcodeCliente')?.value || '').trim();
+  const esFiado = byId('barcodeFiado').checked;
+  if (esFiado && !cliente) {
+    alert('Para anotarlo como fiado necesitás el nombre del cliente.');
+    byId('barcodeCliente').focus();
+    return;
+  }
+  const abonaAhora = esFiado ? (Number(byId('barcodeFiadoAbono').value) || 0) : 0;
+  const vendedor = (byId('barcodeVendedor')?.value || '').trim();
+  const medioPago = byId('barcodeMedioPago')?.value || '';
+  const telefonoCliente = (byId('barcodeClienteTel')?.value || '').trim();
+  const horaEntrega = rubroEsComida() ? (byId('barcodeHoraEntrega')?.value || '') : '';
+
+  const entraPlata = !esFiado || abonaAhora > 0;
+  if (entraPlata && !medioPago) {
+    alert('Elegí con qué te paga antes de registrar la venta.\n\n' +
+          'Es lo que después te deja cerrar la caja por efectivo, débito y transferencia.');
+    byId('barcodeMedioPago')?.focus();
+    return;
+  }
+
+  const resumen = aplicarArmadoDePorciones(lineas);
+  const ok = await registrarVentaCarrito(resumen, cliente, { fiado: esFiado, abonaAhora, vendedor, medioPago, telefono: telefonoCliente, horaEntrega });
+  if (!ok) return;
+
+  guardarNombreVendedor(vendedor);
+  alert('✓ Venta registrada: ' + resumen.lineas.length + ' producto' + (resumen.lineas.length === 1 ? '' : 's') +
+        ' = ' + money(resumen.total) +
+        (resumen.ajustes.length ? '\n\n' + resumen.ajustes.map(textoAjustePorciones).join('\n') : ''));
+
+  if (byId('barcodeTicket')?.checked) {
+    imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
+  }
+
+  carritoVenta = [];
+  renderCarritoVenta();
+  limpiarDatosDeVentaRegistrada();
+  salirDeModoPedido();
+  clearBarcodeResult();
+}
+
+// Mismo reseteo que hace confirmBarcodeVenta despues de una venta sola.
+function limpiarDatosDeVentaRegistrada() {
+  if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
+  if (byId('barcodeClienteTel')) byId('barcodeClienteTel').value = '';
+  telefonoVentaAutocompletado = true;
+  horaEntregaEditadaAMano = false;
+  if (byId('barcodeHoraEntrega')) byId('barcodeHoraEntrega').value = horaEntregaSugerida();
+  byId('barcodeFiado').checked = false;
+  byId('campoFiadoMonto').classList.add('hidden');
+  byId('barcodeFiadoAbono').value = '0';
+  byId('barcodeMedioPago').value = '';
+  actualizarAliasVenta();
+  byId('barcodeAbono').value = '0';
+  varianteSeleccionadaVenta = {};
+  imeiSeleccionadoVenta = null;
+  byId('barcodeVarianteBloque').classList.add('hidden');
+  avisoTelefonoVenta();
+}
+
+// Una sola orden con todas las lineas. Mismo contrato que registrarVenta()
+// (customer_phone 'scanner', estado confirmado, abono en store_pagos), pero
+// con varios items y el total ya armado.
+async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
+  if (!puedeOperar()) return false;
+  const { fiado = false, abonaAhora = 0, vendedor = '', medioPago = '', telefono = '', horaEntrega = '' } = opciones || {};
+
+  const total = resumen.total;
+  const nombre = (nombreCliente || '').trim() ||
+                 ('Venta mostrador ' + horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
+  const saldoPendiente = fiado ? Math.max(0, total - abonaAhora) : 0;
+
+  const items = resumen.lineas.map(l => {
+    const it = { product_id: l.product.id, qty: l.qty, name: nombreDeLineaVenta(l), price: l.precioCobrado, variante: l.variante };
+    // El precio de lista queda anotado cuando se cobro armado como pizza.
+    if (l.precioCobrado !== Number(l.precioUnitario)) it.precio_lista = Number(l.precioUnitario);
+    if (l.imei) it.imei = l.imei;
+    return it;
+  });
+
+  const { data, error } = await sb.from('orders').insert([{
+    store_slug: currentStore.slug,
+    customer_name: nombre,
+    customer_phone: String(telefono || '').trim() || 'scanner',
+    hora_entrega: horaEntregaISO(horaEntrega),
+    items,
+    total,
+    estado: 'confirmado',
+    saldo_pendiente: saldoPendiente,
+    vendedor: vendedor || null,
+    medio_pago: medioPago || null,
+    created_at: new Date().toISOString()
+  }]).select('id');
+
+  if (error) {
+    alert('Error al registrar la venta:\n\n' + humano(error));
+    return false;
+  }
+  const ordenId = data?.[0]?.id || null;
+
+  if (fiado && abonaAhora > 0 && ordenId) {
+    await sb.from('store_pagos').insert({
+      order_id: ordenId,
+      store_slug: currentStore.slug,
+      customer_name: nombre,
+      monto: abonaAhora,
+      medio_pago: medioPago || null,
+      nota: 'Pago al momento de la venta'
+    });
+  }
+
+  // De a una: aplicarStockDeItem actualiza la copia en memoria, asi dos
+  // lineas del mismo producto no se pisan el stock.
+  let cambioImei = false;
+  for (let i = 0; i < resumen.lineas.length; i++) {
+    const l = resumen.lineas[i];
+    const imeiVendido = await aplicarStockDeItem({ product_id: l.product.id, qty: l.qty, variante: l.variante, imei: l.imei }, -1);
+    if (l.product.imei) {
+      await registrarEventoImei(l.product.imei, 'venta', 'Vendido a ' + nombre, l.importe);
+    } else if (imeiVendido) {
+      items[i].imei = imeiVendido;
+      cambioImei = true;
+      await registrarEventoImei(imeiVendido, 'venta', 'Vendido a ' + nombre, l.importe);
+    }
+  }
+  if (cambioImei && ordenId) await sb.from('orders').update({ items }).eq('id', ordenId);
+
+  await refreshData();
+  return { ok: true, ordenId };
+}
+
+function imprimirTicketPedidoMostrador(resumen, v) {
+  const numero = numeroDeTicket(v.ordenId);
+  const items = resumen.lineas.map(l => {
+    const lista = Number(l.precioUnitario) * Number(l.qty);
+    return {
+      texto: (seVendePorMedida(l.product) ? formatearCantidad(l.qty, l.product) : Number(l.qty).toLocaleString('es-AR')) +
+             ' x ' + escapeHtml(l.product.name),
+      detalle: detalleVarianteTicket(l.variante),
+      importe: money(lista),
+      unitario: Number(l.qty) !== 1 ? money(l.precioUnitario) + ' c/u' : ''
+    };
+  });
+  // El armado va como renglon aparte: el cliente ve el precio de lista y
+  // cuanto se le desconto por llevarlo como pizza.
+  resumen.ajustes.forEach(a => items.push({
+    texto: 'Armado: ' + escapeHtml(a.porciones + ' porc. = ' + a.texto),
+    detalle: '',
+    importe: '-' + money(a.lista - a.armado),
+    unitario: ''
+  }));
+
+  const html = armarTicketHtml({
+    numero,
+    fecha: new Date(),
+    cliente: v.cliente,
+    items,
+    total: resumen.total,
+    horaEntrega: v.horaEntrega || '',
+    medioPago: v.medioPago,
+    vendedor: v.vendedor,
+    pagoAhora: v.abonaAhora || 0,
+    debe: v.fiado ? Math.max(0, resumen.total - Number(v.abonaAhora || 0)) : 0
+  });
+  abrirVentanaTicket('Ticket' + (numero ? ' #' + numero : ''), html, true);
+}
+
+// ---- Alias para transferencia ----
+// Se carga una vez en Configuracion. Cuando el cliente paga por
+// transferencia o Mercado Pago, el vendedor lo tiene en pantalla para
+// dictarlo o mostrarlo, sin buscarlo en el celular.
+const MEDIOS_CON_ALIAS = ['Transferencia', 'Mercado Pago'];
+
+function datosTransferencia() {
+  const t = currentStore?.transferencia;
+  return (t && (t.alias || t.cbu)) ? t : null;
+}
+
+function actualizarAliasVenta() {
+  const caja = byId('barcodeAliasBox');
+  if (!caja) return;
+  const medio = byId('barcodeMedioPago')?.value || '';
+  if (!MEDIOS_CON_ALIAS.includes(medio)) { caja.classList.add('hidden'); return; }
+
+  const t = datosTransferencia();
+  caja.innerHTML = t
+    ? (t.alias ? '<div style="font-size:12px;color:var(--text-mute);">Alias</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<b style="font-size:20px;color:var(--navy);letter-spacing:.3px;">' + escapeHtml(t.alias) + '</b>' +
+          '<button type="button" class="btn-ghost" data-copiar-alias="' + escapeHtml(t.alias) + '" style="padding:5px 10px;font-size:12px;">Copiar</button>' +
+        '</div>' : '') +
+      (t.cbu ? '<div style="font-size:12.5px;margin-top:4px;">CBU/CVU: <b>' + escapeHtml(t.cbu) + '</b> ' +
+        '<button type="button" class="btn-ghost" data-copiar-alias="' + escapeHtml(t.cbu) + '" style="padding:3px 8px;font-size:11.5px;">Copiar</button></div>' : '') +
+      (t.titular ? '<div style="font-size:12.5px;color:var(--text-mute);margin-top:2px;">A nombre de ' + escapeHtml(t.titular) + '</div>' : '')
+    : '<div style="font-size:12.5px;color:var(--text-mute);">Cargá tu alias en <b>Configuración → Datos para transferencia</b> y va a aparecer acá para mostrárselo al cliente.</div>';
+  caja.classList.remove('hidden');
+
+  caja.querySelectorAll('[data-copiar-alias]').forEach(b => b.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(b.dataset.copiarAlias);
+      b.textContent = '✓ Copiado';
+      setTimeout(() => { b.textContent = 'Copiar'; }, 1500);
+    } catch (e) {
+      prompt('Copialo desde acá:', b.dataset.copiarAlias);
+    }
+  }));
+}
+byId('barcodeMedioPago')?.addEventListener('change', actualizarAliasVenta);
+
+// ---- Cierre de caja ----
+// Ticket de 58mm con lo que muestra la pantalla de Caja: del dia elegido,
+// cuanto entro, cuanto salio y en que medio esta la plata. Si se cuenta el
+// efectivo, sale tambien la diferencia contra lo que deberia haber.
+function imprimirCierreCaja() {
+  renderCaja();
+  const r = ultimoResumenCaja;
+  if (!r) return;
+
+  const ahora = new Date();
+  const ventas = r.movimientos.filter(m => m.origen === 'venta' && m.medio !== 'Equipo usado').length;
+  const efectivoEsperado = Number(r.porMedio['Efectivo'] || 0);
+
+  const contado = prompt(
+    'Cierre de caja del ' + fechaAR(r.fecha) + '\n\n' +
+    'Efectivo que debería haber: ' + money(efectivoEsperado) + '\n\n' +
+    '¿Cuánto efectivo contaste? (dejalo vacío para imprimir sin contar)', '');
+  if (contado === null) return;   // Cancelar no imprime
+  const contadoNum = contado.trim() === '' ? null : Number(contado.replace(/\./g, '').replace(',', '.'));
+
+  const fila = (a, b) => '<div class="tk-fila"><span>' + a + '</span><span>' + b + '</span></div>';
+  const medios = Object.keys(r.porMedio).sort();
+
+  const html =
+    '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
+    '<div class="tk-sub">CIERRE DE CAJA</div>' +
+    '<div class="tk-sep"></div>' +
+    fila('Día', fechaAR(r.fecha)) +
+    fila('Cierre', fechaAR(ahora) + ' ' + horaAR(ahora, { hour: '2-digit', minute: '2-digit', hour12: false })) +
+    fila('Ventas', String(ventas)) +
+    '<div class="tk-sep"></div>' +
+    fila('Ingresos', money(r.ingresos)) +
+    fila('Egresos', '-' + money(r.egresos)) +
+    '<div class="tk-total"><span>SALDO</span><span>' + money(r.ingresos - r.egresos) + '</span></div>' +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-sub">POR MEDIO DE PAGO</div>' +
+    (medios.length ? medios.map(m => fila(escapeHtml(m), money(r.porMedio[m]))).join('') : fila('Sin movimientos', '')) +
+    (contadoNum != null && isFinite(contadoNum)
+      ? '<div class="tk-sep"></div>' +
+        fila('Efectivo esperado', money(efectivoEsperado)) +
+        fila('Efectivo contado', money(contadoNum)) +
+        fila('<b>Diferencia</b>', '<b>' + (contadoNum - efectivoEsperado < 0 ? '-' : '') + money(Math.abs(contadoNum - efectivoEsperado)) + '</b>')
+      : '') +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-pie">Firma: ____________________</div>';
+
+  abrirVentanaTicket('Cierre de caja ' + r.fecha, html, true);
+}
+
 async function confirmBarcodeVenta() {
   if (!puedeOperar()) return;
+
+  // Pedido de varios productos, o porciones que se cobran como pizza: va
+  // por el camino del carrito. La venta de un solo producto sigue igual.
+  const lineaSola = lineaVentaEnPantalla();
+  if (carritoVenta.length || (lineaSola && aplicarArmadoDePorciones([lineaSola]).ajustes.length)) {
+    return confirmarVentaCarrito();
+  }
 
   const qty = cantidadVendida();
 
@@ -23214,6 +23841,25 @@ function configuracionDeTurnos() {
 // si va a la casa del cliente, va a prestar el servicio ahí. Es el mismo
 // campo y la misma plata, pero llamarlo "costo de envío" en ese rubro no se
 // entiende — así que la etiqueta acompaña al tipo de negocio.
+// null si no cargo nada: asi la tienda no muestra un recuadro vacio.
+function datosTransferenciaDelFormulario() {
+  const alias = (byId('configAlias')?.value || '').trim();
+  const cbu = (byId('configCbu')?.value || '').replace(/\s/g, '');
+  const titular = (byId('configTitular')?.value || '').trim();
+  return (alias || cbu) ? { alias: alias || null, cbu: cbu || null, titular: titular || null } : null;
+}
+
+// Sin envios, el costo de envio no tiene sentido: se esconde. (Sigue
+// valiendo para el servicio a domicilio de una peluqueria, que no vende
+// productos: ahi el tilde no aplica y el campo queda a la vista.)
+function actualizarCampoCostoEnvio() {
+  const tilde = byId('configOfreceEnvio');
+  const campo = byId('configCostoEnvio')?.closest('.field');
+  if (!tilde || !campo) return;
+  campo.classList.toggle('hidden', !tilde.checked && !(currentStore?.turnos && currentStore.turnos.activo));
+}
+byId('configOfreceEnvio')?.addEventListener('change', actualizarCampoCostoEnvio);
+
 function actualizarTextoRecargoDomicilio() {
   const esDeTurnos = byId('turnosActivo')?.checked;
   const label = byId('configCostoEnvioLabel');
@@ -23862,6 +24508,14 @@ async function cargarConfiguracion() {
 
     if (byId('configCostoEnvio')) byId('configCostoEnvio').value = store.costo_envio != null ? store.costo_envio : '';
     if (byId('configDemora')) byId('configDemora').value = store.demora_texto || '';
+    if (byId('configOfreceEnvio')) {
+      byId('configOfreceEnvio').checked = store.ofrece_envio !== false;
+      actualizarCampoCostoEnvio();
+    }
+    const transf = store.transferencia || {};
+    if (byId('configAlias')) byId('configAlias').value = transf.alias || '';
+    if (byId('configCbu')) byId('configCbu').value = transf.cbu || '';
+    if (byId('configTitular')) byId('configTitular').value = transf.titular || '';
 
     const bal = store.balanza || {};
     if (byId('configBalanzaActiva')) {
@@ -24052,6 +24706,8 @@ async function guardarConfiguracion() {
     medios_pago: mediosDePagoElegidos(),
     costo_envio: byId('configCostoEnvio').value === '' ? null : Math.max(0, Number(byId('configCostoEnvio').value) || 0),
     demora_texto: (byId('configDemora')?.value || '').trim() || null,
+    ofrece_envio: byId('configOfreceEnvio') ? byId('configOfreceEnvio').checked : true,
+    transferencia: datosTransferenciaDelFormulario(),
     turnos: configuracionDeTurnos(),
     horario_local: hlLeer(),
     tema: temaElegido(),

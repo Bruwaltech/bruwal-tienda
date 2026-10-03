@@ -637,6 +637,7 @@
     <div class="field">
       <label>¿Cómo pagás?</label>
       <div class="opciones" id="opcionesPago"></div>
+      <div id="aliasCheckout" class="hidden" style="margin-top:10px;padding:12px 14px;background:#EAF4FD;border-radius:9px;font-size:13.5px;line-height:1.5;"></div>
     </div>
 
     <div id="hlAvisoCheckout" class="hidden" style="padding:11px 13px;border-radius:9px;margin-bottom:12px;font-size:13px;line-height:1.5;"></div>
@@ -2581,6 +2582,16 @@ const carritoTieneServicios = () => Object.values(cart).some(l => {
 // cortarle el pelo a alguien en la casa es un servicio a domicilio.
 let configRecargoDomicilio = null;
 
+// false = el negocio solo trabaja con retiro (store_profiles.ofrece_envio).
+// Default true: las tiendas que nunca lo tocaron siguen ofreciendo envio.
+let configOfreceEnvio = true;
+
+// { alias, cbu, titular } o null. Se muestra cuando el cliente elige pagar
+// por transferencia o Mercado Pago, para que copie el alias sin pedirlo.
+let configTransferencia = null;
+const MEDIOS_CON_ALIAS = ['Transferencia', 'Mercado Pago'];
+const aliasAplica = (medio) => !!(configTransferencia && MEDIOS_CON_ALIAS.includes(medio));
+
 const A_DOMICILIO_PRODUCTO = 'Envío a domicilio';
 const A_DOMICILIO_SERVICIO = 'A domicilio';
 const esOpcionADomicilio = (valor) => valor === A_DOMICILIO_PRODUCTO || valor === A_DOMICILIO_SERVICIO;
@@ -2618,6 +2629,10 @@ function configurarEntrega() {
       '<button type="button" class="opcion" data-valor="' + A_DOMICILIO_SERVICIO + '">🏠 A domicilio' + sufijo + '</button>'
     : '<button type="button" class="opcion activa" data-valor="Retiro por el local">🏪 Retiro por el local</button>' +
       '<button type="button" class="opcion" data-valor="' + A_DOMICILIO_PRODUCTO + '">🛵 Envío a domicilio' + sufijo + '</button>';
+
+  if (!soloServicios && !configOfreceEnvio) {
+    grupo.innerHTML = '<button type="button" class="opcion activa" data-valor="Retiro por el local">🏪 Retiro por el local</button>';
+  }
 
   grupo.querySelectorAll('.opcion').forEach(b => {
     b.addEventListener('click', () => {
@@ -3023,12 +3038,39 @@ function horariosDelDia(diaSemana) {
   return salida;
 }
 
+function pintarAliasCheckout() {
+  const caja = byId('aliasCheckout');
+  if (!caja) return;
+  const medio = valorElegido('opcionesPago');
+  if (!aliasAplica(medio)) { caja.classList.add('hidden'); return; }
+  const t = configTransferencia;
+  const boton = (valor) => '<button type="button" data-copiar="' + escapeHtml(valor) + '" ' +
+    'style="margin-left:8px;padding:4px 10px;border-radius:6px;border:1px solid var(--line);background:#fff;font-family:inherit;font-size:12.5px;cursor:pointer;">Copiar</button>';
+  caja.innerHTML =
+    (t.alias ? '<div>Alias: <b style="font-size:16px;">' + escapeHtml(t.alias) + '</b>' + boton(t.alias) + '</div>' : '') +
+    (t.cbu ? '<div style="margin-top:4px;">CBU/CVU: <b>' + escapeHtml(t.cbu) + '</b>' + boton(t.cbu) + '</div>' : '') +
+    (t.titular ? '<div style="color:var(--text-mute);margin-top:4px;">A nombre de ' + escapeHtml(t.titular) + '</div>' : '');
+  caja.classList.remove('hidden');
+  caja.querySelectorAll('[data-copiar]').forEach(b => b.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(b.dataset.copiar);
+      b.textContent = '✓ Copiado';
+      setTimeout(() => { b.textContent = 'Copiar'; }, 1500);
+    } catch (e) {
+      prompt('Copialo desde acá:', b.dataset.copiar);
+    }
+  }));
+}
+
 function armarOpcionesDeCheckout(store) {
   // El recargo por ir hasta el cliente (envío de un producto, o el servicio
   // a domicilio de una peluquería) se guarda una sola vez acá, porque el
   // checkout lo necesita para mostrar el precio en el botón mucho antes de
   // confirmar el pedido. null = el negocio no lo ofrece.
   configRecargoDomicilio = (store && store.costo_envio != null) ? Number(store.costo_envio) : null;
+  configOfreceEnvio = !(store && store.ofrece_envio === false);
+  const t = store && store.transferencia;
+  configTransferencia = (t && (t.alias || t.cbu)) ? t : null;
 
   // Casa o departamento: el piso y el timbre solo tienen sentido en depto
   const vivienda = byId('opcionesVivienda');
@@ -3053,6 +3095,10 @@ function armarOpcionesDeCheckout(store) {
   pago.querySelectorAll('.opcion').forEach(b => {
     b.addEventListener('click', () => elegirOpcion(pago, b));
   });
+  pago.querySelectorAll('.opcion').forEach(b => {
+    b.addEventListener('click', pintarAliasCheckout);
+  });
+  pintarAliasCheckout();
 }
 
 // ---- Horario de atención del local ----------------------------------
@@ -3405,6 +3451,10 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       }
     }
     detalles += '\n💳 *Paga con:* ' + medioDePago;
+    if (aliasAplica(medioDePago)) {
+      if (configTransferencia.alias) detalles += '\n🏦 *Alias:* ' + configTransferencia.alias;
+      if (configTransferencia.cbu) detalles += '\n🏦 *CBU/CVU:* ' + configTransferencia.cbu;
+    }
 
     // Va al final y con su propio titulo: en un mensaje largo es lo que mas
     // se pasa por alto, y es justo lo que no hay que pasar por alto.
