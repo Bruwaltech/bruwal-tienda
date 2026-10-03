@@ -2757,7 +2757,7 @@ tr:last-child td { border-bottom: none; }
     <button class="modal-close" id="closeModal">✕</button>
     <h3 id="modalTitle">Nuevo producto o servicio</h3>
     <div class="modal-grid-producto">
-      <form id="productForm">
+      <form id="productForm" novalidate>
         <div id="wizardProgreso" class="hidden" style="font-size:12px;font-weight:700;color:var(--celeste);letter-spacing:.03em;text-transform:uppercase;margin-bottom:10px;"></div>
 
         <div class="wizard-step" data-step="1">
@@ -2910,8 +2910,8 @@ tr:last-child td { border-bottom: none; }
           <div style="display:flex;gap:6px;">
             <!-- Sin `required` por el mismo motivo que pName: en el wizard
                  este paso está oculto cuando se aprieta Guardar. -->
-            <input type="number" id="pPrice" min="0" step="0.01" style="flex:1;">
-            <select id="pPriceMoneda" class="campo-electronica hidden" style="padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+            <input type="number" id="pPrice" min="0" step="0.01" style="flex:1;min-width:0;">
+            <select id="pPriceMoneda" class="campo-electronica hidden" style="flex-shrink:0;padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
               <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
             </select>
           </div>
@@ -3949,8 +3949,8 @@ tr:last-child td { border-bottom: none; }
       <div class="field">
         <label>Costo (repuesto)</label>
         <div style="display:flex;gap:6px;">
-          <input type="number" id="repCosto" min="0" step="1" value="0" style="flex:1;">
-          <select id="repCostoMoneda" class="campo-electronica hidden" style="padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+          <input type="number" id="repCosto" min="0" step="1" value="0" style="flex:1;min-width:0;">
+          <select id="repCostoMoneda" class="campo-electronica hidden" style="flex-shrink:0;padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
             <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
           </select>
         </div>
@@ -3959,8 +3959,8 @@ tr:last-child td { border-bottom: none; }
       <div class="field">
         <label>Precio al cliente</label>
         <div style="display:flex;gap:6px;">
-          <input type="number" id="repPrecio" min="0" step="1" value="0" style="flex:1;">
-          <select id="repPrecioMoneda" class="campo-electronica hidden" style="padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+          <input type="number" id="repPrecio" min="0" step="1" value="0" style="flex:1;min-width:0;">
+          <select id="repPrecioMoneda" class="campo-electronica hidden" style="flex-shrink:0;padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
             <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
           </select>
         </div>
@@ -21692,6 +21692,28 @@ byId('porMayorLeer')?.addEventListener('click', () => {
 byId('productForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!puedeOperar()) return;
+  // Safari del iPhone deja escribir "1.250.000" en un campo de numero, lo
+  // marca invalido y, como ese campo esta en otro paso (oculto), cancelaba el
+  // envio EN SILENCIO: el boton Guardar parecia muerto (iPhone Store, 3/10).
+  // Por eso el form es novalidate y la revision se hace aca, con aviso y
+  // llevando al paso del campo. stepMismatch no se frena: un precio con
+  // tres decimales no es motivo para no guardar.
+  const campoNumeroMal = [...e.target.querySelectorAll('input')].find(i =>
+    i.validity && (i.validity.badInput || i.validity.rangeUnderflow || i.validity.rangeOverflow || i.validity.typeMismatch));
+  if (campoNumeroMal) {
+    const pasoDelCampo = Number(campoNumeroMal.closest('.wizard-step')?.dataset.step) || 0;
+    let contenedorCampo = campoNumeroMal.parentElement;
+    while (contenedorCampo && contenedorCampo.id !== 'productForm' && !contenedorCampo.querySelector('label')) contenedorCampo = contenedorCampo.parentElement;
+    const etiquetaCampo = (contenedorCampo && contenedorCampo.id !== 'productForm' ? contenedorCampo.querySelector('label')?.textContent || '' : '').trim();
+    alert((etiquetaCampo ? 'Revisá "' + etiquetaCampo + '".\n\n' : 'Hay un número mal escrito.\n\n') +
+      (campoNumeroMal.validity.badInput
+        ? 'Escribí el número sin puntos de miles: 1250000, no 1.250.000. Para decimales usá la coma o el punto una sola vez.'
+        : (campoNumeroMal.validationMessage || 'El valor no es válido.')));
+    if (wizardModoGuiado && pasoDelCampo) mostrarPasoWizard(pasoDelCampo);
+    campoNumeroMal.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    campoNumeroMal.focus();
+    return;
+  }
 
   if (byId('pTieneVariantes').checked && !variantesEnEdicion.length) {
     alert('Activaste "Este producto tiene variantes" pero no cargaste ningún atributo con valores.\n\n' +
