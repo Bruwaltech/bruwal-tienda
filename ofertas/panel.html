@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ofertas — Panel · BRUWAL</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#15294D">
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --navy: #15294D;
+  --celeste: #2F8FE0;
+  --bg: #F4F8FC;
+  --surface: #FFFFFF;
+  --line: #DCE6F0;
+  --text-dark: #15294D;
+  --text-mute: #5C6B82;
+  --ok: #1FA088;
+  --warn: #D97706;
+  --danger: #DC2626;
+  --ml: #FFE600;
+  --radius: 12px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text-dark);
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
+
+/* ---------------- ingreso ---------------- */
+.pantalla-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.caja-login {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 34px 30px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 12px 40px -18px rgba(21, 41, 77, .35);
+}
+.marca { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.marca-cuadro {
+  width: 34px; height: 34px; border-radius: 9px; background: var(--navy);
+  color: #fff; display: grid; place-items: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+}
+.marca-nombre { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 19px; }
+.bajada { color: var(--text-mute); font-size: 14px; margin-bottom: 22px; }
+
+.campo { margin-bottom: 14px; min-width: 0; }
+.campo label, .rotulo-campo {
+  display: block; font-size: 12px; font-weight: 600; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--text-mute); margin-bottom: 6px;
+}
+.campo input, .campo textarea, .campo select {
+  width: 100%; padding: 11px 13px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 15px; font-family: inherit;
+  background: #fff; color: var(--text-dark);
+}
+.campo textarea { resize: vertical; min-height: 64px; line-height: 1.45; }
+.campo input:focus, .campo textarea:focus, .campo select:focus {
+  outline: none; border-color: var(--celeste);
+}
+.ayuda { font-size: 12.5px; color: var(--text-mute); margin-top: 6px; line-height: 1.45; }
+.contador { float: right; font-weight: 500; text-transform: none; letter-spacing: 0; }
+
+.btn {
+  border: none; border-radius: 8px; padding: 12px 18px; font-size: 15px;
+  font-family: inherit; font-weight: 600; cursor: pointer;
+}
+.btn:disabled { opacity: .55; cursor: default; }
+.btn-primario { background: var(--navy); color: #fff; }
+.btn-primario:hover:not(:disabled) { background: #1d3767; }
+.btn-ancho { width: 100%; }
+.btn-suave {
+  background: #fff; color: var(--navy); border: 1px solid var(--line);
+  padding: 9px 14px; font-size: 14px;
+}
+.btn-suave:hover:not(:disabled) { border-color: var(--celeste); }
+.btn-peligro { background: #fff; color: var(--danger); border: 1px solid #FECACA; padding: 7px 12px; font-size: 13px; }
+
+.aviso {
+  border-radius: 8px; padding: 11px 13px; font-size: 14px; margin-bottom: 15px;
+  line-height: 1.45;
+}
+.aviso-error { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+.aviso-ok { background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
+.aviso-warn { background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; }
+
+.link-suave {
+  background: none; border: none; color: var(--celeste); font-size: 13.5px;
+  cursor: pointer; font-family: inherit; padding: 0;
+}
+.link-suave:hover { text-decoration: underline; }
+.fila-recordar {
+  display: flex; align-items: center; gap: 8px; font-size: 14px;
+  color: var(--text-mute); margin-bottom: 16px;
+}
+
+/* ---------------- estructura ---------------- */
+.barra {
+  background: var(--navy); color: #fff; padding: 14px 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
+}
+.barra .quien { font-size: 13px; color: #B9CBE4; }
+.barra h1 { font-size: 17px; font-weight: 600; }
+.barra .acciones { display: flex; gap: 8px; align-items: center; }
+.barra a, .barra button {
+  background: rgba(255,255,255,.12); color: #fff; border: none; text-decoration: none;
+  border-radius: 8px; padding: 8px 12px; font-size: 13.5px;
+  font-family: inherit; cursor: pointer;
+}
+.barra a:hover, .barra button:hover { background: rgba(255,255,255,.22); }
+
+.contenido { max-width: 1100px; margin: 0 auto; padding: 18px 16px 40px; }
+
+.tarjetas {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.tarjeta {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.tarjeta .rotulo {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-mute); font-weight: 600; margin-bottom: 4px;
+}
+.tarjeta .valor { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700; }
+
+.caja {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px 16px; margin-bottom: 18px;
+}
+.caja h2 { font-size: 18px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+.fila-link { display: flex; gap: 8px; }
+.fila-link input { flex: 1; min-width: 0; }
+.fila-link .btn { white-space: nowrap; }
+
+.grupo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 520px) { .grupo.apila { grid-template-columns: 1fr; } }
+
+.vista-previa {
+  display: flex; gap: 12px; align-items: center;
+  border: 1px dashed var(--line); border-radius: 10px; padding: 10px; margin-bottom: 14px;
+}
+.vista-previa img { width: 72px; height: 72px; object-fit: contain; background: #fff; border-radius: 8px; flex-shrink: 0; }
+.vista-previa .txt { font-size: 13px; color: var(--text-mute); line-height: 1.45; min-width: 0; }
+.vista-previa .txt b { color: var(--text-dark); display: block; font-size: 14px; }
+
+.checks { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 16px; }
+.checks label { display: flex; align-items: center; gap: 7px; font-size: 14px; cursor: pointer; }
+.checks input { width: 18px; height: 18px; accent-color: var(--navy); }
+
+.botones { display: flex; gap: 10px; flex-wrap: wrap; }
+.botones .btn-primario { flex: 1; min-width: 180px; }
+
+/* lista */
+.filtros-lista { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.filtros-lista input, .filtros-lista select {
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+  font: 14px 'Inter', sans-serif; background: #fff; color: var(--text-dark);
+}
+.filtros-lista input { flex: 1; min-width: 160px; }
+
+.item {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.item:first-child { border-top: none; }
+.item img, .item .sin-foto {
+  width: 64px; height: 64px; object-fit: contain; background: #fff;
+  border: 1px solid var(--line); border-radius: 8px;
+  display: grid; place-items: center; font-size: 22px;
+}
+.item.apagada { opacity: .55; }
+.item .titulo { font-weight: 600; font-size: 14px; line-height: 1.35; word-break: break-word; }
+.item .meta { font-size: 12.5px; color: var(--text-mute); margin-top: 3px; line-height: 1.5; }
+.item .meta b { color: var(--text-dark); }
+.etiqueta {
+  display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 7px; margin-right: 4px;
+}
+.etiqueta.top { background: var(--ml); color: #2D3277; }
+.etiqueta.off { background: #EEF2F7; color: var(--text-mute); }
+.etiqueta.vencida { background: #FEF2F2; color: #991B1B; }
+.item .acciones { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.item .acciones button {
+  background: #fff; border: 1px solid var(--line); color: var(--navy);
+  border-radius: 7px; padding: 6px 10px; font: 600 12.5px 'Inter', sans-serif; cursor: pointer;
+}
+.item .acciones button:hover { border-color: var(--celeste); }
+.item .acciones .borrar { color: var(--danger); border-color: #FECACA; }
+
+.vacio { text-align: center; color: var(--text-mute); padding: 26px 10px; font-size: 14px; line-height: 1.6; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  background: var(--navy); color: #fff; font-size: 13.5px; font-weight: 600;
+  padding: 10px 16px; border-radius: 999px; box-shadow: 0 10px 30px -10px rgba(0,0,0,.4);
+  z-index: 50; max-width: calc(100% - 32px); text-align: center;
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ INGRESO ============================ -->
+<div class="pantalla-login hidden" id="pantallaLogin">
+  <div class="caja-login">
+    <div class="marca">
+      <div class="marca-cuadro">B</div>
+      <div class="marca-nombre">BRUWALTECH</div>
+    </div>
+    <p class="bajada">Ofertas de Mercado Libre — carga de links</p>
+
+    <div class="aviso aviso-error hidden" id="avisoLogin"></div>
+    <div class="aviso aviso-ok hidden" id="avisoOk"></div>
+
+    <form id="formLogin">
+      <div class="campo">
+        <label for="email">Email</label>
+        <input type="email" id="email" autocomplete="username" required>
+      </div>
+      <div class="campo">
+        <label for="clave">Contraseña</label>
+        <input type="password" id="clave" autocomplete="current-password" required>
+      </div>
+      <label class="fila-recordar">
+        <input type="checkbox" id="recordarme" checked>
+        Mantenerme conectado
+      </label>
+      <button type="submit" class="btn btn-primario btn-ancho" id="btnEntrar">Ingresar</button>
+    </form>
+
+    <div style="text-align:center;margin-top:14px;">
+      <button type="button" class="link-suave" id="btnOlvide">¿Olvidaste tu contraseña?</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================= PANEL ============================= -->
+<div class="hidden" id="pantallaPanel">
+  <div class="barra">
+    <div>
+      <div class="quien" id="quienSoy"></div>
+      <h1>Ofertas de Mercado Libre</h1>
+    </div>
+    <div class="acciones">
+      <a href="/ofertas" target="_blank" rel="noopener">Ver la página ↗</a>
+      <button type="button" id="btnSalir">Salir</button>
+    </div>
+  </div>
+
+  <div class="contenido">
+    <div class="aviso aviso-error hidden" id="avisoPanel"></div>
+
+    <div id="zonaAdmin" class="hidden">
+      <div class="tarjetas">
+        <div class="tarjeta"><div class="rotulo">En la página</div><div class="valor" id="numActivas">—</div></div>
+        <div class="tarjeta"><div class="rotulo">Clics 7 días</div><div class="valor" id="numSemana">—</div></div>
+        <div class="tarjeta"><div class="rotulo">Clics totales</div><div class="valor" id="numTotal">—</div></div>
+        <div class="tarjeta"><div class="rotulo">Rubros</div><div class="valor" id="numRubros">—</div></div>
+      </div>
+
+      <!-- ---------- formulario ---------- -->
+      <div class="caja" id="cajaForm">
+        <h2><span id="tituloForm">Nueva oferta</span>
+          <button type="button" class="link-suave hidden" id="btnCancelarEdicion">Cancelar edición</button></h2>
+
+        <form id="formOferta" autocomplete="off">
+          <div class="campo">
+            <label for="fLink">Link de referido</label>
+            <div class="fila-link">
+              <input type="url" id="fLink" inputmode="url" placeholder="https://meli.la/…" required>
+              <button type="button" class="btn btn-suave" id="btnPegar">Pegar</button>
+              <button type="button" class="btn btn-suave" id="btnLeer">Leer datos</button>
+            </div>
+            <div class="ayuda">
+              En la app de Mercado Libre: abrí la publicación → <b>Compartir</b> → copiá tu link de afiliado y pegalo acá.
+              Con <b>Leer datos</b> se completan el título, la foto y el precio.
+            </div>
+            <div class="aviso aviso-warn hidden" id="avisoAfiliado" style="margin:8px 0 0;"></div>
+            <div class="ayuda" id="estadoLectura"></div>
+          </div>
+
+          <div class="vista-previa hidden" id="vistaPrevia">
+            <img id="vpFoto" alt="">
+            <div class="txt"><b id="vpTitulo"></b><span id="vpPrecio"></span></div>
+          </div>
+
+          <div class="campo">
+            <label for="fTitulo">Título</label>
+            <input type="text" id="fTitulo" maxlength="200" required placeholder="Samsung Galaxy A15 128 GB">
+          </div>
+
+          <div class="grupo">
+            <div class="campo">
+              <label for="fPrecio">Precio</label>
+              <input type="text" id="fPrecio" inputmode="decimal" placeholder="299.999">
+            </div>
+            <div class="campo">
+              <label for="fAntes">Precio antes</label>
+              <input type="text" id="fAntes" inputmode="decimal" placeholder="399.999">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="fRubro">Rubro</label>
+            <input type="text" id="fRubro" maxlength="40" list="listaRubros" placeholder="Celulares, Hogar, Herramientas…" required>
+            <datalist id="listaRubros"></datalist>
+          </div>
+
+          <div class="campo">
+            <label for="fNota">Por qué la recomendás <span class="contador" id="contNota">0/280</span></label>
+            <textarea id="fNota" maxlength="280" placeholder="El más barato con 8 GB de RAM. Envío gratis y Full."></textarea>
+          </div>
+
+          <div class="grupo apila">
+            <div class="campo">
+              <label for="fFoto">Foto (link)</label>
+              <input type="url" id="fFoto" inputmode="url" placeholder="https://http2.mlstatic.com/…">
+            </div>
+            <div class="campo">
+              <label for="fVence">Vence (opcional)</label>
+              <input type="date" id="fVence">
+            </div>
+          </div>
+
+          <div class="checks">
+            <label><input type="checkbox" id="fActiva" checked> Se muestra en la página</label>
+            <label><input type="checkbox" id="fDestacada"> Destacada (va primero)</label>
+          </div>
+
+          <div class="aviso aviso-error hidden" id="avisoForm"></div>
+
+          <div class="botones">
+            <button type="submit" class="btn btn-primario" id="btnGuardar">Guardar oferta</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ---------- lista ---------- -->
+      <div class="caja">
+        <h2>Tus ofertas</h2>
+        <div class="filtros-lista">
+          <input type="search" id="buscarLista" placeholder="Buscar…">
+          <select id="filtroEstado">
+            <option value="todas">Todas</option>
+            <option value="activas">En la página</option>
+            <option value="apagadas">Apagadas</option>
+            <option value="vencidas">Vencidas</option>
+          </select>
+          <select id="filtroRubro"><option value="">Todos los rubros</option></select>
+          <select id="orden">
+            <option value="nuevas">Más nuevas</option>
+            <option value="semana">Más clics (7 días)</option>
+            <option value="total">Más clics (total)</option>
+          </select>
+        </div>
+        <div id="lista"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
+
+const $ = (id) => document.getElementById(id);
+const ver = (el) => el.classList.remove('hidden');
+const ocultar = (el) => el.classList.add('hidden');
+
+const escapar = (t) => {
+  const d = document.createElement('div');
+  d.textContent = t == null ? '' : String(t);
+  return d.innerHTML;
+};
+
+const pesos = (n) => '$' + Math.round(Number(n)).toLocaleString('es-AR');
+
+// Precios como los escribe una persona en Argentina. "1.500" son mil
+// quinientos, no uno y medio (ya nos paso con la cotizacion a mano).
+function leerPrecio(texto) {
+  let s = String(texto == null ? '' : texto).replace(/[^\d.,]/g, '');
+  if (!s) return null;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = Number(s);
+  return isFinite(n) && n >= 0 ? n : NaN;
+}
+
+const precioParaCampo = (n) => (n || n === 0) && Number(n) > 0 ? Number(n).toLocaleString('es-AR') : '';
+
+function esLinkDeMl(url) {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === 'meli.la' || /(^|\.)mercadolibre\.com(\.[a-z]{2})?$/.test(h);
+  } catch (e) { return false; }
+}
+
+// La comision se cobra solo si la compra entra por un link de afiliado. Uno
+// copiado de la barra del navegador lleva a la misma publicacion pero no
+// suma nada, y desde afuera no se nota la diferencia.
+function pareceDeAfiliado(url) {
+  try {
+    const u = new URL(url);
+    return u.hostname === 'meli.la' || u.pathname.startsWith('/sec/') ||
+      u.searchParams.has('matt_tool') || u.searchParams.has('matt_word');
+  } catch (e) { return false; }
+}
+
+function avisar(texto) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = texto;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2400);
+}
+
+// Misma lógica que el dashboard: si el usuario no marcó "mantenerme conectado",
+// la sesión vive en sessionStorage y muere al cerrar la pestaña.
+const almacenamientoSesion = {
+  getItem: (k) => {
+    try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); }
+    catch (e) { return null; }
+  },
+  setItem: (k, v) => {
+    try {
+      if (localStorage.getItem('bruwal_remember_me') === 'true') {
+        localStorage.setItem(k, v); sessionStorage.removeItem(k);
+      } else {
+        sessionStorage.setItem(k, v); localStorage.removeItem(k);
+      }
+    } catch (e) {}
+  },
+  removeItem: (k) => {
+    try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch (e) {}
+  }
+};
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: almacenamientoSesion,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
+
+(function limpiarTokensDeLaUrl() {
+  if (!/access_token=|refresh_token=|type=recovery/.test(window.location.hash || '')) return;
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+})();
+
+// ============================== estado ==============================
+
+let ofertas = [];
+let hoy = '';
+let editando = null;        // id de la oferta que se está editando
+let mlItemId = null;        // lo devuelve "Leer datos"; se guarda de referencia
+
+// ============================== API ==============================
+
+async function api(cuerpo) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('Se cerró la sesión. Volvé a entrar.');
+
+  let r;
+  try {
+    r = await fetch('/api/ofertas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify(cuerpo)
+    });
+  } catch (err) {
+    // "TypeError: Load failed" en Safari, "Failed to fetch" en Chrome: es
+    // la conexión, y así hay que decirlo.
+    throw new Error('No hay conexión con el servidor. Revisá internet y probá de nuevo.');
+  }
+
+  let datos = {};
+  try { datos = await r.json(); } catch (e) {}
+  if (r.status === 403) {
+    const e = new Error(datos.error || 'Esta sección es solo para la cuenta de BRUWAL.');
+    e.noAdmin = true;
+    throw e;
+  }
+  if (!r.ok) throw new Error(datos.error || ('El servidor contestó ' + r.status));
+  return datos;
+}
+
+// ============================== ingreso ==============================
+
+$('formLogin').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  ocultar($('avisoLogin'));
+  ocultar($('avisoOk'));
+
+  const boton = $('btnEntrar');
+  boton.disabled = true;
+  boton.textContent = 'Entrando…';
+
+  if ($('recordarme').checked) localStorage.setItem('bruwal_remember_me', 'true');
+  else localStorage.removeItem('bruwal_remember_me');
+
+  const { error } = await sb.auth.signInWithPassword({
+    email: $('email').value.trim(),
+    password: $('clave').value
+  });
+
+  boton.disabled = false;
+  boton.textContent = 'Ingresar';
+
+  if (error) {
+    const m = (error.message || '').toLowerCase();
+    $('avisoLogin').textContent =
+      m.includes('not confirmed')
+        ? 'Falta confirmar tu cuenta. Revisá tu correo, incluido el no deseado.'
+        : m.includes('invalid login credentials')
+        ? 'El email o la contraseña no coinciden. Revisá que no haya quedado un espacio de más.'
+        : m.includes('rate limit') || /after \d+ seconds?/.test(m)
+        ? 'Demasiados intentos seguidos. Esperá un minuto y volvé a probar.'
+        : error.message;
+    ver($('avisoLogin'));
+    return;
+  }
+
+  await entrar();
+});
+
+$('btnOlvide').addEventListener('click', async () => {
+  const email = $('email').value.trim();
+  ocultar($('avisoLogin'));
+  ocultar($('avisoOk'));
+  if (!email) {
+    $('avisoLogin').textContent = 'Escribí tu email arriba y volvé a tocar el enlace.';
+    return ver($('avisoLogin'));
+  }
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/dashboard'
+  });
+  if (error) {
+    $('avisoLogin').textContent = error.message;
+    return ver($('avisoLogin'));
+  }
+  $('avisoOk').textContent = 'Te mandamos un correo para que crees una contraseña nueva.';
+  ver($('avisoOk'));
+});
+
+$('btnSalir').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  window.location.reload();
+});
+
+async function entrar() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) { ver($('pantallaLogin')); return; }
+
+  ocultar($('pantallaLogin'));
+  ver($('pantallaPanel'));
+  $('quienSoy').textContent = user.email || '';
+
+  await cargar();
+
+  // Un link que llega en la URL (?link=...) se carga solo. Sirve para un
+  // atajo del celular que mande acá lo que se copió en la app de ML.
+  const deUrl = new URLSearchParams(location.search).get('link');
+  if (deUrl && !$('fLink').value) {
+    $('fLink').value = deUrl;
+    history.replaceState(null, '', location.pathname);
+    revisarLink();
+    leerDatos();
+  }
+}
+
+async function cargar() {
+  ocultar($('avisoPanel'));
+  try {
+    const d = await api({ accion: 'listar' });
+    if (d.ok === false) throw new Error(d.motivo || 'No se pudieron traer las ofertas.');
+    ofertas = d.ofertas || [];
+    hoy = d.hoy || new Date().toISOString().slice(0, 10);
+    ver($('zonaAdmin'));
+    pintarTodo();
+  } catch (err) {
+    $('avisoPanel').textContent = err.message;
+    ver($('avisoPanel'));
+    if (err.noAdmin) ocultar($('zonaAdmin'));
+  }
+}
+
+// ============================== formulario ==============================
+
+function revisarLink() {
+  const link = $('fLink').value.trim();
+  const aviso = $('avisoAfiliado');
+  if (link && esLinkDeMl(link) && !pareceDeAfiliado(link)) {
+    aviso.textContent = 'Este link no parece de afiliado (meli.la o mercadolibre.com/sec/…). ' +
+      'Funciona igual, pero si alguien compra desde acá no te suma comisión.';
+    ver(aviso);
+  } else {
+    ocultar(aviso);
+  }
+}
+
+$('fLink').addEventListener('input', revisarLink);
+
+// Pegar el link ya es pedir los datos: es lo que se va a hacer siempre.
+$('fLink').addEventListener('paste', () => {
+  setTimeout(() => {
+    revisarLink();
+    if (esLinkDeMl($('fLink').value.trim()) && !$('fTitulo').value.trim()) leerDatos();
+  }, 0);
+});
+
+$('btnPegar').addEventListener('click', async () => {
+  try {
+    const texto = (await navigator.clipboard.readText() || '').trim();
+    // Desde la app de ML a veces se copia "Mirá esto en Mercado Libre: https://…"
+    const url = (texto.match(/https?:\/\/\S+/) || [texto])[0];
+    if (!url) return avisar('No hay nada copiado');
+    $('fLink').value = url;
+    revisarLink();
+    if (esLinkDeMl(url)) leerDatos();
+  } catch (err) {
+    avisar('El navegador no dejó leer lo copiado: pegalo en el campo');
+    $('fLink').focus();
+  }
+});
+
+$('btnLeer').addEventListener('click', leerDatos);
+
+let leyendo = false;
+async function leerDatos() {
+  // Lo mismo que en Pegar: el texto que comparte la app de ML a veces trae
+  // una frase antes del link.
+  const crudo = $('fLink').value.trim();
+  const link = (crudo.match(/https?:\/\/\S+/) || [crudo])[0];
+  if (link !== crudo) { $('fLink').value = link; revisarLink(); }
+  const estado = $('estadoLectura');
+  if (!link) { estado.textContent = 'Pegá primero el link.'; return; }
+  if (leyendo) return;
+
+  leyendo = true;
+  $('btnLeer').disabled = true;
+  estado.style.color = '';
+  estado.textContent = 'Leyendo la publicación en Mercado Libre…';
+
+  try {
+    const d = await api({ accion: 'leer-link', link });
+    if (d.ml_item_id) mlItemId = d.ml_item_id;
+    if (!d.ok) {
+      estado.style.color = 'var(--warn)';
+      estado.textContent = d.motivo || 'No se pudo leer. Completalo a mano.';
+      return;
+    }
+    // Solo se completa lo que está vacío: si ya se escribió un título a
+    // mano, es porque el de ML no gustaba.
+    if (!$('fTitulo').value.trim() && d.titulo) $('fTitulo').value = d.titulo;
+    if (!$('fFoto').value.trim() && d.imagen_url) $('fFoto').value = d.imagen_url;
+    if (!$('fPrecio').value.trim() && d.precio) $('fPrecio').value = precioParaCampo(d.precio);
+    if (!$('fAntes').value.trim() && d.precio_antes) $('fAntes').value = precioParaCampo(d.precio_antes);
+    estado.style.color = 'var(--ok)';
+    estado.textContent = '✓ Datos leídos. Revisalos, elegí el rubro y guardá.' +
+      (d.precio_antes ? '' : ' No figura precio anterior: si lo sabés, cargalo.');
+    pintarVistaPrevia();
+    if (!$('fRubro').value.trim()) $('fRubro').focus();
+  } catch (err) {
+    estado.style.color = 'var(--danger)';
+    estado.textContent = err.message;
+  } finally {
+    leyendo = false;
+    $('btnLeer').disabled = false;
+  }
+}
+
+function pintarVistaPrevia() {
+  const foto = $('fFoto').value.trim();
+  const titulo = $('fTitulo').value.trim();
+  if (!foto && !titulo) return ocultar($('vistaPrevia'));
+  const precio = leerPrecio($('fPrecio').value);
+  const antes = leerPrecio($('fAntes').value);
+  $('vpFoto').src = foto || '/favicon.svg';
+  $('vpTitulo').textContent = titulo || '(sin título)';
+  let txt = precio > 0 ? pesos(precio) : 'Sin precio';
+  if (antes > precio && precio > 0) txt += ' · antes ' + pesos(antes) + ' · -' + Math.round((1 - precio / antes) * 100) + '%';
+  $('vpPrecio').textContent = txt;
+  ver($('vistaPrevia'));
+}
+
+['fFoto', 'fTitulo', 'fPrecio', 'fAntes'].forEach((id) => $(id).addEventListener('input', pintarVistaPrevia));
+
+$('fNota').addEventListener('input', () => {
+  $('contNota').textContent = $('fNota').value.length + '/280';
+});
+
+function limpiarFormulario() {
+  editando = null;
+  mlItemId = null;
+  $('formOferta').reset();
+  $('fActiva').checked = true;
+  $('tituloForm').textContent = 'Nueva oferta';
+  $('btnGuardar').textContent = 'Guardar oferta';
+  ocultar($('btnCancelarEdicion'));
+  ocultar($('vistaPrevia'));
+  ocultar($('avisoForm'));
+  ocultar($('avisoAfiliado'));
+  $('estadoLectura').textContent = '';
+  $('contNota').textContent = '0/280';
+}
+
+$('btnCancelarEdicion').addEventListener('click', limpiarFormulario);
+
+function editar(id) {
+  const o = ofertas.find((x) => x.id === id);
+  if (!o) return;
+  limpiarFormulario();
+  editando = id;
+  mlItemId = o.ml_item_id || null;
+  $('fLink').value = o.link || '';
+  $('fTitulo').value = o.titulo || '';
+  $('fPrecio').value = precioParaCampo(o.precio);
+  $('fAntes').value = precioParaCampo(o.precio_antes);
+  $('fRubro').value = o.rubro || '';
+  $('fNota').value = o.nota || '';
+  $('fFoto').value = o.imagen_url || '';
+  $('fVence').value = o.vence || '';
+  $('fActiva').checked = !!o.activa;
+  $('fDestacada').checked = !!o.destacada;
+  $('contNota').textContent = $('fNota').value.length + '/280';
+  $('tituloForm').textContent = 'Editando oferta';
+  $('btnGuardar').textContent = 'Guardar cambios';
+  ver($('btnCancelarEdicion'));
+  revisarLink();
+  pintarVistaPrevia();
+  $('cajaForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+$('formOferta').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  ocultar($('avisoForm'));
+
+  const precio = leerPrecio($('fPrecio').value);
+  const antes = leerPrecio($('fAntes').value);
+  const error = (texto) => { $('avisoForm').textContent = texto; ver($('avisoForm')); };
+
+  if (Number.isNaN(precio) || Number.isNaN(antes)) return error('Revisá los precios: solo números, como 299.999');
+  if (antes && precio && antes <= precio) {
+    return error('El "precio antes" tiene que ser más alto que el precio: si no, no hay descuento que mostrar.');
+  }
+
+  const boton = $('btnGuardar');
+  boton.disabled = true;
+  const textoBoton = boton.textContent;
+  boton.textContent = 'Guardando…';
+
+  try {
+    const d = await api({
+      accion: 'guardar',
+      oferta: {
+        id: editando,
+        link: $('fLink').value.trim(),
+        titulo: $('fTitulo').value.trim(),
+        precio,
+        precio_antes: antes,
+        rubro: $('fRubro').value.trim(),
+        nota: $('fNota').value.trim(),
+        imagen_url: $('fFoto').value.trim(),
+        vence: $('fVence').value || null,
+        activa: $('fActiva').checked,
+        destacada: $('fDestacada').checked,
+        ml_item_id: mlItemId
+      }
+    });
+    if (!d.ok) return error(d.motivo || 'No se pudo guardar.');
+
+    const guardada = Object.assign({ clicks_7d: 0 }, ofertas.find((x) => x.id === d.oferta.id) || {}, d.oferta);
+    ofertas = [guardada].concat(ofertas.filter((x) => x.id !== guardada.id));
+    if (!editando) ofertas.sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
+    avisar(editando ? 'Cambios guardados' : 'Oferta publicada');
+    // El rubro se mantiene: lo normal es cargar varias del mismo rubro seguidas.
+    const rubro = $('fRubro').value;
+    limpiarFormulario();
+    $('fRubro').value = rubro;
+    pintarTodo();
+  } catch (err) {
+    error(err.message);
+  } finally {
+    boton.disabled = false;
+    if (boton.textContent === 'Guardando…') boton.textContent = textoBoton;
+  }
+});
+
+// ============================== lista ==============================
+
+const estaVencida = (o) => o.vence && o.vence < hoy;
+const estaEnLaPagina = (o) => o.activa && !estaVencida(o);
+
+function pintarTodo() {
+  const rubros = [...new Set(ofertas.map((o) => o.rubro))].sort((a, b) => a.localeCompare(b));
+
+  $('numActivas').textContent = ofertas.filter(estaEnLaPagina).length;
+  $('numSemana').textContent = ofertas.reduce((s, o) => s + (o.clicks_7d || 0), 0).toLocaleString('es-AR');
+  $('numTotal').textContent = ofertas.reduce((s, o) => s + (o.clicks || 0), 0).toLocaleString('es-AR');
+  $('numRubros').textContent = new Set(ofertas.filter(estaEnLaPagina).map((o) => o.rubro)).size;
+
+  $('listaRubros').innerHTML = rubros.map((r) => '<option value="' + escapar(r) + '">').join('');
+
+  const elegido = $('filtroRubro').value;
+  $('filtroRubro').innerHTML = '<option value="">Todos los rubros</option>' +
+    rubros.map((r) => '<option' + (r === elegido ? ' selected' : '') + '>' + escapar(r) + '</option>').join('');
+
+  pintarLista();
+}
+
+function pintarLista() {
+  const q = $('buscarLista').value.trim().toLowerCase();
+  const estado = $('filtroEstado').value;
+  const rubro = $('filtroRubro').value;
+  const orden = $('orden').value;
+
+  let lista = ofertas.filter((o) => {
+    if (rubro && o.rubro !== rubro) return false;
+    if (estado === 'activas' && !estaEnLaPagina(o)) return false;
+    if (estado === 'apagadas' && o.activa) return false;
+    if (estado === 'vencidas' && !estaVencida(o)) return false;
+    if (q && !(o.titulo + ' ' + o.rubro + ' ' + (o.nota || '')).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (orden === 'semana') lista = lista.slice().sort((a, b) => (b.clicks_7d || 0) - (a.clicks_7d || 0));
+  if (orden === 'total') lista = lista.slice().sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
+
+  if (!lista.length) {
+    $('lista').innerHTML = '<div class="vacio">' +
+      (ofertas.length ? 'Ninguna oferta coincide con el filtro.'
+        : 'Todavía no cargaste ofertas. Pegá arriba tu primer link de Mercado Libre.') + '</div>';
+    return;
+  }
+
+  $('lista').innerHTML = lista.map((o) => {
+    const off = Number(o.precio_antes) > Number(o.precio) && Number(o.precio) > 0
+      ? ' · -' + Math.round((1 - o.precio / o.precio_antes) * 100) + '%' : '';
+    const etiquetas =
+      (o.destacada ? '<span class="etiqueta top">★ Destacada</span>' : '') +
+      (!o.activa ? '<span class="etiqueta off">Apagada</span>' : '') +
+      (estaVencida(o) ? '<span class="etiqueta vencida">Venció el ' + escapar(o.vence.split('-').reverse().join('/')) + '</span>' : '');
+
+    return '<div class="item' + (estaEnLaPagina(o) ? '' : ' apagada') + '">' +
+      (o.imagen_url
+        ? '<img src="' + escapar(o.imagen_url) + '" alt="" loading="lazy" referrerpolicy="no-referrer">'
+        : '<div class="sin-foto">🛍️</div>') +
+      '<div>' +
+        '<div class="titulo">' + etiquetas + escapar(o.titulo) + '</div>' +
+        '<div class="meta">' + escapar(o.rubro) +
+          (Number(o.precio) > 0 ? ' · <b>' + pesos(o.precio) + '</b>' + off : '') +
+          '<br>Clics: <b>' + (o.clicks_7d || 0) + '</b> esta semana · ' + (o.clicks || 0) + ' en total' +
+          (o.vence && !estaVencida(o) ? ' · vence ' + escapar(o.vence.split('-').reverse().join('/')) : '') +
+        '</div>' +
+        '<div class="acciones">' +
+          '<button type="button" data-accion="editar" data-id="' + o.id + '">Editar</button>' +
+          '<button type="button" data-accion="activa" data-id="' + o.id + '">' + (o.activa ? 'Apagar' : 'Prender') + '</button>' +
+          '<button type="button" data-accion="destacada" data-id="' + o.id + '">' + (o.destacada ? 'Quitar destacada' : 'Destacar') + '</button>' +
+          '<button type="button" data-accion="abrir" data-id="' + o.id + '">Probar link</button>' +
+          '<button type="button" class="borrar" data-accion="borrar" data-id="' + o.id + '">Borrar</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+['buscarLista', 'filtroEstado', 'filtroRubro', 'orden'].forEach((id) => {
+  $(id).addEventListener(id === 'buscarLista' ? 'input' : 'change', pintarLista);
+});
+
+$('lista').addEventListener('click', async (e) => {
+  const boton = e.target.closest('button[data-accion]');
+  if (!boton) return;
+  const id = boton.dataset.id;
+  const o = ofertas.find((x) => x.id === id);
+  if (!o) return;
+  const accion = boton.dataset.accion;
+
+  if (accion === 'editar') return editar(id);
+
+  // Se abre sin pasar por el contador: probar el link propio no es un clic
+  // de un cliente.
+  if (accion === 'abrir') return window.open(o.link, '_blank', 'noopener');
+
+  if (accion === 'borrar') {
+    if (!confirm('¿Borrar "' + o.titulo + '"?\n\nSe pierden también sus clics. Si solo querés sacarla de la página, usá Apagar.')) return;
+    boton.disabled = true;
+    try {
+      const d = await api({ accion: 'borrar', id });
+      if (!d.ok) throw new Error(d.motivo || 'No se pudo borrar.');
+      ofertas = ofertas.filter((x) => x.id !== id);
+      if (editando === id) limpiarFormulario();
+      pintarTodo();
+      avisar('Oferta borrada');
+    } catch (err) {
+      boton.disabled = false;
+      avisar(err.message);
+    }
+    return;
+  }
+
+  if (accion === 'activa' || accion === 'destacada') {
+    boton.disabled = true;
+    try {
+      const d = await api({ accion: 'cambiar', id, campos: { [accion]: !o[accion] } });
+      if (!d.ok) throw new Error(d.motivo || 'No se pudo cambiar.');
+      Object.assign(o, d.oferta);
+      pintarTodo();
+    } catch (err) {
+      boton.disabled = false;
+      avisar(err.message);
+    }
+  }
+});
+
+// ============================== arranque ==============================
+
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await entrar();
+  else ver($('pantallaLogin'));
+})();
+</script>
+
+</body>
+</html>

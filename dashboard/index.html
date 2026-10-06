@@ -9414,6 +9414,11 @@ function generarSlug(nombre) {
     .slice(0, 40)
     .replace(/-+$/, '');                                // por si el corte dejo uno
 
+  // Carpetas que viven en la raiz del sitio: una tienda llamada "Ofertas"
+  // quedaria tapada por /ofertas y nadie podria entrar a ella.
+  const reservados = ['dashboard', 'asistente', 'ofertas', 'api', 'admin', 'cuenta', 'emails', 'schema', 'supabase'];
+  if (reservados.includes(limpio)) return limpio + '-tienda';
+
   return limpio || 'mi-tienda';
 }
 

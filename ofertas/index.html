@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ofertas de Mercado Libre elegidas a mano · BRUWAL</title>
+<meta name="description" content="Las mejores ofertas de Mercado Libre, separadas por rubro y revisadas a mano. Elegís, entrás y comprás directo en Mercado Libre.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#15294D">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="BRUWAL">
+<meta property="og:url" content="https://bruwaltech.com.ar/ofertas">
+<meta property="og:title" content="Ofertas de Mercado Libre elegidas a mano">
+<meta property="og:description" content="Separadas por rubro y revisadas una por una. Entrás, elegís y comprás directo en Mercado Libre.">
+<meta property="og:image" content="https://bruwaltech.com.ar/og-ofertas.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy: #15294D;
+  --celeste: #2F8FE0;
+  --bg: #F4F8FC;
+  --surface: #FFFFFF;
+  --line: #DCE6F0;
+  --text: #15294D;
+  --mute: #5C6B82;
+  --ok: #1FA088;
+  --ml: #FFE600;
+  --ml-texto: #2D3277;
+  --radius: 14px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { font-family: 'Space Grotesk', 'Inter', sans-serif; }
+a { color: inherit; }
+.hidden { display: none !important; }
+
+/* ---------------- barra ---------------- */
+.barra {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--celeste) 100%);
+  color: #fff;
+  /* Los costados acompañan al resto: en pantalla ancha la marca queda
+     alineada con el título y la grilla, no pegada al borde. */
+  padding: 12px max(16px, calc((100% - 1100px) / 2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.marca {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 17px; text-decoration: none; letter-spacing: .3px;
+}
+.marca .punto { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.marca .seccion { font-weight: 500; opacity: .85; }
+.btn-compartir {
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: 600 13px 'Inter', sans-serif;
+  cursor: pointer;
+}
+.btn-compartir:hover { background: rgba(255,255,255,.26); }
+
+/* ---------------- portada ---------------- */
+.portada {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--celeste) 100%);
+  color: #fff;
+  padding: 18px 16px 34px;
+}
+.portada-inner { max-width: 1100px; margin: 0 auto; }
+.etiqueta {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--ml); color: var(--ml-texto);
+  font-size: 12px; font-weight: 700;
+  padding: 5px 11px; border-radius: 999px; margin-bottom: 14px;
+}
+.portada h1 {
+  font-size: clamp(26px, 6vw, 42px);
+  line-height: 1.12;
+  max-width: 720px;
+  margin-bottom: 10px;
+}
+.portada p {
+  font-size: 15.5px;
+  line-height: 1.55;
+  opacity: .9;
+  max-width: 600px;
+}
+
+/* ---------------- filtros ---------------- */
+.filtros {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(244, 248, 252, .96);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 16px 10px;
+}
+.filtros-inner { max-width: 1100px; margin: 0 auto; }
+.buscador {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 11px 14px;
+  font: 500 15px 'Inter', sans-serif;
+  color: var(--text);
+  outline: none;
+}
+.buscador:focus { border-color: var(--celeste); box-shadow: 0 0 0 3px rgba(47,143,224,.15); }
+.rubros {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 0 2px;
+  scrollbar-width: none;
+}
+.rubros::-webkit-scrollbar { display: none; }
+.chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 13px;
+  font: 600 13px 'Inter', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip .n { color: var(--mute); font-weight: 500; margin-left: 4px; }
+.chip.activo { background: var(--navy); border-color: var(--navy); color: #fff; }
+.chip.activo .n { color: rgba(255,255,255,.7); }
+
+/* ---------------- lista ---------------- */
+main { width: min(1100px, 100% - 32px); margin: 0 auto; padding: 16px 0 40px; }
+.resumen { font-size: 13px; color: var(--mute); margin-bottom: 12px; }
+
+.grilla {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (min-width: 680px) { .grilla { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; } }
+@media (min-width: 980px) { .grilla { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.oferta {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.oferta:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -18px rgba(21,41,77,.4); }
+.oferta.destacada { border-color: var(--celeste); box-shadow: 0 0 0 1px var(--celeste); }
+
+.foto {
+  position: relative;
+  display: block;
+  aspect-ratio: 1 / 1;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.foto img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  padding: 10px;
+}
+.foto .sin-foto {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--mute); font-size: 34px;
+}
+.sello {
+  position: absolute;
+  top: 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.sello.descuento { left: 8px; background: var(--ok); color: #fff; }
+.sello.marca-oferta { right: 8px; background: var(--navy); color: #fff; }
+
+.cuerpo {
+  padding: 11px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+.rubro {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--celeste);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.titulo {
+  font-family: 'Inter', sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.titulo a { text-decoration: none; }
+.nota {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--mute);
+  border-left: 3px solid var(--ml);
+  padding-left: 8px;
+}
+.precios { margin-top: auto; padding-top: 4px; }
+.precios s { display: block; font-size: 12.5px; color: var(--mute); }
+.precios b { font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+.ir {
+  display: block;
+  text-align: center;
+  background: var(--ml);
+  color: var(--ml-texto);
+  font-weight: 700;
+  font-size: 13.5px;
+  text-decoration: none;
+  border-radius: 10px;
+  padding: 10px 8px;
+  margin-top: 6px;
+}
+.ir:hover { filter: brightness(.96); }
+
+/* cargando */
+.esqueleto { pointer-events: none; }
+.esqueleto .foto, .esqueleto .barrita {
+  background: linear-gradient(90deg, #eef3f8 0%, #f7fafc 50%, #eef3f8 100%);
+  background-size: 200% 100%;
+  animation: brillo 1.2s infinite linear;
+}
+.esqueleto .barrita { height: 12px; border-radius: 6px; }
+@keyframes brillo { to { background-position: -200% 0; } }
+
+.vacio {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--mute);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.vacio b { display: block; color: var(--text); font-size: 17px; margin-bottom: 4px; }
+.vacio button {
+  margin-top: 14px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  border-radius: 999px; padding: 9px 16px; font: 600 13px 'Inter', sans-serif; cursor: pointer;
+}
+
+/* ---------------- pie ---------------- */
+footer {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: 26px 16px 34px;
+}
+.pie-inner { max-width: 1100px; margin: 0 auto; display: grid; gap: 18px; }
+.aviso { font-size: 12.5px; color: var(--mute); line-height: 1.6; max-width: 720px; }
+.promo {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px;
+}
+.promo p { font-size: 14px; line-height: 1.5; max-width: 520px; }
+.promo a {
+  background: var(--navy); color: #fff; text-decoration: none;
+  font-weight: 700; font-size: 13.5px; border-radius: 10px; padding: 10px 16px; white-space: nowrap;
+}
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  background: var(--navy); color: #fff; font-size: 13.5px; font-weight: 600;
+  padding: 10px 16px; border-radius: 999px; box-shadow: 0 10px 30px -10px rgba(0,0,0,.4);
+  z-index: 50;
+}
+</style>
+</head>
+<body>
+
+<div class="barra">
+  <a class="marca" href="/"><span class="punto"></span> BRUWAL <span class="seccion">· Ofertas</span></a>
+  <button class="btn-compartir" id="btnCompartir" type="button">Compartir</button>
+</div>
+
+<section class="portada">
+  <div class="portada-inner">
+    <span class="etiqueta">Elegidas a mano en Mercado Libre</span>
+    <h1>Las mejores ofertas de Mercado Libre, por rubro</h1>
+    <p>Revisamos precios y dejamos solo las que valen la pena. Elegís el rubro, entrás y comprás directo en Mercado Libre, con su envío y su garantía.</p>
+  </div>
+</section>
+
+<div class="filtros">
+  <div class="filtros-inner">
+    <input class="buscador" id="buscar" type="search" autocomplete="off"
+           placeholder="Buscar: auriculares, freidora, zapatillas…" aria-label="Buscar ofertas">
+    <div class="rubros" id="rubros" role="tablist" aria-label="Rubros"></div>
+  </div>
+</div>
+
+<main>
+  <div class="resumen" id="resumen"></div>
+  <div class="grilla" id="grilla"></div>
+  <div class="vacio hidden" id="vacio"></div>
+</main>
+
+<footer>
+  <div class="pie-inner">
+    <p class="aviso">
+      Los links de esta página son de afiliado de Mercado Libre: si comprás, BRUWAL puede recibir una
+      comisión. A vos no te cuesta nada: el precio y las condiciones son los mismos que en Mercado Libre.
+      Los precios son los del momento en que publicamos la oferta y pueden cambiar; el precio final es
+      el que ves en Mercado Libre antes de pagar.
+    </p>
+    <div class="promo">
+      <p><b>¿Tenés un negocio?</b> Con BRUWAL armás tu tienda online, cargás tu stock y vendés por WhatsApp y Mercado Libre desde un solo lugar.</p>
+      <a href="/">Conocer BRUWAL</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
+
+const $ = (id) => document.getElementById(id);
+
+function escapar(texto) {
+  return String(texto == null ? '' : texto)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// El link lo carga la cuenta de BRUWAL, pero igual: a un href solo entra
+// http(s). Un "javascript:" en la base no puede volverse un click peligroso.
+function linkSeguro(url) {
+  return /^https?:\/\//i.test(String(url || '')) ? String(url) : '#';
+}
+
+const pesos = (n) => '$' + Math.round(Number(n)).toLocaleString('es-AR');
+
+// "Celulares y tablets" -> "celulares-y-tablets", para que el rubro viaje
+// en el link sin tildes ni espacios.
+function claveRubro(nombre) {
+  return String(nombre || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function sinTildes(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+let ofertas = [];
+let rubroElegido = '';
+let busqueda = '';
+
+// ---------- estado en la URL ----------
+// /ofertas?rubro=celulares se puede mandar por WhatsApp y abre ya filtrado.
+
+function leerUrl() {
+  const p = new URLSearchParams(location.search);
+  rubroElegido = p.get('rubro') || '';
+  busqueda = p.get('q') || '';
+  $('buscar').value = busqueda;
+}
+
+function escribirUrl() {
+  const p = new URLSearchParams();
+  if (rubroElegido) p.set('rubro', rubroElegido);
+  if (busqueda) p.set('q', busqueda);
+  const q = p.toString();
+  history.replaceState(null, '', location.pathname + (q ? '?' + q : ''));
+}
+
+// ---------- carga ----------
+
+function mostrarEsqueleto() {
+  const tarjeta =
+    '<div class="oferta esqueleto"><div class="foto"></div><div class="cuerpo">' +
+    '<div class="barrita" style="width:40%"></div><div class="barrita"></div>' +
+    '<div class="barrita" style="width:70%"></div><div class="barrita" style="width:50%;height:18px;margin-top:8px"></div>' +
+    '</div></div>';
+  $('grilla').innerHTML = tarjeta.repeat(8);
+}
+
+async function cargar() {
+  mostrarEsqueleto();
+  try {
+    // Las columnas van una por una: la tabla no deja leer las demás (los
+    // clics son nuestros) y un select=* rebotaría entero.
+    const r = await fetch(SUPABASE_URL + '/rest/v1/ofertas' +
+      '?select=id,link,titulo,imagen_url,precio,precio_antes,rubro,nota,destacada,creada_en' +
+      '&order=destacada.desc,creada_en.desc&limit=500', {
+      headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    ofertas = await r.json();
+  } catch (err) {
+    console.error('No se pudieron cargar las ofertas', err);
+    $('grilla').innerHTML = '';
+    $('resumen').textContent = '';
+    $('vacio').innerHTML = '<b>No pudimos cargar las ofertas</b>Revisá la conexión y probá de nuevo.' +
+      '<br><button type="button" onclick="cargar()">Reintentar</button>';
+    $('vacio').classList.remove('hidden');
+    return;
+  }
+
+  // Un rubro que vino en el link pero ya no tiene ofertas: se muestran todas
+  // en vez de una página vacía.
+  if (rubroElegido && !ofertas.some((o) => claveRubro(o.rubro) === rubroElegido)) rubroElegido = '';
+
+  pintarRubros();
+  pintar();
+}
+
+// ---------- rubros ----------
+
+function pintarRubros() {
+  const conteo = new Map();
+  ofertas.forEach((o) => {
+    const clave = claveRubro(o.rubro);
+    if (!conteo.has(clave)) conteo.set(clave, { nombre: o.rubro, n: 0 });
+    conteo.get(clave).n++;
+  });
+
+  // Los que más ofertas tienen, primero: es donde más chances hay de
+  // encontrar algo.
+  const lista = [...conteo.entries()].sort((a, b) => b[1].n - a[1].n || a[1].nombre.localeCompare(b[1].nombre));
+
+  const chip = (clave, nombre, n) =>
+    '<button type="button" role="tab" class="chip' + (clave === rubroElegido ? ' activo' : '') + '" ' +
+    'aria-selected="' + (clave === rubroElegido) + '" data-rubro="' + escapar(clave) + '">' +
+    escapar(nombre) + '<span class="n">' + n + '</span></button>';
+
+  $('rubros').innerHTML = chip('', 'Todas', ofertas.length) +
+    lista.map(([clave, r]) => chip(clave, r.nombre, r.n)).join('');
+  // Con muchos rubros, que el elegido quede a la vista y no escondido a la derecha.
+  const activo = $('rubros').querySelector('.chip.activo');
+  if (activo && activo.scrollIntoView) activo.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+$('rubros').addEventListener('click', (e) => {
+  const boton = e.target.closest('[data-rubro]');
+  if (!boton) return;
+  rubroElegido = boton.dataset.rubro;
+  escribirUrl();
+  pintarRubros();
+  pintar();
+});
+
+let esperaBusqueda = null;
+$('buscar').addEventListener('input', () => {
+  clearTimeout(esperaBusqueda);
+  esperaBusqueda = setTimeout(() => {
+    busqueda = $('buscar').value.trim();
+    escribirUrl();
+    pintar();
+  }, 150);
+});
+
+// ---------- tarjetas ----------
+
+function descuento(o) {
+  const antes = Number(o.precio_antes), ahora = Number(o.precio);
+  if (!(antes > 0 && ahora > 0 && antes > ahora)) return 0;
+  return Math.round((1 - ahora / antes) * 100);
+}
+
+function esNueva(o) {
+  return o.creada_en && (Date.now() - new Date(o.creada_en).getTime()) < 2 * 24 * 3600 * 1000;
+}
+
+function tarjeta(o) {
+  const href = escapar(linkSeguro(o.link));
+  const atributos = 'href="' + href + '" target="_blank" rel="sponsored noopener" data-id="' + escapar(o.id) + '"';
+  const off = descuento(o);
+
+  const foto = o.imagen_url
+    ? '<img src="' + escapar(o.imagen_url) + '" alt="' + escapar(o.titulo) + '" loading="lazy" ' +
+      'referrerpolicy="no-referrer" onerror="this.remove()">'
+    : '<span class="sin-foto">🛍️</span>';
+
+  const sello = o.destacada ? '<span class="sello marca-oferta">★ Top</span>'
+    : esNueva(o) ? '<span class="sello marca-oferta">Nueva</span>' : '';
+
+  const precios = Number(o.precio) > 0
+    ? '<div class="precios">' + (off ? '<s>' + pesos(o.precio_antes) + '</s>' : '') +
+      '<b>' + pesos(o.precio) + '</b></div>'
+    : '<div class="precios"></div>';
+
+  return '<article class="oferta' + (o.destacada ? ' destacada' : '') + '">' +
+    '<a class="foto" ' + atributos + ' tabindex="-1" aria-hidden="true">' + foto +
+      (off >= 5 ? '<span class="sello descuento">-' + off + '%</span>' : '') + sello + '</a>' +
+    '<div class="cuerpo">' +
+      '<span class="rubro">' + escapar(o.rubro) + '</span>' +
+      '<h3 class="titulo"><a ' + atributos + '>' + escapar(o.titulo) + '</a></h3>' +
+      (o.nota ? '<p class="nota">' + escapar(o.nota) + '</p>' : '') +
+      precios +
+      '<a class="ir" ' + atributos + '>Ver en Mercado Libre</a>' +
+    '</div>' +
+  '</article>';
+}
+
+function pintar() {
+  const palabras = sinTildes(busqueda).split(/\s+/).filter(Boolean);
+  const visibles = ofertas.filter((o) => {
+    if (rubroElegido && claveRubro(o.rubro) !== rubroElegido) return false;
+    if (!palabras.length) return true;
+    const texto = sinTildes(o.titulo + ' ' + o.rubro + ' ' + (o.nota || ''));
+    return palabras.every((p) => texto.includes(p));
+  });
+
+  const nombreRubro = rubroElegido
+    ? (ofertas.find((o) => claveRubro(o.rubro) === rubroElegido) || {}).rubro
+    : '';
+
+  $('grilla').innerHTML = visibles.map(tarjeta).join('');
+  $('resumen').textContent = visibles.length
+    ? visibles.length + (visibles.length === 1 ? ' oferta' : ' ofertas') +
+      (nombreRubro ? ' en ' + nombreRubro : '') + (busqueda ? ' para "' + busqueda + '"' : '')
+    : '';
+
+  const vacio = $('vacio');
+  if (visibles.length) {
+    vacio.classList.add('hidden');
+  } else if (!ofertas.length) {
+    vacio.innerHTML = '<b>Estamos preparando las primeras ofertas</b>Volvé en un rato: las cargamos a mano.';
+    vacio.classList.remove('hidden');
+  } else {
+    vacio.innerHTML = '<b>No encontramos ofertas' + (busqueda ? ' para "' + escapar(busqueda) + '"' : '') +
+      (nombreRubro ? ' en ' + escapar(nombreRubro) : '') + '</b>Probá con otra palabra o mirá todos los rubros.' +
+      '<br><button type="button" id="verTodas">Ver todas las ofertas</button>';
+    vacio.classList.remove('hidden');
+    $('verTodas').onclick = () => {
+      rubroElegido = ''; busqueda = ''; $('buscar').value = '';
+      escribirUrl(); pintarRubros(); pintar();
+    };
+  }
+}
+
+// ---------- clics ----------
+// Se cuenta sin frenar la ida a Mercado Libre: el link es un <a> común (en
+// el celular abre la app de ML directo) y el conteo sale aparte, con
+// keepalive para que no se corte si la pestaña se va.
+
+const contados = new Set();
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[data-id]');
+  if (!a) return;
+  const id = a.dataset.id;
+  // Foto, título y botón son tres links a lo mismo: un clic por oferta y
+  // por visita alcanza para saber qué interesa.
+  if (contados.has(id)) return;
+  contados.add(id);
+  try {
+    fetch(SUPABASE_URL + '/rest/v1/rpc/contar_click_oferta', {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ p_id: id })
+    }).catch(() => {});
+  } catch (err) { /* contar es secundario: nunca puede trabar el link */ }
+});
+
+// ---------- compartir ----------
+
+function avisar(texto) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = texto;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+
+$('btnCompartir').addEventListener('click', async () => {
+  const nombreRubro = rubroElegido
+    ? (ofertas.find((o) => claveRubro(o.rubro) === rubroElegido) || {}).rubro : '';
+  const datos = {
+    title: 'Ofertas de Mercado Libre' + (nombreRubro ? ' en ' + nombreRubro : ''),
+    text: 'Mirá estas ofertas de Mercado Libre' + (nombreRubro ? ' en ' + nombreRubro : '') + ', elegidas a mano:',
+    url: location.href
+  };
+  try {
+    if (navigator.share) { await navigator.share(datos); return; }
+    await navigator.clipboard.writeText(location.href);
+    avisar('Link copiado');
+  } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    window.prompt('Copiá el link:', location.href);
+  }
+});
+
+leerUrl();
+cargar();
+</script>
+</body>
+</html>
