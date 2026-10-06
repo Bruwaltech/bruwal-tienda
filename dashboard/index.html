@@ -13230,71 +13230,83 @@ function renderPulsoSemanal() {
 }
 
 // Cuánta plata hay parada en el stock, separada entre lo que ya se puede
-// vender y lo que todavía necesita restauración — a costo, no a precio de
-// venta (es "cuánto puse", no "cuánto podría cobrar"). Inspirado en cómo lo
-// muestra Gestu (competencia de celulares), adaptado a los datos que BRUWAL
-// ya tiene: pendiente_restauracion a nivel producto, listo a nivel IMEI.
+// vender y lo que todavía necesita restauración — a PRECIO DE VENTA ("cuánto
+// podría cobrar"), en pesos. Antes era a costo, pero p.costo se guarda en la
+// moneda en que el dueño lo tipeó (en electrónica, dólares) y se sumaba como
+// si fueran pesos: una tienda con US$1.120 de costo mostraba "$1.120".
+// El precio sí está siempre en pesos (price ya viene convertido con la
+// cotización), y se toma con los mismos helpers que usa la venta en el
+// mostrador: precio propio del equipo > precio de la combinación > precio
+// vigente del producto (con oferta si la hay).
 function calcularValoracionStock() {
   let disponibleValor = 0, disponibleUds = 0;
   let pendienteValor = 0, pendienteUds = 0;
-  let sinCosto = 0;
+  let sinPrecio = 0;
+
+  const sumar = (precio, cantidad, pendiente) => {
+    if (!(precio > 0)) { sinPrecio += cantidad; return; }
+    if (pendiente) { pendienteValor += precio * cantidad; pendienteUds += cantidad; }
+    else { disponibleValor += precio * cantidad; disponibleUds += cantidad; }
+  };
 
   products.forEach(p => {
     if (!esProductoFisico(p)) return;
-    const costo = Number(p.costo) || 0;
-    const tieneCosto = Number(p.costo) > 0;
 
     if (p.tiene_variantes && Array.isArray(p.variantes) && p.variantes.length) {
       p.variantes.forEach(v => {
+        const variante = v.atributos || {};
         if (Array.isArray(v.imeis) && v.imeis.length) {
           // Electrónica: cada unidad se cuenta por separado según su
-          // propio tilde "listo para vender".
+          // propio tilde "listo para vender" y con su propio precio.
           v.imeis.map(normalizarUnidadImei).forEach(u => {
-            if (!tieneCosto) { sinCosto++; return; }
-            if (u.listo === false) { pendienteValor += costo; pendienteUds++; }
-            else { disponibleValor += costo; disponibleUds++; }
+            sumar(precioDeUnidad(p, variante, u), 1, u.listo === false);
           });
         } else {
           const stock = Number(v.stock || 0);
           if (!stock) return;
-          if (!tieneCosto) { sinCosto += stock; return; }
           // Talle/color no tiene "listo" por combinación — se usa el
           // estado del producto entero (pendiente_restauracion).
-          if (p.pendiente_restauracion) { pendienteValor += costo * stock; pendienteUds += stock; }
-          else { disponibleValor += costo * stock; disponibleUds += stock; }
+          sumar(precioDeVentaMostrador(p, variante), stock, !!p.pendiente_restauracion);
         }
       });
     } else {
       const stock = Number(p.stock || 0);
       if (!stock) return;
-      if (!tieneCosto) { sinCosto += stock; return; }
-      if (p.pendiente_restauracion) { pendienteValor += costo * stock; pendienteUds += stock; }
-      else { disponibleValor += costo * stock; disponibleUds += stock; }
+      sumar(precioVigente(p), stock, !!p.pendiente_restauracion);
     }
   });
 
-  return { disponibleValor, disponibleUds, pendienteValor, pendienteUds, sinCosto };
+  return { disponibleValor, disponibleUds, pendienteValor, pendienteUds, sinPrecio };
 }
 
-function renderValoracionStock() {
+async function renderValoracionStock() {
   const bloqueado = requiereDesbloqueoCostos();
   byId('verValoracionStockBtn').classList.toggle('hidden', !bloqueado);
   byId('valoracionStockContenido').classList.toggle('hidden', bloqueado);
   if (bloqueado) { hide(byId('valoracionStockAviso')); return; }
 
   const v = calcularValoracionStock();
-  byId('valoracionDisponible').textContent = money(v.disponibleValor);
-  byId('valoracionDisponibleUds').textContent = v.disponibleUds + ' unidad' + (v.disponibleUds === 1 ? '' : 'es');
-  byId('valoracionPendiente').textContent = money(v.pendienteValor);
-  byId('valoracionPendienteUds').textContent = v.pendienteUds + ' unidad' + (v.pendienteUds === 1 ? '' : 'es');
+  const uds = (n) => n + ' unidad' + (n === 1 ? '' : 'es');
+  byId('valoracionDisponible').textContent = money(Math.round(v.disponibleValor));
+  byId('valoracionDisponibleUds').textContent = uds(v.disponibleUds);
+  byId('valoracionPendiente').textContent = money(Math.round(v.pendienteValor));
+  byId('valoracionPendienteUds').textContent = uds(v.pendienteUds);
 
-  if (v.sinCosto > 0) {
+  if (v.sinPrecio > 0) {
     byId('valoracionStockAviso').textContent =
-      '⚠️ ' + v.sinCosto + ' unidad' + (v.sinCosto === 1 ? '' : 'es') + ' sin costo cargado — no se incluyen en estos totales.';
+      '⚠️ ' + uds(v.sinPrecio) + ' sin precio cargado — no se incluyen en estos totales.';
     show(byId('valoracionStockAviso'));
   } else {
     hide(byId('valoracionStockAviso'));
   }
+
+  // Debajo, el equivalente en dólares al blue de hoy, igual que las
+  // stat-cards de ventas. Si la cotización no está, quedan solo las unidades.
+  const cot = await obtenerCotizacion('USD');
+  if (!cot || !cot.venta) return;
+  const usd = (n) => 'USD$' + Math.round(n / cot.venta).toLocaleString('es-AR');
+  byId('valoracionDisponibleUds').textContent = uds(v.disponibleUds) + ' · ' + usd(v.disponibleValor);
+  byId('valoracionPendienteUds').textContent = uds(v.pendienteUds) + ' · ' + usd(v.pendienteValor);
 }
 
 byId('verValoracionStockBtn').addEventListener('click', () => abrirPinCostosModal(renderValoracionStock));
