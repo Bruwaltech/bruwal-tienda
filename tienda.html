@@ -1036,6 +1036,13 @@ async function init(){
   // a mostrar por accidente.
   products = (prods || []).filter(p => !p.solo_interno);
 
+  // El ejemplo de las aclaraciones habla el idioma del rubro: "sin sal,
+  // cortada en 8" no le dice nada a quien compra un iPhone, y el pedido
+  // tipico ahi es entregar el telefono viejo como parte de pago.
+  if (products.some(p => productoEsIphone(p.name))) {
+    byId('custAclaraciones').placeholder = 'Ej: me gustaría entregar mi teléfono como parte de pago (marca y modelo)';
+  }
+
   hide(byId('loadingState'));
   show(byId('storeView'));
   renderProducts();
