@@ -408,11 +408,15 @@ function armarSistema(cliente) {
 // No todos los modelos aceptan los mismos parametros, y mandar uno de mas no
 // se degrada: devuelve 400 y el cliente se queda sin respuesta.
 //
-//   esfuerzo  -> el parametro effort no existe en Haiku 4.5, da error
+//   esfuerzo  -> el parametro effort no existe en Haiku 4.5, da error. En
+//                Haiku 5.5 si existe, y si no se manda arranca en medium:
+//                mas lento y mas caro de lo que pide un WhatsApp.
 //   reintento -> el reintento automatico ante rechazo aplica a Opus 5, que es
-//                el unico de los tres con clasificadores que puedan rechazar
+//                el unico con clasificadores que puedan rechazar y con
+//                reintento del lado del servidor (Haiku 5.5 no lo tiene)
 const PERFILES_MODELO = {
   'claude-haiku-4-5': { esfuerzo: false, reintento: false },
+  'claude-haiku-5-5': { esfuerzo: true,  reintento: false },
   'claude-sonnet-5':  { esfuerzo: true,  reintento: false },
   'claude-opus-5':    { esfuerzo: true,  reintento: true }
 };

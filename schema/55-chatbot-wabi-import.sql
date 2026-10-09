@@ -1,6 +1,6 @@
 -- ============================================================
 -- Alta del chatbot: Wabi import (tienda de Walter)
--- Correr DESPUES de 04-bot-whatsapp.sql
+-- Correr DESPUES de 04-bot-whatsapp.sql y 56-haiku-5-5.sql
 -- ============================================================
 --
 -- Es la primera tienda que usa el chatbot desde su propio panel. El boton
@@ -30,11 +30,11 @@ insert into public.clientes (
 
   false,
 
-  'claude-haiku-4-5',
+  'claude-haiku-5-5',              -- unas 1.800 conversaciones por mes
   'esencial',
 
-  120,
-  360,
+  2000,                            -- incluidas en el abono
+  3000,                            -- freno duro
   null,
 
   'PENDIENTE_NUMERO_DE_WALTER',    -- formato 549341XXXXXXX, sin + ni espacios
