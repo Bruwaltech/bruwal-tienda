@@ -1873,6 +1873,10 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
       <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
+      <!-- Solo aparece en las tiendas que contrataron el chatbot de WhatsApp:
+           lleva al panel del asistente (/asistente), que ya tiene los
+           contactos, las conversaciones y el consumo del plan. -->
+      <button class="app-tab hidden" id="tabChatbot"><i class="fa-brands fa-whatsapp"></i> Chatbot</button>
     </div>
   </div>
 
@@ -9521,6 +9525,9 @@ async function onLoggedIn() {
   hide(byId('authView'));
   show(byId('appView'));
 
+  // Va sin await: es un boton extra y no tiene que demorar la carga del panel.
+  revisarChatbot();
+
   // La primera vez que entra, le mostramos la guía sola. Es justo cuando no
   // sabe por dónde empezar. Después no vuelve a aparecer, y queda el botón
   // "Cómo usar" en el encabezado por si la quiere de nuevo.
@@ -9561,6 +9568,32 @@ async function onLoggedIn() {
   // Si entro desde el icono del celular, va derecho a vender
   await arranqueDirectoAVentas();
 }
+
+// ---------- Chatbot de WhatsApp: el acceso ----------
+
+// El chatbot es un servicio aparte (tabla clientes, ver schema/04). Una tienda
+// lo tiene cuando hay un cliente del bot con su mismo slug, y este usuario lo
+// ve solo si esta vinculado en cliente_usuarios: las politicas de la base ya
+// filtran, asi que si la consulta vuelve vacia el boton queda escondido.
+async function revisarChatbot() {
+  const tab = byId('tabChatbot');
+  if (!tab) return;
+  hide(tab);
+  if (!currentStore?.slug) return;
+  try {
+    const { data } = await sb
+      .from('clientes')
+      .select('slug')
+      .eq('slug', currentStore.slug)
+      .limit(1);
+    if (data && data.length) show(tab);
+  } catch (e) { /* sin chatbot no hay boton; nada que avisar */ }
+}
+
+byId('tabChatbot')?.addEventListener('click', () => {
+  if (!currentStore?.slug) return;
+  window.location.href = '/asistente?cliente=' + encodeURIComponent(currentStore.slug);
+});
 
 // ---------- Mercado Libre: la pestaña ----------
 

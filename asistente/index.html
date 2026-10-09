@@ -124,6 +124,11 @@ h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
   font-family: inherit; cursor: pointer;
 }
 .barra button:hover { background: rgba(255,255,255,.22); }
+.barra .volver-panel {
+  background: rgba(255,255,255,.12); color: #fff; text-decoration: none;
+  border-radius: 8px; padding: 8px 14px; font-size: 14px;
+}
+.barra .volver-panel:hover { background: rgba(255,255,255,.22); }
 
 .contenido { max-width: 1180px; margin: 0 auto; padding: 22px; }
 
@@ -302,6 +307,8 @@ tbody tr:hover { background: #F8FBFF; }
     <div style="display:flex;gap:8px;align-items:center;">
       <select id="selectorCliente" class="hidden"
               style="padding:7px 10px;border-radius:8px;border:none;font-family:inherit;font-size:14px;"></select>
+      <!-- Solo cuando se entra desde el panel de la tienda (boton Chatbot). -->
+      <a href="/dashboard" class="volver-panel hidden" id="volverPanel">← Panel</a>
       <button id="btnExportar">Exportar</button>
       <button id="btnSalir">Salir</button>
     </div>
@@ -577,7 +584,12 @@ async function entrar() {
     return;
   }
 
-  clienteActual = clientes[0];
+  // Desde el panel de la tienda se llega con ?cliente=<slug>: arranca en ese
+  // negocio y ofrece volver. Un slug que no es suyo simplemente no aparece en
+  // la lista, porque la lista ya viene filtrada por la base.
+  const pedido = new URLSearchParams(window.location.search).get('cliente');
+  clienteActual = clientes.find((c) => c.slug === pedido) || clientes[0];
+  if (pedido) ver($('volverPanel'));
   $('quienSoy').textContent = user.email;
 
   // El selector solo aparece para quien atiende a más de un negocio.
@@ -586,6 +598,7 @@ async function entrar() {
     sel.innerHTML = clientes
       .map((c) => '<option value="' + escapar(c.id) + '">' + escapar(c.nombre) + '</option>')
       .join('');
+    sel.value = clienteActual.id;
     sel.addEventListener('change', () => {
       clienteActual = clientes.find((c) => c.id === sel.value);
       cargarLeads();
