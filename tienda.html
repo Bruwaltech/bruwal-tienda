@@ -3512,7 +3512,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     // Si falla el guardado NO frenamos la venta: es peor perder un cliente
     // que perder un registro.
     try {
-      await sb.from('orders').insert({
+      const pedido = {
         store_slug: getSlugFromUrl(),
         customer_name: name,
         customer_phone: phone,
@@ -3524,7 +3524,26 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
         // pago y la caja del panel no podia cerrar por medio.
         medio_pago: medioDePago || null,
         estado: 'pendiente'
-      });
+      };
+      // Para el tablero de comandas del panel: el mapa y quien lo recibe.
+      // Antes la direccion iba solo en el WhatsApp y no quedaba guardada.
+      const entregaDelPedido = entrega ? {
+        tipo_entrega: esADomicilio ? 'delivery' : 'retiro',
+        direccion: esADomicilio ? [calle, ciudad].filter(Boolean).join(', ') : null,
+        direccion_detalle: esADomicilio ? [
+          vivienda === 'Departamento' && piso ? 'Piso/Depto: ' + piso : '',
+          vivienda === 'Departamento' && timbre ? 'Timbre: ' + timbre : '',
+          aNombre ? 'Recibe: ' + aNombre : '',
+          referencias ? 'Ref: ' + referencias : ''
+        ].filter(Boolean).join(' · ') || null : null
+      } : {};
+      const { error: errPedido } = await sb.from('orders').insert({ ...pedido, ...entregaDelPedido });
+      // Si todavia no se corrio schema/56-comandas.sql, la base rechaza las
+      // columnas de entrega. Se guarda igual sin ellas: perder la direccion
+      // en el panel es mucho menos grave que perder el pedido.
+      if (errPedido && Object.keys(entregaDelPedido).length) {
+        await sb.from('orders').insert(pedido);
+      }
     } catch (e) {
       console.warn('No se pudo registrar el pedido:', e);
     }
