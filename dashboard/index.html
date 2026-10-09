@@ -13401,6 +13401,46 @@ async function editarCotizacionManual(moneda) {
 
   await actualizarCotizacionBanner();
   if (rubroEsElectronica()) renderDashboard();
+  await ofrecerRepreciarProductos(moneda);
+}
+
+// Los productos cargados en dólares/euros guardan el precio ya pasado a
+// pesos con la cotización de ESE día. Cambiar la cotización arriba no los
+// tocaba: el dueño subía el dólar y la tienda seguía mostrando los precios
+// viejos. Ahora, al cambiarla, se ofrece recalcular todos los productos de
+// esa moneda con el valor nuevo (precio, oferta, por mayor y variantes, lo
+// mismo que convierte el formulario al guardar).
+async function ofrecerRepreciarProductos(moneda) {
+  if (!puedeOperar()) return;
+  const cot = await obtenerCotizacion(moneda);
+  const nueva = Number(cot?.venta);
+  if (!(nueva > 0)) return;
+
+  const desactualizados = products.filter(p =>
+    p.moneda === moneda && Number(p.precio_original) > 0 &&
+    Number(p.cotizacion) > 0 && Number(p.cotizacion) !== nueva);
+  if (!desactualizados.length) return;
+
+  const cuantos = desactualizados.length + (desactualizados.length === 1 ? ' producto cargado' : ' productos cargados');
+  if (!confirm('Tenés ' + cuantos + ' en ' + moneda + ' con otra cotización.\n\n' +
+               '¿Les actualizo el precio en pesos a ' + money(nueva) + ' por ' + moneda + '?')) return;
+
+  const r = await aplicarUnoPorUno(desactualizados, (p) => camposRepreciados(p, nueva));
+  if (r.error) alert('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
+  else alert('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
+  renderProducts();
+}
+
+function camposRepreciados(p, nueva) {
+  const factor = nueva / Number(p.cotizacion);
+  const campos = {
+    price: Math.round(Number(p.precio_original) * nueva),
+    cotizacion: nueva
+  };
+  if (p.precio_oferta != null) campos.precio_oferta = aPesosConFactor(p.precio_oferta, factor);
+  if (Array.isArray(p.precios_por_cantidad)) campos.precios_por_cantidad = preciosEnPesos(p.precios_por_cantidad, factor);
+  if (Array.isArray(p.variantes)) campos.variantes = preciosEnPesos(p.variantes, factor);
+  return campos;
 }
 
 function renderTopProducts() {
