@@ -1598,6 +1598,54 @@ tr:last-child td { border-bottom: none; }
   font-family: inherit !important;
   font-size: 14px !important;
 }
+
+/* ---- Tablero de comandas (gastronomia) ---- */
+.comandas-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+.comandas-top h2 { font-size:20px; color:var(--navy); }
+.comandas-vivo { display:inline-flex; align-items:center; gap:6px; background:#E8F6F1; color:#10614F; font-size:12px; font-weight:700; padding:4px 10px; border-radius:20px; }
+.comandas-vivo .punto { width:8px; height:8px; border-radius:50%; background:var(--stock); animation:comandaLatido 1.6s ease-in-out infinite; }
+@keyframes comandaLatido { 50% { opacity:.3; } }
+.comandas-activos { font-size:12px; font-weight:600; color:var(--text-mute); background:var(--surface); border:1px solid var(--line); padding:4px 10px; border-radius:20px; }
+.comandas-tablero { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; margin-bottom:24px; align-items:start; }
+.comandas-col { background:#EDF2F8; border:1px solid var(--line); border-radius:14px; padding:12px; min-height:180px; }
+.comandas-col header { display:flex; align-items:center; gap:7px; font-weight:700; font-size:14px; color:var(--navy); margin-bottom:10px; }
+.comandas-col header .punto { width:9px; height:9px; border-radius:50%; }
+.comandas-col header b { color:var(--text-mute); font-weight:600; }
+.comandas-lista { display:flex; flex-direction:column; gap:12px; }
+.comandas-vacio { text-align:center; color:var(--text-mute); font-size:13px; padding:28px 0; }
+.comanda { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:13px; font-size:13px; box-shadow:0 1px 3px rgba(21,41,77,.06); }
+.comanda.es-nueva { border:2px solid #DC2626; }
+.comanda.recien { animation:comandaEntra 1.2s ease-out; }
+@keyframes comandaEntra { 0% { transform:scale(.96); box-shadow:0 0 0 6px rgba(220,38,38,.35); } 100% { transform:none; } }
+.comanda-cab { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.comanda-num { font-weight:800; font-size:15px; color:var(--navy); font-family:ui-monospace,Menlo,monospace; }
+.comanda-hace { font-size:11.5px; color:var(--text-mute); }
+.comanda-tipo { font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; border:1px solid var(--line); white-space:nowrap; }
+.comanda-tipo.delivery { background:#EAF4FD; color:var(--celeste); border-color:#C9DBEC; }
+.comanda-tipo.retiro { background:#F4F1FE; color:#5B3FC4; border-color:#DCD3FA; }
+.comanda-para { margin-top:6px; font-size:12.5px; color:var(--navy); }
+.comanda hr { border:none; border-top:1px dashed var(--line); margin:10px 0; }
+.comanda-cliente { font-weight:700; color:var(--celeste); }
+.comanda-dato { font-size:12px; color:var(--text-mute); margin-top:2px; line-height:1.45; }
+.comanda-dato a { color:inherit; }
+.comanda-mapa { display:block; margin-top:8px; border-radius:8px; overflow:hidden; border:1px solid var(--line); height:130px; background:#E9EEF4; }
+.comanda-mapa iframe { width:100%; height:100%; border:0; pointer-events:none; }
+.comanda-items { width:100%; border-collapse:collapse; }
+.comanda-items td { padding:2px 0; border:none; font-size:12.5px; vertical-align:top; }
+.comanda-items td:last-child { text-align:right; white-space:nowrap; padding-left:8px; }
+.comanda-aclara { margin-top:7px; padding:5px 8px; background:#FEF6E7; border-radius:6px; color:#8A5200; font-size:12px; font-style:italic; }
+.comanda-total { display:flex; justify-content:space-between; font-weight:800; font-size:15px; color:var(--navy); }
+.comanda-pago { text-align:right; font-size:12px; color:var(--text-mute); margin-top:1px; }
+.comanda-acciones { display:flex; gap:6px; margin-top:11px; }
+.comanda-acciones .principal { flex:1; border:none; border-radius:8px; padding:10px; font-weight:700; font-size:13px; color:#fff; cursor:pointer; font-family:inherit; }
+.comanda-acciones .chico { border:1px solid var(--line); background:var(--surface); border-radius:8px; padding:0 11px; cursor:pointer; font-size:14px; }
+.comanda-acciones .chico.peligro { color:var(--danger); }
+@media (max-width: 900px) {
+  /* En el celular las tres columnas no entran una al lado de la otra: se
+     desliza de costado, una columna por pantalla. */
+  .comandas-tablero { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:10px; padding-bottom:6px; }
+  .comandas-col { flex:0 0 86%; scroll-snap-align:start; }
+}
 </style>
 <link rel="stylesheet" href="dashboard-motion.css">
 </head>
@@ -2056,6 +2104,29 @@ tr:last-child td { border-bottom: none; }
 
     <!-- PEDIDOS -->
     <div id="pedidosView" class="hidden">
+      <!-- Tablero de comandas: solo gastronomia. Ver renderComandas. -->
+      <div id="comandasPanel" class="hidden">
+        <div class="comandas-top">
+          <h2>Comandas</h2>
+          <span class="comandas-vivo"><span class="punto"></span> En vivo</span>
+          <span class="comandas-activos" id="comandasActivos"></span>
+        </div>
+        <div class="comandas-tablero">
+          <section class="comandas-col" data-etapa="nuevo">
+            <header><span class="punto" style="background:#DC2626;"></span> Nuevo <b id="comandasCuentaNuevo"></b></header>
+            <div class="comandas-lista" id="comandasNuevo"></div>
+          </section>
+          <section class="comandas-col" data-etapa="en_preparacion">
+            <header><span class="punto" style="background:#D97706;"></span> En preparación <b id="comandasCuentaPrep"></b></header>
+            <div class="comandas-lista" id="comandasPrep"></div>
+          </section>
+          <section class="comandas-col" data-etapa="listo">
+            <header><span class="punto" style="background:#1FA088;"></span> Listo para retirar <b id="comandasCuentaListo"></b></header>
+            <div class="comandas-lista" id="comandasListo"></div>
+          </section>
+        </div>
+      </div>
+
       <div class="pulso pronto hidden" id="avisoPendientes" style="display:block;"></div>
 
       <div class="panel">
@@ -14511,6 +14582,8 @@ function renderOrders() {
   cuerpo.querySelectorAll('[data-ticket-pedido]').forEach(b =>
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketPedido)));
 
+  renderComandas();
+
   // Aviso arriba de la tabla cuando hay pedidos esperando respuesta
   const pendientes = pedidosTodos.filter(o => estadoPedido(o) === 'pendiente').length;
   const aviso = byId('avisoPendientes');
@@ -14525,6 +14598,234 @@ function renderOrders() {
     }
   }
 }
+
+// ===================== TABLERO DE COMANDAS (gastronomia) =====================
+// Nuevo -> En preparacion -> Listo para retirar, una tarjeta por pedido con
+// el mapa de la direccion, como lo usan las pizzerias y hamburgueserias.
+//
+// La etapa de cocina va en su propia columna (orders.etapa, schema 56) y no
+// en 'estado': 'estado' decide si el pedido cuenta como venta y de eso
+// cuelgan el stock y la caja. Un pedido 'pendiente' sin etapa es "Nuevo";
+// al aceptarlo se confirma (descuenta stock, pide la hora, saca el ticket)
+// y pasa a En preparacion en el mismo update.
+
+// Pasadas 24 h una comanda ya no es de este turno: si nadie la marco como
+// entregada, igual sale del tablero (sigue en la lista de abajo).
+const COMANDA_VIGENCIA_MS = 24 * 3600 * 1000;
+const COMANDAS_CADA_MS = 20000;
+let comandasFirma = null;
+let comandasVistas = null;   // ids de "Nuevo" ya mostrados, para el aviso sonoro
+
+// select('*') trae la clave 'etapa' (aunque sea null) solo si la columna
+// existe. Sin la migracion 56 el tablero muestra los nuevos igual, pero no
+// hay donde guardar en que etapa esta cada uno.
+const hayColumnaEtapa = () => pedidosTodos.some(o => 'etapa' in o);
+
+function etapaDeComanda(o) {
+  const e = estadoPedido(o);
+  if (e === 'cancelado') return null;
+  if (Date.now() - new Date(o.created_at).getTime() > COMANDA_VIGENCIA_MS) return null;
+  if (o.etapa) return o.etapa === 'entregado' ? null : o.etapa;
+  return e === 'pendiente' ? 'nuevo' : null;
+}
+
+function haceCuanto(iso) {
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return 'hace menos de un minuto';
+  if (min < 60) return 'hace ' + min + ' min';
+  const h = Math.floor(min / 60);
+  return 'hace ' + h + ' h' + (min % 60 ? ' ' + (min % 60) + ' min' : '');
+}
+
+function tarjetaComanda(o, etapa) {
+  const numero = '#' + String(o.id).replace(/-/g, '').slice(0, 6).toUpperCase();
+  const tipo = o.tipo_entrega === 'delivery'
+    ? '<span class="comanda-tipo delivery">🛵 Delivery</span>'
+    : o.tipo_entrega === 'retiro'
+      ? '<span class="comanda-tipo retiro">🏪 Retira</span>'
+      : '';
+  const tel = String(o.customer_phone || '').replace(/\D/g, '');
+  const telHtml = (tel && tel !== '0' && o.customer_phone !== 'scanner')
+    ? '<div class="comanda-dato"><a href="https://wa.me/' + numeroWhatsApp(o.customer_phone) + '" target="_blank">' +
+        escapeHtml(o.customer_phone) + '</a></div>'
+    : '';
+
+  // El mapa es el embed publico de Google Maps (no pide clave). Tocarlo
+  // abre la direccion en Maps, que es lo que hace el cadete.
+  const dir = o.direccion ? String(o.direccion) : '';
+  const mapa = dir
+    ? '<div class="comanda-dato">📍 ' + escapeHtml(dir) + '</div>' +
+      (o.direccion_detalle ? '<div class="comanda-dato">' + escapeHtml(o.direccion_detalle) + '</div>' : '') +
+      '<a class="comanda-mapa" href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(dir) +
+        '" target="_blank" title="Abrir en Google Maps">' +
+        '<iframe loading="lazy" tabindex="-1" src="https://maps.google.com/maps?q=' + encodeURIComponent(dir) +
+        '&z=15&output=embed"></iframe></a>'
+    : '';
+
+  const items = Array.isArray(o.items) ? o.items : [];
+  const filas = items.map(it => {
+    const qty = Number(it.qty || 1);
+    const precio = Number(it.price || 0) * qty;
+    return '<tr><td>' + qty + 'x ' + escapeHtml(nombreDelItem(it) + detalleDelItem(it)) + '</td>' +
+      '<td>' + (precio ? money(precio) : '') + '</td></tr>';
+  }).join('');
+
+  const para = o.hora_entrega
+    ? '<div class="comanda-para">⏰ Para las <b>' + horaEntregaTexto(o.hora_entrega) + '</b></div>'
+    : '';
+
+  let acciones = '';
+  const ticket = '<button class="chico" data-comanda-ticket="' + o.id + '" title="Imprimir comanda">🧾</button>';
+  if (etapa === 'nuevo') {
+    acciones = '<button class="principal" style="background:#DC2626;" data-comanda-aceptar="' + o.id + '">Aceptar y preparar</button>' +
+      ticket + '<button class="chico peligro" data-comanda-rechazar="' + o.id + '" title="Rechazar">✕</button>';
+  } else if (etapa === 'en_preparacion') {
+    acciones = '<button class="principal" style="background:var(--warn);" data-comanda-etapa="' + o.id + '" data-de="en_preparacion" data-a="listo">Listo ✓</button>' + ticket;
+  } else if (etapa === 'listo') {
+    acciones = '<button class="principal" style="background:var(--stock);" data-comanda-etapa="' + o.id + '" data-de="listo" data-a="entregado">Entregado</button>' +
+      '<button class="chico" data-comanda-etapa="' + o.id + '" data-de="listo" data-a="en_preparacion" title="Volver a En preparación">↩</button>';
+  }
+
+  return '<div class="comanda' + (etapa === 'nuevo' ? ' es-nueva' : '') + '" data-comanda="' + o.id + '">' +
+    '<div class="comanda-cab"><div><div class="comanda-num">' + numero + '</div>' +
+      '<div class="comanda-hace" data-hace="' + escapeHtml(o.created_at) + '">' + haceCuanto(o.created_at) + '</div></div>' +
+      tipo + '</div>' +
+    para +
+    '<hr>' +
+    '<div class="comanda-cliente">' + escapeHtml(o.customer_name || 'Sin nombre') + '</div>' +
+    telHtml + mapa +
+    '<hr>' +
+    '<table class="comanda-items">' + filas + '</table>' +
+    (o.aclaraciones ? '<div class="comanda-aclara">"' + escapeHtml(o.aclaraciones) + '"</div>' : '') +
+    '<hr>' +
+    '<div class="comanda-total"><span>TOTAL</span><span>' + money(o.total) + '</span></div>' +
+    (o.medio_pago ? '<div class="comanda-pago">' + escapeHtml(o.medio_pago) + '</div>' : '') +
+    '<div class="comanda-acciones">' + acciones + '</div>' +
+  '</div>';
+}
+
+function renderComandas() {
+  const panel = byId('comandasPanel');
+  if (!panel) return;
+  if (!rubroEsComida()) { hide(panel); return; }
+  show(panel);
+
+  const porEtapa = { nuevo: [], en_preparacion: [], listo: [] };
+  pedidosTodos.forEach(o => {
+    const e = etapaDeComanda(o);
+    if (porEtapa[e]) porEtapa[e].push(o);
+  });
+  // Los nuevos, el mas viejo arriba (es el que mas espera). Los que ya
+  // estan en la cocina, por hora de entrega como la lista de abajo.
+  const porHora = (a, b) =>
+    new Date(a.hora_entrega || a.created_at) - new Date(b.hora_entrega || b.created_at);
+  porEtapa.nuevo.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  porEtapa.en_preparacion.sort(porHora);
+  porEtapa.listo.sort(porHora);
+
+  const activos = porEtapa.nuevo.length + porEtapa.en_preparacion.length + porEtapa.listo.length;
+  byId('comandasActivos').textContent = activos + (activos === 1 ? ' activo' : ' activos');
+  byId('comandasCuentaNuevo').textContent = porEtapa.nuevo.length || '';
+  byId('comandasCuentaPrep').textContent = porEtapa.en_preparacion.length || '';
+  byId('comandasCuentaListo').textContent = porEtapa.listo.length || '';
+
+  // Aviso sonoro solo por pedidos que no estaban en la vuelta anterior
+  // (no al abrir el panel con pedidos que ya estaban).
+  const idsNuevos = porEtapa.nuevo.map(o => String(o.id));
+  const recien = comandasVistas ? idsNuevos.filter(id => !comandasVistas.has(id)) : [];
+  comandasVistas = new Set(idsNuevos);
+  if (recien.length) sonarComandaNueva();
+
+  // Se redibuja solo si algo cambio: si no, cada vuelta del "en vivo"
+  // recargaria los mapas y la pantalla parpadearia.
+  const firma = JSON.stringify(Object.values(porEtapa).map(l =>
+    l.map(o => [o.id, o.etapa, o.estado, o.hora_entrega, o.total])));
+  if (firma === comandasFirma) {
+    panel.querySelectorAll('[data-hace]').forEach(el => { el.textContent = haceCuanto(el.dataset.hace); });
+    return;
+  }
+  comandasFirma = firma;
+
+  const pintar = (cont, lista, etapa, vacio) => {
+    byId(cont).innerHTML = lista.map(o => tarjetaComanda(o, etapa)).join('') ||
+      '<div class="comandas-vacio">' + vacio + '</div>';
+  };
+  pintar('comandasNuevo', porEtapa.nuevo, 'nuevo', 'Sin pedidos nuevos');
+  pintar('comandasPrep', porEtapa.en_preparacion, 'en_preparacion', 'Sin pedidos');
+  pintar('comandasListo', porEtapa.listo, 'listo', 'Sin pedidos');
+
+  recien.forEach(id => panel.querySelector('[data-comanda="' + id + '"]')?.classList.add('recien'));
+
+  panel.querySelectorAll('[data-comanda-aceptar]').forEach(b =>
+    b.addEventListener('click', () => cambiarEstadoPedido(b.dataset.comandaAceptar, 'confirmado')));
+  panel.querySelectorAll('[data-comanda-rechazar]').forEach(b =>
+    b.addEventListener('click', () => {
+      if (confirm('¿Rechazar este pedido?\n\nNo cuenta como venta.')) {
+        cambiarEstadoPedido(b.dataset.comandaRechazar, 'cancelado');
+      }
+    }));
+  panel.querySelectorAll('[data-comanda-etapa]').forEach(b =>
+    b.addEventListener('click', () => moverComanda(b.dataset.comandaEtapa, b.dataset.de, b.dataset.a)));
+  panel.querySelectorAll('[data-comanda-ticket]').forEach(b =>
+    b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.comandaTicket)));
+}
+
+async function moverComanda(id, de, a) {
+  if (!puedeOperar()) return;
+  if (!hayColumnaEtapa()) {
+    alert('Para mover las comandas falta correr schema/56-comandas.sql en Supabase.');
+    return;
+  }
+  // Mismo cuidado que cambiarEstadoPedido: solo si sigue en la etapa que
+  // vimos, por si otro aparato (la caja y la cocina) ya lo movio.
+  const { data, error } = await sb.from('orders').update({ etapa: a })
+    .eq('id', id).eq('etapa', de).select('id');
+  if (error) {
+    alert('No se pudo mover el pedido:\n\n' + humano(error));
+    return;
+  }
+  if (!data || !data.length) {
+    await refrescarComandas();   // ya lo habian movido desde otro lado
+    return;
+  }
+  const pedido = pedidosTodos.find(o => String(o.id) === String(id));
+  if (pedido) pedido.etapa = a;
+  renderComandas();
+}
+
+function sonarComandaNueva() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.22].forEach(t => {
+      const osc = ctx.createOscillator();
+      const vol = ctx.createGain();
+      osc.frequency.value = 880;
+      vol.gain.setValueAtTime(0.25, ctx.currentTime + t);
+      vol.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.18);
+      osc.connect(vol).connect(ctx.destination);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch (e) { /* sin audio no pasa nada: la tarjeta igual aparece */ }
+}
+
+// "En vivo": mientras el tablero esta a la vista se traen solo los pedidos
+// cada 20 s, sin el refresh entero del panel.
+async function refrescarComandas() {
+  if (!currentStore) return;
+  const { data, error } = await sb.from('orders').select('*')
+    .eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  if (error || !data) return;
+  guardarPedidos(data);
+  renderOrders();
+}
+
+setInterval(() => {
+  if (document.hidden) return;
+  if (!byId('pedidosView')?.classList.contains('visible')) return;
+  if (byId('comandasPanel')?.classList.contains('hidden')) return;
+  refrescarComandas();
+}, COMANDAS_CADA_MS);
 
 // Suma o resta stock por un ítem de pedido. signo -1 = descontar (al
 // confirmar), +1 = devolver (al anular). Contempla productos con variantes
@@ -14649,7 +14950,9 @@ async function eliminarPedido(id) {
   await refreshData();
 }
 
-async function cambiarEstadoPedido(id, nuevo) {
+// 'extra' viaja en el MISMO update que el estado. Lo usa el tablero de
+// comandas: "Aceptar y preparar" confirma y pasa a En preparacion de una.
+async function cambiarEstadoPedido(id, nuevo, extra = {}) {
   const pedido = pedidosTodos.find(o => String(o.id) === String(id));
   if (!pedido) return;
 
@@ -14692,7 +14995,14 @@ async function cambiarEstadoPedido(id, nuevo) {
   // no hacía nada.
   // La hora viaja en el MISMO update que el estado: si fueran dos, un
   // pedido podria quedar confirmado sin hora si el segundo falla.
-  const cambiosPedido = { estado: nuevo };
+  // En gastronomia, confirmar un pedido es mandarlo a la cocina: pasa a
+  // En preparacion en el tablero de comandas, se confirme desde el
+  // tablero o desde la lista. Solo si ya existe la columna (schema 56).
+  if (anterior === 'pendiente' && nuevo === 'confirmado' && rubroEsComida() &&
+      hayColumnaEtapa() && !('etapa' in extra)) {
+    extra = { ...extra, etapa: 'en_preparacion' };
+  }
+  const cambiosPedido = { estado: nuevo, ...extra };
   if (horaConfirmada) cambiosPedido.hora_entrega = horaConfirmada;
 
   const { data, error } = await sb.from('orders')
@@ -14702,7 +15012,8 @@ async function cambiarEstadoPedido(id, nuevo) {
     .select('id');
 
   if (error) {
-    alert('No se pudo actualizar el pedido:\n\n' + humano(error));
+    alert('No se pudo actualizar el pedido:\n\n' + humano(error) +
+          (extra.etapa ? '\n\n(Si dice que falta la columna, correr schema/56-comandas.sql en Supabase.)' : ''));
     return;
   }
   if (!data || !data.length) {
