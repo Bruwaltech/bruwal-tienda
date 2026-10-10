@@ -429,6 +429,20 @@
   }
   #map .leaflet-popup-content-wrapper { border: 1px solid #26354F; border-radius: 12px; }
   #map .leaflet-popup-content a { color: #5BB0F5; font-weight: 600; }
+  #map .leaflet-popup-content { margin: 12px 14px; }
+  .popup-tienda { display: flex; align-items: center; gap: 12px; min-width: 170px; }
+  .popup-tienda b { display: block; font-size: 14px; margin-bottom: 3px; }
+  .popup-logo {
+    position: relative; overflow: hidden;
+    width: 48px; height: 48px; flex: 0 0 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #2F8FE0, #1FD1A5); color: #fff;
+    font-size: 20px; font-weight: 800;
+  }
+  .popup-logo img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; background: #fff;
+  }
   #map a.leaflet-popup-close-button { color: #8FA3BF; }
   #map .leaflet-bar a {
     background: #162033; color: #E6EDF7; border-bottom-color: #26354F;
@@ -1927,6 +1941,20 @@ function initMap() {
   }).addTo(map);
 }
 
+// El globito del pin: logo de la tienda (o su inicial si no cargó logo),
+// nombre y el enlace para entrar.
+function popupTienda(store) {
+  // La inicial queda siempre abajo; si hay logo y carga, lo tapa. Si el
+  // link del logo está roto, la imagen se saca sola y queda la inicial.
+  const inicial = escapeHtml((store.business_name || '?').trim().charAt(0).toUpperCase());
+  const logo = /^(https?:|data:image\/)/i.test(store.image_url || '')
+    ? '<img src="' + escapeHtml(store.image_url) + '" alt="" loading="lazy" onerror="this.remove()">'
+    : '';
+  return '<div class="popup-tienda"><span class="popup-logo">' + inicial + logo + '</span>' +
+    '<div><b>' + escapeHtml(store.business_name) + '</b>' +
+    '<a href="/' + encodeURIComponent(store.slug) + '" target="_blank">Ver tienda &rarr;</a></div></div>';
+}
+
 function iconoTienda(activa) {
   return L.divIcon({
     className: '',
@@ -1946,10 +1974,8 @@ function addMapMarkers() {
     const coords = storeCoords(store);
     if (!coords) return; // sin ubicacion cargada: no inventamos un pin
 
-    const marker = L.marker(coords, { icon: iconoTienda(selectedStore?.id === store.id) }).addTo(map).bindPopup(
-      '<b>' + escapeHtml(store.business_name) + '</b><br>' +
-      '<a href="/' + store.slug + '" target="_blank">Ver tienda &rarr;</a>'
-    );
+    const marker = L.marker(coords, { icon: iconoTienda(selectedStore?.id === store.id) })
+      .addTo(map).bindPopup(popupTienda(store));
     marker.on('click', () => selectStore(store.id));
     marker.tiendaId = store.id;
     markers.push(marker);
