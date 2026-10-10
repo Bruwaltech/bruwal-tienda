@@ -655,6 +655,62 @@ tr.fila-elegida > td { background:#EAF4FD; }
   margin-bottom: 14px;
 }
 
+/* Interruptor deslizable (on/off). Es el mismo <input type="checkbox">
+   de siempre, solo cambia cómo se ve: el JS sigue leyendo .checked y
+   escuchando 'change'. Referencia visual: switch de 21st.dev (pista con
+   degradé y perilla con rebote suave). */
+input[type="checkbox"].switch {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #CBD5E1;
+  box-shadow: inset 0 1px 2px rgba(21, 41, 77, 0.18);
+  cursor: pointer;
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+  vertical-align: middle;
+}
+input[type="checkbox"].switch::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(21, 41, 77, 0.3);
+  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.2s ease;
+}
+input[type="checkbox"].switch:active::before { width: 24px; }
+input[type="checkbox"].switch:checked:active::before { transform: translateX(14px); }
+input[type="checkbox"].switch:checked {
+  background: linear-gradient(135deg, var(--stock), #22B89C);
+}
+input[type="checkbox"].switch:checked::before { transform: translateX(18px); }
+input[type="checkbox"].switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(47, 143, 224, 0.35);
+}
+/* La fila del interruptor se lee como una opción, no como título de campo */
+.field label:has(> input.switch) {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+input[type="checkbox"].switch:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  input[type="checkbox"].switch, input[type="checkbox"].switch::before { transition: none; }
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;
@@ -2939,11 +2995,11 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field" id="campoMostrarPrecio">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pMostrarPrecio" checked style="margin:0;width:auto;cursor:pointer;">
+            <input type="checkbox" role="switch" class="switch" id="pMostrarPrecio" checked>
             Mostrar el precio en la tienda pública
           </label>
           <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;">
-            Si lo destildás, el cliente ve "Consultar precio" en vez del número — vos lo seguís viendo acá normal.
+            Si lo apagás, el cliente ve "Consultar precio" en vez del número — vos lo seguís viendo acá normal.
           </small>
         </div>
 
@@ -2953,18 +3009,18 @@ tr:last-child td { border-bottom: none; }
              pizzas (las variantes de comida arrancan en 9999). -->
         <div class="field hidden" id="campoPausado">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pPausado" style="margin:0;width:auto;cursor:pointer;">
+            <input type="checkbox" role="switch" class="switch" id="pPausado">
             🚫 Hoy no hay — no lo muestres en la tienda
           </label>
           <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Sigue cargado con su precio y su foto: el cliente lo ve en gris, como
-            <strong>No disponible</strong>, y no lo puede pedir. Lo destildás mañana y vuelve.
+            <strong>No disponible</strong>, y no lo puede pedir. Lo apagás mañana y vuelve.
           </small>
         </div>
 
         <div class="field hidden" id="campoServicioInterno">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pServicioInterno" style="margin:0;width:auto;cursor:pointer;">
+            <input type="checkbox" role="switch" class="switch" id="pServicioInterno">
             🔒 Este servicio también es de uso interno (no se ofrece directo al cliente)
           </label>
         </div>
@@ -3139,11 +3195,11 @@ tr:last-child td { border-bottom: none; }
         <div id="camposEquipoUnico">
           <div class="field campo-electronica hidden">
             <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-              <input type="checkbox" id="pPendienteRestauracion" style="margin:0;width:auto;cursor:pointer;">
+              <input type="checkbox" role="switch" class="switch" id="pPendienteRestauracion">
               🔧 Pendiente de restauración
             </label>
             <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;">
-              Se marca sola en los equipos tomados en parte de pago. Destildala cuando ya lo revisaste y quedó listo para vender.
+              Se marca sola en los equipos tomados en parte de pago. Apagalo cuando ya lo revisaste y quedó listo para vender.
             </small>
           </div>
           <div class="field campo-electronica hidden">
@@ -3185,7 +3241,7 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field hidden" id="campoVentaPorMedidaToggle">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pVentaPorMedida" style="margin:0;width:auto;cursor:pointer;">
+            <input type="checkbox" role="switch" class="switch" id="pVentaPorMedida">
             📏 Se vende por medida, no por unidad
           </label>
           <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -3260,8 +3316,8 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field hidden" id="campoVariantesToggle">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="pTieneVariantes" style="margin:0;width:auto;cursor:pointer;">
-            Este producto tiene variantes <span id="variTipoParentesis">(talle, color...)</span>
+            <input type="checkbox" role="switch" class="switch" id="pTieneVariantes">
+            <span>Este producto tiene variantes <span id="variTipoParentesis">(talle, color...)</span></span>
           </label>
           <small id="variTipoAyuda" style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Cada combinación lleva su propio stock. "Remera talle M" y
@@ -4520,7 +4576,7 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field hidden" id="campoConfigHaceReparaciones" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="configHaceReparaciones" style="margin:0;cursor:pointer;width:auto;">
+            <input type="checkbox" role="switch" class="switch" id="configHaceReparaciones">
             📱 Hago reparaciones de celulares/electrónica
           </label>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -4530,7 +4586,7 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field" id="campoConfigBalanza" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="configBalanzaActiva" style="margin:0;cursor:pointer;width:auto;">
+            <input type="checkbox" role="switch" class="switch" id="configBalanzaActiva">
             ⚖️ Uso balanza etiquetadora (Systel, Kretz...)
           </label>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -4619,7 +4675,7 @@ tr:last-child td { border-bottom: none; }
         <div class="cfg-corte" data-seccion="Pedidos y pagos"></div>
         <div class="field" id="campoConfigTurnos" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="turnosActivo" style="margin:0;cursor:pointer;width:auto;">
+            <input type="checkbox" role="switch" class="switch" id="turnosActivo">
             Mi negocio trabaja con turnos
           </label>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -4629,7 +4685,7 @@ tr:last-child td { border-bottom: none; }
 
           <div id="turnosConfig" class="hidden" style="margin-top:14px;padding:14px;background:var(--bg);border-radius:10px;">
             <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:14px;">
-              <input type="checkbox" id="turnosPorDia" style="margin:0;cursor:pointer;width:auto;">
+              <input type="checkbox" role="switch" class="switch" id="turnosPorDia">
               Horarios distintos según el día
             </label>
             <small style="display:block;margin:-10px 0 14px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -4670,7 +4726,7 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="hlActivo" style="margin:0;cursor:pointer;width:auto;">
+            <input type="checkbox" role="switch" class="switch" id="hlActivo">
             Mostrar en mi tienda si estoy abierto o cerrado
           </label>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -4689,11 +4745,11 @@ tr:last-child td { border-bottom: none; }
             </button>
 
             <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-top:14px;">
-              <input type="checkbox" id="hlBloquear" style="margin:0;cursor:pointer;width:auto;">
+              <input type="checkbox" role="switch" class="switch" id="hlBloquear">
               No aceptar pedidos con el local cerrado
             </label>
             <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:12px;line-height:1.5;">
-              Si lo dejás destildado el cliente igual puede pedir fuera de hora, avisado
+              Si lo dejás apagado el cliente igual puede pedir fuera de hora, avisado
               de que estás cerrado — sirve para dejar el pedido encargado para cuando abrís.
             </small>
 
@@ -4703,11 +4759,11 @@ tr:last-child td { border-bottom: none; }
 
         <div class="field">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
-            <input type="checkbox" id="configOfreceEnvio" style="margin:0;cursor:pointer;width:auto;">
+            <input type="checkbox" role="switch" class="switch" id="configOfreceEnvio">
             🛵 Hago envíos a domicilio
           </label>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
-            Si lo destildás, en tu tienda el cliente solo puede elegir <b>Retiro por el local</b>.
+            Si lo apagás, en tu tienda el cliente solo puede elegir <b>Retiro por el local</b>.
           </small>
         </div>
 
@@ -24188,7 +24244,7 @@ function renderTurnosPorDia() {
     const titulo = nombre.charAt(0).toUpperCase() + nombre.slice(1);
     return '<div style="padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:8px;">' +
       '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:13px;">' +
-        '<input type="checkbox" data-dia-activo="' + i + '" ' + (d.activo ? 'checked' : '') + ' style="margin:0;cursor:pointer;width:auto;"> ' + titulo +
+        '<input type="checkbox" role="switch" class="switch" data-dia-activo="' + i + '" ' + (d.activo ? 'checked' : '') + '> ' + titulo +
       '</label>' +
       (d.activo ? '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">' +
         d.franjas.map((f, idx) =>
@@ -24412,7 +24468,7 @@ function hlRender() {
     const titulo = nombre.charAt(0).toUpperCase() + nombre.slice(1);
     return '<div style="padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:8px;">' +
       '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:13px;">' +
-        '<input type="checkbox" data-hl-activo="' + i + '" ' + (d.activo ? 'checked' : '') + ' style="margin:0;cursor:pointer;width:auto;"> ' + titulo +
+        '<input type="checkbox" role="switch" class="switch" data-hl-activo="' + i + '" ' + (d.activo ? 'checked' : '') + '> ' + titulo +
       '</label>' +
       (d.activo
         ? '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">' +
