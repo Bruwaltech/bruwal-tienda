@@ -28,6 +28,7 @@
 <!-- La imagen del producto para historias y estados. El mismo archivo que
      usa el panel: si se cambia el diseno, se cambia en un solo lado. -->
 <script src="/imagen-producto.js"></script>
+<script src="/avisos.js"></script>
 <style>
   :root{
     --navy:#15294D; --celeste:#2F8FE0; --celeste-soft:#5DAEF0;
@@ -3064,7 +3065,7 @@ function pintarAliasCheckout() {
       b.textContent = '✓ Copiado';
       setTimeout(() => { b.textContent = 'Copiar'; }, 1500);
     } catch (e) {
-      prompt('Copialo desde acá:', b.dataset.copiar);
+      dialogoCopiar('Copialo desde acá:', b.dataset.copiar);
     }
   }));
 }
