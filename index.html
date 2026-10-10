@@ -399,6 +399,10 @@
     background: #0e1420;
   }
 
+  /* Invertir y girar el color deja el mapa claro en oscuro manteniendo el
+     agua azul y los parques verdes. */
+  #map .tiles-oscuras { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+
   /* ---- Mapa oscuro (referencia: "Location Map" de 21st.dev) ----
      Pines propios en celeste con un pulso suave, y los globitos y los
      controles de Leaflet en oscuro para que no queden blancos encima. */
@@ -1932,12 +1936,13 @@ function storeCoords(store) {
 
 function initMap() {
   map = L.map('map').setView([-38.0, -63.6], 4); // Argentina
-  // Tiles oscuras de CARTO (gratis, sin clave), con los mismos datos de
-  // OpenStreetMap que antes.
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  // Las tiles de siempre de OpenStreetMap, oscurecidas por CSS (ver
+  // .tiles-oscuras). Las oscuras de CARTO pasaron a pedir clave y en
+  // produccion se veia "API KEY REQUIRED" en vez del mapa.
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    subdomains: 'abcd',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    className: 'tiles-oscuras',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 }
 
