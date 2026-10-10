@@ -35,6 +35,7 @@
      precio cambia, cambia en un lado. Va antes del script de abajo porque
      define constantes que ese script usa. -->
 <script src="../planes.js"></script>
+<script src="../avisos.js"></script>
 <!-- La imagen del producto para historias y estados, compartida con la tienda -->
 <script src="../imagen-producto.js"></script>
 <style>
@@ -4984,10 +4985,10 @@ function pedirPrueba() {
   window.open('https://wa.me/' + WHATSAPP_UPGRADE_PRO + '?text=' + encodeURIComponent(msg), '_blank');
 }
 
-function ofrecerUpgradePro(nombreFuncion) {
+async function ofrecerUpgradePro(nombreFuncion) {
   const negocio = (currentStore && (currentStore.business_name || currentStore.slug)) || '';
   const msg = 'Hola! Quiero sumar ' + nombreFuncion + ' (plan Pro) a mi tienda' + (negocio ? ' ' + negocio : '') + '.';
-  if (confirm('🔒 ' + nombreFuncion + ' es parte del plan Pro.\n\n¿Querés escribirnos por WhatsApp para sumarlo?')) {
+  if (await dialogoConfirmar('🔒 ' + nombreFuncion + ' es parte del plan Pro.\n\n¿Querés escribirnos por WhatsApp para sumarlo?')) {
     window.open('https://wa.me/' + WHATSAPP_UPGRADE_PRO + '?text=' + encodeURIComponent(msg), '_blank');
   }
 }
@@ -5705,7 +5706,7 @@ async function valorConvertido(inputId, selectId) {
     // enfrente y no puede guardar el producto hasta que vuelva internet.
     // El panel ya sabe trabajar con una cotizacion cargada a mano, asi
     // que se la pedimos acá mismo en vez de mandarlo a Configuracion.
-    const tipeada = prompt(
+    const tipeada = await dialogoPedir(
       'No pudimos consultar la cotización del ' + moneda + ' (puede ser la señal).\n\n' +
       '¿A cuánto está el ' + moneda + ' hoy? Escribilo y seguimos.\n' +
       'Queda guardado hasta que lo borres desde Configuración.');
@@ -5716,7 +5717,7 @@ async function valorConvertido(inputId, selectId) {
     // de 800 dólares quedaba publicado en $1.200 en vez de $1.200.000.
     const valor = numeroArgentino(tipeada);
     if (!Number.isFinite(valor) || valor <= 0) {
-      alert('Esa cotización no se entiende. Probá de nuevo, o cargá el precio directo en pesos.');
+      dialogoAviso('Esa cotización no se entiende. Probá de nuevo, o cargá el precio directo en pesos.');
       return null;
     }
 
@@ -5725,7 +5726,7 @@ async function valorConvertido(inputId, selectId) {
     // previmos -- se ve acá, en pesos, y no después con el producto ya
     // publicado a mil veces menos.
     const enPesos = Math.round(monto * valor);
-    if (!confirm('Tomamos ' + money(valor) + ' por ' + moneda + '.' + '\n\n' +
+    if (!await dialogoConfirmar('Tomamos ' + money(valor) + ' por ' + moneda + '.' + '\n\n' +
                  'Este producto queda en ' + money(enPesos) + '.' + '\n\n' +
                  '¿Va así?')) return null;
 
@@ -6337,11 +6338,11 @@ function alCambiarCategoria() {
 
 // El <select> agrega y se vuelve a poner en blanco: es un boton con lista,
 // no un campo con valor. Dejarlo marcado haria creer que esa es LA categoria.
-byId('pCatExtraSel').addEventListener('change', (e) => {
+byId('pCatExtraSel').addEventListener('change', async (e) => {
   const v = e.target.value;
   if (!v) return;
   if (v === '__nueva') {
-    const nombre = window.prompt('Nombre de la categor\u00eda nueva:');
+    const nombre = await dialogoPedir('Nombre de la categor\u00eda nueva:');
     if (nombre !== null) sumarCatExtra(nombre);
     renderCatsExtra();
     return;
@@ -6467,7 +6468,7 @@ byId('guardarCategoriasBtn').addEventListener('click', async () => {
     .eq('slug', currentStore.slug);
 
   if (error) {
-    alert('No se pudieron guardar las categorías: ' + humano(error));
+    dialogoAviso('No se pudieron guardar las categorías: ' + humano(error));
     return;
   }
 
@@ -6887,7 +6888,7 @@ async function renombrarCategoria(nombreViejo) {
   const caminos = caminosQueEmpiezanEn(nombreViejo);
   const estantes = caminos.filter(c => claveCat(c) !== claveCat(nombreViejo));
 
-  const propuesto = window.prompt(
+  const propuesto = await dialogoPedir(
     'Nuevo nombre para \u201c' + nombreViejo + '\u201d:' +
     (estantes.length
       ? '\n\nSe renombra tambi\u00e9n adentro de sus ' + estantes.length +
@@ -6908,7 +6909,7 @@ async function renombrarCategoria(nombreViejo) {
 
   // Renombrar a algo que ya existe es unificar. No es un error, pero tiene
   // que decirlo antes: son dos categorias que se vuelven una sola.
-  if (yaExiste && !confirm(
+  if (yaExiste && !await dialogoConfirmar(
       'Ya ten\u00e9s una categor\u00eda \u201c' + nuevo + '\u201d.\n\n' +
       'Se van a juntar en una sola, con estos ' + cuantos.size + ' productos adentro. \u00bfSeguimos?')) return;
 
@@ -6918,7 +6919,7 @@ async function renombrarCategoria(nombreViejo) {
     const ids = productosDeCategoria(viejo).map(p => p.id);
     if (!ids.length) continue;
     const error = await reasignarCategorias(ids, viejo, caminoRenombrado(viejo, nombreViejo, nuevo), false);
-    if (error) { alert('No se pudo renombrar:\n\n' + humano(error)); return; }
+    if (error) { dialogoAviso('No se pudo renombrar:\n\n' + humano(error)); return; }
   }
 
   // La lista del perfil (el orden que eligio el vendedor) se renombra en el
@@ -6956,7 +6957,7 @@ async function unificarGrupo(indice) {
     error = await reasignarCategorias(ids, c.nombre, principal, false);
     if (error) break;
   }
-  if (error) { alert('No se pudieron unificar:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudieron unificar:\n\n' + humano(error)); return; }
 
   const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : [])
     .filter(c => g.slice(1).every(x => claveCat(c) !== claveCat(x.nombre) || claveCat(c) === claveCat(principal)));
@@ -7022,12 +7023,12 @@ byId('acomMoverBtn').addEventListener('click', async () => {
   let destino;
   if (valor === '__nueva') {
     destino = byId('acomDestinoNueva').value.trim();
-    if (!destino) { alert('Escrib\u00ed el nombre de la categor\u00eda nueva.'); return; }
+    if (!destino) { dialogoAviso('Escrib\u00ed el nombre de la categor\u00eda nueva.'); return; }
   } else if (valor === '__sin') {
     destino = null;
   } else {
     destino = acomDestinos[Number(valor)];
-    if (!destino) { alert('Eleg\u00ed a d\u00f3nde mover los productos.'); return; }
+    if (!destino) { dialogoAviso('Eleg\u00ed a d\u00f3nde mover los productos.'); return; }
   }
 
   const btn = byId('acomMoverBtn');
@@ -7042,7 +7043,7 @@ byId('acomMoverBtn').addEventListener('click', async () => {
   btn.disabled = false;
   btn.textContent = textoAntes;
 
-  if (error) { alert('No se pudieron mover:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudieron mover:\n\n' + humano(error)); return; }
 
   if (destino) {
     const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).slice();
@@ -8421,7 +8422,7 @@ function renderImeisDeVariante(clave) {
       if (!unidad || !unidad.imei) { renderImeisDeVariante(clave2); return; }
       const repetidoAca = variante.imeis.some((u, j) => j !== idx && u.imei === unidad.imei);
       const repetidoEnOtra = variantesEnEdicion.some(x => x !== variante && (x.imeis || []).some(u => u.imei === unidad.imei));
-      if (repetidoAca || repetidoEnOtra) alert('Ese IMEI ya está cargado en otra unidad — corregilo antes de guardar.');
+      if (repetidoAca || repetidoEnOtra) dialogoAviso('Ese IMEI ya está cargado en otra unidad — corregilo antes de guardar.');
       renderImeisDeVariante(clave2);
     });
   });
@@ -8456,9 +8457,9 @@ function agregarImeiAVariante(clave) {
   if (!v) return;
   if (!v.imeis) v.imeis = [];
 
-  if (v.imeis.some(u => u.imei === imei)) { alert('Ese IMEI ya está cargado en esta misma variante.'); return; }
+  if (v.imeis.some(u => u.imei === imei)) { dialogoAviso('Ese IMEI ya está cargado en esta misma variante.'); return; }
   if (variantesEnEdicion.some(x => x !== v && (x.imeis || []).some(u => u.imei === imei))) {
-    alert('Ese IMEI ya está cargado en otra variante de este producto.');
+    dialogoAviso('Ese IMEI ya está cargado en otra variante de este producto.');
     return;
   }
 
@@ -8991,8 +8992,8 @@ if (byId('agregarUsadoEnBtn')) {
   byId('agregarUsadoEnBtn').addEventListener('click', () => {
     const id = byId('usadoEnServicio').value;
     const cantidad = Number(String(byId('usadoEnCantidad').value).replace(',', '.'));
-    if (!id) { alert('Eleg\u00ed en qu\u00e9 servicio se gasta.'); return; }
-    if (!Number.isFinite(cantidad) || cantidad <= 0) { alert('La cantidad tiene que ser mayor que 0.'); return; }
+    if (!id) { dialogoAviso('Eleg\u00ed en qu\u00e9 servicio se gasta.'); return; }
+    if (!Number.isFinite(cantidad) || cantidad <= 0) { dialogoAviso('La cantidad tiene que ser mayor que 0.'); return; }
     usadoEnEnEdicion.push({ servicio_id: id, cantidad });
     byId('usadoEnCantidad').value = '1';
     renderUsadoEn();
@@ -9033,8 +9034,8 @@ if (byId('agregarInsumoBtn')) {
   byId('agregarInsumoBtn').addEventListener('click', () => {
     const id = byId('insumoProducto').value;
     const cantidad = Number(String(byId('insumoCantidad').value).replace(',', '.'));
-    if (!id) { alert('Elegí qué producto se gasta.'); return; }
-    if (!Number.isFinite(cantidad) || cantidad <= 0) { alert('La cantidad tiene que ser mayor que 0.'); return; }
+    if (!id) { dialogoAviso('Elegí qué producto se gasta.'); return; }
+    if (!Number.isFinite(cantidad) || cantidad <= 0) { dialogoAviso('La cantidad tiene que ser mayor que 0.'); return; }
 
     // Si ya estaba, se suma en vez de duplicar la fila.
     const existente = insumosEnEdicion.find(x => String(x.producto_id) === String(id));
@@ -9182,7 +9183,7 @@ byId('nuevaClaveForm').addEventListener('submit', async (e) => {
 
   enRecuperacion = false;
   hide(byId('nuevaClaveForm'));
-  alert('✓ Contraseña actualizada. Ya podés usarla para entrar.');
+  dialogoAviso('✓ Contraseña actualizada. Ya podés usarla para entrar.');
   await onLoggedIn();
 });
 
@@ -10109,7 +10110,7 @@ async function sincronizarStockEnMl(fila, boton) {
 
   // Esto cambia una publicacion en vivo: se pregunta, y se dice exactamente
   // que numero va a quedar.
-  if (!confirm('\u00bfPoner ' + fila.local + ' unidad' + (fila.local === 1 ? '' : 'es') +
+  if (!await dialogoConfirmar('\u00bfPoner ' + fila.local + ' unidad' + (fila.local === 1 ? '' : 'es') +
                ' en Mercado Libre?\n\n' + fila.titulo + '\n' +
                'Ahora figura con ' + fila.ml + '.')) return;
 
@@ -10124,7 +10125,7 @@ async function sincronizarStockEnMl(fila, boton) {
     });
 
     if (!r.ok) {
-      alert('No se pudo:\n\n' + (r.motivo || 'Error desconocido.'));
+      dialogoAviso('No se pudo:\n\n' + (r.motivo || 'Error desconocido.'));
       boton.disabled = false;
       boton.textContent = 'Poner ' + fila.local + ' en ML';
       return;
@@ -10133,12 +10134,12 @@ async function sincronizarStockEnMl(fila, boton) {
     // Lo que se informa es lo que quedo segun Mercado Libre, no lo que
     // pedimos: si acepto pero dejo otro numero, hay que verlo.
     if (r.quedo !== null && r.quedo !== r.pedida) {
-      alert('Mercado Libre acept\u00f3 el cambio pero qued\u00f3 en ' + r.quedo +
+      dialogoAviso('Mercado Libre acept\u00f3 el cambio pero qued\u00f3 en ' + r.quedo +
             ', no en ' + r.pedida + '.');
     }
     await verStockCruzado();
   } catch (err) {
-    alert('No se pudo:\n\n' + humano(err));
+    dialogoAviso('No se pudo:\n\n' + humano(err));
     boton.disabled = false;
     boton.textContent = 'Poner ' + fila.local + ' en ML';
   }
@@ -10428,7 +10429,7 @@ async function importarVentaMl(idOrden, total, boton) {
   if (!puedeOperar()) return;
 
   // Traerla mueve stock y anota la comision: se pregunta antes.
-  if (!confirm('\u00bfTraer esta venta de ' + money(Math.round(total)) + ' a BRUWAL?\n\n' +
+  if (!await dialogoConfirmar('\u00bfTraer esta venta de ' + money(Math.round(total)) + ' a BRUWAL?\n\n' +
                'Se registra el pedido, se descuenta el stock de los productos vinculados ' +
                'y se anota la comisi\u00f3n de Mercado Libre.')) return;
 
@@ -10439,7 +10440,7 @@ async function importarVentaMl(idOrden, total, boton) {
     const r = await llamarApiMl('importar_venta', { ml_order_id: idOrden });
 
     if (!r.ok) {
-      alert(r.ya
+      dialogoAviso(r.ya
         ? 'Esa venta ya estaba registrada en BRUWAL.'
         : 'No se pudo traer:\n\n' + (r.motivo || 'Error desconocido.'));
       boton.disabled = false;
@@ -10457,12 +10458,12 @@ async function importarVentaMl(idOrden, total, boton) {
       detalle += '\n\nOJO: ' + r.sin_vinculo.length + ' publicaci\u00f3n sin vincular, as\u00ed que ' +
                  'ese stock NO se descont\u00f3. Ajustalo a mano y vincul\u00e1 la publicaci\u00f3n.';
     }
-    alert(detalle);
+    dialogoAviso(detalle);
 
     await refreshData();
     await buscarVentasFaltantes();
   } catch (err) {
-    alert('No se pudo traer:\n\n' + humano(err));
+    dialogoAviso('No se pudo traer:\n\n' + humano(err));
     boton.disabled = false;
     boton.textContent = '\u2b07 Traer a BRUWAL';
   }
@@ -10793,7 +10794,7 @@ function pintarSaludAds(r) {
         await llamarApiMl('ads_no_tocar', { campana_id: b.dataset.notocar, valor: b.dataset.valor === '1' });
         await revisarSaludAds(false);
       } catch (err) {
-        alert('No se pudo guardar:\n\n' + humano(err));
+        dialogoAviso('No se pudo guardar:\n\n' + humano(err));
         b.disabled = false;
       }
     });
@@ -10831,7 +10832,7 @@ byId('autoPausarAdsChk').addEventListener('change', async (e) => {
   const activo = e.target.checked;
 
   // Prenderlo apaga publicidad en vivo: se pregunta antes.
-  if (activo && !confirm('\u00bfPausar solas las campa\u00f1as que queman plata?\n\n' +
+  if (activo && !await dialogoConfirmar('\u00bfPausar solas las campa\u00f1as que queman plata?\n\n' +
       'Se pausan las que gastaron sin vender, o las que se pasan un 50% del ACOS que vos pusiste.\n' +
       'Nunca se reactivan solas.')) {
     e.target.checked = false;
@@ -10845,7 +10846,7 @@ byId('autoPausarAdsChk').addEventListener('change', async (e) => {
     if (r.primeraPasada) pintarSaludAds(r.primeraPasada);
     if (!activo) byId('saludAdsResultado').innerHTML = '';
   } catch (err) {
-    alert('No se pudo guardar:\n\n' + humano(err));
+    dialogoAviso('No se pudo guardar:\n\n' + humano(err));
     e.target.checked = !activo;
   } finally {
     e.target.disabled = false;
@@ -10870,7 +10871,7 @@ async function cambiarEstadoCampana(datos) {
     : '\u00bfPausar \u201c' + nombre + '\u201d?\n\nDeja de mostrar avisos y de gastar. ' +
       'La pod\u00e9s volver a activar cuando quieras.';
 
-  if (!confirm(pregunta)) return;
+  if (!await dialogoConfirmar(pregunta)) return;
 
   const cuerpo = byId('mlPublicidadCuerpo');
   const antes = cuerpo.innerHTML;
@@ -10897,7 +10898,7 @@ async function cambiarEstadoCampana(datos) {
     // Se avisa lo que dice la API, no lo que pedimos. Si Mercado Libre lo
     // acepto pero lo dejo en otro estado, el vendedor tiene que enterarse.
     if (r.estado_real && r.estado_real !== r.estado_pedido) {
-      alert('Mercado Libre acept\u00f3 el cambio pero la campa\u00f1a qued\u00f3 en "' +
+      dialogoAviso('Mercado Libre acept\u00f3 el cambio pero la campa\u00f1a qued\u00f3 en "' +
             r.estado_real + '". Puede tardar unos minutos en aplicarse.');
     }
 
@@ -11357,13 +11358,13 @@ async function aplicarMlPublicaciones() {
 
     hide(byId('mlPublicacionesModal'));
     await refreshData();
-    alert('¡Listo!\n\n' +
+    dialogoAviso('¡Listo!\n\n' +
           creados.length + ' producto' + (creados.length === 1 ? '' : 's') + ' creado' + (creados.length === 1 ? '' : 's') + '.\n' +
           (aCrear.length + aVincular.length) + ' publicaci' + ((aCrear.length + aVincular.length) === 1 ? 'ón vinculada' : 'ones vinculadas') +
           (vinculos.length > aCrear.length + aVincular.length ? ' (' + vinculos.length + ' vínculos con variantes)' : '') + '.' +
           (actualizarPrecios ? '\n' + precios + ' precio' + (precios === 1 ? '' : 's') + ' actualizado' + (precios === 1 ? '' : 's') + '.' : ''));
   } catch (err) {
-    alert('No se pudo aplicar:\n\n' + (humano(err) || err));
+    dialogoAviso('No se pudo aplicar:\n\n' + (humano(err) || err));
   } finally {
     boton.disabled = false;
     boton.textContent = textoOriginal;
@@ -11443,17 +11444,17 @@ async function conectarMl() {
   } catch (err) {
     boton.disabled = false;
     boton.textContent = textoOriginal;
-    alert('No se pudo empezar la conexión con Mercado Libre:\n\n' + humano(err));
+    dialogoAviso('No se pudo empezar la conexión con Mercado Libre:\n\n' + humano(err));
   }
 }
 
 async function desconectarMl() {
-  if (!confirm('Se desconecta la cuenta de Mercado Libre.\n\nLas ventas de ML dejan de descontar stock acá hasta que la vuelvas a conectar. Los vínculos con las publicaciones quedan guardados.')) return;
+  if (!await dialogoConfirmar('Se desconecta la cuenta de Mercado Libre.\n\nLas ventas de ML dejan de descontar stock acá hasta que la vuelvas a conectar. Los vínculos con las publicaciones quedan guardados.')) return;
   try {
     await llamarApiMl('desconectar');
     await cargarEstadoMl();
   } catch (err) {
-    alert('No se pudo desconectar:\n\n' + humano(err));
+    dialogoAviso('No se pudo desconectar:\n\n' + humano(err));
   }
 }
 
@@ -11467,9 +11468,9 @@ function avisarVueltaDeMl() {
 
   if (ml === 'conectado') {
     const cuenta = params.get('cuenta');
-    alert('¡Listo! Tu cuenta de Mercado Libre quedó conectada' + (cuenta ? ' (' + cuenta + ')' : '') + '.');
+    dialogoAviso('¡Listo! Tu cuenta de Mercado Libre quedó conectada' + (cuenta ? ' (' + cuenta + ')' : '') + '.');
   } else {
-    alert('No se pudo conectar Mercado Libre.\n\n' + (params.get('motivo') || 'Probá de nuevo.'));
+    dialogoAviso('No se pudo conectar Mercado Libre.\n\n' + (params.get('motivo') || 'Probá de nuevo.'));
   }
 
   try {
@@ -12269,7 +12270,7 @@ byId('guardarVidrieraBtn').addEventListener('click', async () => {
     renderProducts();
   } catch (err) {
     const msg = String(err && err.message ? err.message : err);
-    alert(msg.includes('orden')
+    dialogoAviso(msg.includes('orden')
       ? 'Falta la columna "orden" en la base.\n\nCorr\u00e9 schema/47-orden-productos.sql en Supabase.'
       : 'No se pudo guardar el orden:\n\n' + msg);
   } finally {
@@ -12327,7 +12328,7 @@ byId('cambiarClaveForm').addEventListener('submit', async (e) => {
     if (error) { fallar(error.message); return; }
 
     hide(byId('cambiarClaveModal'));
-    alert('\u2713 Listo, contrase\u00f1a cambiada.\n\n' +
+    dialogoAviso('\u2713 Listo, contrase\u00f1a cambiada.\n\n' +
           'Segu\u00ed trabajando normalmente. La pr\u00f3xima vez que entres, us\u00e1 la nueva.');
   } catch (err) {
     fallar(err && err.message ? err.message : String(err));
@@ -12458,7 +12459,7 @@ async function agregarNegocio() {
   if (!tienePlanPro()) { ofrecerUpgradePro('Varios negocios en una cuenta'); return; }
   if (!puedeOperar()) return;
 
-  const nombre = (window.prompt('\u00bfC\u00f3mo se llama el negocio nuevo?') || '').trim();
+  const nombre = (await dialogoPedir('\u00bfC\u00f3mo se llama el negocio nuevo?') || '').trim();
   if (!nombre) return;
 
   const boton = byId('agregarNegocioBtn');
@@ -12492,11 +12493,11 @@ async function agregarNegocio() {
 
     if (error) throw error;
 
-    alert('Listo: "' + nombre + '" qued\u00f3 creado.\n\n' +
+    dialogoAviso('Listo: "' + nombre + '" qued\u00f3 creado.\n\n' +
           'Su tienda online es ' + window.location.origin + '/' + slug);
     cambiarDeNegocio(nueva.slug);
   } catch (err) {
-    alert('No se pudo crear el negocio:\n\n' + (err && humano(err) ? humano(err) : err));
+    dialogoAviso('No se pudo crear el negocio:\n\n' + (err && humano(err) ? humano(err) : err));
     if (boton) { boton.disabled = false; boton.textContent = '+ Agregar otro negocio'; }
   }
 }
@@ -12548,7 +12549,7 @@ async function refrescarAhora() {
   } catch (e) {
     // Se avisa, porque el que apreta el boton esta esperando una respuesta:
     // dejarlo sin nada es peor que decirle que no se pudo.
-    alert('No se pudieron traer los datos:\n\n' + (e && humano(e) ? humano(e) : e));
+    dialogoAviso('No se pudieron traer los datos:\n\n' + (e && humano(e) ? humano(e) : e));
   } finally {
     refrescando = false;
     if (boton) { boton.disabled = false; boton.classList.remove('girando'); }
@@ -12995,10 +12996,10 @@ async function renderAgendaDia() {
     b.addEventListener('click', async (e) => {
       e.stopPropagation();
       const t = turnos.find(x => String(x.id) === String(b.dataset.liberarTurno));
-      if (!confirm('¿Liberar el turno de ' + (t?.bloqueado ? 'este bloqueo' : (t?.cliente || 'este cliente')) + ' (' + t?.hora + ')?\n\n' +
+      if (!await dialogoConfirmar('¿Liberar el turno de ' + (t?.bloqueado ? 'este bloqueo' : (t?.cliente || 'este cliente')) + ' (' + t?.hora + ')?\n\n' +
                    (t?.bloqueado ? 'El horario vuelve a quedar disponible.' : 'El horario vuelve a quedar disponible. Avisale vos al cliente si corresponde.'))) return;
       const { error: errDel } = await sb.from('store_turnos').delete().eq('id', b.dataset.liberarTurno);
-      if (errDel) { alert('No se pudo liberar: ' + errDel.message); return; }
+      if (errDel) { dialogoAviso('No se pudo liberar: ' + errDel.message); return; }
       await renderAgendaDia();
     });
   });
@@ -13149,11 +13150,11 @@ async function guardarTurno() {
 
   const fecha = byId('turnoFechaCampo').value;
   const hora = byId('turnoHoraCampo').value;
-  if (!fecha || !hora) { alert('Elegí fecha y hora para el turno.'); return; }
+  if (!fecha || !hora) { dialogoAviso('Elegí fecha y hora para el turno.'); return; }
 
   const bloqueo = byId('turnoSoloBloquear').checked;
   const cliente = bloqueo ? null : byId('turnoCliente').value.trim();
-  if (!bloqueo && !cliente) { alert('Poné el nombre del cliente, o marcá "Bloquear sin cliente".'); return; }
+  if (!bloqueo && !cliente) { dialogoAviso('Poné el nombre del cliente, o marcá "Bloquear sin cliente".'); return; }
 
   const paso = pasoDeTurnos();
   const duracion = Number(byId('turnoDuracion').value) || paso;
@@ -13176,7 +13177,7 @@ async function guardarTurno() {
   });
 
   if (pisa) {
-    alert('Ese horario se pisa con el turno de ' + (pisa.cliente || 'otro cliente') +
+    dialogoAviso('Ese horario se pisa con el turno de ' + (pisa.cliente || 'otro cliente') +
       ', que va de ' + String(pisa.hora).slice(0, 5) +
       ' a ' + aHoraAgenda(aMinutosAgenda(String(pisa.hora).slice(0, 5)) + (Number(pisa.duracion_minutos) || paso)) + '.');
     return;
@@ -13197,7 +13198,7 @@ async function guardarTurno() {
   const { error } = await sb.from('store_turnos').insert([payload]);
   if (error) {
     const ocupado = error.code === '23505' || /duplicate|unique/i.test(error.message || '');
-    alert(ocupado ? 'Ese horario ya está ocupado — refrescá la agenda.' : 'No se pudo guardar el turno:\n\n' + humano(error));
+    dialogoAviso(ocupado ? 'Ese horario ya está ocupado — refrescá la agenda.' : 'No se pudo guardar el turno:\n\n' + humano(error));
     return;
   }
 
@@ -13461,7 +13462,7 @@ async function actualizarCotizacionBanner() {
 async function editarCotizacionManual(moneda) {
   const actual = cotizacionManual(moneda) || await obtenerCotizacion(moneda);
   const nombre = moneda === 'USD' ? 'dólar blue' : 'euro';
-  const entrada = prompt(
+  const entrada = await dialogoPedir(
     '¿A cuánto está el ' + nombre + ' hoy? (dejalo vacío para volver a la cotización automática)',
     actual ? actual.venta : ''
   );
@@ -13474,7 +13475,7 @@ async function editarCotizacionManual(moneda) {
     // quinientos, no uno con cincuenta. Con el Number pelado el dólar
     // quedaba en $1,5 y cualquier producto en USD se repreciaba a centavos.
     const valor = numeroArgentino(entrada);
-    if (!Number.isFinite(valor) || valor <= 0) { alert('Poné un número válido.'); return; }
+    if (!Number.isFinite(valor) || valor <= 0) { dialogoAviso('Poné un número válido.'); return; }
     fijarCotizacionManual(moneda, valor);
   }
 
@@ -13504,19 +13505,19 @@ async function ofrecerRepreciarProductos(moneda) {
     // vez de dejar al vendedor pensando que el cambio no anduvo.
     const enPesos = products.filter(p => !p.moneda && Number(p.price) > 0).length;
     if (moneda === 'USD' && enPesos && rubroEsElectronica()) {
-      alert('Tus ' + enPesos + ' productos están cargados en pesos, así que su precio no cambia con el dólar.\n\n' +
+      dialogoAviso('Tus ' + enPesos + ' productos están cargados en pesos, así que su precio no cambia con el dólar.\n\n' +
             'Para que sigan al dólar: en Productos seleccionalos y tocá "💵 Fijar en dólares".');
     }
     return;
   }
 
   const cuantos = desactualizados.length + (desactualizados.length === 1 ? ' producto cargado' : ' productos cargados');
-  if (!confirm('Tenés ' + cuantos + ' en ' + moneda + ' con otra cotización.\n\n' +
+  if (!await dialogoConfirmar('Tenés ' + cuantos + ' en ' + moneda + ' con otra cotización.\n\n' +
                '¿Les actualizo el precio en pesos a ' + money(nueva) + ' por ' + moneda + '?')) return;
 
   const r = await aplicarUnoPorUno(desactualizados, (p) => camposRepreciados(p, nueva));
-  if (r.error) alert('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
-  else alert('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
+  if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
+  else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
   renderProducts();
 }
 
@@ -13944,11 +13945,11 @@ async function aplicarUnoPorUno(elegidos, calcularCampos) {
 }
 
 // El numero que escribe el vendedor. Acepta "20", "20%", "20,5" y "-10".
-function pedirPorcentaje(titulo, ejemplo) {
-  const txt = window.prompt(titulo, ejemplo);
+async function pedirPorcentaje(titulo, ejemplo) {
+  const txt = await dialogoPedir(titulo, ejemplo);
   if (txt === null) return null;
   const n = Number(String(txt).replace('%', '').replace(',', '.').trim());
-  if (!isFinite(n) || n === 0) { alert('Escrib\u00ed un n\u00famero, por ejemplo ' + ejemplo + '.'); return null; }
+  if (!isFinite(n) || n === 0) { dialogoAviso('Escrib\u00ed un n\u00famero, por ejemplo ' + ejemplo + '.'); return null; }
   return n;
 }
 
@@ -13980,12 +13981,12 @@ async function accionSeleccion(accion) {
   }
 
   if (accion === 'precio') {
-    const pct = pedirPorcentaje(
+    const pct = await pedirPorcentaje(
       'Ajustar el precio de ' + cuantos + '.\n\n' +
       'Pon\u00e9 10 para subir un 10%, o -10 para bajarlo un 10%.', '10');
     if (pct === null) return;
     const factor = 1 + pct / 100;
-    if (factor <= 0) { alert('Ese descuento deja los precios en cero o en negativo.'); return; }
+    if (factor <= 0) { dialogoAviso('Ese descuento deja los precios en cero o en negativo.'); return; }
 
     // Si el producto esta en oferta, la oferta se mueve con el precio: si no,
     // subir la lista un 20% agranda el descuento sin que nadie lo pida.
@@ -14000,24 +14001,24 @@ async function accionSeleccion(accion) {
       if (hayOferta(p)) campos.precio_oferta = Math.round(Number(p.precio_oferta) * factor);
       return campos;
     });
-    if (r.error) { alert('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
-    else if (r.saltados) { alert('Listo: ' + r.hechos + ' con precio nuevo.\n' + r.saltados + ' sin precio de lista cargado quedaron igual.'); }
+    if (r.error) { dialogoAviso('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
+    else if (r.saltados) { dialogoAviso('Listo: ' + r.hechos + ' con precio nuevo.\n' + r.saltados + ' sin precio de lista cargado quedaron igual.'); }
     terminarAccionSeleccion();
     return;
   }
 
   if (accion === 'oferta') {
-    const pct = pedirPorcentaje('\u00bfQu\u00e9 descuento les pon\u00e9s a ' + cuantos + '?\n\nPor ejemplo 20 para 20% OFF.', '20');
+    const pct = await pedirPorcentaje('\u00bfQu\u00e9 descuento les pon\u00e9s a ' + cuantos + '?\n\nPor ejemplo 20 para 20% OFF.', '20');
     if (pct === null) return;
-    if (pct <= 0 || pct >= 100) { alert('El descuento tiene que estar entre 1 y 99.'); return; }
+    if (pct <= 0 || pct >= 100) { dialogoAviso('El descuento tiene que estar entre 1 y 99.'); return; }
 
     const r = await aplicarUnoPorUno(elegidos, (p) => {
       const lista = Number(p.price) || 0;
       if (!lista) return null;
       return { precio_oferta: Math.round(lista * (1 - pct / 100)) };
     });
-    if (r.error) { alert('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
-    else if (r.saltados) { alert('Listo: ' + r.hechos + ' en oferta.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
+    if (r.error) { dialogoAviso('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
+    else if (r.saltados) { dialogoAviso('Listo: ' + r.hechos + ' en oferta.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
     terminarAccionSeleccion();
     return;
   }
@@ -14028,15 +14029,15 @@ async function accionSeleccion(accion) {
   // los ofrece actualizar igual que a los que se cargaron en USD de entrada.
   if (accion === 'fijar-usd') {
     const enPesos = elegidos.filter(p => !p.moneda && Number(p.price) > 0);
-    if (!enPesos.length) { alert('Esos productos ya están en dólares o no tienen precio.'); return; }
+    if (!enPesos.length) { dialogoAviso('Esos productos ya están en dólares o no tienen precio.'); return; }
     const cot = await obtenerCotizacion('USD');
     const dolar = Number(cot?.venta);
-    if (!(dolar > 0)) { alert('No se pudo consultar el dólar. Cargalo a mano desde el Panel de Control y probá de nuevo.'); return; }
+    if (!(dolar > 0)) { dialogoAviso('No se pudo consultar el dólar. Cargalo a mano desde el Panel de Control y probá de nuevo.'); return; }
 
     const ej = enPesos[0];
     const usdEj = Math.round(Number(ej.price) / dolar * 100) / 100;
     const n = enPesos.length + (enPesos.length === 1 ? ' producto' : ' productos');
-    if (!confirm('Fijar ' + n + ' en dólares al blue de ' + money(dolar) + '.\n\n' +
+    if (!await dialogoConfirmar('Fijar ' + n + ' en dólares al blue de ' + money(dolar) + '.\n\n' +
                  'Hoy el precio en pesos no cambia. Por ejemplo: ' + ej.name + ' ' + money(ej.price) +
                  ' queda en US$' + usdEj.toLocaleString('es-AR') + '.\n\n' +
                  'Cuando cambies el dólar, te voy a ofrecer actualizarles el precio en pesos. ¿Seguimos?')) return;
@@ -14046,22 +14047,22 @@ async function accionSeleccion(accion) {
       precio_original: Math.round(Number(p.price) / dolar * 100) / 100,
       cotizacion: dolar
     }));
-    if (r.error) alert('Se pasaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
-    else alert('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto quedó' : ' productos quedaron') + ' en dólares.');
+    if (r.error) dialogoAviso('Se pasaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
+    else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto quedó' : ' productos quedaron') + ' en dólares.');
     terminarAccionSeleccion();
     return;
   }
 
   if (accion === 'sacar-oferta') {
     const error = await actualizarEnLote(ids, { precio_oferta: null });
-    if (error) alert('No se pudo:\n\n' + humano(error));
+    if (error) dialogoAviso('No se pudo:\n\n' + humano(error));
     terminarAccionSeleccion();
     return;
   }
 
   if (accion === 'pausar' || accion === 'activar') {
     const error = await actualizarEnLote(ids, { pausado: accion === 'pausar' });
-    if (error) alert('No se pudo:\n\n' + humano(error));
+    if (error) dialogoAviso('No se pudo:\n\n' + humano(error));
     terminarAccionSeleccion();
     return;
   }
@@ -14071,10 +14072,10 @@ async function accionSeleccion(accion) {
     // cartel dice "20 productos" es como no preguntar nada.
     const muestra = elegidos.slice(0, 6).map(p => '\u2022 ' + p.name).join('\n');
     const resto = elegidos.length > 6 ? '\n\u2026 y ' + (elegidos.length - 6) + ' m\u00e1s' : '';
-    if (!confirm('\u00bfEliminar ' + cuantos + '?\n\n' + muestra + resto + '\n\nEsto no se puede deshacer.')) return;
+    if (!await dialogoConfirmar('\u00bfEliminar ' + cuantos + '?\n\n' + muestra + resto + '\n\nEsto no se puede deshacer.')) return;
 
     const error = await borrarEnLote(ids);
-    if (error) { alert('No se pudieron eliminar:\n\n' + humano(error)); return; }
+    if (error) { dialogoAviso('No se pudieron eliminar:\n\n' + humano(error)); return; }
     seleccionProductos = new Set();
     await refreshData();
     return;
@@ -14111,12 +14112,12 @@ byId('selCategoriaAplicar').addEventListener('click', async () => {
   let destino;
   if (sel.value === '__nueva') {
     destino = byId('selCategoriaNueva').value.trim();
-    if (!destino) { alert('Escrib\u00ed el nombre de la categor\u00eda nueva.'); return; }
+    if (!destino) { dialogoAviso('Escrib\u00ed el nombre de la categor\u00eda nueva.'); return; }
   } else if (sel.value === '__sin') {
     destino = null;
   } else {
     destino = nombres[Number(sel.value)];
-    if (!destino) { alert('Eleg\u00ed una categor\u00eda.'); return; }
+    if (!destino) { dialogoAviso('Eleg\u00ed una categor\u00eda.'); return; }
   }
 
   const btn = byId('selCategoriaAplicar');
@@ -14128,7 +14129,7 @@ byId('selCategoriaAplicar').addEventListener('click', async () => {
   btn.disabled = false;
   btn.textContent = 'Cambiar';
 
-  if (error) { alert('No se pudo:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo:\n\n' + humano(error)); return; }
 
   if (destino) {
     const lista = (Array.isArray(currentStore?.categorias) ? currentStore.categorias : []).slice();
@@ -14386,10 +14387,10 @@ function renderProducts() {
       }, prod.name + ' \u2014 ' + money(precioVigente(prod)) + '\n' + link);
 
       if (como === 'descargado') {
-        alert('\u2713 Imagen descargada.\n\nSub\u00edla a tu historia o a tu estado de WhatsApp.');
+        dialogoAviso('\u2713 Imagen descargada.\n\nSub\u00edla a tu historia o a tu estado de WhatsApp.');
       }
     } catch (err) {
-      alert('No se pudo armar la imagen:\n\n' + (err && humano(err) ? humano(err) : err));
+      dialogoAviso('No se pudo armar la imagen:\n\n' + (err && humano(err) ? humano(err) : err));
     } finally {
       b.disabled = false;
       b.textContent = antes;
@@ -14432,7 +14433,7 @@ function abrirOferta(id) {
   if (!p) return;
 
   if (!Number(p.price)) {
-    alert('Este producto no tiene precio de lista cargado, así que no se le puede calcular un descuento.');
+    dialogoAviso('Este producto no tiene precio de lista cargado, así que no se le puede calcular un descuento.');
     return;
   }
 
@@ -14485,7 +14486,7 @@ async function guardarOferta() {
   const lista = Number(productoEnOferta.price);
   const fin = Number(byId('ofertaFinal').value);
   if (!(fin > 0) || fin >= lista) {
-    alert('Poné un precio con descuento mayor a 0 y menor a ' + money(lista) + '.');
+    dialogoAviso('Poné un precio con descuento mayor a 0 y menor a ' + money(lista) + '.');
     return;
   }
   await grabarPrecioOferta(productoEnOferta, fin);
@@ -14493,7 +14494,7 @@ async function guardarOferta() {
 
 async function sacarOferta() {
   if (!productoEnOferta) return;
-  if (!confirm('¿Sacar la oferta de "' + productoEnOferta.name + '"?\n\nVuelve a venderse a ' +
+  if (!await dialogoConfirmar('¿Sacar la oferta de "' + productoEnOferta.name + '"?\n\nVuelve a venderse a ' +
                money(productoEnOferta.price) + '.')) return;
   await grabarPrecioOferta(productoEnOferta, null);
 }
@@ -14501,7 +14502,7 @@ async function sacarOferta() {
 async function grabarPrecioOferta(p, valor) {
   const { error } = await sb.from('store_products').update({ precio_oferta: valor }).eq('id', p.id);
   if (error) {
-    alert('No se pudo guardar la oferta:\n\n' + humano(error) +
+    dialogoAviso('No se pudo guardar la oferta:\n\n' + humano(error) +
           '\n\n(Si dice que falta la columna, correr schema/37-precio-oferta.sql en Supabase.)');
     return;
   }
@@ -14525,7 +14526,7 @@ async function alternarPausado(id) {
   const nuevo = !p.pausado;
   const { error } = await sb.from('store_products').update({ pausado: nuevo }).eq('id', id);
   if (error) {
-    alert('No se pudo cambiar: ' + humano(error));
+    dialogoAviso('No se pudo cambiar: ' + humano(error));
     return;
   }
   p.pausado = nuevo;   // se refleja al toque, sin esperar el refresh entero
@@ -14619,14 +14620,14 @@ function renderOrders() {
   cuerpo.querySelectorAll('[data-confirmar]').forEach(b =>
     b.addEventListener('click', () => cambiarEstadoPedido(b.dataset.confirmar, 'confirmado')));
   cuerpo.querySelectorAll('[data-cancelar]').forEach(b =>
-    b.addEventListener('click', () => {
-      if (confirm('¿Marcar este pedido como no concretado?\n\nDeja de contar en tus ventas.')) {
+    b.addEventListener('click', async () => {
+      if (await dialogoConfirmar('¿Marcar este pedido como no concretado?\n\nDeja de contar en tus ventas.')) {
         cambiarEstadoPedido(b.dataset.cancelar, 'cancelado');
       }
     }));
   cuerpo.querySelectorAll('[data-anular]').forEach(b =>
-    b.addEventListener('click', () => {
-      if (confirm('¿Anular esta venta?\n\nSe devuelve el stock que se había descontado al confirmarla. No se puede deshacer.')) {
+    b.addEventListener('click', async () => {
+      if (await dialogoConfirmar('¿Anular esta venta?\n\nSe devuelve el stock que se había descontado al confirmarla. No se puede deshacer.')) {
         cambiarEstadoPedido(b.dataset.anular, 'cancelado');
       }
     }));
@@ -14773,7 +14774,7 @@ async function marcarPagadoComanda(id, pagado) {
   if (!puedeOperar()) return;
   const { error } = await sb.from('orders').update({ pagado }).eq('id', id);
   if (error) {
-    alert('No se pudo guardar el pago:\n\n' + humano(error));
+    dialogoAviso('No se pudo guardar el pago:\n\n' + humano(error));
     return;
   }
   const pedido = pedidosTodos.find(o => String(o.id) === String(id));
@@ -14836,8 +14837,8 @@ function renderComandas() {
   panel.querySelectorAll('[data-comanda-aceptar]').forEach(b =>
     b.addEventListener('click', () => cambiarEstadoPedido(b.dataset.comandaAceptar, 'confirmado')));
   panel.querySelectorAll('[data-comanda-rechazar]').forEach(b =>
-    b.addEventListener('click', () => {
-      if (confirm('¿Rechazar este pedido?\n\nNo cuenta como venta.')) {
+    b.addEventListener('click', async () => {
+      if (await dialogoConfirmar('¿Rechazar este pedido?\n\nNo cuenta como venta.')) {
         cambiarEstadoPedido(b.dataset.comandaRechazar, 'cancelado');
       }
     }));
@@ -14852,7 +14853,7 @@ function renderComandas() {
 async function moverComanda(id, de, a) {
   if (!puedeOperar()) return;
   if (!hayColumnaEtapa()) {
-    alert('Para mover las comandas falta correr schema/56-comandas.sql en Supabase.');
+    dialogoAviso('Para mover las comandas falta correr schema/56-comandas.sql en Supabase.');
     return;
   }
   // Mismo cuidado que cambiarEstadoPedido: solo si sigue en la etapa que
@@ -14860,7 +14861,7 @@ async function moverComanda(id, de, a) {
   const { data, error } = await sb.from('orders').update({ etapa: a })
     .eq('id', id).eq('etapa', de).select('id');
   if (error) {
-    alert('No se pudo mover el pedido:\n\n' + humano(error));
+    dialogoAviso('No se pudo mover el pedido:\n\n' + humano(error));
     return;
   }
   if (!data || !data.length) {
@@ -15015,15 +15016,15 @@ async function eliminarPedido(id) {
   if (!pedido) return;
 
   if (estadoPedido(pedido) === 'confirmado') {
-    alert('Este pedido está confirmado. Primero anulalo (eso devuelve el stock) y después vas a poder borrarlo.');
+    dialogoAviso('Este pedido está confirmado. Primero anulalo (eso devuelve el stock) y después vas a poder borrarlo.');
     return;
   }
 
-  if (!confirm('¿Borrar este pedido de la lista?\n\nNo se puede deshacer.')) return;
+  if (!await dialogoConfirmar('¿Borrar este pedido de la lista?\n\nNo se puede deshacer.')) return;
 
   const { error } = await sb.from('orders').delete().eq('id', id);
   if (error) {
-    alert('No se pudo borrar el pedido:\n\n' + humano(error));
+    dialogoAviso('No se pudo borrar el pedido:\n\n' + humano(error));
     return;
   }
   await refreshData();
@@ -15053,7 +15054,7 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     const sugerida = pedido.hora_entrega
       ? horaEntregaTexto(pedido.hora_entrega)
       : horaEntregaSugerida();
-    const escrita = prompt(
+    const escrita = await dialogoPedir(
       '\u00bfPara qu\u00e9 hora es este pedido?  (HH:MM)\n\n' +
       (demoraDelLocal()
         ? 'Sugerida: ahora + ' + demoraDelLocal() + ' min. Cambiala si el cliente la pidi\u00f3 para otra hora.'
@@ -15091,12 +15092,12 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     .select('id');
 
   if (error) {
-    alert('No se pudo actualizar el pedido:\n\n' + humano(error) +
+    dialogoAviso('No se pudo actualizar el pedido:\n\n' + humano(error) +
           (extra.etapa ? '\n\n(Si dice que falta la columna, correr schema/56-comandas.sql en Supabase.)' : ''));
     return;
   }
   if (!data || !data.length) {
-    alert('No se pudo actualizar el pedido: la base rechazó el cambio, o ya lo habías cambiado en otro momento.\n\n' +
+    dialogoAviso('No se pudo actualizar el pedido: la base rechazó el cambio, o ya lo habías cambiado en otro momento.\n\n' +
           'Si el problema persiste, avisale a soporte y mencioná "política de update en orders".');
     await refreshData();   // por si el estado real ya cambió, refrescar la vista
     return;
@@ -15215,14 +15216,14 @@ function venderACliente(nombre) {
 async function renombrarCliente(actual) {
   if (!puedeOperar()) return;
 
-  const nuevo = prompt('Nombre del cliente:', actual);
+  const nuevo = await dialogoPedir('Nombre del cliente:', actual);
   if (nuevo === null) return;
 
   const limpio = nuevo.trim();
   if (!limpio || limpio === actual) return;
 
   const suyos = pedidosTodos.filter(o => o.customer_name === actual);
-  if (!confirm('Se va a cambiar el nombre en sus ' + suyos.length +
+  if (!await dialogoConfirmar('Se va a cambiar el nombre en sus ' + suyos.length +
                ' compra' + (suyos.length === 1 ? '' : 's') + '.\n\n"' +
                actual + '"  →  "' + limpio + '"')) return;
 
@@ -15233,11 +15234,11 @@ async function renombrarCliente(actual) {
     .select('id');
 
   if (error) {
-    alert('No se pudo cambiar el nombre:\n\n' + humano(error));
+    dialogoAviso('No se pudo cambiar el nombre:\n\n' + humano(error));
     return;
   }
   if (!data || !data.length) {
-    alert('No se pudo cambiar el nombre: la base rechazó el cambio.\n\n' +
+    dialogoAviso('No se pudo cambiar el nombre: la base rechazó el cambio.\n\n' +
           'Falta el permiso de modificación en la tabla de pedidos.');
     return;
   }
@@ -15256,7 +15257,7 @@ async function eliminarCliente(nombre) {
   if (!suyos.length) return;
 
   const total = suyos.reduce((s, o) => s + Number(o.total || 0), 0);
-  if (!confirm('¿Borrar a "' + nombre + '" y sus ' + suyos.length +
+  if (!await dialogoConfirmar('¿Borrar a "' + nombre + '" y sus ' + suyos.length +
                ' compra' + (suyos.length === 1 ? '' : 's') + ' (' + money(total) + ')?\n\n' +
                'Las compras confirmadas devuelven su stock antes de borrarse. ' +
                'No se puede deshacer.')) return;
@@ -15275,7 +15276,7 @@ async function eliminarCliente(nombre) {
     .eq('customer_name', nombre);
 
   if (error) {
-    alert('No se pudo borrar el cliente:\n\n' + humano(error));
+    dialogoAviso('No se pudo borrar el cliente:\n\n' + humano(error));
     await refreshData();   // el stock ya se devolvió: refrescar para no perder de vista el estado real
     return;
   }
@@ -15426,8 +15427,8 @@ async function guardarEdicionFiado() {
   const monto = Number(byId('fmMonto').value);
   const detalle = byId('fmDetalle').value.trim();
 
-  if (!nombre) { alert('Poné el nombre del cliente.'); return; }
-  if (!Number.isFinite(monto) || monto < 0) { alert('El monto no puede quedar vacío ni ser negativo.'); return; }
+  if (!nombre) { dialogoAviso('Poné el nombre del cliente.'); return; }
+  if (!Number.isFinite(monto) || monto < 0) { dialogoAviso('El monto no puede quedar vacío ni ser negativo.'); return; }
 
   const saldoAnterior = Number(deuda.saldo_pendiente || 0);
 
@@ -15437,7 +15438,7 @@ async function guardarEdicionFiado() {
   // el historial de pagos del cliente. Mismo criterio que separa "reponer
   // stock" de "corregir el stock" en Productos.
   if (monto < saldoAnterior) {
-    const seguir = confirm(
+    const seguir = await dialogoConfirmar(
       '⚠️ Estás bajando el saldo de ' + money(saldoAnterior) + ' a ' + money(monto) + '.\n\n' +
       'Si el cliente te pagó, cancelá y usá "+ Pago": así queda registrado en su historial y en la Caja.\n\n' +
       'Seguí solo si estás corrigiendo un monto que se había cargado mal.'
@@ -15461,7 +15462,7 @@ async function guardarEdicionFiado() {
 
   const { error } = await sb.from('orders').update(cambios).eq('id', deuda.id);
   if (error) {
-    alert('No se pudieron guardar los cambios:\n\n' + humano(error));
+    dialogoAviso('No se pudieron guardar los cambios:\n\n' + humano(error));
     return;
   }
 
@@ -15471,7 +15472,7 @@ async function guardarEdicionFiado() {
     // 1) Los otros pedidos del mismo cliente: el panel agrupa por nombre, así
     //    que dejarlos con el nombre viejo lo parte en dos clientes distintos.
     const otros = orders.filter(o => o.customer_name === nombreViejo && String(o.id) !== String(deuda.id));
-    if (otros.length && confirm('Hay ' + otros.length + ' pedido' + (otros.length === 1 ? '' : 's') +
+    if (otros.length && await dialogoConfirmar('Hay ' + otros.length + ' pedido' + (otros.length === 1 ? '' : 's') +
         ' más a nombre de "' + nombreViejo + '".\n\n¿Renombrarlos también? (Si no, van a quedar como dos clientes separados.)')) {
       await sb.from('orders').update({ customer_name: nombre })
         .eq('store_slug', currentStore.slug).eq('customer_name', nombreViejo);
@@ -15503,7 +15504,7 @@ async function guardarEdicionFiado() {
 async function obtenerLinkDeCuenta(nombreCliente) {
   const cliente = (nombreCliente || '').trim();
   if (!cliente) {
-    alert('Esta deuda no tiene nombre de cliente cargado, así que no se le puede armar un link propio.');
+    dialogoAviso('Esta deuda no tiene nombre de cliente cargado, así que no se le puede armar un link propio.');
     return null;
   }
 
@@ -15517,7 +15518,7 @@ async function obtenerLinkDeCuenta(nombreCliente) {
     .maybeSingle();
 
   if (errBuscar) {
-    alert('No se pudo generar el link:\n\n' + errBuscar.message +
+    dialogoAviso('No se pudo generar el link:\n\n' + errBuscar.message +
       '\n\n(Si dice que falta la tabla, correr schema/33-portal-clientes.sql en Supabase.)');
     return null;
   }
@@ -15530,13 +15531,13 @@ async function obtenerLinkDeCuenta(nombreCliente) {
       .select('token')
       .maybeSingle();
     if (errCrear) {
-      alert('No se pudo generar el link:\n\n' + errCrear.message);
+      dialogoAviso('No se pudo generar el link:\n\n' + errCrear.message);
       return null;
     }
     token = creado?.token;
   }
 
-  if (!token) { alert('No se pudo generar el link. Probá de nuevo.'); return null; }
+  if (!token) { dialogoAviso('No se pudo generar el link. Probá de nuevo.'); return null; }
 
   return location.origin + '/cuenta.html?t=' + token;
 }
@@ -15578,9 +15579,9 @@ async function copiarLinkDeCuenta(nombreCliente) {
 async function copiarTexto(texto, avisoOk) {
   try {
     await navigator.clipboard.writeText(texto);
-    alert(avisoOk);
+    dialogoAviso(avisoOk);
   } catch (e) {
-    prompt('Copiá el link y mandáselo al cliente:', texto);
+    dialogoCopiar('Copiá el link y mandáselo al cliente:', texto);
   }
 }
 
@@ -16233,7 +16234,7 @@ async function confirmarImportacionExcel() {
     boton.disabled = false;
     boton.textContent = textoOriginal;
     await refreshData();
-    alert(mensaje);
+    dialogoAviso(mensaje);
   };
 
   // De a 500: una lista de 3.000 filas en un solo insert se corta por
@@ -16302,7 +16303,7 @@ async function confirmarImportacionExcel() {
   if (actualizados) {
     dichos.push('se ' + (actualizados === 1 ? 'actualizó 1 que ya tenías' : 'actualizaron ' + actualizados + ' que ya tenías'));
   }
-  alert('¡Listo! ' + dichos.join(' y ') + '.');
+  dialogoAviso('¡Listo! ' + dichos.join(' y ') + '.');
 }
 
 // ---------- Carga de stock desde una factura, leída con IA (Pro) ----------
@@ -16629,7 +16630,7 @@ async function confirmarFacturaIa() {
   const aCargar = lineasQueSeCargan();
   const sinPrecio = aCargar.filter(it => it.destino === 'nuevo' && (!it.precio_venta || it.precio_venta <= 0));
   if (sinPrecio.length) {
-    alert('Faltó cargar el precio de venta de ' + sinPrecio.length +
+    dialogoAviso('Faltó cargar el precio de venta de ' + sinPrecio.length +
       ' producto' + (sinPrecio.length === 1 ? '' : 's') + ' nuevo' + (sinPrecio.length === 1 ? '' : 's') + '.');
     return;
   }
@@ -16643,14 +16644,14 @@ async function confirmarFacturaIa() {
 
   const sinCombinacion = pendientes.filter(({ it, p }) => p.tiene_variantes && !productoTieneImeis(p) && !it.combinacion);
   if (sinCombinacion.length) {
-    alert('Faltó elegir la combinación (talle/color) de ' + sinCombinacion.length +
+    dialogoAviso('Faltó elegir la combinación (talle/color) de ' + sinCombinacion.length +
       ' línea' + (sinCombinacion.length === 1 ? '' : 's') + '.');
     return;
   }
 
   const sinRevisarImei = pendientes.filter(({ p }) => productoTieneImeis(p));
   if (sinRevisarImei.length) {
-    alert('Faltó revisar los IMEI de ' + sinRevisarImei.length +
+    dialogoAviso('Faltó revisar los IMEI de ' + sinRevisarImei.length +
       ' línea' + (sinRevisarImei.length === 1 ? '' : 's') + ' — tocá "Revisar IMEI" antes de confirmar.');
     return;
   }
@@ -16659,14 +16660,14 @@ async function confirmarFacturaIa() {
   const gastoMonto = Number(byId('facturaIaGastoMonto').value) || 0;
   const gastoMedioPago = byId('facturaIaGastoMedioPago').value;
   if (registrarGasto && (gastoMonto <= 0 || !gastoMedioPago)) {
-    alert('Para registrar el gasto en Caja falta el monto y/o el medio de pago — completalos o destildá la opción.');
+    dialogoAviso('Para registrar el gasto en Caja falta el monto y/o el medio de pago — completalos o destildá la opción.');
     return;
   }
 
   // Sin líneas para el catálogo y sin gasto tildado no hay nada que hacer:
   // mejor decirlo que dejar que el botón parezca que funcionó.
   if (!aCargar.length && !registrarGasto) {
-    alert('No quedó nada para cargar: o elegís al menos una línea para el catálogo, o tildás registrar el gasto.');
+    dialogoAviso('No quedó nada para cargar: o elegís al menos una línea para el catálogo, o tildás registrar el gasto.');
     return;
   }
 
@@ -16748,7 +16749,7 @@ async function confirmarFacturaIa() {
   if (errorHubo) {
     boton.disabled = false;
     boton.textContent = 'Cargar productos al stock';
-    alert('No se pudieron cargar todos los productos:\n\n' + errorHubo.message);
+    dialogoAviso('No se pudieron cargar todos los productos:\n\n' + errorHubo.message);
     return;
   }
 
@@ -16781,7 +16782,7 @@ async function confirmarFacturaIa() {
   limpiarFacturaIa();
   hide(byId('facturaIaModal'));
   await refreshData();
-  alert(cantidad
+  dialogoAviso(cantidad
     ? '¡Listo! Se cargaron ' + cantidad + ' producto' + (cantidad === 1 ? '' : 's') + ' desde la factura.' + avisoGasto
     : '¡Listo! Se registró el gasto de la factura. No se cargó ningún producto al catálogo.' + avisoGasto);
 }
@@ -16897,7 +16898,7 @@ function armarHojaExcel(filas, columnasMoneda, columnasAnchas) {
 // reimportar.
 function exportarCatalogoExcel() {
   if (!products.length) {
-    alert('Todavía no cargaste ningún producto.');
+    dialogoAviso('Todavía no cargaste ningún producto.');
     return;
   }
 
@@ -17122,7 +17123,7 @@ function abrirVentanaEtiquetaTermica(titulo, contenidoHtml) {
   // La ventana de previsualización ya no necesita ser alta y angosta: la
   // etiqueta ahora es apaisada (60x30mm), así que la ventana también.
   const ventana = window.open('', '_blank', 'width=360,height=280');
-  if (!ventana) { alert('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return null; }
+  if (!ventana) { dialogoAviso('El navegador bloqueó la ventana de impresión. Permitila e intentá de nuevo.'); return null; }
 
   ventana.document.write(
     '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(titulo) + '</title>' +
@@ -17229,7 +17230,7 @@ function abrirVentanaTicket(titulo, contenidoHtml, autoImprimir) {
         marco.contentWindow.focus();
         marco.contentWindow.print();
       } catch (e) {
-        alert('No se pudo abrir la impresión:\n\n' + (e && humano(e) ? humano(e) : e));
+        dialogoAviso('No se pudo abrir la impresión:\n\n' + (e && humano(e) ? humano(e) : e));
       }
     }, 350);
   }
@@ -17337,7 +17338,7 @@ async function fijarDemora(minutos) {
   const { error } = await sb.from('store_profiles')
     .update({ demora_minutos: minutos }).eq('slug', currentStore.slug);
   if (error) {
-    alert('No se pudo guardar la demora:\n\n' + humano(error) +
+    dialogoAviso('No se pudo guardar la demora:\n\n' + humano(error) +
           '\n\n(Si dice que falta la columna, correr schema/38-hora-entrega.sql en Supabase.)');
     return;
   }
@@ -17445,7 +17446,7 @@ function armarTicketHtml(d) {
 function imprimirTicketDeOrden(id) {
   const lista = (orders || []).concat(pedidosTodos || []);
   const o = lista.find(x => String(x.id) === String(id));
-  if (!o) { alert('No se encontr\u00f3 esa venta.'); return; }
+  if (!o) { dialogoAviso('No se encontr\u00f3 esa venta.'); return; }
 
   const items = (Array.isArray(o.items) ? o.items : []).map(it => {
     const qty = Number(it.qty || 1);
@@ -17709,7 +17710,7 @@ function renderRepuestoVarianteCampos() {
 
 function agregarRepuesto(nombreProducto, cantidad) {
   const p = products.find(x => x.name.trim().toLowerCase() === (nombreProducto || '').trim().toLowerCase());
-  if (!p) { alert('No encontré ese producto en tu catálogo. Elegilo de la lista mientras escribís.'); return; }
+  if (!p) { dialogoAviso('No encontré ese producto en tu catálogo. Elegilo de la lista mientras escribís.'); return; }
 
   const qty = Math.max(1, Number(cantidad) || 1);
 
@@ -17794,8 +17795,8 @@ async function guardarReparacion() {
 
   const cliente = byId('repCliente').value.trim();
   const equipo = byId('repEquipo').value.trim();
-  if (!cliente) { alert('Poné el nombre del cliente.'); return; }
-  if (!equipo) { alert('Poné el equipo (ej: iPhone 11 128GB).'); return; }
+  if (!cliente) { dialogoAviso('Poné el nombre del cliente.'); return; }
+  if (!equipo) { dialogoAviso('Poné el equipo (ej: iPhone 11 128GB).'); return; }
 
   const costoConv = await valorConvertido('repCosto', 'repCostoMoneda');
   if (!costoConv) return;
@@ -17838,7 +17839,7 @@ async function guardarReparacion() {
     ({ error } = await sb.from('store_reparaciones').insert([payload]));
   }
 
-  if (error) { alert('No se pudo guardar la reparación:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo guardar la reparación:\n\n' + humano(error)); return; }
 
   // Solo al crear: si se loguea también al editar, cada corrección de la
   // reparación (cambiar el problema, agregar una nota) sumaría otra línea
@@ -17866,7 +17867,7 @@ async function avanzarReparacion(id) {
       return stock === null || stock < Number(rp.qty || 1);
     });
     if (faltantes.length) {
-      alert('No hay stock suficiente para entregar:\n\n' +
+      dialogoAviso('No hay stock suficiente para entregar:\n\n' +
         faltantes.map(rp => '• ' + rp.name + ' (pedís ' + rp.qty + ')').join('\n') +
         '\n\nRevisá el stock de esos productos antes de marcarla como Entregada.');
       return;
@@ -17886,7 +17887,7 @@ async function avanzarReparacion(id) {
     .eq('estado', r.estado)
     .select('id');
 
-  if (error) { alert('No se pudo actualizar el estado:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo actualizar el estado:\n\n' + humano(error)); return; }
   if (!data?.length) { await refreshData(); return; }   // alguien ya lo había avanzado
 
   // Al entregar, el ingreso de la reparación pasa a contar como una venta
@@ -17915,7 +17916,7 @@ async function avanzarReparacion(id) {
     // lo dejamos pasar en silencio, porque significa que esa venta no va a
     // aparecer en las estadísticas hasta que se resuelva.
     if (errorPedido) {
-      alert('La reparación se marcó como entregada, pero no se pudo sumar al Dashboard:\n\n' + errorPedido.message);
+      dialogoAviso('La reparación se marcó como entregada, pero no se pudo sumar al Dashboard:\n\n' + errorPedido.message);
     }
   }
 
@@ -17933,10 +17934,10 @@ async function avanzarReparacion(id) {
 
 async function eliminarReparacion(id) {
   if (!puedeOperar()) return;
-  if (!confirm('¿Borrar esta ficha de reparación? No se puede deshacer.')) return;
+  if (!await dialogoConfirmar('¿Borrar esta ficha de reparación? No se puede deshacer.')) return;
 
   const { error } = await sb.from('store_reparaciones').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -17998,7 +17999,7 @@ async function guardarGasto() {
   if (!puedeOperar()) return;
 
   const concepto = byId('gastoConcepto').value.trim();
-  if (!concepto) { alert('Poné un concepto para el gasto.'); return; }
+  if (!concepto) { dialogoAviso('Poné un concepto para el gasto.'); return; }
 
   const conv = await valorConvertido('gastoMonto', 'gastoMoneda');
   if (!conv) return;
@@ -18021,7 +18022,7 @@ async function guardarGasto() {
     ? await sb.from('store_gastos').update(payload).eq('id', id)
     : await sb.from('store_gastos').insert([payload]);
 
-  if (error) { alert('No se pudo guardar el gasto:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo guardar el gasto:\n\n' + humano(error)); return; }
 
   hide(byId('gastoModal'));
   await refreshData();
@@ -18029,10 +18030,10 @@ async function guardarGasto() {
 
 async function eliminarGasto(id) {
   if (!puedeOperar()) return;
-  if (!confirm('¿Borrar este gasto? No se puede deshacer.')) return;
+  if (!await dialogoConfirmar('¿Borrar este gasto? No se puede deshacer.')) return;
 
   const { error } = await sb.from('store_gastos').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -18337,8 +18338,8 @@ async function guardarMovimientoCaja() {
 
   const concepto = byId('movCajaConcepto').value.trim();
   const monto = Number(byId('movCajaMonto').value);
-  if (!concepto) { alert('Poné un concepto para el movimiento.'); return; }
-  if (!Number.isFinite(monto) || monto <= 0) { alert('Escribí un monto mayor que 0.'); return; }
+  if (!concepto) { dialogoAviso('Poné un concepto para el movimiento.'); return; }
+  if (!Number.isFinite(monto) || monto <= 0) { dialogoAviso('Escribí un monto mayor que 0.'); return; }
 
   const { error } = await sb.from('store_movimientos_caja').insert([{
     store_slug: currentStore.slug,
@@ -18350,7 +18351,7 @@ async function guardarMovimientoCaja() {
     notas: byId('movCajaNotas').value.trim()
   }]);
 
-  if (error) { alert('No se pudo guardar el movimiento:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo guardar el movimiento:\n\n' + humano(error)); return; }
 
   hide(byId('movimientoCajaModal'));
   await refreshData();
@@ -18359,10 +18360,10 @@ byId('guardarMovimientoCajaBtn').addEventListener('click', guardarMovimientoCaja
 
 async function eliminarMovimientoCaja(id) {
   if (!puedeOperar()) return;
-  if (!confirm('¿Borrar este movimiento? No se puede deshacer.')) return;
+  if (!await dialogoConfirmar('¿Borrar este movimiento? No se puede deshacer.')) return;
 
   const { error } = await sb.from('store_movimientos_caja').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -18704,8 +18705,8 @@ async function guardarFiadoManual() {
   const monto = Number(byId('fmMonto').value);
   const detalle = byId('fmDetalle').value.trim();
 
-  if (!nombre) { alert('Poné el nombre del cliente.'); return; }
-  if (!Number.isFinite(monto) || monto <= 0) { alert('Escribí un monto mayor que 0.'); return; }
+  if (!nombre) { dialogoAviso('Poné el nombre del cliente.'); return; }
+  if (!Number.isFinite(monto) || monto <= 0) { dialogoAviso('Escribí un monto mayor que 0.'); return; }
 
   const { data, error } = await sb.from('orders').insert([{
     store_slug: currentStore.slug,
@@ -18719,7 +18720,7 @@ async function guardarFiadoManual() {
   }]).select('id');
 
   if (error || !data?.length) {
-    alert('No se pudo guardar la deuda:\n\n' + (error?.message || 'intentá de nuevo.'));
+    dialogoAviso('No se pudo guardar la deuda:\n\n' + (error?.message || 'intentá de nuevo.'));
     return;
   }
 
@@ -18738,13 +18739,13 @@ async function registrarPago(orderId) {
   if (!deuda) return;
 
   const saldoActual = Number(deuda.saldo_pendiente || 0);
-  const texto = prompt('¿Cuánto pagó ' + deuda.customer_name + '?\n\nDebe: ' + money(saldoActual),
+  const texto = await dialogoPedir('¿Cuánto pagó ' + deuda.customer_name + '?\n\nDebe: ' + money(saldoActual),
                         String(saldoActual));
   if (texto === null) return;
 
   const monto = Number(texto);
   if (!Number.isFinite(monto) || monto <= 0) {
-    alert('Escribí un monto mayor que 0.');
+    dialogoAviso('Escribí un monto mayor que 0.');
     return;
   }
 
@@ -18761,7 +18762,7 @@ async function registrarPago(orderId) {
     monto: monto
   });
   if (errPago) {
-    alert('No se pudo registrar el pago:\n\n' + errPago.message);
+    dialogoAviso('No se pudo registrar el pago:\n\n' + errPago.message);
     return;
   }
 
@@ -18769,7 +18770,7 @@ async function registrarPago(orderId) {
     .update({ saldo_pendiente: nuevoSaldo })
     .eq('id', deuda.id);
   if (errSaldo) {
-    alert('El pago quedó registrado, pero no se pudo actualizar el saldo pendiente:\n\n' +
+    dialogoAviso('El pago quedó registrado, pero no se pudo actualizar el saldo pendiente:\n\n' +
           errSaldo.message + '\n\nAvisale a soporte.');
   }
 
@@ -18783,11 +18784,11 @@ async function verHistorialPagos(orderId) {
     .order('created_at', { ascending: true });
 
   if (error) {
-    alert('No se pudo consultar el historial:\n\n' + humano(error));
+    dialogoAviso('No se pudo consultar el historial:\n\n' + humano(error));
     return;
   }
   if (!data || !data.length) {
-    alert('Todavía no se registró ningún pago para esta deuda.');
+    dialogoAviso('Todavía no se registró ningún pago para esta deuda.');
     return;
   }
 
@@ -18796,7 +18797,7 @@ async function verHistorialPagos(orderId) {
     (p.nota ? ' (' + p.nota + ')' : '')
   ).join('\n');
 
-  alert('Historial de pagos:\n\n' + texto);
+  dialogoAviso('Historial de pagos:\n\n' + texto);
 }
 
 function renderVentas() {
@@ -18885,7 +18886,7 @@ async function anularVenta(id) {
     ? venta.items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it)).join(', ')
     : '';
 
-  if (!confirm('¿Anular esta venta?\n\n' + detalle + '\nTotal: ' + money(venta.total) +
+  if (!await dialogoConfirmar('¿Anular esta venta?\n\n' + detalle + '\nTotal: ' + money(venta.total) +
                '\n\nSe va a devolver el stock. No se puede deshacer.')) return;
 
   // Primero devolvemos el stock, despues borramos: si falla el borrado
@@ -18903,7 +18904,7 @@ async function anularVenta(id) {
 
   const { error } = await sb.from('orders').delete().eq('id', venta.id);
   if (error) {
-    alert('No se pudo anular la venta: ' + humano(error));
+    dialogoAviso('No se pudo anular la venta: ' + humano(error));
     return;
   }
 
@@ -18921,7 +18922,7 @@ async function searchByBarcode() {
   const crudo = byId('barcodeInput').value.trim();
   const query = normalizarTexto(crudo);
   if (!query) {
-    alert('Ingresa un código, EAN o nombre del producto');
+    dialogoAviso('Ingresa un código, EAN o nombre del producto');
     return;
   }
 
@@ -18933,7 +18934,7 @@ async function searchByBarcode() {
   if (pesada) {
     const delaBalanza = productoPorPlu(pesada.plu);
     if (!delaBalanza) {
-      alert('Leí la etiqueta de la balanza (código ' + pesada.plu + '),\n' +
+      dialogoAviso('Leí la etiqueta de la balanza (código ' + pesada.plu + '),\n' +
             'pero ningún producto tiene ese código cargado.\n\n' +
             'Abrí el producto en Productos y escribí ' + pesada.plu +
             ' en "Código en la balanza".');
@@ -18975,7 +18976,7 @@ async function searchByBarcode() {
   if (coincidencias.length === 0) {
     hide(byId('barcodeMatches'));
     hide(byId('barcodeResult'));
-    alert('Producto no encontrado');
+    dialogoAviso('Producto no encontrado');
     byId('barcodeInput').focus();
     return;
   }
@@ -19311,11 +19312,11 @@ function calculateChange() {
   byId('barcodeChange').textContent = money(Math.max(0, change));
 }
 
-function clearBarcodeResult() {
+async function clearBarcodeResult() {
   if (carritoVenta.length) {
     // Con un producto en pantalla, "Limpiar" saca solo ese y deja el pedido.
     if (currentBarcodeProduct) { entrarEnModoPedido(); return; }
-    if (!confirm('¿Vaciar el pedido en curso (' + carritoVenta.length + ' producto' + (carritoVenta.length === 1 ? '' : 's') + ')?')) return;
+    if (!await dialogoConfirmar('¿Vaciar el pedido en curso (' + carritoVenta.length + ' producto' + (carritoVenta.length === 1 ? '' : 's') + ')?')) return;
     carritoVenta = [];
     renderCarritoVenta();
   }
@@ -19354,12 +19355,12 @@ function lineaVentaEnPantalla() {
 // devuelve null si algo falta.
 function validarLineaVentaEnPantalla() {
   const p = currentBarcodeProduct;
-  if (!p) { alert('Elegí un producto.'); return null; }
+  if (!p) { dialogoAviso('Elegí un producto.'); return null; }
 
   const qty = cantidadVendida();
   if (qty <= 0) {
     const u = unidadDe(p);
-    alert('Escribí cuántos ' + (u ? u.plural : 'unidades') + ' estás vendiendo.');
+    dialogoAviso('Escribí cuántos ' + (u ? u.plural : 'unidades') + ' estás vendiendo.');
     byId('barcodeQty').focus();
     return null;
   }
@@ -19373,7 +19374,7 @@ function validarLineaVentaEnPantalla() {
   if (seVendePorMedida(p) && !productoDeVentaTieneVariantes()) {
     const disponible = Number(p.stock || 0) - yaEnPedido(null);
     if (qty > disponible) {
-      alert('No hay stock suficiente: quedan ' + formatearCantidad(Math.max(0, disponible), p) + '.');
+      dialogoAviso('No hay stock suficiente: quedan ' + formatearCantidad(Math.max(0, disponible), p) + '.');
       return null;
     }
   }
@@ -19381,21 +19382,21 @@ function validarLineaVentaEnPantalla() {
   let variante = null;
   if (productoDeVentaTieneVariantes()) {
     if (Object.keys(varianteSeleccionadaVenta).length < p.variante_campos.length) {
-      alert('Elegí ' + p.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
+      dialogoAviso('Elegí ' + p.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
       return null;
     }
     variante = { ...varianteSeleccionadaVenta };
     const disponible = (stockDeVarianteVenta() || 0) - yaEnPedido(variante);
     if (disponible < qty) {
-      alert('No hay stock suficiente en esa combinación: quedan ' + Math.max(0, disponible) + '.');
+      dialogoAviso('No hay stock suficiente en esa combinación: quedan ' + Math.max(0, disponible) + '.');
       return null;
     }
     if (unidadesDisponiblesVenta().length > 1 && !imeiSeleccionadoVenta) {
-      alert('Elegí cuál de los equipos estás vendiendo.');
+      dialogoAviso('Elegí cuál de los equipos estás vendiendo.');
       return null;
     }
     if (imeiSeleccionadoVenta && carritoVenta.some(l => l.imei === imeiSeleccionadoVenta)) {
-      alert('Ese equipo ya está en el pedido.');
+      dialogoAviso('Ese equipo ya está en el pedido.');
       return null;
     }
   }
@@ -19564,7 +19565,7 @@ function salirDeModoPedido() {
 function agregarAlPedidoVenta() {
   if (!puedeOperar()) return;
   if (byId('barcodeTradeIn')?.checked) {
-    alert('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
+    dialogoAviso('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
     return;
   }
   const linea = validarLineaVentaEnPantalla();
@@ -19584,7 +19585,7 @@ function quitarLineaDelPedido(i) {
 
 async function confirmarVentaCarrito() {
   if (byId('barcodeTradeIn')?.checked) {
-    alert('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
+    dialogoAviso('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
     return;
   }
   let lineas = carritoVenta.slice();
@@ -19593,12 +19594,12 @@ async function confirmarVentaCarrito() {
     if (!linea) return;
     lineas.push(linea);
   }
-  if (!lineas.length) { alert('El pedido está vacío.'); return; }
+  if (!lineas.length) { dialogoAviso('El pedido está vacío.'); return; }
 
   const cliente = (byId('barcodeCliente')?.value || '').trim();
   const esFiado = byId('barcodeFiado').checked;
   if (esFiado && !cliente) {
-    alert('Para anotarlo como fiado necesitás el nombre del cliente.');
+    dialogoAviso('Para anotarlo como fiado necesitás el nombre del cliente.');
     byId('barcodeCliente').focus();
     return;
   }
@@ -19610,7 +19611,7 @@ async function confirmarVentaCarrito() {
 
   const entraPlata = !esFiado || abonaAhora > 0;
   if (entraPlata && !medioPago) {
-    alert('Elegí con qué te paga antes de registrar la venta.\n\n' +
+    dialogoAviso('Elegí con qué te paga antes de registrar la venta.\n\n' +
           'Es lo que después te deja cerrar la caja por efectivo, débito y transferencia.');
     byId('barcodeMedioPago')?.focus();
     return;
@@ -19621,7 +19622,7 @@ async function confirmarVentaCarrito() {
   if (!ok) return;
 
   guardarNombreVendedor(vendedor);
-  alert('✓ Venta registrada: ' + resumen.lineas.length + ' producto' + (resumen.lineas.length === 1 ? '' : 's') +
+  dialogoAviso('✓ Venta registrada: ' + resumen.lineas.length + ' producto' + (resumen.lineas.length === 1 ? '' : 's') +
         ' = ' + money(resumen.total) +
         (resumen.ajustes.length ? '\n\n' + resumen.ajustes.map(textoAjustePorciones).join('\n') : ''));
 
@@ -19690,7 +19691,7 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
   }]).select('id');
 
   if (error) {
-    alert('Error al registrar la venta:\n\n' + humano(error));
+    dialogoAviso('Error al registrar la venta:\n\n' + humano(error));
     return false;
   }
   const ordenId = data?.[0]?.id || null;
@@ -19798,7 +19799,7 @@ function actualizarAliasVenta() {
       b.textContent = '✓ Copiado';
       setTimeout(() => { b.textContent = 'Copiar'; }, 1500);
     } catch (e) {
-      prompt('Copialo desde acá:', b.dataset.copiarAlias);
+      dialogoCopiar('Copialo desde acá:', b.dataset.copiarAlias);
     }
   }));
 }
@@ -19808,7 +19809,7 @@ byId('barcodeMedioPago')?.addEventListener('change', actualizarAliasVenta);
 // Ticket de 58mm con lo que muestra la pantalla de Caja: del dia elegido,
 // cuanto entro, cuanto salio y en que medio esta la plata. Si se cuenta el
 // efectivo, sale tambien la diferencia contra lo que deberia haber.
-function imprimirCierreCaja() {
+async function imprimirCierreCaja() {
   renderCaja();
   const r = ultimoResumenCaja;
   if (!r) return;
@@ -19817,7 +19818,7 @@ function imprimirCierreCaja() {
   const ventas = r.movimientos.filter(m => m.origen === 'venta' && m.medio !== 'Equipo usado').length;
   const efectivoEsperado = Number(r.porMedio['Efectivo'] || 0);
 
-  const contado = prompt(
+  const contado = await dialogoPedir(
     'Cierre de caja del ' + fechaAR(r.fecha) + '\n\n' +
     'Efectivo que debería haber: ' + money(efectivoEsperado) + '\n\n' +
     '¿Cuánto efectivo contaste? (dejalo vacío para imprimir sin contar)', '');
@@ -19871,7 +19872,7 @@ async function confirmBarcodeVenta() {
   // el producto que el usuario efectivamente selecciono.
   const product = currentBarcodeProduct;
   if (!product) {
-    alert('Elegí un producto antes de registrar la venta.');
+    dialogoAviso('Elegí un producto antes de registrar la venta.');
     return;
   }
 
@@ -19879,7 +19880,7 @@ async function confirmBarcodeVenta() {
   // vacío o 0 — que en una venta no significa nada.
   if (qty <= 0) {
     const u = unidadDe(product);
-    alert('Escribí cuántos ' + (u ? u.plural : 'unidades') + ' estás vendiendo.');
+    dialogoAviso('Escribí cuántos ' + (u ? u.plural : 'unidades') + ' estás vendiendo.');
     byId('barcodeQty').focus();
     return;
   }
@@ -19890,7 +19891,7 @@ async function confirmBarcodeVenta() {
   if (seVendePorMedida(product) && !productoDeVentaTieneVariantes()) {
     const disponible = Number(product.stock || 0);
     if (qty > disponible) {
-      alert('No hay stock suficiente: quedan ' + formatearCantidad(disponible, product) + '.');
+      dialogoAviso('No hay stock suficiente: quedan ' + formatearCantidad(disponible, product) + '.');
       return;
     }
   }
@@ -19901,7 +19902,7 @@ async function confirmBarcodeVenta() {
   const esFiado = byId('barcodeFiado').checked;
 
   if (esFiado && !cliente) {
-    alert('Para anotarlo como fiado necesitás el nombre del cliente.');
+    dialogoAviso('Para anotarlo como fiado necesitás el nombre del cliente.');
     byId('barcodeCliente').focus();
     return;
   }
@@ -19911,12 +19912,12 @@ async function confirmBarcodeVenta() {
   let variante = null;
   if (productoDeVentaTieneVariantes()) {
     if (Object.keys(varianteSeleccionadaVenta).length < product.variante_campos.length) {
-      alert('Elegí ' + product.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' antes de registrar la venta.');
+      dialogoAviso('Elegí ' + product.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + ' antes de registrar la venta.');
       return;
     }
     const stockDisponible = stockDeVarianteVenta();
     if (!stockDisponible || stockDisponible < qty) {
-      alert('No hay stock suficiente en esa combinación: quedan ' + (stockDisponible || 0) +
+      dialogoAviso('No hay stock suficiente en esa combinación: quedan ' + (stockDisponible || 0) +
             (stockDisponible === 1 ? ' unidad' : ' unidades') + '.');
       return;
     }
@@ -19924,7 +19925,7 @@ async function confirmBarcodeVenta() {
     // y uno blanco), hay que confirmar cuál se está vendiendo — si no, el
     // descuento de stock elegía cualquiera sin que el vendedor lo supiera.
     if (unidadesDisponiblesVenta().length > 1 && !imeiSeleccionadoVenta) {
-      alert('Elegí cuál de los equipos estás vendiendo antes de registrar la venta.');
+      dialogoAviso('Elegí cuál de los equipos estás vendiendo antes de registrar la venta.');
       return;
     }
     variante = { ...varianteSeleccionadaVenta };
@@ -19932,7 +19933,7 @@ async function confirmBarcodeVenta() {
 
   const tomaEquipo = byId('barcodeTradeIn').checked;
   if (tomaEquipo && !byId('barcodeTradeInDesc').value.trim()) {
-    alert('Describí qué equipo estás recibiendo (marca, modelo, estado).');
+    dialogoAviso('Describí qué equipo estás recibiendo (marca, modelo, estado).');
     byId('barcodeTradeInDesc').focus();
     return;
   }
@@ -19940,7 +19941,7 @@ async function confirmBarcodeVenta() {
   // descontar cero sin avisar le rompe la venta igual que descontar mal.
   if (tomaEquipo && byId('barcodeTradeInMoneda')?.value !== 'ARS' &&
       (Number(byId('barcodeTradeInValor').value) || 0) > 0 && !tasacionEnPesos) {
-    alert('No pudimos convertir la tasación a pesos.\n\nProbá de nuevo, o cargá el valor en pesos.');
+    dialogoAviso('No pudimos convertir la tasación a pesos.\n\nProbá de nuevo, o cargá el valor en pesos.');
     return;
   }
 
@@ -19972,7 +19973,7 @@ async function confirmBarcodeVenta() {
   // medio obligaria a inventar uno que despues ensucia la caja igual.
   const entraPlata = !esFiado || abonaAhora > 0;
   if (entraPlata && !medioPago) {
-    alert('Elegí con qué te paga antes de registrar la venta.\n\n' +
+    dialogoAviso('Elegí con qué te paga antes de registrar la venta.\n\n' +
           'Es lo que después te deja cerrar la caja por efectivo, débito y transferencia.');
     byId('barcodeMedioPago')?.focus();
     return;
@@ -19987,7 +19988,7 @@ async function confirmBarcodeVenta() {
         ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos.'
         : '\n\n⚠️ La venta quedó registrada, pero no se pudo cargar el equipo tomado como stock. Cargalo a mano en Productos.';
     }
-    alert(mensaje);
+    dialogoAviso(mensaje);
 
     // Despues del alert a proposito: el vendedor confirma la venta y recien
     // ahi sale el ticket. Si saliera antes, el dialogo de impresion tapa el
@@ -20039,7 +20040,7 @@ async function confirmBarcodeVenta() {
     // Se ofrece después de limpiar el formulario de venta: si el vendedor
     // dice que sí, el modal de producto se abre sobre una pantalla ya
     // lista para la próxima venta, no a mitad de una.
-    if (idEquipoParaFoto && confirm('¿Le sacás una foto al equipo que tomaste en parte de pago ahora?')) {
+    if (idEquipoParaFoto && await dialogoConfirmar('¿Le sacás una foto al equipo que tomaste en parte de pago ahora?')) {
       editProduct(idEquipoParaFoto);
     }
   }
@@ -20181,7 +20182,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
   }]).select('id');
 
   if (error) {
-    alert('Error al registrar la venta:\n\n' + humano(error));
+    dialogoAviso('Error al registrar la venta:\n\n' + humano(error));
     return false;
   }
 
@@ -20491,7 +20492,7 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
     const msg = (err && err.name === 'NotAllowedError')
       ? 'Necesitamos permiso para usar la cámara. Habilitalo desde el candado en la barra de direcciones.'
       : 'No se pudo abrir la cámara: ' + (err?.message || err);
-    alert(msg);
+    dialogoAviso(msg);
   }
 }
 
@@ -20902,7 +20903,7 @@ async function atarSuscripcionDeLaVuelta() {
     limpia();
 
     if (d && d.ok && d.activado) {
-      alert('\u00a1Listo! Se activo tu plan ' + nombrePlan(d.plan) + '.\n\n' +
+      await dialogoAviso('\u00a1Listo! Se activo tu plan ' + nombrePlan(d.plan) + '.\n\n' +
             'Ya podes usar todo el panel.');
       window.location.reload();
       return true;
@@ -20911,7 +20912,7 @@ async function atarSuscripcionDeLaVuelta() {
     // Que no se active no siempre es un problema: el caso mas comun es que
     // Mercado Pago todavia no hizo el primer cobro. Se le dice, en vez de
     // dejarlo mirando un panel bloqueado despues de haber pagado.
-    if (d && d.motivo) alert(d.motivo);
+    if (d && d.motivo) dialogoAviso(d.motivo);
   } catch (e) {
     limpia();
     // Sin conexion: queda el boton "Ya pague" y el chequeo al entrar.
@@ -20939,7 +20940,7 @@ async function chequearSuscripcionAlEntrar() {
 
     // Pago y no lo sabiamos. Se le avisa antes de recargar, para que entienda
     // por que se movio la pantalla sola.
-    alert('Encontramos tu pago: se activo el plan ' + nombrePlan(datos.plan) + '.\n\n' +
+    await dialogoAviso('Encontramos tu pago: se activo el plan ' + nombrePlan(datos.plan) + '.\n\n' +
           'Ya podes usar el panel.');
     window.location.reload();
   } catch (e) {
@@ -21798,13 +21799,13 @@ byId('contactForm').addEventListener('submit', async (e) => {
   }).eq('slug', currentStore.slug);
 
   if (error){
-    alert('Error al guardar: ' + humano(error));
+    dialogoAviso('Error al guardar: ' + humano(error));
     return;
   }
 
   currentStore = { ...currentStore, phone, website, instagram, location };
   hide(byId('contactModal'));
-  alert('Datos de contacto guardados!');
+  dialogoAviso('Datos de contacto guardados!');
 });
 
 const MAX_FOTOS = 4;
@@ -21962,11 +21963,11 @@ byId('pImageFile').addEventListener('change', async (e) => {
 
   const lugar = MAX_FOTOS - fotosEnEdicion.length;
   if (lugar <= 0) {
-    alert('Ya tenés las ' + MAX_FOTOS + ' fotos permitidas. Quitá alguna para agregar otra.');
+    dialogoAviso('Ya tenés las ' + MAX_FOTOS + ' fotos permitidas. Quitá alguna para agregar otra.');
     return;
   }
   if (elegidos.length > lugar) {
-    alert('Se agregan las primeras ' + lugar + ': ya tenías ' + fotosEnEdicion.length + ' y el máximo es ' + MAX_FOTOS + '.');
+    dialogoAviso('Se agregan las primeras ' + lugar + ': ya tenías ' + fotosEnEdicion.length + ' y el máximo es ' + MAX_FOTOS + '.');
   }
 
   for (const archivo of elegidos.slice(0, lugar)) {
@@ -21979,7 +21980,7 @@ byId('pImageFile').addEventListener('change', async (e) => {
       // achicar. Sacarle una captura de pantalla la convierte en algo que
       // el navegador si entiende, y es lo unico que el vendedor puede hacer
       // sin instalar nada.
-      alert('No pudimos achicar "' + archivo.name + '".' + '\n\n' +
+      dialogoAviso('No pudimos achicar "' + archivo.name + '".' + '\n\n' +
             'Suele pasar con fotos del iPhone en formato HEIC. Una forma rapida de ' +
             'resolverlo: abrí la foto, sacale una captura de pantalla y subí la captura.');
       continue;
@@ -22147,7 +22148,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     let contenedorCampo = campoNumeroMal.parentElement;
     while (contenedorCampo && contenedorCampo.id !== 'productForm' && !contenedorCampo.querySelector('label')) contenedorCampo = contenedorCampo.parentElement;
     const etiquetaCampo = (contenedorCampo && contenedorCampo.id !== 'productForm' ? contenedorCampo.querySelector('label')?.textContent || '' : '').trim();
-    alert((etiquetaCampo ? 'Revisá "' + etiquetaCampo + '".\n\n' : 'Hay un número mal escrito.\n\n') +
+    dialogoAviso((etiquetaCampo ? 'Revisá "' + etiquetaCampo + '".\n\n' : 'Hay un número mal escrito.\n\n') +
       (campoNumeroMal.validity.badInput
         ? 'Escribí el número sin puntos de miles: 1250000, no 1.250.000. Para decimales usá la coma o el punto una sola vez.'
         : (campoNumeroMal.validationMessage || 'El valor no es válido.')));
@@ -22158,7 +22159,7 @@ byId('productForm').addEventListener('submit', async (e) => {
   }
 
   if (byId('pTieneVariantes').checked && !variantesEnEdicion.length) {
-    alert('Activaste "Este producto tiene variantes" pero no cargaste ningún atributo con valores.\n\n' +
+    dialogoAviso('Activaste "Este producto tiene variantes" pero no cargaste ningún atributo con valores.\n\n' +
           'Completá al menos uno (por ejemplo Talle: S, M, L) o destildá la casilla.');
     return;
   }
@@ -22168,7 +22169,7 @@ byId('productForm').addEventListener('submit', async (e) => {
   // roto (no hay forma de venderlo ni de encontrarlo después).
   const equiposSinImei = variantesEnEdicion.reduce((s, v) => s + (v.imeis || []).filter(u => !u.imei).length, 0);
   if (equiposSinImei > 0) {
-    alert('Hay ' + equiposSinImei + ' equipo' + (equiposSinImei === 1 ? '' : 's') + ' sin IMEI cargado — completalo' +
+    dialogoAviso('Hay ' + equiposSinImei + ' equipo' + (equiposSinImei === 1 ? '' : 's') + ' sin IMEI cargado — completalo' +
       (equiposSinImei === 1 ? '' : 's') + ' o quitalo' + (equiposSinImei === 1 ? '' : 's') + ' con la ✕ antes de guardar.');
     return;
   }
@@ -22179,7 +22180,7 @@ byId('productForm').addEventListener('submit', async (e) => {
   // silencio ("An invalid form control is not focusable") — el botón
   // parecía roto. Además así podemos llevarlo al paso exacto del problema.
   const irAlPasoYAvisar = (paso, mensaje, idFoco) => {
-    alert(mensaje);
+    dialogoAviso(mensaje);
     if (wizardModoGuiado) mostrarPasoWizard(paso);
     const campo = byId(idFoco);
     if (campo) { campo.scrollIntoView({ behavior: 'smooth', block: 'center' }); campo.focus(); }
@@ -22222,7 +22223,7 @@ byId('productForm').addEventListener('submit', async (e) => {
   const ofertaAGuardar = ofertaEscrita === '' ? null : aPesosConFactor(ofertaEscrita, factorMoneda);
   if (ofertaAGuardar !== null &&
       (!(ofertaAGuardar > 0) || ofertaAGuardar >= Number(precioConv.monto_ars))) {
-    alert('El precio en oferta tiene que ser mayor a 0 y menor al precio de lista (' +
+    dialogoAviso('El precio en oferta tiene que ser mayor a 0 y menor al precio de lista (' +
           money(precioConv.monto_ars) + ').\n\nSi no querés hacer oferta, dejá el campo vacío.');
     byId('pPrecioOferta').focus();
     return;
@@ -22254,7 +22255,7 @@ byId('productForm').addEventListener('submit', async (e) => {
         urlsFinales[urlsFinales.indexOf(aSubir[i])] = { tipo: 'url', url };
       }
     } catch (err) {
-      alert('Error subiendo las fotos: ' + (humano(err) || 'error desconocido'));
+      dialogoAviso('Error subiendo las fotos: ' + (humano(err) || 'error desconocido'));
       boton.disabled = false;
       boton.textContent = textoOriginal;
       return;
@@ -22363,7 +22364,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     const msg = errorGuardado.message || '';
     const falta = msg.match(/Could not find the '([^']+)' column/);
 
-    alert(falta
+    dialogoAviso(falta
       ? (falta[1] === 'categorias'
           ? 'Falta una actualización en la base para que un producto pueda estar\n' +
             'en varias categorías.\n\nCorré schema/48-varias-categorias.sql en Supabase.'
@@ -22515,7 +22516,7 @@ async function reponerStock(id) {
   if (!p) return;
 
   const u = unidadDe(p);
-  const texto = prompt('¿Cuántos ' + (u ? u.plural : 'unidades') + ' de "' + p.name + '" sumás al stock?' +
+  const texto = await dialogoPedir('¿Cuántos ' + (u ? u.plural : 'unidades') + ' de "' + p.name + '" sumás al stock?' +
     (u ? '\n(Si llegó un rollo de 50 ' + u.plural + ', escribí 50.)' : '') +
     '\n\nStock actual: ' + formatearCantidad(p.stock, p));
   if (texto === null) return;
@@ -22523,7 +22524,7 @@ async function reponerStock(id) {
   // Coma o punto: en Argentina se escribe "12,5" y Number() lo rechaza.
   const cantidad = Number(String(texto).replace(',', '.'));
   if (!Number.isFinite(cantidad) || cantidad <= 0) {
-    alert('Escribí un número mayor que 0.');
+    dialogoAviso('Escribí un número mayor que 0.');
     return;
   }
 
@@ -22535,7 +22536,7 @@ async function reponerStock(id) {
   }).eq('id', id);
 
   if (error) {
-    alert('No se pudo actualizar el stock:\n\n' + humano(error));
+    dialogoAviso('No se pudo actualizar el stock:\n\n' + humano(error));
     return;
   }
   await refreshData();
@@ -22649,7 +22650,7 @@ function renderReponerImeisLista() {
       const p = products.find(x => String(x.id) === String(reponerVarianteProductoId));
       const repetidoEnProducto = p && Array.isArray(p.variantes) && p.variantes.some(v =>
         Array.isArray(v.imeis) && v.imeis.map(normalizarUnidadImei).some(x => x.imei === u.imei));
-      if (repetidoAca || repetidoEnProducto) alert('Ese IMEI ya está cargado en otra unidad — corregilo antes de confirmar.');
+      if (repetidoAca || repetidoEnProducto) dialogoAviso('Ese IMEI ya está cargado en otra unidad — corregilo antes de confirmar.');
       renderReponerImeisLista();
     });
   });
@@ -22674,12 +22675,12 @@ byId('reponerAgregarImeiBtn').addEventListener('click', () => {
   const input = byId('reponerNuevoImei');
   const imei = input.value.trim();
   if (!imei) return;
-  if (reponerImeisNuevos.some(u => u.imei === imei)) { alert('Ya agregaste ese IMEI en esta reposición.'); return; }
+  if (reponerImeisNuevos.some(u => u.imei === imei)) { dialogoAviso('Ya agregaste ese IMEI en esta reposición.'); return; }
 
   const p = products.find(x => String(x.id) === String(reponerVarianteProductoId));
   const yaExiste = p && Array.isArray(p.variantes) && p.variantes.some(v =>
     Array.isArray(v.imeis) && v.imeis.map(normalizarUnidadImei).some(u => u.imei === imei));
-  if (yaExiste) { alert('Ese IMEI ya está cargado en otra variante de este producto.'); return; }
+  if (yaExiste) { dialogoAviso('Ese IMEI ya está cargado en otra variante de este producto.'); return; }
 
   reponerImeisNuevos.push({
     imei,
@@ -22756,7 +22757,7 @@ async function confirmarReponerVariante() {
 
   const campos = Array.isArray(p.variante_campos) ? p.variante_campos : [];
   if (Object.keys(reponerVarianteSeleccion).length < campos.length) {
-    alert('Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
+    dialogoAviso('Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
     return;
   }
 
@@ -22764,14 +22765,14 @@ async function confirmarReponerVariante() {
   let cantidad = Number(byId('reponerVarianteCantidad').value);
 
   if (esElec) {
-    if (!reponerImeisNuevos.length) { alert('Agregá al menos un IMEI.'); return; }
+    if (!reponerImeisNuevos.length) { dialogoAviso('Agregá al menos un IMEI.'); return; }
     if (reponerImeisNuevos.some(u => !u.imei)) {
-      alert('Hay equipos sin IMEI cargado — completalos o quitalos con la ✕ antes de confirmar.');
+      dialogoAviso('Hay equipos sin IMEI cargado — completalos o quitalos con la ✕ antes de confirmar.');
       return;
     }
     cantidad = reponerImeisNuevos.length;
   } else if (!Number.isFinite(cantidad) || cantidad <= 0) {
-    alert('Escribí un número mayor que 0.');
+    dialogoAviso('Escribí un número mayor que 0.');
     return;
   }
 
@@ -22800,7 +22801,7 @@ async function confirmarReponerVariante() {
   const { error } = await sb.from('store_products').update({ variantes, stock: stockTotal }).eq('id', p.id);
 
   if (error) {
-    alert('No se pudo actualizar el stock:\n\n' + humano(error));
+    dialogoAviso('No se pudo actualizar el stock:\n\n' + humano(error));
     return;
   }
 
@@ -22923,14 +22924,14 @@ function confirmarEtiquetaVariante() {
 
   const campos = Array.isArray(p.variante_campos) ? p.variante_campos : [];
   if (Object.keys(etiquetaVarianteSeleccion).length < campos.length) {
-    alert('Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
+    dialogoAviso('Elegí ' + campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
     return;
   }
 
   const v = varianteEtiquetaSeleccionada(p);
   const conImeis = v && Array.isArray(v.imeis) && v.imeis.length;
   if (conImeis && !etiquetaVarianteImeiSeleccionado) {
-    alert('Elegí cuál de los equipos vas a etiquetar.');
+    dialogoAviso('Elegí cuál de los equipos vas a etiquetar.');
     return;
   }
   const unidad = conImeis ? v.imeis.map(normalizarUnidadImei).find(u => u.imei === etiquetaVarianteImeiSeleccionado) : null;
@@ -23009,11 +23010,11 @@ function imprimirEtiquetaProducto(id, variante, unidad, precioVariante) {
 
 async function deleteProduct(id) {
   if (!puedeOperar()) return;
-  if (!confirm('¿Eliminar este producto?')) return;
+  if (!await dialogoConfirmar('¿Eliminar este producto?')) return;
 
   const { error } = await sb.from('store_products').delete().eq('id', id);
   if (error) {
-    alert('No se pudo eliminar el producto:\n\n' + humano(error));
+    dialogoAviso('No se pudo eliminar el producto:\n\n' + humano(error));
     return;
   }
   await refreshData();
@@ -23507,7 +23508,7 @@ async function guardarEmpleado() {
   if (!puedeOperar()) return;
 
   const nombre = byId('empleadoNombre').value.trim();
-  if (!nombre) { alert('Falta el nombre del empleado.'); return; }
+  if (!nombre) { dialogoAviso('Falta el nombre del empleado.'); return; }
 
   const tarjeta = normalizarTarjeta(byId('empleadoTarjeta').value);
   const id = byId('empleadoModal').dataset.id;
@@ -23515,7 +23516,7 @@ async function guardarEmpleado() {
   // Dos empleados con la misma tarjeta harían que una marca no sepa de
   // quién es. La base también lo frena, pero acá se explica de quién es.
   const repetida = tarjeta && empleados.find(x => normalizarTarjeta(x.tarjeta) === tarjeta && String(x.id) !== String(id));
-  if (repetida) { alert('Esa tarjeta ya es de ' + (repetida.nombre || 'otro empleado') + '.'); return; }
+  if (repetida) { dialogoAviso('Esa tarjeta ya es de ' + (repetida.nombre || 'otro empleado') + '.'); return; }
 
   const datos = {
     store_slug: currentStore.slug,
@@ -23530,7 +23531,7 @@ async function guardarEmpleado() {
     ? await sb.from('store_empleados').update(datos).eq('id', id)
     : await sb.from('store_empleados').insert([datos]);
 
-  if (error) { alert('No se pudo guardar:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo guardar:\n\n' + humano(error)); return; }
 
   hide(byId('empleadoModal'));
   await refreshData();
@@ -23541,11 +23542,11 @@ async function eliminarEmpleado() {
   const id = byId('empleadoModal').dataset.id;
   if (!id) return;
 
-  if (!confirm('¿Eliminar este empleado? Se borran también todas sus marcas de entrada y salida.\n\n' +
+  if (!await dialogoConfirmar('¿Eliminar este empleado? Se borran también todas sus marcas de entrada y salida.\n\n' +
                'Si simplemente dejó de trabajar, mejor destildá "Trabaja actualmente": así las horas viejas se siguen viendo.')) return;
 
   const { error } = await sb.from('store_empleados').delete().eq('id', id);
-  if (error) { alert('No se pudo eliminar:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo eliminar:\n\n' + humano(error)); return; }
 
   hide(byId('empleadoModal'));
   await refreshData();
@@ -23553,9 +23554,9 @@ async function eliminarEmpleado() {
 
 async function borrarFichada(id) {
   if (!puedeOperar()) return;
-  if (!confirm('¿Borrar esta marca?')) return;
+  if (!await dialogoConfirmar('¿Borrar esta marca?')) return;
   const { error } = await sb.from('store_fichadas').delete().eq('id', id);
-  if (error) { alert('No se pudo borrar:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
 
@@ -23779,16 +23780,16 @@ async function copiarLinkDelReloj() {
   const link = linkDelReloj();
   try {
     await navigator.clipboard.writeText(link);
-    alert('Link del reloj copiado:\n\n' + link +
+    dialogoAviso('Link del reloj copiado:\n\n' + link +
           '\n\nAbrilo en la tablet de la entrada y dejalo como página de inicio.');
   } catch (e) {
-    prompt('Copiá el link del reloj:', link);
+    dialogoCopiar('Copiá el link del reloj:', link);
   }
 }
 
 function abrirReloj() {
   if (!empleadosActivos().length) {
-    alert('Cargá al menos un empleado antes de abrir el reloj.');
+    dialogoAviso('Cargá al menos un empleado antes de abrir el reloj.');
     return;
   }
   marcarRelojEnLaUrl(true);
@@ -23829,7 +23830,7 @@ function salirDelReloj() {
 }
 
 // ---- El sueldo del período, como gasto ----
-function registrarSueldoComoGasto(empleadoId) {
+async function registrarSueldoComoGasto(empleadoId) {
   const e = empleadoPorId(empleadoId);
   if (!e) return;
 
@@ -23837,7 +23838,7 @@ function registrarSueldoComoGasto(empleadoId) {
   const r = resumenDeEmpleado(e, desde, hasta);
   if (r.aPagar <= 0) return;
 
-  if (r.olvidos && !confirm('Ojo: ' + e.nombre + ' tiene ' + r.olvidos + ' marca(s) sin cerrar en este período, ' +
+  if (r.olvidos && !await dialogoConfirmar('Ojo: ' + e.nombre + ' tiene ' + r.olvidos + ' marca(s) sin cerrar en este período, ' +
       'así que esas horas no están contadas.\n\n¿Registrar igual ' + money(r.aPagar) + '?')) return;
 
   // Se abre el modal de gastos de siempre, precargado. El gasto no se
@@ -23873,7 +23874,7 @@ async function leerTarjetaNfcAlCampo(idCampo, boton) {
       boton.disabled = false;
     };
   } catch (err) {
-    alert('No se pudo leer la tarjeta con el celular: ' + humano(err) +
+    dialogoAviso('No se pudo leer la tarjeta con el celular: ' + humano(err) +
       '\n\nSi el teléfono no tiene NFC o el navegador no lo permite, usá un lector USB.');
     boton.textContent = textoOriginal;
     boton.disabled = false;
@@ -23953,7 +23954,7 @@ byId('relojModal').addEventListener('click', () => {
 byId('marcaManualBtn').addEventListener('click', () => {
   if (!puedeOperar()) return;
   const activos = empleadosActivos();
-  if (!activos.length) { alert('Primero cargá un empleado.'); return; }
+  if (!activos.length) { dialogoAviso('Primero cargá un empleado.'); return; }
 
   byId('marcaManualEmpleado').innerHTML = activos
     .map(e => '<option value="' + e.id + '">' + escapeHtml(e.nombre || '') + '</option>').join('');
@@ -23974,7 +23975,7 @@ byId('guardarMarcaManualBtn').addEventListener('click', async () => {
 
   const empleadoId = byId('marcaManualEmpleado').value;
   const texto = byId('marcaManualMomento').value;
-  if (!empleadoId || !texto) { alert('Faltan el empleado o el día y la hora.'); return; }
+  if (!empleadoId || !texto) { dialogoAviso('Faltan el empleado o el día y la hora.'); return; }
 
   // El datetime-local se tipea en hora de Buenos Aires (es la hora del
   // local). Se arma con los mismos números y se guarda el instante real.
@@ -23989,7 +23990,7 @@ byId('guardarMarcaManualBtn').addEventListener('click', async () => {
     origen: 'manual'
   }]);
 
-  if (error) { alert('No se pudo guardar la marca:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo guardar la marca:\n\n' + humano(error)); return; }
 
   hide(byId('marcaManualModal'));
   await refreshData();
@@ -24069,7 +24070,7 @@ byId('guardarPinCostosBtn').addEventListener('click', guardarPinCostos);
 byId('quitarPinCostosBtn').addEventListener('click', quitarPinCostos);
 byId('registrarHuellaBtn').addEventListener('click', async () => {
   const ok = await registrarHuella();
-  alert(ok ? '✓ Huella habilitada en este dispositivo.' : 'No se pudo habilitar la huella. Probá de nuevo.');
+  dialogoAviso(ok ? '✓ Huella habilitada en este dispositivo.' : 'No se pudo habilitar la huella. Probá de nuevo.');
   await actualizarEstadoPinCostos();
 });
 byId('pProveedorVerBtn').addEventListener('click', () => {
@@ -24103,7 +24104,7 @@ byId('repRepuestoVarianteConfirmar').addEventListener('click', () => {
   const p = productoVarianteRepuesto;
   if (!p) return;
   if (Object.keys(seleccionVarianteRepuesto).length < p.variante_campos.length) {
-    alert('Elegí ' + p.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
+    dialogoAviso('Elegí ' + p.variante_campos.map(c => c.nombre.toLowerCase()).join(' y ') + '.');
     return;
   }
   agregarLineaRepuesto(p, cantidadPendienteRepuesto, { ...seleccionVarianteRepuesto });
@@ -24656,7 +24657,7 @@ byId('configPortadaInput').addEventListener('change', async (e) => {
   // la misma foto entraba sin problema como foto de producto.
   const chica = await achicarHastaQueEntre(f);
   if (chica.size > 2 * 1024 * 1024) {
-    alert('La portada sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra imagen.');
+    dialogoAviso('La portada sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra imagen.');
     e.target.value = '';
     return;
   }
@@ -25044,8 +25045,8 @@ async function actualizarEstadoPinCostos() {
 
 async function guardarPinCostos() {
   const pin = byId('configPinNuevo').value.trim();
-  if (!pin) { alert('Escribí un PIN de 4 dígitos.'); return; }
-  if (!/^\d{4}$/.test(pin)) { alert('El PIN tiene que ser de 4 dígitos, solo números.'); return; }
+  if (!pin) { dialogoAviso('Escribí un PIN de 4 dígitos.'); return; }
+  if (!/^\d{4}$/.test(pin)) { dialogoAviso('El PIN tiene que ser de 4 dígitos, solo números.'); return; }
 
   // Si ya había un PIN cargado, para CAMBIARLO hay que probar primero que
   // se sabe el actual (con el PIN mismo o la huella) — si no, cualquiera
@@ -25062,14 +25063,14 @@ async function guardarPinCostos() {
 async function guardarPinCostosConfirmado(pin) {
   const hash = await hashPin(pin);
   const { error } = await sb.from('store_profiles').update({ pin_costos: hash }).eq('slug', currentStore.slug);
-  if (error) { alert('No se pudo guardar el PIN:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo guardar el PIN:\n\n' + humano(error)); return; }
 
   currentStore.pin_costos = hash;
   byId('configPinNuevo').value = '';
   costosDesbloqueados = true;   // acaba de probar que lo sabe (o lo acaba de crear): no tiene sentido pedírselo de nuevo ya mismo
   await actualizarEstadoPinCostos();
   renderReparaciones();
-  alert('✓ PIN guardado. A partir de ahora se va a pedir para ver Gastos, Costo/Margen y proveedores.');
+  dialogoAviso('✓ PIN guardado. A partir de ahora se va a pedir para ver Gastos, Costo/Margen y proveedores.');
 }
 
 async function quitarPinCostos() {
@@ -25080,10 +25081,10 @@ async function quitarPinCostos() {
 }
 
 async function quitarPinCostosConfirmado() {
-  if (!confirm('¿Sacar el PIN? Gastos, Costo/Margen y los datos de proveedores van a quedar visibles para cualquiera con acceso al panel, como antes.')) return;
+  if (!await dialogoConfirmar('¿Sacar el PIN? Gastos, Costo/Margen y los datos de proveedores van a quedar visibles para cualquiera con acceso al panel, como antes.')) return;
 
   const { error } = await sb.from('store_profiles').update({ pin_costos: null }).eq('slug', currentStore.slug);
-  if (error) { alert('No se pudo quitar el PIN:\n\n' + humano(error)); return; }
+  if (error) { dialogoAviso('No se pudo quitar el PIN:\n\n' + humano(error)); return; }
 
   currentStore.pin_costos = null;
   localStorage.removeItem(claveHuellaLS());   // la huella era un atajo del PIN — sin PIN, no tiene sentido dejarla registrada
@@ -25119,7 +25120,7 @@ async function guardarConfiguracion() {
     // navegador y recien ahi se mira cuanto pesa.
     const logoChico = await achicarHastaQueEntre(logoFile);
     if (logoChico.size > 2 * 1024 * 1024) {
-      alert('La imagen sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra.');
+      dialogoAviso('La imagen sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra.');
       return;
     }
 
@@ -25130,7 +25131,7 @@ async function guardarConfiguracion() {
     const { data, error: uploadError } = await sb.storage.from('product-images').upload(fileName, logoChico, { upsert: true });
 
     if (uploadError) {
-      alert('Error al subir la imagen: ' + uploadError.message);
+      dialogoAviso('Error al subir la imagen: ' + uploadError.message);
       return;
     }
 
@@ -25144,7 +25145,7 @@ async function guardarConfiguracion() {
   if (portadaFile) {
     const portadaChica = await achicarHastaQueEntre(portadaFile);
     if (portadaChica.size > 2 * 1024 * 1024) {
-      alert('La portada sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra.');
+      dialogoAviso('La portada sigue pesando mas de 2MB incluso despues de achicarla. Proba con otra.');
       return;
     }
     const nombre = 'portadas/' + currentStore.slug + '-' + Date.now() + portadaChica.name.slice(-4);
@@ -25152,7 +25153,7 @@ async function guardarConfiguracion() {
       .upload(nombre, portadaChica, { upsert: true });
 
     if (errPortada) {
-      alert('Error al subir la portada: ' + errPortada.message);
+      dialogoAviso('Error al subir la portada: ' + errPortada.message);
       return;
     }
     portadaUrl = sb.storage.from('product-images').getPublicUrl(nombre).data.publicUrl;
@@ -25202,11 +25203,11 @@ async function guardarConfiguracion() {
   const { error } = await sb.from('store_profiles').update(updateData).eq('slug', currentStore.slug);
 
   if (error) {
-    alert('Error al guardar: ' + humano(error));
+    dialogoAviso('Error al guardar: ' + humano(error));
     return;
   }
 
-  alert('✓ Configuración guardada correctamente!');
+  dialogoAviso('✓ Configuración guardada correctamente!');
   currentStore = { ...currentStore, ...updateData };
   byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
   aplicarVisibilidadPorRubro();
@@ -25332,7 +25333,7 @@ function mostrarPesoBalanza(valor, estado) {
 
 async function conectarBalanza() {
   if (!hayPuertoSerie()) {
-    alert('Este navegador no puede conectarse a la balanza por cable.\n\n' +
+    dialogoAviso('Este navegador no puede conectarse a la balanza por cable.\n\n' +
           'Funciona en Chrome o Edge de computadora. En el celular usá la etiqueta ' +
           'con código de barras, que hace lo mismo.');
     return;
@@ -25350,7 +25351,7 @@ async function conectarBalanza() {
   } catch (e) {
     // Cancelar el selector de puertos no es un error que haya que gritar.
     if (e && (e.name === 'NotFoundError' || e.name === 'AbortError')) return;
-    alert('No se pudo abrir la balanza:\n\n' + (e?.message || e) +
+    dialogoAviso('No se pudo abrir la balanza:\n\n' + (e?.message || e) +
           '\n\n(Si dice que el puerto está ocupado, cerrá cualquier otro programa que la esté usando.)');
   }
 }
@@ -25396,8 +25397,8 @@ async function desconectarBalanza() {
 // vendedor carga la venta, y un numero que se mueve bajo la mano es peor que
 // tipearlo. Lo pasa el vendedor cuando ya esta.
 function usarPesoDeBalanza() {
-  if (pesoBalanza == null) { alert('Todavía no hay un peso estable en la balanza.'); return; }
-  if (!currentBarcodeProduct) { alert('Buscá primero el producto que estás pesando.'); return; }
+  if (pesoBalanza == null) { dialogoAviso('Todavía no hay un peso estable en la balanza.'); return; }
+  if (!currentBarcodeProduct) { dialogoAviso('Buscá primero el producto que estás pesando.'); return; }
   byId('barcodeQty').value = pesoBalanza;
   avisoBalanzaVenta({ producto: currentBarcodeProduct, cantidad: pesoBalanza });
   calculateTotal();
@@ -25505,10 +25506,10 @@ let promptDeInstalacion = null;
       return;
     }
     if (esIOS) {
-      alert('Para instalarlo en tu iPhone:\n\nTocá el botón Compartir (el cuadradito con la flecha hacia arriba) y después "Agregar a inicio".');
+      dialogoAviso('Para instalarlo en tu iPhone:\n\nTocá el botón Compartir (el cuadradito con la flecha hacia arriba) y después "Agregar a inicio".');
       return;
     }
-    alert('Buscá "Instalar aplicación" en el menú de tu navegador (los tres puntitos).');
+    dialogoAviso('Buscá "Instalar aplicación" en el menú de tu navegador (los tres puntitos).');
   });
 })();
 
