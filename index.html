@@ -394,7 +394,49 @@
     position: relative;
     z-index: 0;
     isolation: isolate;
+    /* Mismo fondo que las tiles oscuras: sin esto, mientras cargan se ve
+       un parpadeo blanco. */
+    background: #0e1420;
   }
+
+  /* ---- Mapa oscuro (referencia: "Location Map" de 21st.dev) ----
+     Pines propios en celeste con un pulso suave, y los globitos y los
+     controles de Leaflet en oscuro para que no queden blancos encima. */
+  .pin-tienda { position: relative; width: 22px; height: 22px; }
+  .pin-tienda .pin-punto {
+    position: absolute; inset: 5px; border-radius: 50%;
+    background: #2F8FE0; border: 2px solid #fff;
+    box-shadow: 0 0 10px rgba(47,143,224,.9);
+  }
+  .pin-tienda .pin-pulso {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: rgba(47,143,224,.45);
+    animation: pin-pulso 2.2s ease-out infinite;
+  }
+  .pin-tienda.activa .pin-punto { background: #1FD1A5; box-shadow: 0 0 14px rgba(31,209,165,.95); }
+  .pin-tienda.activa .pin-pulso { background: rgba(31,209,165,.45); }
+  @keyframes pin-pulso {
+    0%   { transform: scale(.6); opacity: .9; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pin-tienda .pin-pulso { animation: none; opacity: .35; }
+  }
+  #map .leaflet-popup-content-wrapper,
+  #map .leaflet-popup-tip {
+    background: #162033; color: #E6EDF7;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  #map .leaflet-popup-content-wrapper { border: 1px solid #26354F; border-radius: 12px; }
+  #map .leaflet-popup-content a { color: #5BB0F5; font-weight: 600; }
+  #map a.leaflet-popup-close-button { color: #8FA3BF; }
+  #map .leaflet-bar a {
+    background: #162033; color: #E6EDF7; border-bottom-color: #26354F;
+  }
+  #map .leaflet-bar a:hover { background: #1E2C45; }
+  #map .leaflet-bar { border: 1px solid #26354F; }
+  #map .leaflet-control-attribution { background: rgba(14,20,32,.75); color: #8FA3BF; }
+  #map .leaflet-control-attribution a { color: #5BB0F5; }
 
   .stores-sidebar {
     background: #fff;
@@ -1876,10 +1918,23 @@ function storeCoords(store) {
 
 function initMap() {
   map = L.map('map').setView([-38.0, -63.6], 4); // Argentina
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  // Tiles oscuras de CARTO (gratis, sin clave), con los mismos datos de
+  // OpenStreetMap que antes.
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    subdomains: 'abcd',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
   }).addTo(map);
+}
+
+function iconoTienda(activa) {
+  return L.divIcon({
+    className: '',
+    html: '<div class="pin-tienda' + (activa ? ' activa' : '') + '"><span class="pin-pulso"></span><span class="pin-punto"></span></div>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -12]
+  });
 }
 
 function addMapMarkers() {
@@ -1891,11 +1946,12 @@ function addMapMarkers() {
     const coords = storeCoords(store);
     if (!coords) return; // sin ubicacion cargada: no inventamos un pin
 
-    const marker = L.marker(coords).addTo(map).bindPopup(
+    const marker = L.marker(coords, { icon: iconoTienda(selectedStore?.id === store.id) }).addTo(map).bindPopup(
       '<b>' + escapeHtml(store.business_name) + '</b><br>' +
       '<a href="/' + store.slug + '" target="_blank">Ver tienda &rarr;</a>'
     );
     marker.on('click', () => selectStore(store.id));
+    marker.tiendaId = store.id;
     markers.push(marker);
     puntos.push(coords);
   });
@@ -1934,6 +1990,9 @@ function selectStore(storeId) {
 
   selectedStore = store;
   renderStoresList();
+
+  // La tienda elegida se pinta en verde; el resto vuelve al celeste.
+  markers.forEach(m => m.setIcon(iconoTienda(String(m.tiendaId) === String(store.id))));
 
   const coords = storeCoords(store);
   if (coords) map.setView(coords, 14);
