@@ -2085,6 +2085,7 @@ tr:last-child td { border-bottom: none; }
         <button type="button" data-sel-accion="precio">$ Ajustar precio</button>
         <button type="button" data-sel-accion="oferta">% Poner oferta</button>
         <button type="button" data-sel-accion="sacar-oferta">Sacar oferta</button>
+        <button type="button" data-sel-accion="fijar-usd" id="selFijarUsd" class="hidden">💵 Fijar en dólares</button>
         <button type="button" data-sel-accion="pausar">⏸ Pausar</button>
         <button type="button" data-sel-accion="activar">▶ Activar</button>
         <button type="button" data-sel-accion="eliminar" class="peligro">Eliminar</button>
@@ -13470,8 +13471,11 @@ async function editarCotizacionManual(moneda) {
   if (entrada.trim() === '') {
     quitarCotizacionManual(moneda);
   } else {
-    const valor = Number(entrada.replace(',', '.'));
-    if (!valor || valor <= 0) { dialogoAviso('Poné un número válido.'); return; }
+    // numeroArgentino y no Number(...replace(',', '.')): "1.500" es mil
+    // quinientos, no uno con cincuenta. Con el Number pelado el dólar
+    // quedaba en $1,5 y cualquier producto en USD se repreciaba a centavos.
+    const valor = numeroArgentino(entrada);
+    if (!Number.isFinite(valor) || valor <= 0) { dialogoAviso('Poné un número válido.'); return; }
     fijarCotizacionManual(moneda, valor);
   }
 
@@ -13495,7 +13499,17 @@ async function ofrecerRepreciarProductos(moneda) {
   const desactualizados = products.filter(p =>
     p.moneda === moneda && Number(p.precio_original) > 0 &&
     Number(p.cotizacion) > 0 && Number(p.cotizacion) !== nueva);
-  if (!desactualizados.length) return;
+  if (!desactualizados.length) {
+    // Cambió el dólar y no se movió ningún precio: pasa cuando todo está
+    // cargado en pesos. Se avisa cómo hacer que sigan al dólar, en
+    // vez de dejar al vendedor pensando que el cambio no anduvo.
+    const enPesos = products.filter(p => !p.moneda && Number(p.price) > 0).length;
+    if (moneda === 'USD' && enPesos && rubroEsElectronica()) {
+      dialogoAviso('Tus ' + enPesos + ' productos están cargados en pesos, así que su precio no cambia con el dólar.\n\n' +
+            'Para que sigan al dólar: en Productos seleccionalos y tocá "💵 Fijar en dólares".');
+    }
+    return;
+  }
 
   const cuantos = desactualizados.length + (desactualizados.length === 1 ? ' producto cargado' : ' productos cargados');
   if (!await dialogoConfirmar('Tenés ' + cuantos + ' en ' + moneda + ' con otra cotización.\n\n' +
@@ -13888,6 +13902,7 @@ function pintarBarraSeleccion() {
   barra.classList.toggle('hidden', elegidos.length === 0);
   byId('selCuenta').textContent = elegidos.length;
   byId('selPalabra').textContent = elegidos.length === 1 ? 'seleccionado' : 'seleccionados';
+  byId('selFijarUsd')?.classList.toggle('hidden', !rubroEsElectronica());
 }
 
 // PostgREST manda el filtro en la direccion: 300 ids de una vez arman una
@@ -13979,6 +13994,10 @@ async function accionSeleccion(accion) {
       const lista = Number(p.price) || 0;
       if (!lista) return null;
       const campos = { price: Math.round(lista * factor) };
+      // Si sigue al dólar, el ajuste va también al monto en dólares: si no,
+      // el próximo cambio de cotización lo recalcula desde el viejo y el
+      // aumento se pierde.
+      if (p.moneda && Number(p.precio_original) > 0) campos.precio_original = Math.round(Number(p.precio_original) * factor * 100) / 100;
       if (hayOferta(p)) campos.precio_oferta = Math.round(Number(p.precio_oferta) * factor);
       return campos;
     });
@@ -14000,6 +14019,36 @@ async function accionSeleccion(accion) {
     });
     if (r.error) { dialogoAviso('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
     else if (r.saltados) { dialogoAviso('Listo: ' + r.hechos + ' en oferta.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
+    terminarAccionSeleccion();
+    return;
+  }
+
+  // Productos cargados en pesos pasan a "seguir al dólar": el precio en
+  // pesos de hoy no cambia, pero queda anotado cuántos dólares son al blue
+  // actual. Desde ahí, cuando cambia el dólar, ofrecerRepreciarProductos
+  // los ofrece actualizar igual que a los que se cargaron en USD de entrada.
+  if (accion === 'fijar-usd') {
+    const enPesos = elegidos.filter(p => !p.moneda && Number(p.price) > 0);
+    if (!enPesos.length) { dialogoAviso('Esos productos ya están en dólares o no tienen precio.'); return; }
+    const cot = await obtenerCotizacion('USD');
+    const dolar = Number(cot?.venta);
+    if (!(dolar > 0)) { dialogoAviso('No se pudo consultar el dólar. Cargalo a mano desde el Panel de Control y probá de nuevo.'); return; }
+
+    const ej = enPesos[0];
+    const usdEj = Math.round(Number(ej.price) / dolar * 100) / 100;
+    const n = enPesos.length + (enPesos.length === 1 ? ' producto' : ' productos');
+    if (!await dialogoConfirmar('Fijar ' + n + ' en dólares al blue de ' + money(dolar) + '.\n\n' +
+                 'Hoy el precio en pesos no cambia. Por ejemplo: ' + ej.name + ' ' + money(ej.price) +
+                 ' queda en US$' + usdEj.toLocaleString('es-AR') + '.\n\n' +
+                 'Cuando cambies el dólar, te voy a ofrecer actualizarles el precio en pesos. ¿Seguimos?')) return;
+
+    const r = await aplicarUnoPorUno(enPesos, (p) => ({
+      moneda: 'USD',
+      precio_original: Math.round(Number(p.price) / dolar * 100) / 100,
+      cotizacion: dolar
+    }));
+    if (r.error) dialogoAviso('Se pasaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
+    else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto quedó' : ' productos quedaron') + ' en dólares.');
     terminarAccionSeleccion();
     return;
   }
