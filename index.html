@@ -18,6 +18,7 @@
 <!-- Los mismos planes que muestra el panel. Un solo archivo: si el precio
      cambia, cambia en un lado. -->
 <script src="planes.js"></script>
+<script src="avisos.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -2171,7 +2172,7 @@ function configurarInstalacion() {
     if (esIOS) { mostrarAyudaIOS(); return; }
 
     // Chrome sin el evento: suele ser porque ya esta instalada
-    alert('Buscá "Instalar aplicación" en el menú de tu navegador (los tres puntitos).');
+    dialogoAviso('Buscá "Instalar aplicación" en el menú de tu navegador (los tres puntitos).');
   });
 }
 
