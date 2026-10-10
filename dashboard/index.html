@@ -18891,7 +18891,8 @@ async function searchByBarcode() {
       byId('barcodeInput').select();
       return;
     }
-    seleccionarProductoVenta(delaBalanza.id, cantidadDesdeBalanza(pesada, delaBalanza));
+    const pesoEtiqueta = cantidadDesdeBalanza(pesada, delaBalanza);
+    if (!escanearAlPedido(delaBalanza, pesoEtiqueta)) seleccionarProductoVenta(delaBalanza.id, pesoEtiqueta);
     byId('barcodeInput').value = '';
     return;
   }
@@ -18903,7 +18904,7 @@ async function searchByBarcode() {
   const porEan = products.find(p => normalizarTexto(p.ean) === query);
   const porImei = !porEan && products.find(p => normalizarTexto(p.imei) === query);
   if (porEan || porImei) {
-    seleccionarProductoVenta((porEan || porImei).id);
+    if (!escanearAlPedido(porEan || porImei)) seleccionarProductoVenta((porEan || porImei).id);
     return;
   }
 
@@ -19523,6 +19524,76 @@ function agregarAlPedidoVenta() {
   carritoVenta.push(linea);
   entrarEnModoPedido();
 }
+
+// ---- Escaner laser: pasar productos y que se vayan sumando solos ----
+// El lector de mano escribe el codigo y un Enter, como un teclado. Antes cada
+// pasada abria el producto con el foco en Cantidad, y la segunda pasada se
+// escribia ADENTRO de la cantidad (un alfajor quedaba en 7790040000001
+// unidades). Ahora un producto simple encontrado por codigo va directo al
+// pedido, el foco vuelve al buscador y el cajero sigue pasando cosas; el
+// mismo producto dos veces suma una unidad a su linea.
+//
+// Devuelve false cuando el producto necesita que alguien elija algo (talle,
+// color, cuantos metros) o la venta lleva un equipo en parte de pago: ahi
+// sigue el camino de siempre, con el producto en pantalla.
+function escanearAlPedido(p, cantidad) {
+  if (!puedeOperar()) return true;
+  const conVariantes = !!(p.tiene_variantes && Array.isArray(p.variante_campos) && p.variante_campos.length);
+  const deBalanza = cantidad != null && Number(cantidad) > 0;
+  if (conVariantes || (seVendePorMedida(p) && !deBalanza)) return false;
+  if (byId('barcodeTradeIn')?.checked) return false;
+
+  // Lo que estaba en pantalla (por ejemplo algo buscado por nombre) entra al
+  // pedido antes del nuevo, para no perderlo. Si le falta algo, se avisa y
+  // el escaneo nuevo espera.
+  if (currentBarcodeProduct) {
+    const anterior = validarLineaVentaEnPantalla();
+    if (!anterior) { byId('barcodeInput').value = ''; return true; }
+    carritoVenta.push(anterior);
+  }
+
+  const qty = deBalanza ? Number(cantidad) : 1;
+  const misma = !deBalanza && carritoVenta.find(l =>
+    String(l.product.id) === String(p.id) && !l.variante && !l.imei && !seVendePorMedida(l.product));
+  if (misma) misma.qty = Number(misma.qty) + 1;
+  else carritoVenta.push({ product: p, qty, variante: null, imei: null, precioUnitario: precioDeUnidad(p, {}, undefined) });
+
+  // Primera pasada de la venta: los datos de cobro arrancan como en una
+  // venta normal (vendedor de siempre, abono en cero).
+  if (byId('barcodeResult').classList.contains('hidden')) {
+    inicializarTicketVenta();
+    aplicarVisibilidadEntrega();
+    byId('barcodeAbono').value = '0';
+    renderListaVendedores();
+    if (!byId('barcodeVendedor').value) {
+      byId('barcodeVendedor').value = localStorage.getItem(claveUltimoVendedor()) || '';
+    }
+  }
+  avisarLectura();
+  entrarEnModoPedido();
+  return true;
+}
+
+// Enter con el buscador vacio y el pedido armado: el cajero termino de pasar
+// productos, el cursor salta a "Abona con" para escribir con cuanto paga.
+function irAlCobro() {
+  if (!carritoVenta.length || currentBarcodeProduct) return false;
+  byId('barcodeAbono').focus();
+  byId('barcodeAbono').select();
+  return true;
+}
+
+// Si el foco quedo en cualquier lado (se toco un boton, se cerro un aviso),
+// lo que tipea el lector igual tiene que llegar al buscador: con la pantalla
+// de Ventas abierta, una tecla fuera de un campo de texto lo manda ahi.
+document.addEventListener('keydown', (e) => {
+  if (!byId('ventasView')?.classList.contains('visible')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+  const el = document.activeElement;
+  const editable = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  if (editable) return;
+  byId('barcodeInput').focus();
+}, true);
 
 function quitarLineaDelPedido(i) {
   carritoVenta.splice(i, 1);
@@ -20211,7 +20282,9 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
 
 // Permitir escanear con Enter en el input
 byId('barcodeInput').addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') searchByBarcode();
+  if (e.key !== 'Enter') return;
+  if (!byId('barcodeInput').value.trim() && irAlCobro()) return;
+  searchByBarcode();
 });
 
 // ============ ESCANEO CON LA CAMARA ============
