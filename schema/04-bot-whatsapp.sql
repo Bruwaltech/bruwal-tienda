@@ -37,8 +37,12 @@ create table if not exists public.clientes (
   -- 512). Nuestro prefijo mide ~2600, asi que en Haiku NO se cachea y cada
   -- llamada paga el prompt entero. No falla ni avisa: simplemente no aplica.
   -- Sigue siendo el mas barato de los tres igual.
+  --
+  -- Haiku 5.5 cuesta una decima parte de Haiku 4.5 ($0,10 / $0,50 por millon
+  -- de tokens contra $1 / $5) y es el que conviene para clientes con mucho
+  -- volumen (ver 56-haiku-5-5.sql).
   modelo text not null default 'claude-sonnet-5'
-    check (modelo in ('claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5')),
+    check (modelo in ('claude-haiku-4-5', 'claude-haiku-5-5', 'claude-sonnet-5', 'claude-opus-5')),
 
   -- Nombre del plan contratado, para el panel y la facturacion.
   plan text,
@@ -108,10 +112,14 @@ create table if not exists public.cliente_usuarios (
   primary key (cliente_id, user_id)
 );
 
+-- Se llama mis_clientes_bot y no mis_clientes porque ya existe
+-- mis_clientes(p_revendedor uuid default null), la de revendedores: con las
+-- dos, una llamada sin argumentos es ambigua y Postgres la rechaza.
+--
 -- Consultar cliente_usuarios desde una politica de cliente_usuarios seria
 -- recursivo y Postgres lo corta con un error. Una funcion security definer
 -- rompe el ciclo: corre con permisos del dueño y no vuelve a aplicar RLS.
-create or replace function public.mis_clientes()
+create or replace function public.mis_clientes_bot()
 returns setof uuid
 language sql
 stable
@@ -280,7 +288,7 @@ grant update (atendido, atendido_at, notas_internas) on public.wa_leads to authe
 drop policy if exists "ve sus clientes" on public.clientes;
 create policy "ve sus clientes" on public.clientes
   for select to authenticated
-  using (id in (select public.mis_clientes()));
+  using (id in (select public.mis_clientes_bot()));
 
 drop policy if exists "ve sus vinculos" on public.cliente_usuarios;
 create policy "ve sus vinculos" on public.cliente_usuarios
@@ -290,23 +298,23 @@ create policy "ve sus vinculos" on public.cliente_usuarios
 drop policy if exists "ve sus mensajes" on public.wa_mensajes;
 create policy "ve sus mensajes" on public.wa_mensajes
   for select to authenticated
-  using (cliente_id in (select public.mis_clientes()));
+  using (cliente_id in (select public.mis_clientes_bot()));
 
 drop policy if exists "ve sus leads" on public.wa_leads;
 create policy "ve sus leads" on public.wa_leads
   for select to authenticated
-  using (cliente_id in (select public.mis_clientes()));
+  using (cliente_id in (select public.mis_clientes_bot()));
 
 drop policy if exists "ve su consumo" on public.wa_conversaciones;
 create policy "ve su consumo" on public.wa_conversaciones
   for select to authenticated
-  using (cliente_id in (select public.mis_clientes()));
+  using (cliente_id in (select public.mis_clientes_bot()));
 
 drop policy if exists "marca sus leads" on public.wa_leads;
 create policy "marca sus leads" on public.wa_leads
   for update to authenticated
-  using (cliente_id in (select public.mis_clientes()))
-  with check (cliente_id in (select public.mis_clientes()));
+  using (cliente_id in (select public.mis_clientes_bot()))
+  with check (cliente_id in (select public.mis_clientes_bot()));
 
 -- ============================================================
 -- 6) VISTA PARA EL PANEL
