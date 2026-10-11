@@ -2590,6 +2590,20 @@ tr:last-child td { border-bottom: none; }
         </div>
       </div>
 
+      <div class="panel" id="mpResumenPanel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>💳 Lo que te cobra y te retiene Mercado Pago</span>
+          <input type="month" id="mpResumenMes" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+        </div>
+        <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));padding:12px 14px 0;">
+          <div class="stat-card"><div class="label">Cobrado</div><div class="value" id="mpCobrado">—</div></div>
+          <div class="stat-card"><div class="label">Comisión MP</div><div class="value" id="mpComision" style="color:var(--danger);">—</div></div>
+          <div class="stat-card"><div class="label">Impuestos retenidos</div><div class="value" id="mpImpuestos" style="color:var(--danger);">—</div></div>
+          <div class="stat-card"><div class="label">Te quedó</div><div class="value" id="mpNeto">—</div></div>
+        </div>
+        <div id="mpResumenNota" style="padding:4px 14px 14px;font-size:12.5px;line-height:1.55;color:var(--text-mute);"></div>
+      </div>
+
       <div class="panel">
         <div class="panel-head">📊 Gastos por mes (este año)</div>
         <div class="chart-container"><canvas id="gastosChart"></canvas></div>
@@ -4649,6 +4663,19 @@ tr:last-child td { border-bottom: none; }
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" id="conectarMlBtn" class="btn" style="width:auto;">Conectar mi cuenta</button>
             <button type="button" id="desconectarMlBtn" class="btn-ghost hidden" style="width:auto;color:var(--danger);">Desconectar</button>
+          </div>
+        </div>
+
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label>💳 Mercado Pago</label>
+          <small style="display:block;margin-bottom:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Conectá la cuenta con la que cobrás para ver en Gastos cuánto entró cada mes, cuánto te cobró
+            Mercado Pago de comisión, cuánto te retuvieron de impuestos y cuánto te quedó.
+          </small>
+          <div id="mpEstado" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;">—</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="conectarMpBtn" class="btn" style="width:auto;">Conectar Mercado Pago</button>
+            <button type="button" id="desconectarMpBtn" class="btn-ghost hidden" style="width:auto;color:var(--danger);">Desconectar</button>
           </div>
         </div>
 
@@ -9686,6 +9713,7 @@ async function onLoggedIn() {
   revisarSuscripcionDeVezEnCuando();
 
   avisarVueltaDeMl();
+  avisarVueltaDeMp();
 
   // El reloj gana: si la tablet arranca en modo reloj no hay que abrirle
   // ninguna otra pantalla arriba.
@@ -11424,6 +11452,124 @@ async function aplicarMlPublicaciones() {
   } finally {
     boton.disabled = false;
     boton.textContent = textoOriginal;
+  }
+}
+
+// ---------- Mercado Pago de la tienda ----------
+// La cuenta de cobro DEL NEGOCIO, conectada por OAuth (api/mercadopago.js).
+// No es la suscripcion a BRUWAL. El panel nunca ve el token: pide el estado
+// y el resumen del mes ya sumado.
+
+async function llamarApiMp(accion, cuerpoExtra) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('Volvé a iniciar sesión.');
+  const r = await fetch('/api/mercadopago', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+    body: JSON.stringify(Object.assign({ accion: accion, slug: currentStore && currentStore.slug }, cuerpoExtra || {}))
+  });
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(datos.error || ('Error ' + r.status));
+  return datos;
+}
+
+async function cargarEstadoMp() {
+  const cartel = byId('mpEstado');
+  if (!cartel) return;
+  cartel.textContent = 'Consultando…';
+  try {
+    const r = await llamarApiMp('estado');
+    cartel.innerHTML = r.conectado
+      ? '<span style="color:var(--stock);font-weight:600;">✓ Conectada</span>' + (r.nickname ? ' (' + escapeHtml(r.nickname) + ')' : '')
+      : 'No conectada.';
+    byId('conectarMpBtn').classList.toggle('hidden', !!r.conectado);
+    byId('desconectarMpBtn').classList.toggle('hidden', !r.conectado);
+  } catch (err) {
+    cartel.textContent = humano(err) || String(err);
+  }
+}
+
+async function conectarMp() {
+  const boton = byId('conectarMpBtn');
+  const texto = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Abriendo Mercado Pago…';
+  try {
+    const { url } = await llamarApiMp('conectar');
+    window.location.href = url;
+  } catch (err) {
+    boton.disabled = false;
+    boton.textContent = texto;
+    dialogoAviso('No se pudo empezar la conexión con Mercado Pago:\n\n' + humano(err));
+  }
+}
+
+async function desconectarMp() {
+  if (!await dialogoConfirmar('Se desconecta tu cuenta de Mercado Pago.\n\nDeja de aparecer el resumen de cobros en Gastos hasta que la vuelvas a conectar.')) return;
+  try {
+    await llamarApiMp('desconectar');
+    await cargarEstadoMp();
+    renderResumenMp();
+  } catch (err) {
+    dialogoAviso('No se pudo desconectar:\n\n' + humano(err));
+  }
+}
+
+function avisarVueltaDeMp() {
+  const params = new URLSearchParams(location.search);
+  const mp = params.get('mp');
+  if (!mp) return;
+  if (mp === 'conectado') {
+    dialogoAviso('¡Listo! Tu cuenta de Mercado Pago quedó conectada. En Gastos vas a ver cuánto cobraste, cuánto te cobró Mercado Pago y cuánto te retuvieron.');
+  } else {
+    dialogoAviso('No se pudo conectar Mercado Pago.\n\n' + (params.get('motivo') || 'Probá de nuevo.'));
+  }
+  try {
+    const url = new URL(window.location.href);
+    ['mp', 'motivo', 'cuenta'].forEach(k => url.searchParams.delete(k));
+    history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
+  } catch (e) { /* no pasa nada grave */ }
+}
+
+function mesActualAR() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit' })
+    .format(new Date()).slice(0, 7);
+}
+
+// Lo que se ve en Gastos: cobrado, comision, impuestos retenidos y neto
+// del mes elegido. Se pide al abrir la vista, no en cada refresco: cada
+// consulta recorre todos los cobros del mes en Mercado Pago.
+async function renderResumenMp() {
+  const panel = byId('mpResumenPanel');
+  if (!panel) return;
+  const selector = byId('mpResumenMes');
+  if (!selector.value) selector.value = mesActualAR();
+  const nota = byId('mpResumenNota');
+  nota.textContent = 'Consultando a Mercado Pago…';
+  panel.classList.remove('hidden');
+  try {
+    const r = await llamarApiMp('resumen', { mes: selector.value });
+    if (!r.conectado) {
+      ['mpCobrado', 'mpComision', 'mpImpuestos', 'mpNeto'].forEach(id => { byId(id).textContent = '—'; });
+      nota.innerHTML = 'Conectá tu cuenta en Configuración → Mercado Pago para ver acá lo que te cobra y te retiene.';
+      return;
+    }
+    const t = r.totales;
+    byId('mpCobrado').textContent = money(t.bruto);
+    byId('mpComision').textContent = money(t.comision);
+    byId('mpImpuestos').textContent = money(t.impuestos);
+    byId('mpNeto').textContent = money(t.neto);
+    const pct = t.bruto > 0 ? ((t.comision + t.impuestos) / t.bruto * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 }) : '0';
+    nota.innerHTML = t.cobros + ' cobro' + (t.cobros === 1 ? '' : 's') + '. Mercado Pago se quedó con el <b>' + pct + '%</b> de lo cobrado.' +
+      (t.devuelto > 0 ? ' Devoluciones: ' + money(t.devuelto) + '.' : '') +
+      (r.cortado ? ' <b>Ojo:</b> el mes tiene demasiados cobros y se sumó solo una parte.' : '') +
+      '<br>Las retenciones que Mercado Pago aplica al liberar la plata pueden no figurar acá: el detalle fiscal está en Mercado Pago → Reportes → Retenciones.';
+  } catch (err) {
+    // Sin la conexion activada en el servidor (faltan las variables o la
+    // migracion 59) el panel se esconde: un error que el negocio no puede
+    // arreglar no le sirve de nada en la pantalla de Gastos.
+    console.warn('Resumen de Mercado Pago:', err);
+    panel.classList.add('hidden');
   }
 }
 
@@ -21351,9 +21497,13 @@ byId('openConfigBtn').addEventListener('click', async () => {
   // Sin await: que el modal abra ya, y el estado de ML se complete solo
   // cuando conteste el servidor.
   cargarEstadoMl();
+  cargarEstadoMp();
 });
 
 byId('conectarMlBtn').addEventListener('click', conectarMl);
+byId('conectarMpBtn').addEventListener('click', conectarMp);
+byId('desconectarMpBtn').addEventListener('click', desconectarMp);
+byId('mpResumenMes').addEventListener('change', renderResumenMp);
 // ---- Preguntas de compradores de Mercado Libre ----
 //
 // Las trae la Edge Function ml-preguntas, que es la unica que toca el token
@@ -24034,6 +24184,7 @@ function mostrarVistaGastos() {
   byId('tabGastos').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('gastosView').classList.add('visible');
+  renderResumenMp();
 }
 
 byId('tabGastos').addEventListener('click', () => {
