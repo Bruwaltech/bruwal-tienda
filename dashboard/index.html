@@ -2339,6 +2339,14 @@ tr:last-child td { border-bottom: none; }
                 🧾 Imprimir ticket al confirmar
               </label>
 
+              <!-- Solo aparece si el negocio configuró la facturación ARCA.
+                   Arranca tildada o no según lo que eligió en Configuración,
+                   y se puede cambiar venta por venta. -->
+              <label id="filaFacturar" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+                <input type="checkbox" id="barcodeFacturar" style="margin:0;width:auto;cursor:pointer;">
+                🏛️ Hacer factura electrónica (ARCA)
+              </label>
+
               <label id="filaTradeIn" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="barcodeTradeIn" style="margin:0;width:auto;cursor:pointer;">
                 📱 Toma un equipo usado como parte de pago
@@ -4722,7 +4730,7 @@ tr:last-child td { border-bottom: none; }
             </label>
           </div>
           <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;">
-            <input type="checkbox" id="arcaAuto"> Facturar sola cada venta del mostrador
+            <input type="checkbox" id="arcaAuto"> Dejar tildado "Hacer factura" por defecto al vender
           </label>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
             <button type="button" id="arcaGuardarBtn" class="btn" style="width:auto;">Guardar y probar</button>
@@ -11602,6 +11610,7 @@ async function guardarArca() {
     } });
     arcaConfig = r.config || null;
     pintarEstadoArca(r);
+    prepararCasillaFacturar(true);
     renderSalesHistory();
     renderOrders();
   } catch (err) {
@@ -11760,11 +11769,30 @@ function imprimirFactura(c) {
   abrirVentanaTicket('Factura ' + letra + ' ' + numeroComprobante(c), html, true);
 }
 
-// Venta del mostrador con "Facturar sola" prendido: se pide el CAE y, si
+// La casilla "Hacer factura" del mostrador: visible solo con la
+// facturación configurada, y tildada de entrada si el negocio lo eligió así.
+//
+// Sin "volverAlDefault" solo la acomoda la primera vez que aparece: los
+// refrescos del panel pasan en cualquier momento y no pueden destildar lo
+// que el vendedor acaba de elegir para la venta que está cargando.
+function prepararCasillaFacturar(volverAlDefault) {
+  const fila = byId('filaFacturar');
+  if (!fila) return;
+  const estabaOculta = fila.classList.contains('hidden');
+  fila.classList.toggle('hidden', !arcaConfig);
+  if (volverAlDefault || estabaOculta) {
+    byId('barcodeFacturar').checked = !!(arcaConfig && arcaConfig.auto_facturar);
+  }
+}
+
+// Venta del mostrador con "Hacer factura" tildado: se pide el CAE y, si
 // estaba tildado el ticket, sale la factura EN LUGAR del ticket común.
-// Devuelve true si ya imprimió, para no sacar dos papeles.
+// Devuelve true si ya imprimió, para no sacar dos papeles. Después la
+// casilla vuelve a como esta configurada, para la venta siguiente.
 async function facturarVentaDelMostrador(ordenId, conTicket) {
-  if (!arcaConfig || !arcaConfig.auto_facturar || !ordenId) return false;
+  const pedida = !!(arcaConfig && byId('barcodeFacturar')?.checked);
+  prepararCasillaFacturar(true);
+  if (!pedida || !ordenId) return false;
   const c = await emitirFactura(ordenId, null);
   if (!c) return false;   // falló: sale el ticket común y se factura después a mano
   if (conTicket) imprimirFactura(c);
@@ -11956,6 +11984,7 @@ async function refreshData() {
     .eq('store_slug', currentStore.slug).eq('estado', 'autorizado')
     .order('creado_en', { ascending: false }).limit(500);
   comprobantesPorOrden = new Map((cbtes || []).filter(c => c.order_id).map(c => [String(c.order_id), c]));
+  prepararCasillaFacturar();
 
   const { data: emps } = await sb.from('store_empleados').select('*').eq('store_slug', currentStore.slug).order('nombre');
   empleados = emps || [];
