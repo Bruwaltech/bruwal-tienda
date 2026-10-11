@@ -31,6 +31,9 @@
      para que las etiquetas impresas lleven un codigo escaneable de verdad,
      no solo el numero como texto. -->
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<!-- QR de las facturas: ARCA exige que el comprobante impreso lleve un QR
+     que apunta a sus datos fiscales (RG 4892). -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 
 <!-- Los planes viven en un solo archivo, compartido con la home: si el
      precio cambia, cambia en un lado. Va antes del script de abajo porque
@@ -2336,6 +2339,14 @@ tr:last-child td { border-bottom: none; }
                 🧾 Imprimir ticket al confirmar
               </label>
 
+              <!-- Solo aparece si el negocio configuró la facturación ARCA.
+                   Arranca tildada o no según lo que eligió en Configuración,
+                   y se puede cambiar venta por venta. -->
+              <label id="filaFacturar" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+                <input type="checkbox" id="barcodeFacturar" style="margin:0;width:auto;cursor:pointer;">
+                🏛️ Hacer factura electrónica (ARCA)
+              </label>
+
               <label id="filaTradeIn" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="barcodeTradeIn" style="margin:0;width:auto;cursor:pointer;">
                 📱 Toma un equipo usado como parte de pago
@@ -4228,6 +4239,39 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="facturarModal">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" id="closeFacturarModal">✕</button>
+    <h3><i class="fa-solid fa-file-invoice" style="color:var(--celeste);"></i> Facturar venta</h3>
+    <div id="facturarResumen" style="font-size:13.5px;margin-bottom:12px;"></div>
+    <div class="field">
+      <label>Cliente</label>
+      <select id="facturarDocTipo" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+        <option value="99">Consumidor final sin identificar</option>
+        <option value="96">Con DNI</option>
+        <option value="80">Con CUIT</option>
+      </select>
+    </div>
+    <div id="facturarDocCampos" class="hidden">
+      <div class="field"><label>Número</label><input type="text" id="facturarDocNro" inputmode="numeric" placeholder="Sin puntos ni guiones"></div>
+      <div class="field"><label>Nombre</label><input type="text" id="facturarNombre" maxlength="120"></div>
+      <div class="field hidden" id="facturarCondicionCampo">
+        <label>Condición frente al IVA</label>
+        <select id="facturarCondicion" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+          <option value="5">Consumidor final</option>
+          <option value="6">Monotributista</option>
+          <option value="1">Responsable inscripto</option>
+          <option value="4">Exento</option>
+        </select>
+      </div>
+    </div>
+    <small style="display:block;margin:-4px 0 12px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+      Desde $10.000.000 ARCA exige identificar al cliente con DNI o CUIT.
+    </small>
+    <button type="button" id="facturarConfirmarBtn" class="btn btn-primary">Emitir factura</button>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="gastoModal">
   <div class="modal" style="max-width:460px;">
     <button class="modal-close" id="closeGastoModal">✕</button>
@@ -4676,6 +4720,47 @@ tr:last-child td { border-bottom: none; }
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" id="conectarMpBtn" class="btn" style="width:auto;">Conectar Mercado Pago</button>
             <button type="button" id="desconectarMpBtn" class="btn-ghost hidden" style="width:auto;color:var(--danger);">Desconectar</button>
+          </div>
+        </div>
+
+        <div class="field" id="arcaBloque" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label>🧾 Facturación ARCA</label>
+          <small style="display:block;margin-bottom:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Emití factura electrónica (Factura C, monotributo) de tus ventas, con CAE y el QR de ARCA
+            en el ticket. Se configura una sola vez.
+          </small>
+          <div id="arcaEstado" style="font-size:12.5px;color:var(--text-mute);margin-bottom:10px;">—</div>
+          <details id="arcaPasos" style="font-size:12.5px;line-height:1.6;margin-bottom:10px;">
+            <summary style="cursor:pointer;font-weight:600;">Qué hacer en ARCA antes (una sola vez)</summary>
+            <ol style="margin:6px 0 0 18px;padding:0;">
+              <li>Entrá a <b>arca.gob.ar</b> con tu clave fiscal.</li>
+              <li>Abrí <b>Administrador de Relaciones de Clave Fiscal</b> → <b>Nueva relación</b>.</li>
+              <li>Buscá <b>ARCA → WebServices → Facturación electrónica</b>.</li>
+              <li>En "Representante" poné la CUIT de BRUWAL: <b id="arcaCuitBruwal">—</b> y confirmá.</li>
+              <li>Entrá a <b>Administración de puntos de venta y domicilios</b> y creá un punto de venta
+                  nuevo del tipo <b>"Factura electrónica – Monotributo – Web Services"</b>.</li>
+              <li>Cargá abajo tus datos y ese número de punto de venta, y tocá <b>Guardar y probar</b>.</li>
+            </ol>
+          </details>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <input type="text" id="arcaCuit" inputmode="numeric" placeholder="Tu CUIT (11 números)" style="padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+            <input type="number" id="arcaPuntoVenta" min="1" placeholder="Punto de venta (ej: 3)" style="padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+          </div>
+          <input type="text" id="arcaRazonSocial" placeholder="Razón social (como figura en ARCA)" style="width:100%;margin-top:8px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+          <input type="text" id="arcaDomicilio" placeholder="Domicilio comercial" style="width:100%;margin-top:8px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+            <label style="font-size:12px;color:var(--text-mute);">Inicio de actividades
+              <input type="date" id="arcaInicio" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+            </label>
+            <label style="font-size:12px;color:var(--text-mute);">Ingresos Brutos
+              <input type="text" id="arcaIibb" placeholder="Nro o Exento" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+            </label>
+          </div>
+          <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;">
+            <input type="checkbox" id="arcaAuto"> Dejar tildado "Hacer factura" por defecto al vender
+          </label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+            <button type="button" id="arcaGuardarBtn" class="btn" style="width:auto;">Guardar y probar</button>
           </div>
         </div>
 
@@ -11456,7 +11541,7 @@ async function aplicarMlPublicaciones() {
 }
 
 // ---------- Mercado Pago de la tienda ----------
-// La cuenta de cobro DEL NEGOCIO, conectada por OAuth (api/mercadopago.js).
+// La cuenta de cobro DEL NEGOCIO, conectada por OAuth (api/_mercadopago.js).
 // No es la suscripcion a BRUWAL. El panel nunca ve el token: pide el estado
 // y el resumen del mes ya sumado.
 
@@ -11571,6 +11656,294 @@ async function renderResumenMp() {
     console.warn('Resumen de Mercado Pago:', err);
     panel.classList.add('hidden');
   }
+}
+
+// ---------- Facturación ARCA ----------
+// El CAE lo pide el servidor (api/_arca.js): firma con el certificado de
+// BRUWAL, que no puede estar en el navegador. Acá solo se leen los datos
+// fiscales y los comprobantes ya emitidos (RLS de solo lectura) y se arma
+// el ticket con el QR.
+
+let arcaConfig = null;
+let comprobantesPorOrden = new Map();
+let ordenAFacturar = null;
+
+const LETRA_COMPROBANTE = { 11: 'C' };
+
+async function llamarApiArca(accion, cuerpoExtra) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('Volvé a iniciar sesión.');
+  const r = await fetch('/api/arca', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+    body: JSON.stringify(Object.assign({ accion: accion, slug: currentStore && currentStore.slug }, cuerpoExtra || {}))
+  });
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(datos.error || ('Error ' + r.status));
+  return datos;
+}
+
+function formatearCuit(cuit) {
+  const d = String(cuit || '').replace(/\D/g, '');
+  return d.length === 11 ? d.slice(0, 2) + '-' + d.slice(2, 10) + '-' + d.slice(10) : (d || '—');
+}
+
+function numeroComprobante(c) {
+  return String(c.punto_venta).padStart(5, '0') + '-' + String(c.numero).padStart(8, '0');
+}
+
+function llenarFormularioArca(c) {
+  if (!c) return;
+  byId('arcaCuit').value = c.cuit || '';
+  byId('arcaPuntoVenta').value = c.punto_venta || '';
+  byId('arcaRazonSocial').value = c.razon_social || '';
+  byId('arcaDomicilio').value = c.domicilio || '';
+  byId('arcaInicio').value = c.inicio_actividades || '';
+  byId('arcaIibb').value = c.ingresos_brutos || '';
+  byId('arcaAuto').checked = !!c.auto_facturar;
+}
+
+function pintarEstadoArca(r) {
+  const cartel = byId('arcaEstado');
+  if (r.cuit_bruwal) byId('arcaCuitBruwal').textContent = formatearCuit(r.cuit_bruwal);
+  const prueba = r.entorno === 'homologacion'
+    ? ' <span style="color:#8A5200;">(modo prueba: las facturas todavía no son reales)</span>' : '';
+  if (r.listo) {
+    cartel.innerHTML = '<span style="color:var(--stock);font-weight:600;">✓ Listo para facturar.</span> ' +
+      'Último comprobante: C ' + String(r.config.punto_venta).padStart(5, '0') + '-' +
+      String(r.ultimo_numero).padStart(8, '0') + '.' + prueba;
+  } else {
+    cartel.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(r.motivo || 'Todavía no está listo.') + '</span>' + prueba;
+    byId('arcaPasos').open = true;
+  }
+}
+
+async function cargarEstadoArca() {
+  const cartel = byId('arcaEstado');
+  if (!cartel) return;
+  llenarFormularioArca(arcaConfig);
+  if (!arcaConfig) {
+    cartel.textContent = 'Todavía no configuraste la facturación.';
+    byId('arcaPasos').open = true;
+  } else {
+    cartel.textContent = 'Consultando a ARCA…';
+  }
+  try {
+    const r = await llamarApiArca('estado');
+    arcaConfig = r.config || null;
+    llenarFormularioArca(arcaConfig);
+    if (r.config) pintarEstadoArca(r);
+    else if (r.cuit_bruwal) byId('arcaCuitBruwal').textContent = formatearCuit(r.cuit_bruwal);
+  } catch (err) {
+    cartel.textContent = humano(err) || String(err);
+  }
+}
+
+async function guardarArca() {
+  const boton = byId('arcaGuardarBtn');
+  const texto = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Probando con ARCA…';
+  try {
+    const r = await llamarApiArca('guardar', { datos: {
+      cuit: byId('arcaCuit').value,
+      punto_venta: byId('arcaPuntoVenta').value,
+      razon_social: byId('arcaRazonSocial').value,
+      domicilio: byId('arcaDomicilio').value,
+      inicio_actividades: byId('arcaInicio').value,
+      ingresos_brutos: byId('arcaIibb').value,
+      auto_facturar: byId('arcaAuto').checked
+    } });
+    arcaConfig = r.config || null;
+    pintarEstadoArca(r);
+    prepararCasillaFacturar(true);
+    renderSalesHistory();
+    renderOrders();
+  } catch (err) {
+    dialogoAviso('No se pudo guardar:\n\n' + (humano(err) || err));
+  } finally {
+    boton.disabled = false;
+    boton.textContent = texto;
+  }
+}
+
+// El botón que va en cada venta. Si ya tiene factura, la reimprime.
+function botonFactura(ordenId) {
+  if (!arcaConfig) return '';
+  const c = comprobantesPorOrden.get(String(ordenId));
+  return c
+    ? '<button class="icon-btn" data-ver-factura="' + ordenId + '" title="Reimprimir la factura C ' + numeroComprobante(c) + '" style="color:var(--stock);font-weight:700;">FC ✓</button>'
+    : '<button class="icon-btn" data-facturar="' + ordenId + '" title="Emitir factura electrónica" style="font-weight:700;">FC</button>';
+}
+
+function engancharBotonesFactura(contenedor) {
+  contenedor.querySelectorAll('[data-facturar]').forEach(b =>
+    b.addEventListener('click', () => abrirFacturar(b.dataset.facturar)));
+  contenedor.querySelectorAll('[data-ver-factura]').forEach(b =>
+    b.addEventListener('click', () => imprimirFactura(comprobantesPorOrden.get(b.dataset.verFactura))));
+}
+
+function abrirFacturar(ordenId) {
+  if (!puedeOperar()) return;
+  const lista = (orders || []).concat(pedidosTodos || []);
+  const o = lista.find(x => String(x.id) === String(ordenId));
+  if (!o) { dialogoAviso('No se encontró esa venta.'); return; }
+  ordenAFacturar = o;
+  byId('facturarResumen').innerHTML = 'Venta del ' + escapeHtml(fechaAR(o.created_at)) +
+    ' por <b>' + money(o.total) + '</b>.';
+  byId('facturarDocTipo').value = '99';
+  byId('facturarDocNro').value = '';
+  byId('facturarNombre').value = (o.customer_name && !/^Venta mostrador/.test(o.customer_name) && o.customer_name !== 'scanner') ? o.customer_name : '';
+  byId('facturarCondicion').value = '5';
+  actualizarCamposFacturar();
+  show(byId('facturarModal'));
+}
+
+function actualizarCamposFacturar() {
+  const tipo = byId('facturarDocTipo').value;
+  byId('facturarDocCampos').classList.toggle('hidden', tipo === '99');
+  byId('facturarCondicionCampo').classList.toggle('hidden', tipo !== '80');
+}
+
+// Pide el CAE. Devuelve el comprobante, o null si falló (ya avisado).
+async function emitirFactura(ordenId, receptor) {
+  try {
+    const r = await llamarApiArca('emitir', { order_id: ordenId, receptor: receptor || null });
+    comprobantesPorOrden.set(String(ordenId), r.comprobante);
+    return r.comprobante;
+  } catch (err) {
+    dialogoAviso('No se pudo facturar:\n\n' + (humano(err) || err));
+    return null;
+  }
+}
+
+async function confirmarFacturar() {
+  if (!ordenAFacturar) return;
+  const boton = byId('facturarConfirmarBtn');
+  const tipo = Number(byId('facturarDocTipo').value);
+  const receptor = tipo === 99 ? null : {
+    doc_tipo: tipo,
+    doc_nro: byId('facturarDocNro').value,
+    nombre: byId('facturarNombre').value,
+    condicion: tipo === 80 ? Number(byId('facturarCondicion').value) : 5
+  };
+  boton.disabled = true;
+  boton.textContent = 'Pidiendo el CAE a ARCA…';
+  const c = await emitirFactura(ordenAFacturar.id, receptor);
+  boton.disabled = false;
+  boton.textContent = 'Emitir factura';
+  if (!c) return;
+  hide(byId('facturarModal'));
+  imprimirFactura(c);
+  renderSalesHistory();
+  renderOrders();
+}
+
+// El QR que pide ARCA (RG 4892): un JSON en base64 pegado a su URL. Quien
+// lo escanea ve en la página de ARCA si el comprobante es real.
+function urlQrArca(c) {
+  const datos = {
+    ver: 1,
+    fecha: c.fecha,
+    cuit: Number(c.emisor.cuit),
+    ptoVta: c.punto_venta,
+    tipoCmp: c.tipo,
+    nroCmp: Number(c.numero),
+    importe: Number(c.total),
+    moneda: 'PES',
+    ctz: 1,
+    tipoDocRec: c.doc_tipo,
+    nroDocRec: Number(c.doc_nro),
+    tipoCodAut: 'E',
+    codAut: Number(c.cae)
+  };
+  return 'https://www.afip.gob.ar/fe/qr/?p=' + btoa(JSON.stringify(datos));
+}
+
+function qrSvg(texto) {
+  if (typeof qrcode !== 'function') return '';
+  const qr = qrcode(0, 'M');
+  qr.addData(texto);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 3, margin: 0, scalable: true });
+}
+
+const NOMBRE_DOC = { 96: 'DNI', 80: 'CUIT', 99: '' };
+const NOMBRE_CONDICION = { 1: 'Resp. inscripto', 4: 'Exento', 5: 'Consumidor final', 6: 'Monotributista' };
+
+// Factura en el mismo rollo de 58 mm que el ticket común. Se arma con lo
+// que quedó GUARDADO en el comprobante (emisor, items, total), no con los
+// datos de hoy: es un documento fiscal y tiene que decir lo mismo cada vez
+// que se reimprime.
+function imprimirFactura(c) {
+  if (!c) return;
+  const e = c.emisor || {};
+  const items = (c.items || []).map(it =>
+    '<div class="tk-item"><div class="tk-fila"><span>' + Number(it.cantidad).toLocaleString('es-AR') + ' x ' +
+      escapeHtml(it.nombre) + '</span><span>' + (it.precio > 0 ? money(it.precio * it.cantidad) : '') + '</span></div></div>').join('');
+  const letra = LETRA_COMPROBANTE[c.tipo] || '';
+  const vto = c.cae_vto ? c.cae_vto.split('-').reverse().join('/') : '';
+  const fecha = String(c.fecha).split('-').reverse().join('/');
+
+  const html =
+    '<div class="tk-negocio">' + escapeHtml(e.razon_social || currentStore?.business_name || '') + '</div>' +
+    (e.domicilio ? '<div class="tk-sub">' + escapeHtml(e.domicilio) + '</div>' : '') +
+    '<div class="tk-sub">CUIT ' + formatearCuit(e.cuit) + '</div>' +
+    (e.ingresos_brutos ? '<div class="tk-sub">IIBB ' + escapeHtml(e.ingresos_brutos) + '</div>' : '') +
+    (e.inicio_actividades ? '<div class="tk-sub">Inicio act. ' + e.inicio_actividades.split('-').reverse().join('/') + '</div>' : '') +
+    '<div class="tk-sub">Responsable Monotributo</div>' +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-entrega">FACTURA ' + letra + '<br><span style="font-size:14px;">Cód. ' + String(c.tipo).padStart(3, '0') + '</span></div>' +
+    '<div class="tk-fila"><span>N°</span><span>' + numeroComprobante(c) + '</span></div>' +
+    '<div class="tk-fila"><span>Fecha</span><span>' + fecha + '</span></div>' +
+    '<div class="tk-sep"></div>' +
+    (c.doc_tipo !== 99
+      ? (c.receptor_nombre ? '<div>' + escapeHtml(c.receptor_nombre) + '</div>' : '') +
+        '<div class="tk-fila"><span>' + NOMBRE_DOC[c.doc_tipo] + '</span><span>' + c.doc_nro + '</span></div>'
+      : '') +
+    '<div>' + (NOMBRE_CONDICION[c.receptor_condicion] || 'Consumidor final') + '</div>' +
+    '<div class="tk-sep"></div>' +
+    items +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-total"><span>TOTAL</span><span>' + money(c.total) + '</span></div>' +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-fila"><span>CAE</span><span>' + escapeHtml(c.cae || '') + '</span></div>' +
+    '<div class="tk-fila"><span>Vto. CAE</span><span>' + vto + '</span></div>' +
+    '<div style="width:34mm;margin:8px auto 0;">' + qrSvg(urlQrArca(c)) + '</div>' +
+    '<div class="tk-pie">Comprobante autorizado por ARCA</div>';
+
+  abrirVentanaTicket('Factura ' + letra + ' ' + numeroComprobante(c), html, true);
+}
+
+// La casilla "Hacer factura" del mostrador: visible solo con la
+// facturación configurada, y tildada de entrada si el negocio lo eligió así.
+//
+// Sin "volverAlDefault" solo la acomoda la primera vez que aparece: los
+// refrescos del panel pasan en cualquier momento y no pueden destildar lo
+// que el vendedor acaba de elegir para la venta que está cargando.
+function prepararCasillaFacturar(volverAlDefault) {
+  const fila = byId('filaFacturar');
+  if (!fila) return;
+  const estabaOculta = fila.classList.contains('hidden');
+  fila.classList.toggle('hidden', !arcaConfig);
+  if (volverAlDefault || estabaOculta) {
+    byId('barcodeFacturar').checked = !!(arcaConfig && arcaConfig.auto_facturar);
+  }
+}
+
+// Venta del mostrador con "Hacer factura" tildado: se pide el CAE y, si
+// estaba tildado el ticket, sale la factura EN LUGAR del ticket común.
+// Devuelve true si ya imprimió, para no sacar dos papeles. Después la
+// casilla vuelve a como esta configurada, para la venta siguiente.
+async function facturarVentaDelMostrador(ordenId, conTicket) {
+  const pedida = !!(arcaConfig && byId('barcodeFacturar')?.checked);
+  prepararCasillaFacturar(true);
+  if (!pedida || !ordenId) return false;
+  const c = await emitirFactura(ordenId, null);
+  if (!c) return false;   // falló: sale el ticket común y se factura después a mano
+  if (conTicket) imprimirFactura(c);
+  renderSalesHistory();
+  return conTicket;
 }
 
 // ---------- Mercado Libre ----------
@@ -11748,6 +12121,16 @@ async function refreshData() {
 
   const { data: mlVins } = await sb.from('store_ml_vinculos').select('*').eq('store_slug', currentStore.slug);
   mlVinculosPrevios = mlVins || [];
+
+  // Facturación ARCA (migración 58). Sin la migración vuelven con error y
+  // quedan vacías: el botón Facturar simplemente no aparece.
+  const { data: arca } = await sb.from('store_arca').select('*').eq('store_slug', currentStore.slug).maybeSingle();
+  arcaConfig = arca || null;
+  const { data: cbtes } = await sb.from('store_comprobantes').select('*')
+    .eq('store_slug', currentStore.slug).eq('estado', 'autorizado')
+    .order('creado_en', { ascending: false }).limit(500);
+  comprobantesPorOrden = new Map((cbtes || []).filter(c => c.order_id).map(c => [String(c.order_id), c]));
+  prepararCasillaFacturar();
 
   const { data: emps } = await sb.from('store_empleados').select('*').eq('store_slug', currentStore.slug).order('nombre');
   empleados = emps || [];
@@ -14733,7 +15116,7 @@ function renderOrders() {
           '<button class="icon-btn danger" data-cancelar="' + o.id + '" title="No llegó nunca">✕</button>' +
           '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar directamente">🗑</button>' +
         '</div>'
-      : '<div class="row-actions">' + botonTicket + (e === 'confirmado'
+      : '<div class="row-actions">' + botonTicket + (e === 'confirmado' ? botonFactura(o.id) : '') + (e === 'confirmado'
           ? '<button class="icon-btn danger" data-anular="' + o.id + '" title="Anular y devolver el stock">Anular</button>'
           : '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar de la lista">🗑</button>') +
         '</div>';
@@ -14789,6 +15172,7 @@ function renderOrders() {
     b.addEventListener('click', () => eliminarPedido(b.dataset.eliminarPedido)));
   cuerpo.querySelectorAll('[data-ticket-pedido]').forEach(b =>
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketPedido)));
+  engancharBotonesFactura(cuerpo);
 
   renderComandas();
 
@@ -19015,6 +19399,7 @@ function renderSalesHistory() {
       '<td style="text-align:right;color:var(--navy);font-weight:600;">' + money(o.total) + '</td>' +
       '<td style="text-align:right;">' +
         '<button class="icon-btn" data-ticket-venta="' + o.id + '" title="Reimprimir el ticket">🧾</button>' +
+        botonFactura(o.id) +
         '<button class="icon-btn" data-borrar-venta="' + o.id + '" title="Anular esta venta" ' +
         'style="color:var(--danger);">🗑</button></td>' +
       '</tr>';
@@ -19026,6 +19411,7 @@ function renderSalesHistory() {
   el.querySelectorAll('[data-ticket-venta]').forEach(b => {
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketVenta));
   });
+  engancharBotonesFactura(el);
 }
 
 // Anular una venta cargada por error. Devuelve el stock al producto, porque
@@ -19780,7 +20166,9 @@ async function confirmarVentaCarrito() {
         ' = ' + money(resumen.total) +
         (resumen.ajustes.length ? '\n\n' + resumen.ajustes.map(textoAjustePorciones).join('\n') : ''));
 
-  if (byId('barcodeTicket')?.checked) {
+  // Con "Facturar sola" prendido, la factura reemplaza al ticket común.
+  const yaImprimio = await facturarVentaDelMostrador(ok.ordenId, !!byId('barcodeTicket')?.checked);
+  if (byId('barcodeTicket')?.checked && !yaImprimio) {
     imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
   }
 
@@ -20147,7 +20535,8 @@ async function confirmBarcodeVenta() {
     // Despues del alert a proposito: el vendedor confirma la venta y recien
     // ahi sale el ticket. Si saliera antes, el dialogo de impresion tapa el
     // aviso de la venta (y el de la foto del equipo tomado, mas abajo).
-    if (byId('barcodeTicket')?.checked) {
+    const yaImprimio = await facturarVentaDelMostrador(ok.ordenId, !!byId('barcodeTicket')?.checked);
+    if (byId('barcodeTicket')?.checked && !yaImprimio) {
       imprimirTicketVenta({
         producto: product,
         qty,
@@ -21498,9 +21887,14 @@ byId('openConfigBtn').addEventListener('click', async () => {
   // cuando conteste el servidor.
   cargarEstadoMl();
   cargarEstadoMp();
+  cargarEstadoArca();
 });
 
 byId('conectarMlBtn').addEventListener('click', conectarMl);
+byId('arcaGuardarBtn').addEventListener('click', guardarArca);
+byId('closeFacturarModal').addEventListener('click', () => hide(byId('facturarModal')));
+byId('facturarDocTipo').addEventListener('change', actualizarCamposFacturar);
+byId('facturarConfirmarBtn').addEventListener('click', confirmarFacturar);
 byId('conectarMpBtn').addEventListener('click', conectarMp);
 byId('desconectarMpBtn').addEventListener('click', desconectarMp);
 byId('mpResumenMes').addEventListener('change', renderResumenMp);

@@ -10,7 +10,7 @@
 --  Correr en Supabase → SQL Editor. Aditivo e idempotente.
 -- ------------------------------------------------------------
 --  RLS prendida y SIN políticas, igual que store_ml_cuenta: guarda
---  tokens. Solo la toca api/mercadopago.js con la service role key.
+--  tokens. Solo la toca api/_mercadopago.js con la service role key.
 -- ============================================================
 
 create table if not exists public.store_mp_cuenta (
