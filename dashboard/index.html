@@ -11546,6 +11546,7 @@ async function renderResumenMp() {
   if (!selector.value) selector.value = mesActualAR();
   const nota = byId('mpResumenNota');
   nota.textContent = 'Consultando a Mercado Pago…';
+  panel.classList.remove('hidden');
   try {
     const r = await llamarApiMp('resumen', { mes: selector.value });
     if (!r.conectado) {
@@ -11564,7 +11565,11 @@ async function renderResumenMp() {
       (r.cortado ? ' <b>Ojo:</b> el mes tiene demasiados cobros y se sumó solo una parte.' : '') +
       '<br>Las retenciones que Mercado Pago aplica al liberar la plata pueden no figurar acá: el detalle fiscal está en Mercado Pago → Reportes → Retenciones.';
   } catch (err) {
-    nota.textContent = humano(err) || String(err);
+    // Sin la conexion activada en el servidor (faltan las variables o la
+    // migracion 59) el panel se esconde: un error que el negocio no puede
+    // arreglar no le sirve de nada en la pantalla de Gastos.
+    console.warn('Resumen de Mercado Pago:', err);
+    panel.classList.add('hidden');
   }
 }
 
