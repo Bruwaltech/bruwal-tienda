@@ -59,11 +59,16 @@
     return String(texto == null ? '' : texto).replace(/\?[^\s:)'"]*/g, '');
   }
 
+  // Errores que no son nuestros: los inyecta el navegador interno de
+  // Instagram/Facebook (iabjs://) o alguna extensión. No hay nada que arreglar.
+  var AJENO = /(iabjs|chrome-extension|moz-extension|safari-(web-)?extension):\/\//;
+
   function anotar(tipo, mensaje, extra) {
     try {
       extra = extra || {};
       mensaje = cortar(mensaje, 500);
       if (!mensaje) return;
+      if (AJENO.test(String(extra.fuente || '') + ' ' + String(extra.stack || ''))) return;
       var clave = tipo + '|' + mensaje + '|' + (extra.fuente || '');
       if (vistos[clave] || enviados >= MAXIMO) return;
       vistos[clave] = true;
