@@ -341,7 +341,7 @@ module.exports = async (req, res) => {
     if (accion === 'resumen') return res.status(200).json(await accionResumen(tienda.slug, cuerpo.mes));
     return res.status(400).json({ error: 'Acción desconocida' });
   } catch (err) {
-    console.error('mercadopago.js', accion, err);
+    console.error('_mercadopago.js', accion, err);
     return res.status(500).json({ error: String(err.message || err) });
   }
 };

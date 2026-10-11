@@ -11541,7 +11541,7 @@ async function aplicarMlPublicaciones() {
 }
 
 // ---------- Mercado Pago de la tienda ----------
-// La cuenta de cobro DEL NEGOCIO, conectada por OAuth (api/mercadopago.js).
+// La cuenta de cobro DEL NEGOCIO, conectada por OAuth (api/_mercadopago.js).
 // No es la suscripcion a BRUWAL. El panel nunca ve el token: pide el estado
 // y el resumen del mes ya sumado.
 
@@ -11659,7 +11659,7 @@ async function renderResumenMp() {
 }
 
 // ---------- Facturación ARCA ----------
-// El CAE lo pide el servidor (api/arca.js): firma con el certificado de
+// El CAE lo pide el servidor (api/_arca.js): firma con el certificado de
 // BRUWAL, que no puede estar en el navegador. Acá solo se leen los datos
 // fiscales y los comprobantes ya emitidos (RLS de solo lectura) y se arma
 // el ticket con el QR.

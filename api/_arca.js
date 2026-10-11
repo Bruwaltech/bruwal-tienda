@@ -585,7 +585,7 @@ module.exports = async (req, res) => {
     }
     return res.status(400).json({ error: 'Acción desconocida' });
   } catch (err) {
-    console.error('arca.js', accion, err);
+    console.error('_arca.js', accion, err);
     return res.status(400).json({ error: String(err.message || err) });
   }
 };

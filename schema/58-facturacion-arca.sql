@@ -17,7 +17,7 @@
 --
 --  No son secretos, así que el dueño la puede LEER (el panel la usa
 --  para saber si mostrar el botón Facturar). Escribirla, solo desde
---  api/arca.js: así no se cambia la CUIT con la que se factura por un
+--  api/_arca.js: así no se cambia la CUIT con la que se factura por un
 --  camino que no valide nada.
 -- ------------------------------------------------------------
 create table if not exists public.store_arca (
