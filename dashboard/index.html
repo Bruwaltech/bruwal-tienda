@@ -35,10 +35,10 @@
 <!-- Los planes viven en un solo archivo, compartido con la home: si el
      precio cambia, cambia en un lado. Va antes del script de abajo porque
      define constantes que ese script usa. -->
-<script src="../planes.js"></script>
-<script src="../avisos.js"></script>
+<script src="/planes.js"></script>
+<script src="/avisos.js"></script>
 <!-- La imagen del producto para historias y estados, compartida con la tienda -->
-<script src="../imagen-producto.js"></script>
+<script src="/imagen-producto.js"></script>
 <style>
 :root {
   --navy: #15294D;
@@ -1709,7 +1709,10 @@ tr:last-child td { border-bottom: none; }
   .comandas-col { flex:0 0 86%; scroll-snap-align:start; }
 }
 </style>
-<link rel="stylesheet" href="dashboard-motion.css">
+<!-- Rutas absolutas a propósito: el panel también se abre como /dashboard
+     (sin barra final) y ahí "dashboard-motion.css" apuntaba a la raíz, caía
+     en la tienda /:slug y volvía HTML. Lo vimos en errores_sitio. -->
+<link rel="stylesheet" href="/dashboard/dashboard-motion.css">
 </head>
 <body>
 
@@ -20474,11 +20477,24 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
     const lector = new ZXing.BrowserMultiFormatReader(hintsZXing(), 200);
     lectores[clave].zxing = lector;
 
-    let intentos = 0;
-    await lector.decodeFromConstraints(
+    // La camara la pedimos nosotros y recien despues se la damos a ZXing.
+    // Mientras el navegador espera el permiso, la persona puede cerrar el
+    // lector (o tocar el boton dos veces): si ZXing la pedia solo, al volver
+    // ya no encontraba el <video>, tiraba "element with id ... not found" y
+    // la camara quedaba prendida. Lo vimos en errores_sitio.
+    const stream = await navigator.mediaDevices.getUserMedia(
       { video: { facingMode: { ideal: 'environment' },
-                 width: { ideal: 1920 }, height: { ideal: 1080 } } },
-      idVideo,
+                 width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    if (!lectores[clave] || lectores[clave].zxing !== lector || !document.contains(video)) {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+    lectores[clave].stream = stream;
+
+    let intentos = 0;
+    await lector.decodeFromStream(
+      stream,
+      video,
       (resultado, err) => {
         intentos++;
         if (resultado) { alDetectar(resultado.getText()); return; }
@@ -20489,9 +20505,8 @@ async function abrirCamara(clave, idContenedor, idZona, alLeer) {
       }
     );
 
-    // Guardamos el stream que abrio ZXing, para poder apagarlo despues
-    if (video.srcObject) {
-      lectores[clave].stream = video.srcObject;
+    // Linterna y zoom sobre la misma camara que esta leyendo ZXing
+    if (lectores[clave] && video.srcObject) {
       configurarControlesDeCamara(video.srcObject, idZona, video);
     }
 
@@ -25627,6 +25642,6 @@ if ('serviceWorker' in navigator) {
 
 init();
 </script>
-<script src="dashboard-motion.js" defer></script>
+<script src="/dashboard/dashboard-motion.js" defer></script>
 </body>
 </html>
