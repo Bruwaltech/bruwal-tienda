@@ -2064,6 +2064,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
       <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
+      <button class="app-tab" id="tabAfiliados"><i class="fa-solid fa-handshake"></i> Afiliados</button>
     </div>
   </div>
 
@@ -2703,6 +2704,42 @@ tr:last-child td { border-bottom: none; }
         <table>
           <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th style="text-align:right;">Monto</th><th></th></tr></thead>
           <tbody id="gastosBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- AFILIADOS -->
+    <div id="afiliadosView" class="hidden">
+      <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+        <div class="stat-card">
+          <div class="label">Vendido por afiliados</div>
+          <div class="value" id="afiliadosVendido">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Pedidos con código</div>
+          <div class="value" id="afiliadosPedidos">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Comisiones a pagar</div>
+          <div class="value" id="afiliadosComision" style="color:var(--danger);">$0</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>🤝 Afiliados</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="month" id="afiliadosMes" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+            <button type="button" id="nuevoAfiliadoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nuevo afiliado</button>
+          </div>
+        </div>
+        <div style="padding:10px 14px 0;font-size:12.5px;line-height:1.55;color:var(--text-mute);">
+          Cada afiliado comparte su link. Los pedidos que entran por ahí, o con su código escrito en el checkout, quedan a su nombre.
+          La comisión se cuenta sobre los productos de los pedidos confirmados, sin el envío.
+        </div>
+        <table>
+          <thead><tr><th>Afiliado</th><th>Link</th><th style="text-align:right;">Comisión</th><th style="text-align:right;">Pedidos</th><th style="text-align:right;">Vendido</th><th style="text-align:right;">A pagar</th><th></th></tr></thead>
+          <tbody id="afiliadosBody"></tbody>
         </table>
       </div>
     </div>
@@ -4407,6 +4444,32 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL AFILIADO -->
+<div class="modal-overlay hidden" id="afiliadoModal">
+  <div class="modal" style="max-width:460px;">
+    <button class="modal-close" id="closeAfiliadoModal">✕</button>
+    <h3 id="afiliadoModalTitulo"><i class="fa-solid fa-handshake" style="color:var(--celeste);"></i> Nuevo afiliado</h3>
+
+    <div class="field"><label>Nombre</label><input type="text" id="afiliadoNombre" placeholder="Ej: Juan Pérez (entrenador)"></div>
+    <div class="field">
+      <label>Código</label>
+      <input type="text" id="afiliadoCodigo" maxlength="30" placeholder="Ej: JUAN" style="text-transform:uppercase;">
+      <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;">Letras, números, guion. Es lo que va en su link y lo que el cliente puede escribir al pedir.</small>
+    </div>
+    <div class="field"><label>WhatsApp (opcional)</label><input type="tel" id="afiliadoTelefono" placeholder="Para mandarle su link"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>Su comisión (%)</label><input type="number" id="afiliadoComision" min="0" max="100" step="0.5" value="15"></div>
+      <div class="field"><label>Descuento al cliente (%)</label><input type="number" id="afiliadoDescuento" min="0" max="50" step="0.5" value="0"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:12px;">
+      <input type="checkbox" id="afiliadoActivo" checked> Activo (si lo pausás, su link deja de sumarle)
+    </label>
+
+    <button type="button" id="guardarAfiliadoBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar afiliado</button>
+  </div>
+</div>
+
 <!-- MODAL MOVIMIENTO DE CAJA -->
 <div class="modal-overlay hidden" id="movimientoCajaModal">
   <div class="modal" style="max-width:460px;">
@@ -5078,6 +5141,7 @@ sb.auth.onAuthStateChange((evento) => {
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
 let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [], gastos = [], pagos = [], movimientosCaja = [];
+let afiliados = [];
 let empleados = [], fichadas = [];
 
 // Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
@@ -11943,6 +12007,10 @@ async function refreshData() {
   const { data: gts } = await sb.from('store_gastos').select('*').eq('store_slug', currentStore.slug).order('fecha', { ascending: false });
   gastos = gts || [];
 
+  // Sin la migracion 60 vuelve con error y la solapa queda vacia.
+  const { data: afs } = await sb.from('store_afiliados').select('*').eq('store_slug', currentStore.slug).order('nombre');
+  afiliados = afs || [];
+
   const { data: pgs } = await sb.from('store_pagos').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
   pagos = pgs || [];
 
@@ -11985,6 +12053,7 @@ async function refreshData() {
   renderFiado();
   renderReparaciones();
   renderGastos();
+  renderAfiliados();
   renderCaja();
   await sincronizarFichadasPendientes();
   renderEmpleados();
@@ -14961,6 +15030,9 @@ function renderOrders() {
           : '') +
         (o.vendedor
           ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">Atendió: ' + escapeHtml(o.vendedor) + '</div>'
+          : '') +
+        (o.afiliado_codigo
+          ? '<div style="font-size:11px;color:var(--celeste);margin-top:2px;">🤝 Recomendó: ' + escapeHtml(nombreDeAfiliado(o.afiliado_codigo)) + '</div>'
           : '') +
       '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(items) +
@@ -24424,6 +24496,191 @@ function mostrarVistaGastos() {
 byId('tabGastos').addEventListener('click', () => {
   if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaGastos); return; }
   mostrarVistaGastos();
+});
+
+// ===================== AFILIADOS =====================
+// Gente que recomienda la tienda con su link (?ref=CODIGO) y cobra un
+// porcentaje. El pedido llega con el codigo y la comision ya congelada por
+// la base (schema/60-afiliados.sql); aca solo se suma y se muestra.
+
+function nombreDeAfiliado(codigo) {
+  const a = afiliados.find(x => String(x.codigo).toLowerCase() === String(codigo || '').toLowerCase());
+  return a ? a.nombre + ' (' + a.codigo + ')' : codigo;
+}
+
+function linkDeAfiliado(a) {
+  return window.location.origin + '/' + currentStore.slug + '?ref=' + encodeURIComponent(a.codigo);
+}
+
+const mesDeAR = (fecha) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit'
+}).format(comoFecha(fecha)).slice(0, 7);
+
+// Lo que se cobro por los productos: sin envio y con el descuento del
+// codigo ya restado. Sobre eso va la comision.
+function baseDeComision(o) {
+  const productos = (o.items || []).reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 0), 0);
+  const base = (productos || Number(o.total || 0)) - Number(o.afiliado_descuento || 0);
+  return Math.max(0, base);
+}
+
+function renderAfiliados() {
+  const cuerpo = byId('afiliadosBody');
+  if (!cuerpo || !currentStore) return;
+
+  const selector = byId('afiliadosMes');
+  if (!selector.value) selector.value = mesActualAR();
+  const mes = selector.value;
+
+  // `orders` ya son solo los que cuentan como venta: ni pendientes ni cancelados.
+  const delMes = orders.filter(o => o.afiliado_codigo && mesDeAR(o.created_at) === mes);
+  const porCodigo = {};
+  delMes.forEach(o => {
+    const k = String(o.afiliado_codigo).toLowerCase();
+    const r = porCodigo[k] || (porCodigo[k] = { pedidos: 0, vendido: 0, comision: 0 });
+    const base = baseDeComision(o);
+    r.pedidos += 1;
+    r.vendido += base;
+    r.comision += base * Number(o.afiliado_comision_pct || 0) / 100;
+  });
+
+  const totales = Object.values(porCodigo).reduce((t, r) => {
+    t.pedidos += r.pedidos; t.vendido += r.vendido; t.comision += r.comision; return t;
+  }, { pedidos: 0, vendido: 0, comision: 0 });
+  byId('afiliadosVendido').textContent = money(Math.round(totales.vendido));
+  byId('afiliadosPedidos').textContent = totales.pedidos;
+  byId('afiliadosComision').textContent = money(Math.round(totales.comision));
+
+  cuerpo.innerHTML = afiliados.length ? afiliados.map(a => {
+    const r = porCodigo[String(a.codigo).toLowerCase()] || { pedidos: 0, vendido: 0, comision: 0 };
+    const descuento = Number(a.descuento_pct || 0);
+    return '<tr' + (a.activo ? '' : ' style="opacity:.55;"') + '>' +
+      '<td><strong>' + escapeHtml(a.nombre) + '</strong>' +
+        '<div style="font-size:11.5px;color:var(--text-mute);">' + escapeHtml(a.codigo) +
+          (descuento > 0 ? ' · ' + descuento + '% off al cliente' : '') +
+          (a.activo ? '' : ' · pausado') + '</div></td>' +
+      '<td><button class="icon-btn" data-copiar-afiliado="' + a.id + '" title="Copiar su link">🔗 Copiar</button>' +
+        (a.telefono ? ' <button class="icon-btn" data-wa-afiliado="' + a.id + '" title="Mandarle su link por WhatsApp">📱</button>' : '') +
+      '</td>' +
+      '<td style="text-align:right;">' + Number(a.comision_pct || 0) + '%</td>' +
+      '<td style="text-align:right;">' + r.pedidos + '</td>' +
+      '<td style="text-align:right;">' + money(Math.round(r.vendido)) + '</td>' +
+      '<td style="text-align:right;font-weight:600;">' + money(Math.round(r.comision)) + '</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="icon-btn" data-editar-afiliado="' + a.id + '" title="Editar">✎</button>' +
+        '<button class="icon-btn danger" data-eliminar-afiliado="' + a.id + '" title="Eliminar">🗑</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ningún afiliado</td></tr>';
+
+  cuerpo.querySelectorAll('[data-copiar-afiliado]').forEach(b => b.addEventListener('click', () => {
+    const a = afiliados.find(x => String(x.id) === b.getAttribute('data-copiar-afiliado'));
+    if (a) copiarTexto(linkDeAfiliado(a), 'Link de ' + a.nombre + ' copiado:\n\n' + linkDeAfiliado(a));
+  }));
+  cuerpo.querySelectorAll('[data-wa-afiliado]').forEach(b => b.addEventListener('click', () => {
+    const a = afiliados.find(x => String(x.id) === b.getAttribute('data-wa-afiliado'));
+    if (!a) return;
+    const texto = 'Hola ' + a.nombre + '! Este es tu link de ' + (currentStore.business_name || 'la tienda') + ': ' +
+      linkDeAfiliado(a) + '\n\nCada pedido que entre por ahí (o con tu código ' + a.codigo + ') te suma un ' +
+      Number(a.comision_pct || 0) + '% de comisión.';
+    window.open('https://wa.me/' + numeroWhatsApp(a.telefono) + '?text=' + encodeURIComponent(texto), '_blank');
+  }));
+  cuerpo.querySelectorAll('[data-editar-afiliado]').forEach(b =>
+    b.addEventListener('click', () => abrirModalAfiliado(b.getAttribute('data-editar-afiliado'))));
+  cuerpo.querySelectorAll('[data-eliminar-afiliado]').forEach(b =>
+    b.addEventListener('click', () => eliminarAfiliado(b.getAttribute('data-eliminar-afiliado'))));
+}
+
+// "Juan Pérez" -> "JUANPEREZ": un codigo que se pueda dictar por telefono.
+function codigoSugerido(nombre) {
+  return String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/\s+/)[0].toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+}
+
+function abrirModalAfiliado(id) {
+  const a = id ? afiliados.find(x => String(x.id) === String(id)) : null;
+  byId('afiliadoModal').dataset.id = a ? a.id : '';
+  byId('afiliadoModalTitulo').innerHTML = '<i class="fa-solid fa-handshake" style="color:var(--celeste);"></i> ' +
+    (a ? 'Editar afiliado' : 'Nuevo afiliado');
+  byId('afiliadoNombre').value = a ? a.nombre : '';
+  byId('afiliadoCodigo').value = a ? a.codigo : '';
+  byId('afiliadoCodigo').dataset.tocado = a ? '1' : '';
+  byId('afiliadoTelefono').value = a ? (a.telefono || '') : '';
+  byId('afiliadoComision').value = a ? Number(a.comision_pct) : 15;
+  byId('afiliadoDescuento').value = a ? Number(a.descuento_pct) : 0;
+  byId('afiliadoActivo').checked = a ? !!a.activo : true;
+  show(byId('afiliadoModal'));
+}
+
+async function guardarAfiliado() {
+  if (!puedeOperar()) return;
+
+  const nombre = byId('afiliadoNombre').value.trim();
+  const codigo = byId('afiliadoCodigo').value.trim().toUpperCase();
+  const comision = Number(byId('afiliadoComision').value);
+  const descuento = Number(byId('afiliadoDescuento').value || 0);
+
+  if (!nombre) { dialogoAviso('Poné el nombre del afiliado.'); return; }
+  if (!/^[A-Z0-9_-]{2,30}$/.test(codigo)) {
+    dialogoAviso('El código tiene que tener entre 2 y 30 letras o números, sin espacios ni acentos.');
+    return;
+  }
+  if (!(comision >= 0 && comision <= 100)) { dialogoAviso('La comisión tiene que estar entre 0 y 100%.'); return; }
+  if (!(descuento >= 0 && descuento <= 50)) { dialogoAviso('El descuento al cliente puede ir de 0 a 50%.'); return; }
+
+  const payload = {
+    store_slug: currentStore.slug,
+    nombre,
+    codigo,
+    telefono: byId('afiliadoTelefono').value.trim() || null,
+    comision_pct: comision,
+    descuento_pct: descuento,
+    activo: byId('afiliadoActivo').checked
+  };
+
+  const id = byId('afiliadoModal').dataset.id;
+  const { error } = id
+    ? await sb.from('store_afiliados').update(payload).eq('id', id)
+    : await sb.from('store_afiliados').insert([payload]);
+
+  if (error) {
+    const repetido = error.code === '23505' || /duplicate|unique/i.test(error.message || '');
+    dialogoAviso(repetido
+      ? 'Ya tenés un afiliado con el código ' + codigo + '. Elegí otro.'
+      : 'No se pudo guardar el afiliado:\n\n' + humano(error));
+    return;
+  }
+
+  hide(byId('afiliadoModal'));
+  await refreshData();
+}
+
+async function eliminarAfiliado(id) {
+  if (!puedeOperar()) return;
+  if (!await dialogoConfirmar('¿Borrar este afiliado? Sus pedidos viejos quedan con el código, pero su link deja de funcionar. Si solo querés frenarlo, mejor pausalo.')) return;
+
+  const { error } = await sb.from('store_afiliados').delete().eq('id', id);
+  if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
+  await refreshData();
+}
+
+byId('tabAfiliados').addEventListener('click', () => {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabAfiliados').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('afiliadosView').classList.add('visible');
+  renderAfiliados();
+});
+byId('afiliadosMes').addEventListener('change', renderAfiliados);
+byId('nuevoAfiliadoBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  abrirModalAfiliado(null);
+});
+byId('closeAfiliadoModal').addEventListener('click', () => hide(byId('afiliadoModal')));
+byId('guardarAfiliadoBtn').addEventListener('click', guardarAfiliado);
+byId('afiliadoCodigo').addEventListener('input', () => { byId('afiliadoCodigo').dataset.tocado = '1'; });
+byId('afiliadoNombre').addEventListener('input', () => {
+  if (!byId('afiliadoCodigo').dataset.tocado) byId('afiliadoCodigo').value = codigoSugerido(byId('afiliadoNombre').value);
 });
 
 byId('verCostosReparacionesBtn').addEventListener('click', () => {
