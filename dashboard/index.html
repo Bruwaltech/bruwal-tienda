@@ -1708,6 +1708,87 @@ tr:last-child td { border-bottom: none; }
   .comandas-tablero { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:10px; padding-bottom:6px; }
   .comandas-col { flex:0 0 86%; scroll-snap-align:start; }
 }
+/* ---- Panel de Mercado Libre, separado por secciones ----
+   Referencia: "Card Tabs" de 21st.dev (una barra de solapas tipo
+   segmented control y una tarjeta por tema). Portado a mano: el panel no
+   usa React ni build. */
+.mlx-cabecera {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #FFF9D6 0%, #FFFFFF 60%);
+  border: 1px solid #F3E39A; border-radius: 14px;
+  padding: 16px 18px; margin-bottom: 16px;
+}
+.mlx-cuenta { display: flex; align-items: center; gap: 13px; min-width: 0; font-size: 13.5px; line-height: 1.5; }
+.mlx-logo { width: 44px; height: 44px; border-radius: 12px; object-fit: contain; background: #FFE600; padding: 6px; flex-shrink: 0; }
+.mlx-cuenta-titulo { font-weight: 700; color: var(--navy); font-size: 15px; }
+.mlx-cuenta-nota { color: var(--text-mute); font-size: 12px; margin-top: 2px; }
+.mlx-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.mlx-accion {
+  width: auto; padding: 8px 14px; font-size: 13px;
+  background: #fff; color: var(--navy); border: 1px solid var(--line);
+}
+
+.mlx-solapas {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  background: #E8EEF6; border-radius: 12px; padding: 4px;
+  margin-bottom: 18px;
+}
+.mlx-solapa {
+  flex: 1 1 auto; min-width: 0;
+  border: 0; background: transparent; border-radius: 9px;
+  padding: 9px 14px; font: 600 13.5px 'Inter', sans-serif; color: var(--text-mute);
+  cursor: pointer; white-space: nowrap;
+  transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.mlx-solapa:hover { color: var(--navy); }
+.mlx-solapa.active {
+  background: #fff; color: var(--navy);
+  box-shadow: 0 1px 3px rgba(21,41,77,.12), 0 1px 1px rgba(21,41,77,.05);
+}
+.mlx-solapa:focus-visible { outline: 2px solid var(--celeste); outline-offset: 1px; }
+
+.mlx-seccion { animation: subirSuave .35s ease-out; }
+.mlx-intro {
+  display: flex; gap: 12px; align-items: flex-start;
+  margin: 0 2px 16px;
+}
+.mlx-num {
+  flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--navy); color: #fff; font-weight: 700; font-size: 13px;
+}
+.mlx-intro strong { color: var(--navy); font-size: 16px; font-family: 'Space Grotesk', 'Inter', sans-serif; }
+.mlx-intro p { color: var(--text-mute); font-size: 13.5px; line-height: 1.55; margin-top: 2px; max-width: 720px; }
+
+.mlx-grupo { margin-bottom: 18px; }
+.mlx-grupo-titulo {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-mute); margin: 0 2px 8px;
+}
+.mlx-par { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mlx-flujo { display: flex; align-items: stretch; gap: 8px; }
+.mlx-flujo .stat-card { flex: 1 1 0; min-width: 0; }
+.mlx-op {
+  align-self: center; color: #A9B8CB; font-size: 20px; font-weight: 700; flex-shrink: 0;
+}
+.mlx-dato .value { font-size: 22px; }
+.mlx-ayuda { font-size: 12px; color: var(--text-mute); line-height: 1.45; margin-top: 6px; }
+.mlx-final { background: linear-gradient(180deg, #EFFAF7, #FFFFFF); border-color: #BFE7DD; }
+.mlx-final .value { color: var(--stock); }
+
+@media (max-width: 860px) {
+  .mlx-flujo { flex-direction: column; }
+  .mlx-flujo .stat-card { flex: none; }
+  .mlx-op { transform: rotate(90deg); line-height: 1; margin: -2px 0; }
+}
+@media (max-width: 560px) {
+  .mlx-cabecera { padding: 14px; }
+  .mlx-acciones { width: 100%; }
+  .mlx-accion { flex: 1 1 calc(50% - 4px); }
+  .mlx-solapa { flex: 1 1 calc(33% - 4px); padding: 9px 6px; font-size: 12.5px; }
+  .mlx-par { grid-template-columns: 1fr 1fr; }
+}
 </style>
 <link rel="stylesheet" href="dashboard-motion.css">
 </head>
@@ -2628,200 +2709,256 @@ tr:last-child td { border-bottom: none; }
 
     <!-- EMPLEADOS -->
     <div id="mercadoLibreView" class="hidden">
-      <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
-        <div class="stat-card">
-          <div class="label">Ventas de ML este mes</div>
-          <div class="value" id="mlVentasMes">0</div>
+      <!-- El panel de ML esta separado por temas: arriba la cuenta, abajo
+           una solapa por cada pregunta que uno se hace (como me fue, me
+           cuadra el stock, me rinde la publicidad...). Antes eran diez
+           bloques uno abajo del otro y lo importante quedaba al fondo. -->
+      <div class="mlx-cabecera">
+        <div class="mlx-cuenta">
+          <img src="../ml-logo.webp" alt="" class="mlx-logo">
+          <div>
+            <div class="mlx-cuenta-titulo">Tu cuenta de Mercado Libre</div>
+            <div id="mlEstadoTab" style="color:var(--text-mute);">—</div>
+            <div class="mlx-cuenta-nota">Se conecta y se desconecta desde Configuración → Mercado Libre.</div>
+          </div>
         </div>
-        <div class="stat-card">
-          <div class="label">Facturado este mes</div>
-          <div class="value" id="mlFacturadoMes">$0</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Publicaciones vinculadas</div>
-          <div class="value" id="mlVinculadas">0</div>
-        </div>
-      </div>
-
-      <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
-        <div class="stat-card">
-          <div class="label">Comisiones e impuestos de ML (mes)</div>
-          <div class="value" id="mlComisionMes" style="color:var(--danger);">$0</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Neto después de ML</div>
-          <div class="value" id="mlNetoMes">$0</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Ganancia estimada</div>
-          <div class="value" id="mlGananciaMes">—</div>
-          <div class="sub" id="mlGananciaNota" style="font-size:11.5px;color:var(--text-mute);"></div>
+        <div class="mlx-acciones">
+          <button type="button" id="mlBeneficiosBtn" class="btn mlx-accion">✨ Beneficios de tenerlo acá</button>
+          <button type="button" id="mlPublicacionesBtn2" class="btn mlx-accion">Publicaciones y vínculos</button>
+          <button type="button" id="mlEmbudoBtn" class="btn mlx-accion">📊 Embudo</button>
+          <button type="button" id="mlPreguntasBtn" class="btn mlx-accion">💬 Preguntas<span id="mlPreguntasBadge" class="hidden" style="margin-left:7px;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;"></span></button>
         </div>
       </div>
 
       <div id="mlAvisoSinDescontar" class="hidden" style="background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:13px;line-height:1.55;"></div>
 
-      <div class="panel">
-        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span>🔗 Tu cuenta</span>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" id="mlBeneficiosBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">✨ Beneficios de tenerlo acá</button>
-            <button type="button" id="mlPublicacionesBtn2" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Publicaciones y vínculos</button>
-            <button type="button" id="mlEmbudoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">📊 Embudo</button>
-            <button type="button" id="mlPreguntasBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">💬 Preguntas<span id="mlPreguntasBadge" class="hidden" style="margin-left:7px;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;"></span></button>
-          </div>
-        </div>
-        <div style="padding:12px 14px;font-size:13.5px;line-height:1.6;">
-          <div id="mlEstadoTab" style="color:var(--text-mute);">—</div>
-          <div style="color:var(--text-mute);font-size:12.5px;margin-top:6px;">
-            La cuenta se conecta y se desconecta desde Configuración → Mercado Libre.
-          </div>
-        </div>
+      <div class="mlx-solapas" role="tablist" aria-label="Secciones de Mercado Libre">
+        <button type="button" role="tab" class="mlx-solapa active" id="mlxTab-resumen" data-mlx="resumen" aria-selected="true">📈 Resumen</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-stock" data-mlx="stock" aria-selected="false">⚖️ Stock</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-publicidad" data-mlx="publicidad" aria-selected="false">📢 Publicidad</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-publicaciones" data-mlx="publicaciones" aria-selected="false">⭐ Publicaciones</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-costos" data-mlx="costos" aria-selected="false">🧾 Costos</button>
       </div>
 
-      <div class="panel">
-        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span>📢 Publicidad</span>
-          <button type="button" id="mlPublicidadBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Consultar campañas</button>
+      <section class="mlx-seccion" data-mlx-seccion="resumen" role="tabpanel" aria-labelledby="mlxTab-resumen">
+        <div class="mlx-intro">
+          <span class="mlx-num">1</span>
+          <div><strong>Cómo te va</strong><p>Las ventas del mes y cuánta plata te queda de verdad después de lo que cobra Mercado Libre y de lo que te costó el producto.</p></div>
         </div>
-        <!-- El interruptor va ARRIBA de las campanas: es una decision sobre
-             ellas, y esconderlo abajo de una tabla larga es esconderlo. -->
-        <div class="sal-caja" id="saludAdsCaja" style="margin:12px 14px;">
-          <div class="sal-linea">
-            <div class="sal-texto">
-              <label class="sal-switch">
-                <input type="checkbox" id="autoPausarAdsChk">
-                Pausar solas las campañas que queman plata
-              </label>
-              <small>Pausa las que gastan sin vender o se pasan por mucho del ACOS objetivo.
-                     Nunca las reactiva: volver a prenderla es decisión tuya.</small>
+        <div class="mlx-grupo">
+          <div class="mlx-grupo-titulo">Cómo viene el mes</div>
+          <div class="mlx-par">
+            <div class="stat-card mlx-dato">
+              <div class="label">Ventas de ML este mes</div>
+              <div class="value" id="mlVentasMes">0</div>
+              <div class="mlx-ayuda">Ventas pagadas desde el 1° del mes.</div>
             </div>
-            <button type="button" id="revisarAdsBtn" class="btn"
-                    style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">
-              Revisar ahora
-            </button>
+            <div class="stat-card mlx-dato">
+              <div class="label">Publicaciones vinculadas</div>
+              <div class="value" id="mlVinculadas">0</div>
+              <div class="mlx-ayuda">Publicaciones que ya saben qué producto tuyo son.</div>
+            </div>
           </div>
-          <div id="saludAdsResultado"></div>
         </div>
 
-        <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
+        <div class="mlx-grupo">
+          <div class="mlx-grupo-titulo">De lo que vendés a lo que te queda</div>
+          <div class="mlx-flujo">
+            <div class="stat-card mlx-dato">
+              <div class="label">Facturado este mes</div>
+              <div class="value" id="mlFacturadoMes">$0</div>
+              <div class="mlx-ayuda">Lo que pagaron los compradores.</div>
+            </div>
+            <span class="mlx-op" aria-hidden="true">→</span>
+            <div class="stat-card mlx-dato">
+              <div class="label">Comisiones e impuestos de ML (mes)</div>
+              <div class="value" id="mlComisionMes" style="color:var(--danger);">$0</div>
+              <div class="mlx-ayuda">Lo que se queda Mercado Libre.</div>
+            </div>
+            <span class="mlx-op" aria-hidden="true">→</span>
+            <div class="stat-card mlx-dato">
+              <div class="label">Neto después de ML</div>
+              <div class="value" id="mlNetoMes">$0</div>
+              <div class="mlx-ayuda">Lo que queda después de comisión, impuestos y envío.</div>
+            </div>
+            <span class="mlx-op" aria-hidden="true">→</span>
+            <div class="stat-card mlx-dato mlx-final">
+              <div class="label">Ganancia estimada</div>
+              <div class="value" id="mlGananciaMes">—</div>
+              <div class="mlx-ayuda">El neto menos lo que te costaron los productos.</div>
+              <div class="sub" id="mlGananciaNota" style="font-size:11.5px;color:var(--text-mute);"></div>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>⚖️ Stock: acá contra Mercado Libre</span>
-          <button type="button" id="verStockCruzadoBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Comparar
-          </button>
+        <div class="panel">
+          <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
+          <table>
+            <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión e imp.</th><th style="text-align:right;">Envío</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Ganancia</th><th>Estado</th><th>Stock</th></tr></thead>
+            <tbody id="mlVentasBody"></tbody>
+          </table>
         </div>
-        <div id="stockCruzadoCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Compara lo que tenés acá con lo que dice cada publicación. Busca las dos
-          cosas que cuestan plata: <strong>vender lo que no tenés</strong> (activo
-          en ML y sin stock acá) y <strong>plata que no entra</strong> (con stock
-          acá y pausado o en cero allá).
-        </div>
-      </div>
+      </section>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>🎯 Qué conviene publicitar</span>
-          <button type="button" id="verAsesorAdsBtn" class="btn btn-primary"
-                  style="width:auto;padding:8px 14px;font-size:13px;">
-            Analizar
-          </button>
+      <section class="mlx-seccion hidden" data-mlx-seccion="stock" role="tabpanel" aria-labelledby="mlxTab-stock">
+        <div class="mlx-intro">
+          <span class="mlx-num">2</span>
+          <div><strong>Que no se te descuadre el stock</strong><p>Lo que tenés acá contra lo que dice cada publicación, y las ventas que por algún motivo no llegaron a registrarse.</p></div>
         </div>
-        <div id="asesorAdsCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Cruza lo que gastás en campañas con lo que te deja cada producto
-          después de costo, comisión, envío e impuestos. Te dice
-          <strong>hasta qué ACOS te conviene pagar</strong> en cada uno, cuáles
-          están pasados y a cuáles todavía no les hiciste campaña y valdría la pena.
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>⭐ Opiniones de tus publicaciones</span>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="opinionesTexto" maxlength="40" placeholder="Ej: creatina — o vacío para todas"
-                   style="width:auto;min-width:210px;padding:7px 10px;font-size:13px;">
-            <button type="button" id="verOpinionesBtn" class="btn"
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>⚖️ Stock: acá contra Mercado Libre</span>
+            <button type="button" id="verStockCruzadoBtn" class="btn"
                     style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-              Ver
-            </button>
-            <button type="button" id="guardarOpinionesBtn" class="btn btn-primary"
-                    style="width:auto;padding:8px 14px;font-size:13px;">
-              Mostrarlas en mi tienda
+              Comparar
             </button>
           </div>
+          <div id="stockCruzadoCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Compara lo que tenés acá con lo que dice cada publicación. Busca las dos
+            cosas que cuestan plata: <strong>vender lo que no tenés</strong> (activo
+            en ML y sin stock acá) y <strong>plata que no entra</strong> (con stock
+            acá y pausado o en cero allá).
+          </div>
         </div>
-        <div id="opinionesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Las estrellas que tienen tus publicaciones en Mercado Libre, y tu
-          reputación como vendedor. <strong>Ver</strong> no cambia nada;
-          <strong>Mostrarlas en mi tienda</strong> las guarda y salen en la
-          ficha de cada producto. Conviene repetirlo cada tanto para que no
-          queden viejas.
-        </div>
-      </div>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>🧾 Lo que te cobra Mercado Libre</span>
-          <button type="button" id="verFacturacionBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Ver la factura del mes
-          </button>
+        <!-- Red de seguridad: si un aviso de Mercado Libre no llega o se
+             procesa mal, esa venta no aparece en ningun lado y nadie se
+             entera. Esto la va a buscar. -->
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>🔎 ¿Falta alguna venta?</span>
+            <button type="button" id="buscarVentasFaltantesBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+              Buscar en Mercado Libre
+            </button>
+          </div>
+          <div id="ventasFaltantesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Le pregunta a Mercado Libre por tus ventas pagadas de los últimos días y
+            las compara con las que tenés acá. Si alguna no quedó registrada, la
+            traigo con su stock y su comisión.
+          </div>
         </div>
-        <div id="facturacionCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Hay costos que <strong>no vienen en la venta</strong>: el almacenamiento y la
-          gestión de FULL, y la publicidad. Se facturan por período, así que la
-          ganancia por venta los deja afuera. Acá están, con nombre y monto.
-        </div>
-      </div>
+      </section>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>⭐ Cómo mejorar tus publicaciones</span>
-          <button type="button" id="verCalidadBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Revisar mis publicaciones
-          </button>
+      <section class="mlx-seccion hidden" data-mlx-seccion="publicidad" role="tabpanel" aria-labelledby="mlxTab-publicidad">
+        <div class="mlx-intro">
+          <span class="mlx-num">3</span>
+          <div><strong>Que la publicidad rinda</strong><p>Tus campañas de Product Ads, cuáles queman plata y en qué productos te conviene invertir.</p></div>
         </div>
-        <div id="calidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Mercado Libre le pone un nivel a cada publicación (Básica, Estándar o
-          Profesional) según las fotos, la ficha técnica y los datos cargados.
-          Acá te traigo ese nivel y <strong>qué falta en cada una</strong>, con el
-          link para arreglarlo.
-        </div>
-      </div>
+        <div class="panel">
+          <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span>📢 Publicidad</span>
+            <button type="button" id="mlPublicidadBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Consultar campañas</button>
+          </div>
+          <!-- El interruptor va ARRIBA de las campanas: es una decision sobre
+               ellas, y esconderlo abajo de una tabla larga es esconderlo. -->
+          <div class="sal-caja" id="saludAdsCaja" style="margin:12px 14px;">
+            <div class="sal-linea">
+              <div class="sal-texto">
+                <label class="sal-switch">
+                  <input type="checkbox" id="autoPausarAdsChk">
+                  Pausar solas las campañas que queman plata
+                </label>
+                <small>Pausa las que gastan sin vender o se pasan por mucho del ACOS objetivo.
+                       Nunca las reactiva: volver a prenderla es decisión tuya.</small>
+              </div>
+              <button type="button" id="revisarAdsBtn" class="btn"
+                      style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">
+                Revisar ahora
+              </button>
+            </div>
+            <div id="saludAdsResultado"></div>
+          </div>
 
-      <!-- Red de seguridad: si un aviso de Mercado Libre no llega o se
-           procesa mal, esa venta no aparece en ningun lado y nadie se
-           entera. Esto la va a buscar. -->
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>🔎 ¿Falta alguna venta?</span>
-          <button type="button" id="buscarVentasFaltantesBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Buscar en Mercado Libre
-          </button>
+          <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
+          </div>
         </div>
-        <div id="ventasFaltantesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Le pregunta a Mercado Libre por tus ventas pagadas de los últimos días y
-          las compara con las que tenés acá. Si alguna no quedó registrada, la
-          traigo con su stock y su comisión.
-        </div>
-      </div>
 
-      <div class="panel">
-        <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
-        <table>
-          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión e imp.</th><th style="text-align:right;">Envío</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Ganancia</th><th>Estado</th><th>Stock</th></tr></thead>
-          <tbody id="mlVentasBody"></tbody>
-        </table>
-      </div>
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>🎯 Qué conviene publicitar</span>
+            <button type="button" id="verAsesorAdsBtn" class="btn btn-primary"
+                    style="width:auto;padding:8px 14px;font-size:13px;">
+              Analizar
+            </button>
+          </div>
+          <div id="asesorAdsCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Cruza lo que gastás en campañas con lo que te deja cada producto
+            después de costo, comisión, envío e impuestos. Te dice
+            <strong>hasta qué ACOS te conviene pagar</strong> en cada uno, cuáles
+            están pasados y a cuáles todavía no les hiciste campaña y valdría la pena.
+          </div>
+        </div>
+      </section>
+
+      <section class="mlx-seccion hidden" data-mlx-seccion="publicaciones" role="tabpanel" aria-labelledby="mlxTab-publicaciones">
+        <div class="mlx-intro">
+          <span class="mlx-num">4</span>
+          <div><strong>Publicaciones que venden más</strong><p>Qué le falta a cada publicación para subir de nivel, y las opiniones que podés mostrar en tu tienda.</p></div>
+        </div>
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>⭐ Cómo mejorar tus publicaciones</span>
+            <button type="button" id="verCalidadBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+              Revisar mis publicaciones
+            </button>
+          </div>
+          <div id="calidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Mercado Libre le pone un nivel a cada publicación (Básica, Estándar o
+            Profesional) según las fotos, la ficha técnica y los datos cargados.
+            Acá te traigo ese nivel y <strong>qué falta en cada una</strong>, con el
+            link para arreglarlo.
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>⭐ Opiniones de tus publicaciones</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              <input type="text" id="opinionesTexto" maxlength="40" placeholder="Ej: creatina — o vacío para todas"
+                     style="width:auto;min-width:210px;padding:7px 10px;font-size:13px;">
+              <button type="button" id="verOpinionesBtn" class="btn"
+                      style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+                Ver
+              </button>
+              <button type="button" id="guardarOpinionesBtn" class="btn btn-primary"
+                      style="width:auto;padding:8px 14px;font-size:13px;">
+                Mostrarlas en mi tienda
+              </button>
+            </div>
+          </div>
+          <div id="opinionesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Las estrellas que tienen tus publicaciones en Mercado Libre, y tu
+            reputación como vendedor. <strong>Ver</strong> no cambia nada;
+            <strong>Mostrarlas en mi tienda</strong> las guarda y salen en la
+            ficha de cada producto. Conviene repetirlo cada tanto para que no
+            queden viejas.
+          </div>
+        </div>
+      </section>
+
+      <section class="mlx-seccion hidden" data-mlx-seccion="costos" role="tabpanel" aria-labelledby="mlxTab-costos">
+        <div class="mlx-intro">
+          <span class="mlx-num">5</span>
+          <div><strong>Lo que no viene en la venta</strong><p>FULL, almacenamiento y publicidad se facturan aparte. Acá los ves para que la ganancia no te engañe.</p></div>
+        </div>
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>🧾 Lo que te cobra Mercado Libre</span>
+            <button type="button" id="verFacturacionBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+              Ver la factura del mes
+            </button>
+          </div>
+          <div id="facturacionCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Hay costos que <strong>no vienen en la venta</strong>: el almacenamiento y la
+            gestión de FULL, y la publicidad. Se facturan por período, así que la
+            ganancia por venta los deja afuera. Acá están, con nombre y monto.
+          </div>
+        </div>
+      </section>
     </div>
 
     <div id="empleadosView" class="hidden">
@@ -11080,6 +11217,7 @@ function mostrarVistaMercadoLibre() {
   byId('tabMercadoLibre').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('mercadoLibreView').classList.add('visible');
+  mostrarSeccionMl('resumen');
   renderMercadoLibre();
   cargarEstadoMl();
 
@@ -21887,6 +22025,25 @@ byId('sincronizarPreguntasBtn')?.addEventListener('click', sincronizarMlPregunta
 byId('closeMlPreguntasModal')?.addEventListener('click', () => hide(byId('mlPreguntasModal')));
 
 byId('mlPublicacionesBtn').addEventListener('click', abrirMlPublicaciones);
+// ---------- Mercado Libre: solapas del panel ----------
+// Solo muestran y esconden secciones. Lo que hay adentro funciona igual
+// que antes. Al entrar a la pestana siempre se arranca en Resumen: los
+// avisos de "vendiste por ML" y "venta sin descontar" mandan aca, y eso
+// esta en Resumen.
+function mostrarSeccionMl(clave) {
+  document.querySelectorAll('.mlx-solapa').forEach((b) => {
+    const activa = b.dataset.mlx === clave;
+    b.classList.toggle('active', activa);
+    b.setAttribute('aria-selected', activa ? 'true' : 'false');
+  });
+  document.querySelectorAll('.mlx-seccion').forEach((s) => {
+    s.classList.toggle('hidden', s.dataset.mlxSeccion !== clave);
+  });
+}
+document.querySelectorAll('.mlx-solapa').forEach((b) => {
+  b.addEventListener('click', () => mostrarSeccionMl(b.dataset.mlx));
+});
+
 byId('mlPublicacionesBtn2').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicidadBtn').addEventListener('click', consultarPublicidadMl);
 byId('buscarVentasFaltantesBtn').addEventListener('click', buscarVentasFaltantes);
