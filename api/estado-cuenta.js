@@ -28,7 +28,12 @@ async function consultar(ruta) {
   return r.json();
 }
 
+const panelDelAfiliado = require('./_afiliado');
+
 module.exports = async (req, res) => {
+  // /api/afiliado llega acá por el rewrite de vercel.json (ver _afiliado.js).
+  if (req.query && req.query.panel === 'afiliado') return panelDelAfiliado(req, res);
+
   const faltan = faltanVariables();
   if (faltan.length) {
     return res.status(500).json({ error: 'Falta configurar: ' + faltan.join(', ') });

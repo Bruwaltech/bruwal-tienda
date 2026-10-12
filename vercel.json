@@ -9,6 +9,10 @@
       "destination": "/api/mercadopago?accion=callback"
     },
     {
+      "source": "/api/afiliado",
+      "destination": "/api/estado-cuenta?panel=afiliado"
+    },
+    {
       "source": "/:slug",
       "destination": "/api/tienda?slug=:slug"
     }

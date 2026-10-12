@@ -1,5 +1,10 @@
 // Panel del afiliado, para la página pública afiliado.html.
 //
+// Con guion bajo adelante para que Vercel no lo cuente como una función
+// aparte: el plan tiene un tope de 12 y ya estaban todas usadas. Lo atiende
+// api/estado-cuenta.js (los dos son portales públicos por token), y
+// vercel.json manda /api/afiliado hacia ahí.
+//
 // Mismo esquema que api/estado-cuenta.js: el token viaja al servidor, se
 // resuelve con la service role key y se devuelve solo lo de ese afiliado.
 // Los pedidos salen SIN nombre ni teléfono del cliente: el afiliado tiene
