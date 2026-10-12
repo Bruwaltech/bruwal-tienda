@@ -12,8 +12,9 @@
 
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 
-// Cuántos meses hacia atrás se muestran. Alcanza para ver la evolución sin
-// traer el historial entero de un afiliado viejo.
+// Cuántos meses hacia atrás se muestran venta por venta. Alcanza para ver
+// la evolución sin mandar el historial entero de un afiliado viejo; el
+// total desde que empezó sí suma todo.
 const MESES_DE_HISTORIAL = 6;
 
 function faltanVariables() {
@@ -110,13 +111,13 @@ module.exports = async (req, res) => {
     const a = afiliados[0];
     const desde = new Date();
     desde.setMonth(desde.getMonth() - MESES_DE_HISTORIAL);
+    const mesDesde = mesAR(desde);
 
     const [tiendas, pedidos] = await Promise.all([
       consultar('store_profiles?slug=eq.' + encodeURIComponent(a.store_slug) +
                 '&select=business_name,phone,image_url&limit=1'),
       consultar('orders?store_slug=eq.' + encodeURIComponent(a.store_slug) +
                 '&afiliado_codigo=eq.' + encodeURIComponent(a.codigo) +
-                '&created_at=gte.' + desde.toISOString() +
                 '&select=created_at,items,total,estado,mp_pago_id,afiliado_comision_pct,afiliado_descuento' +
                 '&order=created_at.desc')
     ]);
@@ -142,8 +143,17 @@ module.exports = async (req, res) => {
         };
       });
 
+    // Desde que empezó: solo lo confirmado, igual que los totales del mes.
+    const total = { ventas: 0, vendido: 0, comision: 0 };
+    ventas.filter((v) => v.confirmado).forEach((v) => {
+      total.ventas += 1;
+      total.vendido += v.vendido;
+      total.comision += v.comision;
+    });
+
+    const recientes = ventas.filter((v) => v.mes >= mesDesde);
     const porMes = {};
-    ventas.forEach((v) => {
+    recientes.forEach((v) => {
       const m = porMes[v.mes] || (porMes[v.mes] = { mes: v.mes, ventas: 0, vendido: 0, comision: 0, por_confirmar: 0 });
       if (v.confirmado) {
         m.ventas += 1;
@@ -166,7 +176,8 @@ module.exports = async (req, res) => {
       },
       mes_actual: mesAR(new Date()),
       meses: Object.values(porMes).sort((x, y) => (x.mes < y.mes ? 1 : -1)),
-      ventas,
+      total,
+      ventas: recientes,
       generado: new Date().toISOString()
     });
   } catch (e) {

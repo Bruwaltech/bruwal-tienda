@@ -24623,6 +24623,15 @@ function renderAfiliados() {
     r.comision += base * Number(o.afiliado_comision_pct || 0) / 100;
   });
 
+  // Desde que empezó cada uno, sin importar el mes elegido.
+  const historico = {};
+  orders.filter(o => o.afiliado_codigo).forEach(o => {
+    const k = String(o.afiliado_codigo).toLowerCase();
+    const h = historico[k] || (historico[k] = { pedidos: 0, comision: 0 });
+    h.pedidos += 1;
+    h.comision += baseDeComision(o) * Number(o.afiliado_comision_pct || 0) / 100;
+  });
+
   const totales = Object.values(porCodigo).reduce((t, r) => {
     t.pedidos += r.pedidos; t.vendido += r.vendido; t.comision += r.comision; return t;
   }, { pedidos: 0, vendido: 0, comision: 0 });
@@ -24632,12 +24641,16 @@ function renderAfiliados() {
 
   cuerpo.innerHTML = afiliados.length ? afiliados.map(a => {
     const r = porCodigo[String(a.codigo).toLowerCase()] || { pedidos: 0, vendido: 0, comision: 0 };
+    const h = historico[String(a.codigo).toLowerCase()];
     const descuento = Number(a.descuento_pct || 0);
     return '<tr' + (a.activo ? '' : ' style="opacity:.55;"') + '>' +
       '<td><strong>' + escapeHtml(a.nombre) + '</strong>' +
         '<div style="font-size:11.5px;color:var(--text-mute);">' + escapeHtml(a.codigo) +
           (descuento > 0 ? ' · ' + descuento + '% off al cliente' : '') +
-          (a.activo ? '' : ' · pausado') + '</div></td>' +
+          (a.activo ? '' : ' · pausado') + '</div>' +
+        (h ? '<div style="font-size:11.5px;color:var(--text-mute);">Desde que empezó: ' + h.pedidos +
+          (h.pedidos === 1 ? ' pedido' : ' pedidos') + ' · ' + money(Math.round(h.comision)) + ' de comisión</div>' : '') +
+        '</td>' +
       '<td><button class="icon-btn" data-copiar-afiliado="' + a.id + '" title="Copiar su link">🔗 Copiar</button>' +
         (a.token ? ' <button class="icon-btn" data-panel-afiliado="' + a.id + '" title="Copiar el link de su panel, donde ve sus ventas y su comisión">📊 Panel</button>' : '') +
         (a.telefono ? ' <button class="icon-btn" data-wa-afiliado="' + a.id + '" title="Mandarle su link por WhatsApp">📱</button>' : '') +
