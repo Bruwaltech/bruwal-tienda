@@ -39,6 +39,9 @@
 <script src="../avisos.js"></script>
 <!-- La imagen del producto para historias y estados, compartida con la tienda -->
 <script src="../imagen-producto.js"></script>
+<!-- Usuarios del equipo (cada empleado con su usuario y contraseña). Va
+     ANTES del script principal: onLoggedIn() usa sus funciones. -->
+<script src="equipo.js"></script>
 <style>
 :root {
   --navy: #15294D;
@@ -9739,6 +9742,18 @@ async function onLoggedIn() {
 
     misTiendas = tiendas || [];
 
+    // Usuario del equipo (cajero, cocina, encargado): no tiene tiendas
+    // propias, entra a la del dueño. La marca esta en app_metadata, que el
+    // usuario no puede editar. Va ANTES del alta de abajo: si no, a cada
+    // empleado se le crearia una tienda vacia al entrar. Ver equipo.js.
+    const marcaEquipo = user.app_metadata && user.app_metadata.bruwal_equipo;
+    if (!misTiendas.length && marcaEquipo) {
+      if (typeof entrarComoEquipo !== 'function') throw new Error('No cargo equipo.js');
+      const tiendaEquipo = await entrarComoEquipo(user);
+      if (!tiendaEquipo) return;   // pausado o sin plan: ya mostro el cartel y cerro la sesion
+      misTiendas = [tiendaEquipo];
+    }
+
     // La ultima que estuvo mirando. Se valida que siga siendo suya: si la
     // borro o cambio de cuenta en el mismo navegador, el slug guardado
     // apunta a un negocio que no le corresponde.
@@ -9834,6 +9849,8 @@ async function onLoggedIn() {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   if (byId('tabDashboard')) byId('tabDashboard').classList.add('active');
 
+  if (window.equipoMiembro && typeof aplicarModoEquipo === 'function') aplicarModoEquipo();
+
   await refreshData();
 
   show(byId('ayudaBotBtn'));
@@ -9841,6 +9858,12 @@ async function onLoggedIn() {
   // La hora del encabezado tiene que estar desde que entra, no recien cuando
   // abre Ventas: es el primer lugar donde se nota si el reloj esta corrido.
   pintarHoraLocal();
+
+  // Usuario del equipo: suscripcion, Mercado Libre y reloj son cosas del dueño.
+  if (window.equipoMiembro) {
+    if (typeof irAPrimeraSolapaEquipo === 'function') irAPrimeraSolapaEquipo();
+    return;
+  }
 
   // Si esta bloqueado, capaz ya pago y el aviso de Mercado Pago no llego.
   // Va sin await: que no demore la carga del panel.
@@ -24015,6 +24038,7 @@ function renderEmpleados() {
         (r.valorHora > 0 ? money(r.aPagar) : '<span style="font-weight:400;color:var(--text-mute);font-size:11.5px;">falta el valor hora</span>') + '</td>' +
       '<td style="white-space:nowrap;">' +
         (r.aPagar > 0 ? '<button class="icon-btn" data-pagar-empleado="' + e.id + '" title="Registrar como gasto de sueldo">💸</button>' : '') +
+        (typeof botonAccesoEmpleado === 'function' ? botonAccesoEmpleado(e) : '') +
         '<button class="icon-btn" data-editar-empleado="' + e.id + '" title="Editar">✏️</button>' +
       '</td>' +
     '</tr>';
@@ -24074,6 +24098,8 @@ function abrirModalEmpleado(id) {
   byId('empleadoActivo').checked = e ? e.activo !== false : true;
   byId('eliminarEmpleadoBtn').classList.toggle('hidden', !e);
   byId('empleadoTarjetaNfcBtn').classList.toggle('hidden', !('NDEFReader' in window));
+  // Seccion "Va a usar el sistema" (usuario y contraseña): vive en equipo.js.
+  if (typeof prepararAccesoEnEmpleado === 'function') prepararAccesoEnEmpleado(e);
 
   show(byId('empleadoModal'));
   setTimeout(() => byId('empleadoNombre').focus(), 100);
@@ -24092,6 +24118,7 @@ async function guardarEmpleado() {
   // quién es. La base también lo frena, pero acá se explica de quién es.
   const repetida = tarjeta && empleados.find(x => normalizarTarjeta(x.tarjeta) === tarjeta && String(x.id) !== String(id));
   if (repetida) { dialogoAviso('Esa tarjeta ya es de ' + (repetida.nombre || 'otro empleado') + '.'); return; }
+  if (typeof accesoEmpleadoValido === 'function' && !accesoEmpleadoValido(id)) return;
 
   const datos = {
     store_slug: currentStore.slug,
@@ -24102,14 +24129,19 @@ async function guardarEmpleado() {
     activo: byId('empleadoActivo').checked
   };
 
-  const { error } = id
+  const { error, data: empleadoGuardado } = id
     ? await sb.from('store_empleados').update(datos).eq('id', id)
-    : await sb.from('store_empleados').insert([datos]);
+    : await sb.from('store_empleados').insert([datos]).select('id');
 
   if (error) { dialogoAviso('No se pudo guardar:\n\n' + humano(error)); return; }
 
   hide(byId('empleadoModal'));
   await refreshData();
+
+  // Usuario y contraseña del empleado (equipo.js): se crea recien ahora que
+  // el empleado ya existe, asi queda atado a sus horas y a su tarjeta.
+  const idEmpleado = id || (empleadoGuardado && empleadoGuardado[0] && empleadoGuardado[0].id);
+  if (idEmpleado && typeof accesoTrasGuardarEmpleado === 'function') await accesoTrasGuardarEmpleado(idEmpleado, nombre);
 }
 
 async function eliminarEmpleado() {
