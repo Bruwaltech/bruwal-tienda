@@ -3286,7 +3286,16 @@ tr:last-child td { border-bottom: none; }
                sacarlo del total, que es el numero que el negocio tiene. -->
           <label id="pCostoLabel">🔒 Costo por unidad <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <button type="button" id="pCostoVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar costo</button>
-          <input type="number" id="pCosto" min="0" step="0.01" class="hidden" placeholder="0">
+          <!-- En electrónica el costo se puede cargar en dólares: se guarda
+               en pesos (para margen y estadísticas) y además el monto en USD,
+               que es el que queda fijo cuando cambia la cotización. -->
+          <div id="pCostoFila" class="hidden" style="display:flex;gap:6px;">
+            <input type="number" id="pCosto" min="0" step="0.01" placeholder="0" style="flex:1;min-width:0;">
+            <select id="pCostoMoneda" class="campo-electronica hidden" style="flex-shrink:0;padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+              <option value="ARS">ARS</option><option value="USD">USD</option>
+            </select>
+          </div>
+          <small id="pCostoHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
 
           <div id="pCostoDesdeTotal" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-top:9px;">
             <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;">
@@ -6210,12 +6219,18 @@ function valoresProveedorParaGuardar() {
 
 // ---- Costo de un producto (para el margen en Estadísticas) — mismo PIN ----
 let costoEnEdicion = 0;
+// Si el costo se cargó en dólares: { moneda, original, cotizacion }. Null =
+// costo en pesos (el caso de siempre). costoEnEdicion sigue siendo en pesos.
+let costoMonedaEnEdicion = null;
 
 function renderCampoCosto() {
   const bloqueado = requiereDesbloqueoCostos();
   byId('pCostoVerBtn').classList.toggle('hidden', !bloqueado);
-  byId('pCosto').classList.toggle('hidden', bloqueado);
-  if (!bloqueado) byId('pCosto').value = costoEnEdicion || '';
+  byId('pCostoFila').classList.toggle('hidden', bloqueado);
+  if (byId('pCostoMoneda')) byId('pCostoMoneda').value = costoMonedaEnEdicion ? costoMonedaEnEdicion.moneda : 'ARS';
+  if (!bloqueado) byId('pCosto').value = (costoMonedaEnEdicion ? costoMonedaEnEdicion.original : costoEnEdicion) || '';
+  if (bloqueado) hide(byId('pCostoHint'));
+  else actualizarHintMoneda('pCosto', 'pCostoMoneda', 'pCostoHint');
 
   aplicarVisibilidadCosto();
   calcularCostoUnitario();
@@ -6270,9 +6285,10 @@ function calcularCostoUnitario() {
   const sufijo = u ? (' / ' + u.corto) : (propia ? (' / ' + propia.singular) : '');
   preview.textContent = money(Math.round(unitario * 100) / 100) + (unitario > 0 ? sufijo : '');
 
-  if (unitario > 0 && byId('pCosto') && !byId('pCosto').classList.contains('hidden')) {
+  if (unitario > 0 && byId('pCosto') && !byId('pCostoFila').classList.contains('hidden')) {
     byId('pCosto').value = Math.round(unitario * 100) / 100;
-    costoEnEdicion = Number(byId('pCosto').value);
+    if (byId('pCostoMoneda')?.value === 'ARS') costoEnEdicion = Number(byId('pCosto').value);
+    actualizarHintMoneda('pCosto', 'pCostoMoneda', 'pCostoHint');
   }
 }
 
@@ -6288,9 +6304,27 @@ function calcularCostoUnitario() {
 // Mismo criterio que valoresProveedorParaGuardar: si el campo sigue tapado
 // (nunca se desbloqueó en esta carga), se manda lo que el producto ya
 // tenía — leer el input oculto mandaría 0 y borraría el costo sin querer.
-function valorCostoParaGuardar() {
-  if (byId('pCosto').classList.contains('hidden')) return costoEnEdicion || null;
-  return Number(byId('pCosto').value) || null;
+// Devuelve las columnas del costo ya listas para el payload, o null si no
+// se pudo conseguir la cotización para un costo en USD (no se guarda).
+// Las columnas costo_moneda/_original/_cotizacion solo viajan cuando hay un
+// costo en dólares de por medio (antes o ahora): así una tienda que todavía
+// no corrió schema/62-costo-en-dolares.sql sigue guardando productos igual.
+async function valorCostoParaGuardar() {
+  const enUsd = (moneda, original, cotizacion) =>
+    ({ costo_moneda: moneda, costo_original: original, costo_cotizacion: cotizacion });
+  const limpiarUsd = costoMonedaEnEdicion ? enUsd(null, null, null) : {};
+
+  if (byId('pCostoFila').classList.contains('hidden')) {
+    return costoMonedaEnEdicion
+      ? { costo: costoEnEdicion || null, ...enUsd(costoMonedaEnEdicion.moneda, costoMonedaEnEdicion.original, costoMonedaEnEdicion.cotizacion) }
+      : { costo: costoEnEdicion || null };
+  }
+  if (!(Number(byId('pCosto').value) > 0)) return { costo: null, ...limpiarUsd };
+
+  const conv = await valorConvertido('pCosto', 'pCostoMoneda');
+  if (!conv) return null;
+  if (!conv.moneda) return { costo: conv.monto_ars || null, ...limpiarUsd };
+  return { costo: conv.monto_ars || null, ...enUsd(conv.moneda, conv.monto_original, conv.cotizacion) };
 }
 // ============================================================================
 
@@ -13232,8 +13266,8 @@ function aplicarVisibilidadPorRubro() {
   // guardado a mitad de cargar.
   document.querySelectorAll('.campo-electronica').forEach(el => el.classList.toggle('hidden', !esElectronica));
   if (!esElectronica) {
-    ['repCostoMoneda', 'repPrecioMoneda', 'pPriceMoneda'].forEach(id => { if (byId(id)) byId(id).value = 'ARS'; });
-    ['repCostoHint', 'repPrecioHint', 'pPriceHint'].forEach(id => { if (byId(id)) hide(byId(id)); });
+    ['repCostoMoneda', 'repPrecioMoneda', 'pPriceMoneda', 'pCostoMoneda'].forEach(id => { if (byId(id)) byId(id).value = 'ARS'; });
+    ['repCostoHint', 'repPrecioHint', 'pPriceHint', 'pCostoHint'].forEach(id => { if (byId(id)) hide(byId(id)); });
     avisarMonedaDelFormulario();
   }
 
@@ -13982,15 +14016,17 @@ async function ofrecerRepreciarProductos(moneda) {
   if (!(nueva > 0)) return;
 
   const desactualizados = products.filter(p =>
-    p.moneda === moneda && Number(p.precio_original) > 0 &&
-    Number(p.cotizacion) > 0 && Number(p.cotizacion) !== nueva);
+    (precioEnMoneda(p, moneda) && Number(p.cotizacion) !== nueva) ||
+    (costoEnMoneda(p, moneda) && Number(p.costo_cotizacion) !== nueva));
   if (!desactualizados.length) return;
 
   const cuantos = desactualizados.length + (desactualizados.length === 1 ? ' producto cargado' : ' productos cargados');
+  const conCosto = desactualizados.some(p => costoEnMoneda(p, moneda));
   if (!await dialogoConfirmar('Tenés ' + cuantos + ' en ' + moneda + ' con otra cotización.\n\n' +
-               '¿Les actualizo el precio en pesos a ' + money(nueva) + ' por ' + moneda + '?')) return;
+               '¿Les actualizo el precio en pesos a ' + money(nueva) + ' por ' + moneda + '?' +
+               (conCosto ? '\n\nEl costo en ' + moneda + ' no cambia: se recalcula lo que vale en pesos.' : ''))) return;
 
-  const r = await aplicarUnoPorUno(desactualizados, (p) => camposRepreciados(p, nueva));
+  const r = await aplicarUnoPorUno(desactualizados, (p) => camposRepreciados(p, nueva, moneda));
   if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
   else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
   renderProducts();
@@ -14009,7 +14045,9 @@ async function ofrecerAjustarProductosEnPesos(anterior) {
   const nueva = Number(cot?.venta);
   if (!(nueva > 0) || nueva === anterior) return;
 
-  const enPesos = products.filter(p => !p.moneda && Number(p.price) > 0);
+  // Los que tienen el costo en dólares ya los acomodó el aviso de arriba
+  // (siguen a su costo en USD), no se les suma además el porcentaje.
+  const enPesos = products.filter(p => !p.moneda && Number(p.price) > 0 && !costoEnMoneda(p, 'USD'));
   if (!enPesos.length) return;
 
   const factor = nueva / anterior;
@@ -14034,12 +14072,36 @@ function camposAjustadosEnPesos(p, factor) {
   return campos;
 }
 
-function camposRepreciados(p, nueva) {
-  const factor = nueva / Number(p.cotizacion);
-  const campos = {
-    price: Math.round(Number(p.precio_original) * nueva),
-    cotizacion: nueva
-  };
+function precioEnMoneda(p, moneda) {
+  return p.moneda === moneda && Number(p.precio_original) > 0 && Number(p.cotizacion) > 0;
+}
+
+function costoEnMoneda(p, moneda) {
+  return p.costo_moneda === moneda && Number(p.costo_original) > 0 && Number(p.costo_cotizacion) > 0;
+}
+
+// Precio cargado en dólares: el precio en pesos sale del precio en USD.
+// Precio en pesos con el costo en dólares (lo típico en electrónica: el
+// equipo se compra en USD y se vende en pesos): el precio en pesos se
+// mueve en la misma proporción que el costo, o sea se mantiene el margen
+// que tenía sobre el costo en USD. En los dos casos el monto en USD queda
+// igual; lo único que cambia es cuántos pesos vale.
+function camposRepreciados(p, nueva, moneda) {
+  const campos = {};
+  let factor = 1;
+  if (precioEnMoneda(p, moneda)) {
+    factor = nueva / Number(p.cotizacion);
+    campos.price = Math.round(Number(p.precio_original) * nueva);
+    campos.cotizacion = nueva;
+  } else if (costoEnMoneda(p, moneda) && !p.moneda) {
+    factor = nueva / Number(p.costo_cotizacion);
+    campos.price = aPesosConFactor(p.price, factor);
+  }
+  if (costoEnMoneda(p, moneda)) {
+    campos.costo = Math.round(Number(p.costo_original) * nueva);
+    campos.costo_cotizacion = nueva;
+  }
+  if (factor === 1) return campos;
   if (p.precio_oferta != null) campos.precio_oferta = aPesosConFactor(p.precio_oferta, factor);
   if (Array.isArray(p.precios_por_cantidad)) campos.precios_por_cantidad = preciosEnPesos(p.precios_por_cantidad, factor);
   if (Array.isArray(p.variantes)) campos.variantes = preciosEnPesos(p.variantes, factor);
@@ -16492,6 +16554,9 @@ function armarActualizacionImportacion(p, v, destino, modo, catFija) {
     price: precioNuevo,
     stock: stockNuevo,
     costo: costoNuevo,
+    // Un costo nuevo desde el archivo viene en pesos: si el producto lo
+    // tenía en dólares, se suelta para que el dólar no lo vuelva a pisar.
+    ...(costoDelArchivo !== null && p.costo_moneda ? { costo_moneda: null, costo_original: null, costo_cotizacion: null } : {}),
     category: conservar(catFija || v.categoria, p.category === undefined ? null : p.category),
     description: conservar(v.descripcion, p.description === undefined ? null : p.description),
     ean: conservar(v.ean, p.ean === undefined ? null : p.ean),
@@ -17199,7 +17264,8 @@ async function confirmarFacturaIa() {
     for (const { p, cantidad, costo } of acumulado.values()) {
       const nuevoStock = Number(p.stock || 0) + cantidad;
       const { error } = await sb.from('store_products')
-        .update({ stock: nuevoStock, costo: costo || p.costo || null })
+        .update({ stock: nuevoStock, costo: costo || p.costo || null,
+                  ...(costo && p.costo_moneda ? { costo_moneda: null, costo_original: null, costo_cotizacion: null } : {}) })
         .eq('id', p.id);
       if (error) { errorHubo = error; break; }
     }
@@ -21069,6 +21135,7 @@ function abrirFormularioNuevo(tipo) {
     proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
     renderCampoProveedor();
     costoEnEdicion = 0;
+    costoMonedaEnEdicion = null;
     if (byId('pCostoTotal')) byId('pCostoTotal').value = '';
     renderCampoCosto();
     if (byId('pImageFile')) byId('pImageFile').value = '';
@@ -21188,6 +21255,7 @@ function aplicarSolapasDeProductos() {
 }
 
 wireSelectorMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
+wireSelectorMoneda('pCosto', 'pCostoMoneda', 'pCostoHint');
 
 byId('closeModal').addEventListener('click', () => hide(byId('productModal')));
 
@@ -22717,6 +22785,8 @@ byId('productForm').addEventListener('submit', async (e) => {
   // completarse.
   const precioConv = await valorConvertido('pPrice', 'pPriceMoneda');
   if (!precioConv) return;
+  const costoAGuardar = await valorCostoParaGuardar();
+  if (!costoAGuardar) return;
   const factorMoneda = precioConv.moneda ? Number(precioConv.cotizacion) : 1;
 
   // La oferta se guarda solo si es menor al precio de lista. Un numero
@@ -22806,7 +22876,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     moneda: precioConv.moneda,
     precio_original: precioConv.monto_original,
     cotizacion: precioConv.cotizacion,
-    costo: valorCostoParaGuardar(),
+    ...costoAGuardar,
     stock: stockGeneral,
     unidad_medida: unidadAGuardar,
     unidad_nombre: (byId('pUnidadNombre')?.value || '').trim() || null,
@@ -22964,6 +23034,9 @@ async function editProduct(id) {
   proveedorEnEdicion = { nombre: p.proveedor_nombre || '', telefono: p.proveedor_telefono || '', email: p.proveedor_email || '' };
   renderCampoProveedor();
   costoEnEdicion = Number(p.costo || 0);
+  costoMonedaEnEdicion = (p.costo_moneda && Number(p.costo_original) > 0)
+    ? { moneda: p.costo_moneda, original: Number(p.costo_original), cotizacion: Number(p.costo_cotizacion) || null }
+    : null;
   renderCampoCosto();
   if (byId('pImageFile')) byId('pImageFile').value = '';
 
@@ -23331,7 +23404,8 @@ async function confirmarReponerVariante() {
     if (it) {
       it.cargadoAparte = true;
       if (Number(it.precio_unitario) > 0) {
-        await sb.from('store_products').update({ costo: Number(it.precio_unitario) }).eq('id', p.id);
+        await sb.from('store_products').update({ costo: Number(it.precio_unitario),
+          ...(p.costo_moneda ? { costo_moneda: null, costo_original: null, costo_cotizacion: null } : {}) }).eq('id', p.id);
         await refreshData();
       }
     }
@@ -23599,6 +23673,7 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
   renderCampoProveedor();
   costoEnEdicion = 0;
+  costoMonedaEnEdicion = null;
   renderCampoCosto();
   cargarVariantesEnFormulario(null);
   opcionesEnEdicion = [];
