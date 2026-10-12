@@ -24512,6 +24512,12 @@ function linkDeAfiliado(a) {
   return window.location.origin + '/' + currentStore.slug + '?ref=' + encodeURIComponent(a.codigo);
 }
 
+// Su panel privado (afiliado.html): ve su link, sus ventas y su comision.
+// Sin token todavia no se corrio schema/61-panel-afiliados.sql.
+function panelDeAfiliado(a) {
+  return a.token ? window.location.origin + '/afiliado.html?t=' + a.token : null;
+}
+
 const mesDeAR = (fecha) => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit'
 }).format(comoFecha(fecha)).slice(0, 7);
@@ -24560,6 +24566,7 @@ function renderAfiliados() {
           (descuento > 0 ? ' · ' + descuento + '% off al cliente' : '') +
           (a.activo ? '' : ' · pausado') + '</div></td>' +
       '<td><button class="icon-btn" data-copiar-afiliado="' + a.id + '" title="Copiar su link">🔗 Copiar</button>' +
+        (a.token ? ' <button class="icon-btn" data-panel-afiliado="' + a.id + '" title="Copiar el link de su panel, donde ve sus ventas y su comisión">📊 Panel</button>' : '') +
         (a.telefono ? ' <button class="icon-btn" data-wa-afiliado="' + a.id + '" title="Mandarle su link por WhatsApp">📱</button>' : '') +
       '</td>' +
       '<td style="text-align:right;">' + Number(a.comision_pct || 0) + '%</td>' +
@@ -24577,12 +24584,19 @@ function renderAfiliados() {
     const a = afiliados.find(x => String(x.id) === b.getAttribute('data-copiar-afiliado'));
     if (a) copiarTexto(linkDeAfiliado(a), 'Link de ' + a.nombre + ' copiado:\n\n' + linkDeAfiliado(a));
   }));
+  cuerpo.querySelectorAll('[data-panel-afiliado]').forEach(b => b.addEventListener('click', () => {
+    const a = afiliados.find(x => String(x.id) === b.getAttribute('data-panel-afiliado'));
+    if (a && panelDeAfiliado(a)) {
+      copiarTexto(panelDeAfiliado(a), 'Link del panel de ' + a.nombre + ' copiado. Es privado, mandáselo solo a él:\n\n' + panelDeAfiliado(a));
+    }
+  }));
   cuerpo.querySelectorAll('[data-wa-afiliado]').forEach(b => b.addEventListener('click', () => {
     const a = afiliados.find(x => String(x.id) === b.getAttribute('data-wa-afiliado'));
     if (!a) return;
     const texto = 'Hola ' + a.nombre + '! Este es tu link de ' + (currentStore.business_name || 'la tienda') + ': ' +
       linkDeAfiliado(a) + '\n\nCada pedido que entre por ahí (o con tu código ' + a.codigo + ') te suma un ' +
-      Number(a.comision_pct || 0) + '% de comisión.';
+      Number(a.comision_pct || 0) + '% de comisión.' +
+      (panelDeAfiliado(a) ? '\n\nEn tu panel ves tus ventas y lo que llevás ganado: ' + panelDeAfiliado(a) : '');
     window.open('https://wa.me/' + numeroWhatsApp(a.telefono) + '?text=' + encodeURIComponent(texto), '_blank');
   }));
   cuerpo.querySelectorAll('[data-editar-afiliado]').forEach(b =>
