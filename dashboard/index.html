@@ -2379,6 +2379,7 @@ tr:last-child td { border-bottom: none; }
                        autocomplete="off" inputmode="tel"
                        style="flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
               </div>
+              <div id="barcodeStockRestante" class="hidden" style="font-size:13px;margin:-6px 0 12px;line-height:1.5;font-weight:600;"></div>
               <div id="barcodeTelAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;"></div>
               <div id="barcodeBalanzaAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;color:var(--stock);font-weight:600;"></div>
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
@@ -19422,8 +19423,7 @@ async function searchByBarcode() {
       byId('barcodeInput').select();
       return;
     }
-    seleccionarProductoVenta(delaBalanza.id, cantidadDesdeBalanza(pesada, delaBalanza));
-    byId('barcodeInput').value = '';
+    escaneoAutomaticoVenta(delaBalanza, cantidadDesdeBalanza(pesada, delaBalanza));
     return;
   }
 
@@ -19434,7 +19434,7 @@ async function searchByBarcode() {
   const porEan = products.find(p => normalizarTexto(p.ean) === query);
   const porImei = !porEan && products.find(p => normalizarTexto(p.imei) === query);
   if (porEan || porImei) {
-    seleccionarProductoVenta((porEan || porImei).id);
+    escaneoAutomaticoVenta(porEan || porImei, null, !!porImei);
     return;
   }
 
@@ -19471,6 +19471,110 @@ async function searchByBarcode() {
   }
 
   mostrarCoincidencias(coincidencias, huboTipeo);
+}
+
+// ---- Escaneo seguido con el lector ----
+// Con el lector en modo automatico se escanea un producto atras del otro sin
+// tocar la pantalla. Cada codigo exacto (EAN, IMEI o etiqueta de balanza):
+//  - si es el mismo producto que esta en pantalla, suma una unidad;
+//  - si es otro, el de pantalla pasa solo al pedido y se muestra el nuevo.
+// El buscador queda vacio y con el foco puesto para el proximo codigo.
+// La busqueda por nombre sigue como siempre: ahi el vendedor elige.
+function escaneoAutomaticoVenta(product, cantidad, porImei) {
+  const input = byId('barcodeInput');
+  const actual = currentBarcodeProduct;
+  const sumar = (cantidad != null && Number(cantidad) > 0) ? Number(cantidad) : 1;
+
+  if (actual && String(actual.id) === String(product.id)) {
+    // El mismo IMEI dos veces es el mismo equipo: no son dos unidades.
+    // Con talle/color sin elegir tampoco se sabe a que combinacion sumar.
+    const faltaVariante = productoDeVentaTieneVariantes() &&
+      Object.keys(varianteSeleccionadaVenta).length < actual.variante_campos.length;
+    if (!porImei && !faltaVariante) {
+      const previa = Number(byId('barcodeQty').value) || 0;
+      const nueva = previa + sumar;
+      byId('barcodeQty').value = seVendePorMedida(actual) ? redondearMedida(nueva) : nueva;
+      calculateTotal();
+    }
+    avisarLectura();
+    input.value = '';
+    input.focus();
+    return;
+  }
+
+  // Otro producto: el que estaba en pantalla pasa al pedido. Si le falta algo
+  // (talle, equipo, stock) validarLineaVentaEnPantalla avisa y el codigo queda
+  // escrito para volver a escanearlo despues de completarlo.
+  if (actual) {
+    if (!puedeOperar()) return;
+    if (byId('barcodeTradeIn')?.checked) {
+      dialogoAviso('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
+      return;
+    }
+    const linea = validarLineaVentaEnPantalla();
+    if (!linea) return;
+    sumarLineaAlPedido(linea);
+  }
+
+  seleccionarProductoVenta(product.id, cantidad);
+  avisarLectura();
+  input.value = '';
+  input.focus();
+}
+
+// Mete una linea al pedido. Si ya hay una del mismo producto y combinacion
+// (sin IMEI puntual), suma la cantidad ahi en vez de repetir la linea.
+function sumarLineaAlPedido(linea) {
+  const clave = (l) => String(l.product.id) + '|' + claveVariante(l.variante || {});
+  const igual = !linea.imei && carritoVenta.find(l => !l.imei && clave(l) === clave(linea) &&
+    Number(l.precioUnitario) === Number(linea.precioUnitario));
+  if (igual) {
+    const total = Number(igual.qty) + Number(linea.qty);
+    igual.qty = seVendePorMedida(linea.product) ? redondearMedida(total) : total;
+  } else {
+    carritoVenta.push(linea);
+  }
+}
+
+// Debajo de la cantidad: cuanto stock queda si se vende lo que hay en
+// pantalla (contando lo que ya esta en el pedido del mismo producto).
+function actualizarStockRestanteVenta() {
+  const caja = byId('barcodeStockRestante');
+  if (!caja) return;
+  const p = currentBarcodeProduct;
+  if (!p || !esProductoFisico(p)) { caja.classList.add('hidden'); return; }
+
+  let stock;
+  let variante = null;
+  if (productoDeVentaTieneVariantes()) {
+    stock = stockDeVarianteVenta();
+    // Sin combinacion elegida ya lo dice el bloque de talle/color.
+    if (stock === null) { caja.classList.add('hidden'); return; }
+    variante = varianteSeleccionadaVenta;
+  } else {
+    stock = Number(p.stock || 0);
+  }
+
+  const clave = String(p.id) + '|' + claveVariante(variante || {});
+  const enPedido = carritoVenta
+    .filter(l => String(l.product.id) + '|' + claveVariante(l.variante || {}) === clave)
+    .reduce((s, l) => s + Number(l.qty || 0), 0);
+  const qty = Number(byId('barcodeQty').value) || 0;
+  const queda = stock - enPedido - qty;
+  const cuanto = (n) => formatearCantidad(n, p);
+
+  if (queda < 0) {
+    caja.textContent = '⚠️ No alcanza el stock: hay ' + cuanto(Math.max(0, stock - enPedido)) +
+      (enPedido ? ' (además de lo que ya está en el pedido)' : '') + '.';
+    caja.style.color = 'var(--danger)';
+  } else if (queda === 0) {
+    caja.textContent = '📦 Con esta venta te quedás sin stock.';
+    caja.style.color = '#B26A00';
+  } else {
+    caja.textContent = '📦 Te ' + (queda === 1 ? 'queda ' : 'quedan ') + cuanto(queda) + ' en stock.';
+    caja.style.color = 'var(--text-mute)';
+  }
+  caja.classList.remove('hidden');
 }
 
 function mostrarCoincidencias(lista, huboTipeo) {
@@ -19717,6 +19821,7 @@ function calculateTotal() {
   byId('barcodeTotal').textContent = money(total);
   pintarTotalConCarrito();
   calculateChange();
+  actualizarStockRestanteVenta();
 }
 
 // ---- La tasacion del equipo tomado, con su moneda ----
@@ -20026,6 +20131,7 @@ function entrarEnModoPedido() {
   varianteSeleccionadaVenta = {};
   imeiSeleccionadoVenta = null;
   byId('barcodeVarianteBloque').classList.add('hidden');
+  byId('barcodeStockRestante')?.classList.add('hidden');
   hide(byId('barcodeMatches'));
   const n = carritoVenta.length;
   byId('barcodeProductName').textContent = '🛒 Pedido de ' + n + ' producto' + (n === 1 ? '' : 's');
@@ -20051,7 +20157,7 @@ function agregarAlPedidoVenta() {
   }
   const linea = validarLineaVentaEnPantalla();
   if (!linea) return;
-  carritoVenta.push(linea);
+  sumarLineaAlPedido(linea);
   entrarEnModoPedido();
 }
 
@@ -20743,6 +20849,29 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
 // Permitir escanear con Enter en el input
 byId('barcodeInput').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') searchByBarcode();
+});
+
+// Si el vendedor toco la cantidad y despues escanea, el lector "tipea" el
+// codigo en ese campo (13 digitos de cantidad). Se detecta por el largo, se
+// devuelve la cantidad que habia y el codigo va al buscador como si nada.
+// Enter con una cantidad normal vuelve el foco al buscador para seguir.
+let cantidadAntesDeEscanear = '1';
+byId('barcodeQty').addEventListener('focus', (e) => { cantidadAntesDeEscanear = e.target.value; });
+byId('barcodeQty').addEventListener('input', (e) => {
+  if (String(e.target.value).replace(/\D/g, '').length < 6) cantidadAntesDeEscanear = e.target.value;
+});
+byId('barcodeQty').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const valor = String(e.target.value);
+  if (valor.replace(/\D/g, '').length >= 6) {
+    e.target.value = cantidadAntesDeEscanear;
+    calculateTotal();
+    byId('barcodeInput').value = valor;
+    searchByBarcode();
+    return;
+  }
+  byId('barcodeInput').focus();
 });
 
 // ============ ESCANEO CON LA CAMARA ============
