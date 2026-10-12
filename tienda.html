@@ -659,6 +659,8 @@
     <div class="mark">✓</div>
     <h2 id="exitoTitulo">¡Pedido enviado!</h2>
     <p id="exitoTexto" style="color:var(--text-mute);margin-top:10px;">La tienda te va a contactar para coordinar la entrega y el pago.</p>
+    <a id="exitoWhatsApp" class="hidden" target="_blank" rel="noopener" style="display:inline-block;margin-top:18px;padding:13px 28px;background:#25D366;color:#fff;border-radius:8px;font-weight:700;font-size:15px;text-decoration:none;">Enviar por WhatsApp</a>
+    <div id="exitoWhatsAppAyuda" class="hidden" style="font-size:12.5px;color:var(--text-mute);margin-top:8px;">¿No se abrió WhatsApp? Tocá el botón.</div>
     <button onclick="backToShop()" style="margin-top:20px;padding:12px 32px;background:var(--celeste);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:15px;">← Volver a la tienda</button>
   </div>
 </div>
@@ -3551,11 +3553,31 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     }
 
     const waLink = 'https://wa.me/' + numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent(detalles);
-    window.open(waLink, '_blank');
+    // Despues de esperar a la base, el navegador ya no toma esto como un
+    // toque del cliente: Safari en iPhone y varios navegadores dentro de
+    // apps bloquean la ventana sin avisar. Antes igual decia "Pedido
+    // enviado" y el mensaje nunca salia. Ahora queda un boton para
+    // mandarlo con un toque, y si se bloqueo, el cartel lo pide.
+    let ventana = null;
+    try { ventana = window.open(waLink, '_blank'); } catch (e) { ventana = null; }
+    const bloqueado = !ventana;
+    byId('exitoWhatsApp').href = waLink;
+    byId('exitoWhatsApp').textContent = bloqueado
+      ? (turnoTexto ? 'Enviar turno por WhatsApp' : 'Enviar pedido por WhatsApp')
+      : 'Abrir WhatsApp de nuevo';
+    show(byId('exitoWhatsApp'));
+    byId('exitoWhatsAppAyuda').classList.toggle('hidden', bloqueado);
+    if (bloqueado) {
+      byId('exitoTitulo').textContent = '¡Ya casi!';
+      byId('exitoTexto').textContent = (turnoTexto
+        ? 'Tu turno ya quedó reservado. '
+        : '') + 'Falta un paso: tocá el botón verde para mandarle el ' +
+        (turnoTexto ? 'turno' : 'pedido') + ' a la tienda por WhatsApp.';
+    }
 
     // Ahora el horario queda efectivamente bloqueado en la agenda, asi que
     // ya podemos decir "reservado" sin mentirle al cliente.
-    if (turnoTexto) {
+    if (turnoTexto && !bloqueado) {
       byId('exitoTitulo').textContent = '¡Turno reservado!';
       byId('exitoTexto').textContent =
         'Te esperamos el ' + turnoTexto + '. Ese horario ya quedó bloqueado a tu nombre.';
@@ -3576,6 +3598,10 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 function backToShop() {
   cart = {};
   hide(byId('successState'));
+  hide(byId('exitoWhatsApp'));
+  hide(byId('exitoWhatsAppAyuda'));
+  byId('exitoTitulo').textContent = '¡Pedido enviado!';
+  byId('exitoTexto').textContent = 'La tienda te va a contactar para coordinar la entrega y el pago.';
   show(byId('storeView'));
   hide(byId('cartBar'));
   byId('cartCount').textContent = '0';
