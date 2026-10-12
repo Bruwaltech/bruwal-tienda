@@ -13947,6 +13947,7 @@ async function actualizarCotizacionBanner() {
 // hasta que se borre — "Quitar" vuelve a la automática de dolarapi.com.
 async function editarCotizacionManual(moneda) {
   const actual = cotizacionManual(moneda) || await obtenerCotizacion(moneda);
+  const anterior = Number(actual?.venta);
   const nombre = moneda === 'USD' ? 'dólar blue' : 'euro';
   const entrada = await dialogoPedir(
     '¿A cuánto está el ' + nombre + ' hoy? (dejalo vacío para volver a la cotización automática)',
@@ -13965,6 +13966,7 @@ async function editarCotizacionManual(moneda) {
   await actualizarCotizacionBanner();
   if (rubroEsElectronica()) renderDashboard();
   await ofrecerRepreciarProductos(moneda);
+  if (moneda === 'USD') await ofrecerAjustarProductosEnPesos(anterior);
 }
 
 // Los productos cargados en dólares/euros guardan el precio ya pasado a
@@ -13992,6 +13994,44 @@ async function ofrecerRepreciarProductos(moneda) {
   if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
   else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
   renderProducts();
+}
+
+// Muchas tiendas de electrónica (ej. Kitzone) cargan todo en pesos pero
+// piensan los precios en dólares: si el dólar sube 5%, quieren que sus
+// precios en pesos suban 5%. Esos productos no tienen moneda ni cotización
+// guardada, así que el repreciado de arriba no los veía. Al cambiar el
+// dólar a mano se ofrece ajustarlos en la misma proporción que cambió
+// (precio, oferta, por mayor y variantes). Es opcional: hay quien carga en
+// pesos justamente porque no quiere que sigan al dólar.
+async function ofrecerAjustarProductosEnPesos(anterior) {
+  if (!puedeOperar() || !(anterior > 0)) return;
+  const cot = await obtenerCotizacion('USD');
+  const nueva = Number(cot?.venta);
+  if (!(nueva > 0) || nueva === anterior) return;
+
+  const enPesos = products.filter(p => !p.moneda && Number(p.price) > 0);
+  if (!enPesos.length) return;
+
+  const factor = nueva / anterior;
+  const pct = Math.round((factor - 1) * 1000) / 10;
+  const cuantos = enPesos.length + (enPesos.length === 1 ? ' producto cargado' : ' productos cargados');
+  if (!await dialogoConfirmar('Tenés ' + cuantos + ' en pesos.\n\n' +
+               'El dólar pasó de ' + money(anterior) + ' a ' + money(nueva) +
+               ' (' + (pct > 0 ? '+' : '') + String(pct).replace('.', ',') + '%).\n\n' +
+               '¿Les ' + (pct > 0 ? 'subo' : 'bajo') + ' el precio en pesos en la misma proporción?')) return;
+
+  const r = await aplicarUnoPorUno(enPesos, (p) => camposAjustadosEnPesos(p, factor));
+  if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
+  else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
+  renderProducts();
+}
+
+function camposAjustadosEnPesos(p, factor) {
+  const campos = { price: aPesosConFactor(p.price, factor) };
+  if (p.precio_oferta != null) campos.precio_oferta = aPesosConFactor(p.precio_oferta, factor);
+  if (Array.isArray(p.precios_por_cantidad)) campos.precios_por_cantidad = preciosEnPesos(p.precios_por_cantidad, factor);
+  if (Array.isArray(p.variantes)) campos.variantes = preciosEnPesos(p.variantes, factor);
+  return campos;
 }
 
 function camposRepreciados(p, nueva) {
