@@ -12063,6 +12063,10 @@ async function refreshData() {
   refrescarListaDeCategorias();
   pintarCampanita();
   await renderAgendaDia();
+
+  // Al final, con productos y pedidos ya cargados. Si confirmó alguno, se
+  // vuelve a cargar para que se vea el stock descontado.
+  if (await confirmarPagadosConMp()) await refreshData();
 }
 
 // ===================== CAMPANITA DE NOVEDADES =====================
@@ -15034,6 +15038,10 @@ function renderOrders() {
         (o.afiliado_codigo
           ? '<div style="font-size:11px;color:var(--celeste);margin-top:2px;">🤝 Recomendó: ' + escapeHtml(nombreDeAfiliado(o.afiliado_codigo)) + '</div>'
           : '') +
+        (o.mp_pago_id
+          ? '<div style="font-size:11px;color:#0077B6;font-weight:600;margin-top:2px;">💳 Pagado con Mercado Pago: ' + money(o.mp_monto) +
+            (e === 'pendiente' ? ' · revisalo y confirmalo' : '') + '</div>'
+          : '') +
       '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(items) +
         (o.aclaraciones
@@ -15473,9 +15481,13 @@ async function eliminarPedido(id) {
 
 // 'extra' viaja en el MISMO update que el estado. Lo usa el tablero de
 // comandas: "Aceptar y preparar" confirma y pasa a En preparacion de una.
-async function cambiarEstadoPedido(id, nuevo, extra = {}) {
+// opciones.solo: lo llama confirmarPagadosConMp(), sin nadie mirando. No
+// abre carteles ni refresca: quien lo llamó refresca una vez al final.
+// Devuelve true si el pedido cambió de estado.
+async function cambiarEstadoPedido(id, nuevo, extra = {}, opciones = {}) {
   const pedido = pedidosTodos.find(o => String(o.id) === String(id));
-  if (!pedido) return;
+  if (!pedido) return false;
+  const avisar = opciones.solo ? (m) => console.warn(m) : dialogoAviso;
 
   const anterior = estadoPedido(pedido);
 
@@ -15484,7 +15496,7 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
   const transicionValida =
     (anterior === 'pendiente'  && (nuevo === 'confirmado' || nuevo === 'cancelado')) ||
     (anterior === 'confirmado' && nuevo === 'cancelado');
-  if (!transicionValida) return;
+  if (!transicionValida) return false;
 
   // Un pedido que entra por la tienda no trae hora: el cliente pidio, pero
   // para cuando esta lo decide la cocina. Este es el momento en que se
@@ -15504,7 +15516,7 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     // Cancelar en el prompt cancela la confirmacion entera: es mejor no
     // confirmar que confirmar sin hora y que despues nadie sepa para
     // cuando era.
-    if (escrita === null) return;
+    if (escrita === null) return false;
     horaConfirmada = horaEntregaISO(String(escrita).trim());
   }
 
@@ -15533,15 +15545,15 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     .select('id');
 
   if (error) {
-    dialogoAviso('No se pudo actualizar el pedido:\n\n' + humano(error) +
+    avisar('No se pudo actualizar el pedido:\n\n' + humano(error) +
           (extra.etapa ? '\n\n(Si dice que falta la columna, correr schema/56-comandas.sql en Supabase.)' : ''));
-    return;
+    return false;
   }
   if (!data || !data.length) {
-    dialogoAviso('No se pudo actualizar el pedido: la base rechazó el cambio, o ya lo habías cambiado en otro momento.\n\n' +
+    avisar('No se pudo actualizar el pedido: la base rechazó el cambio, o ya lo habías cambiado en otro momento.\n\n' +
           'Si el problema persiste, avisale a soporte y mencioná "política de update en orders".');
-    await refreshData();   // por si el estado real ya cambió, refrescar la vista
-    return;
+    if (!opciones.solo) await refreshData();   // por si el estado real ya cambió, refrescar la vista
+    return false;
   }
 
   // El stock se toca DESPUES de que el cambio de estado en la base fue
@@ -15574,7 +15586,68 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     imprimirTicketDeOrden(id);
   }
 
-  await refreshData();
+  if (!opciones.solo) await refreshData();
+  return true;
+}
+
+// ---------- Pedidos pagados con Mercado Pago ----------
+// api/mercadopago.js marca el pedido como pagado cuando Mercado Pago avisa
+// que el pago se aprobó. El servidor no lo confirma: el stock (variantes,
+// equipos con IMEI, insumos) se descuenta acá, en cambiarEstadoPedido(), y
+// repetir eso en el servidor sería tener dos versiones de la misma cuenta.
+// Así que el panel lo confirma solo en el próximo refresco.
+
+// El precio más bajo al que la tienda vende ese producto: lista, oferta,
+// por mayor o cualquier variante o equipo.
+function precioMinimoDeProducto(p) {
+  const precios = [Number(p.price), Number(p.precio_oferta)];
+  (Array.isArray(p.precios_por_cantidad) ? p.precios_por_cantidad : [])
+    .forEach(e => precios.push(Number(e && e.precio)));
+  (Array.isArray(p.variantes) ? p.variantes : []).forEach(v => {
+    precios.push(Number(v && v.precio));
+    (Array.isArray(v && v.imeis) ? v.imeis : []).forEach(u => precios.push(Number(u && u.precio)));
+  });
+  const validos = precios.filter(x => x > 0);
+  return validos.length ? Math.min(...validos) : 0;
+}
+
+// El pedido lo arma el navegador del cliente, precios incluidos. Pagar
+// $100 un pedido inventado a $100 es un pago aprobado de verdad, así que
+// antes de confirmar solo se mira que los precios sean los de la tienda.
+// Si algo no cierra, queda pendiente con el cartel de pagado y lo mira el
+// dueño.
+function pagoCubrePedido(o) {
+  if (!(Number(o.mp_monto) >= Number(o.total || 0) - 1)) return false;
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return false;
+  let productos = 0;
+  for (const it of items) {
+    const p = products.find(x => String(x.id) === String(it.product_id));
+    if (!p) return false;
+    if (Number(it.price) < precioMinimoDeProducto(p) - 1) return false;
+    productos += Number(it.price) * Number(it.qty || 0);
+  }
+  // El descuento de un afiliado llega como mucho al 50%.
+  return Number(o.total || 0) >= productos / 2 - 1;
+}
+
+let confirmandoPagadosMp = false;
+async function confirmarPagadosConMp() {
+  // Gastronomía no: confirmar es mandar a la cocina y pide la hora.
+  if (confirmandoPagadosMp || rubroEsComida() || estadoSuscripcion() === 'vencido') return false;
+  const listos = (pedidosTodos || []).filter(o =>
+    estadoPedido(o) === 'pendiente' && o.mp_pago_id && pagoCubrePedido(o));
+  if (!listos.length) return false;
+  confirmandoPagadosMp = true;
+  let alguno = false;
+  try {
+    for (const o of listos) {
+      if (await cambiarEstadoPedido(o.id, 'confirmado', {}, { solo: true })) alguno = true;
+    }
+  } finally {
+    confirmandoPagadosMp = false;
+  }
+  return alguno;
 }
 
 function renderClientes() {
@@ -24596,7 +24669,8 @@ function renderAfiliados() {
     const texto = 'Hola ' + a.nombre + '! Este es tu link de ' + (currentStore.business_name || 'la tienda') + ': ' +
       linkDeAfiliado(a) + '\n\nCada pedido que entre por ahí (o con tu código ' + a.codigo + ') te suma un ' +
       Number(a.comision_pct || 0) + '% de comisión.' +
-      (panelDeAfiliado(a) ? '\n\nEn tu panel ves tus ventas y lo que llevás ganado: ' + panelDeAfiliado(a) : '');
+      (panelDeAfiliado(a) ? '\n\nEn tu panel ves tus ventas y lo que llevás ganado: ' + panelDeAfiliado(a) +
+        '\nAbrilo y tocá "Instalar" para tenerlo en el celular como una app.' : '');
     window.open('https://wa.me/' + numeroWhatsApp(a.telefono) + '?text=' + encodeURIComponent(texto), '_blank');
   }));
   cuerpo.querySelectorAll('[data-editar-afiliado]').forEach(b =>

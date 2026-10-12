@@ -49,6 +49,39 @@ function baseDeComision(o) {
 // que en el panel (estadoPedido en dashboard/index.html).
 const estadoDe = (o) => o.estado || 'confirmado';
 
+// El manifest para instalar el panel en el celular. Uno por afiliado: el
+// start_url lleva su token, así el ícono abre su panel. Como el id del
+// manifest sale del start_url, dos afiliados en el mismo teléfono son dos
+// apps distintas.
+async function manifestDelPanel(res, token) {
+  const afiliados = await consultar(
+    'store_afiliados?token=eq.' + token + '&activo=is.true&select=store_slug&limit=1');
+  if (!afiliados.length) return res.status(404).json({ error: 'Este link no está activo.' });
+  const tiendas = await consultar('store_profiles?slug=eq.' + encodeURIComponent(afiliados[0].store_slug) +
+                                  '&select=business_name&limit=1');
+  const negocio = ((tiendas[0] && tiendas[0].business_name) || 'BRUWAL').trim();
+
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  return res.status(200).send(JSON.stringify({
+    name: 'Mi panel de afiliado · ' + negocio,
+    short_name: negocio.length <= 12 ? negocio : 'Mi panel',
+    description: 'Tus ventas y comisiones como afiliado de ' + negocio + '.',
+    lang: 'es-AR',
+    start_url: '/afiliado.html?t=' + token,
+    scope: '/afiliado.html',
+    display: 'standalone',
+    orientation: 'portrait',
+    background_color: '#F4F7FB',
+    theme_color: '#15294D',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+    ]
+  }));
+}
+
 module.exports = async (req, res) => {
   const faltan = faltanVariables();
   if (faltan.length) {
@@ -61,6 +94,8 @@ module.exports = async (req, res) => {
   }
 
   try {
+    if (req.query.manifest) return await manifestDelPanel(res, token);
+
     const afiliados = await consultar(
       'store_afiliados?token=eq.' + token + '&activo=is.true' +
       '&select=store_slug,codigo,nombre,comision_pct,descuento_pct&limit=1'
@@ -82,7 +117,7 @@ module.exports = async (req, res) => {
       consultar('orders?store_slug=eq.' + encodeURIComponent(a.store_slug) +
                 '&afiliado_codigo=eq.' + encodeURIComponent(a.codigo) +
                 '&created_at=gte.' + desde.toISOString() +
-                '&select=created_at,items,total,estado,afiliado_comision_pct,afiliado_descuento' +
+                '&select=created_at,items,total,estado,mp_pago_id,afiliado_comision_pct,afiliado_descuento' +
                 '&order=created_at.desc')
     ]);
 
@@ -94,8 +129,10 @@ module.exports = async (req, res) => {
           fecha: o.created_at,
           mes: mesAR(o.created_at),
           // 'pendiente' = el cliente mandó el pedido pero el negocio todavía
-          // no lo confirmó. Se muestra, pero no suma a lo cobrado.
-          confirmado: estadoDe(o) !== 'pendiente',
+          // no lo confirmó. Se muestra, pero no suma a lo cobrado. Pagado
+          // por Mercado Pago ya cuenta: el panel lo confirma solo cuando el
+          // dueño lo abre, y el afiliado no tiene por qué esperar a eso.
+          confirmado: estadoDe(o) !== 'pendiente' || !!o.mp_pago_id,
           productos: (o.items || []).map((it) => ({
             nombre: it.name || it.label || 'Producto',
             cantidad: Number(it.qty || 1)

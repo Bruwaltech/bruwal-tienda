@@ -490,6 +490,8 @@
   <div id="hlBanner" class="hidden" style="text-align:center;padding:10px 16px;font-size:13.5px;font-weight:600;line-height:1.5;"></div>
   <!-- Aparece cuando el cliente entró con el link de un afiliado (?ref=CODIGO). -->
   <div id="afiliadoBanner" class="hidden" style="text-align:center;padding:10px 16px;font-size:13.5px;font-weight:600;line-height:1.5;background:#EAF4FD;color:#0B3B66;"></div>
+  <!-- La vuelta de Mercado Pago (?pago=aprobado|pendiente|error). -->
+  <div id="pagoBanner" class="hidden" style="text-align:center;padding:12px 16px;font-size:14px;font-weight:600;line-height:1.5;"></div>
 
   <main class="wrap">
     <!-- Buscador y orden. Van ARRIBA de todo el listado: el cliente que ya
@@ -666,6 +668,11 @@
     <div class="mark">✓</div>
     <h2 id="exitoTitulo">¡Pedido enviado!</h2>
     <p id="exitoTexto" style="color:var(--text-mute);margin-top:10px;">La tienda te va a contactar para coordinar la entrega y el pago.</p>
+    <!-- Solo si el cliente eligió Mercado Pago y la tienda tiene su cuenta conectada. -->
+    <div id="pagoMpBox" class="hidden" style="margin-top:18px;">
+      <a id="pagoMpBtn" href="#" style="display:inline-block;padding:14px 28px;background:#009EE3;color:#fff;border-radius:10px;font-weight:700;font-size:16px;text-decoration:none;">Pagar con Mercado Pago</a>
+      <p style="font-size:12.5px;color:var(--text-mute);margin:8px auto 0;max-width:340px;line-height:1.5;">Con tarjeta, en cuotas o con dinero en cuenta. Cuando el pago se aprueba, el negocio recibe tu pedido confirmado.</p>
+    </div>
     <button onclick="backToShop()" style="margin-top:20px;padding:12px 32px;background:var(--celeste);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:15px;">← Volver a la tienda</button>
   </div>
 </div>
@@ -1034,6 +1041,7 @@ async function init(){
   aplicarTema(store.tema);
   // Sin await: la tienda se muestra igual mientras se valida el codigo.
   cargarAfiliado(slug);
+  avisarVueltaDePago();
 
   // Horario del local: de esto dependen el cartel de abierto/cerrado y el
   // aviso del checkout. Si la tienda no lo configuró, queda en null y no
@@ -3640,8 +3648,13 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     //
     // Si falla el guardado NO frenamos la venta: es peor perder un cliente
     // que perder un registro.
+    // El id lo arma el navegador: el cliente anónimo puede insertar pedidos
+    // pero no leerlos, y sin el id no hay cómo pedir el link de pago.
+    const idPedido = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : null;
+    let pedidoGuardado = false;
     try {
       const pedido = {
+        ...(idPedido ? { id: idPedido } : {}),
         store_slug: getSlugFromUrl(),
         customer_name: name,
         customer_phone: phone,
@@ -3682,7 +3695,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       ].filter((p, i, todos) => i === 0 || Object.keys(p).length < Object.keys(todos[i - 1]).length);
       for (const intento of intentos) {
         const { error: errPedido } = await sb.from('orders').insert(intento);
-        if (!errPedido) break;
+        if (!errPedido) { pedidoGuardado = true; break; }
       }
     } catch (e) {
       console.warn('No se pudo registrar el pedido:', e);
@@ -3703,6 +3716,10 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     hide(byId('storeView'));
     show(byId('successState'));
     cart = {};
+
+    // Después del WhatsApp, para no demorarlo: el pedido le llega al negocio
+    // igual que siempre y el botón de pagar aparece en esta pantalla.
+    if (pedidoGuardado && idPedido && medioDePago === 'Mercado Pago') ofrecerPagoMp(idPedido, total);
   } else {
     errEl.textContent = 'No se pudo obtener el número de WhatsApp de la tienda.';
     errEl.classList.remove('hidden');
@@ -3711,8 +3728,59 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   byId('confirmOrderBtn').disabled = false;
 });
 
+// ---------- Pago con Mercado Pago ----------
+// El link lo arma api/mercadopago.js con la cuenta del negocio. Si la
+// tienda no conectó Mercado Pago, no aparece nada y el pago se coordina
+// por WhatsApp como siempre.
+async function ofrecerPagoMp(idPedido, total) {
+  try {
+    const r = await fetch('/api/mercadopago', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'cobrar', pedido: idPedido })
+    });
+    const datos = await r.json().catch(() => ({}));
+    if (!r.ok || !datos.url) return;
+    byId('pagoMpBtn').href = datos.url;
+    byId('pagoMpBtn').textContent = 'Pagar ' + money(total) + ' con Mercado Pago';
+    byId('exitoTitulo').textContent = '¡Pedido enviado! Falta el pago';
+    byId('exitoTexto').textContent = 'Pagalo ahora y queda confirmado al instante.';
+    show(byId('pagoMpBox'));
+  } catch (e) {
+    console.warn('No se pudo armar el link de Mercado Pago:', e);
+  }
+}
+
+function avisarVueltaDePago() {
+  const estado = new URLSearchParams(location.search).get('pago');
+  const textos = {
+    aprobado:  ['✅ ¡Listo! Tu pago se aprobó y el negocio ya tiene tu pedido confirmado.', '#E8F7EE', '#14532D'],
+    pendiente: ['⏳ Tu pago está en proceso. Cuando se acredite, el negocio confirma tu pedido.', '#FFF7E0', '#7A4B00'],
+    error:     ['No se pudo completar el pago. Probá de nuevo o coordinalo con el negocio por WhatsApp.', '#FDECEC', '#8A1C1C']
+  };
+  const t = textos[estado];
+  if (!t) return;
+  const banner = byId('pagoBanner');
+  banner.textContent = t[0];
+  banner.style.background = t[1];
+  banner.style.color = t[2];
+  show(banner);
+  // Que un F5 no vuelva a mostrar el cartel. Los demás parámetros (?ref=)
+  // quedan como estaban.
+  try {
+    const url = new URL(location.href);
+    ['pago', 'collection_id', 'collection_status', 'payment_id', 'status', 'external_reference',
+     'payment_type', 'merchant_order_id', 'preference_id', 'site_id', 'processing_mode', 'merchant_account_id']
+      .forEach(k => url.searchParams.delete(k));
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } catch (e) { /* no pasa nada */ }
+}
+
 function backToShop() {
   cart = {};
+  hide(byId('pagoMpBox'));
+  byId('exitoTitulo').textContent = '¡Pedido enviado!';
+  byId('exitoTexto').textContent = 'La tienda te va a contactar para coordinar la entrega y el pago.';
   hide(byId('successState'));
   show(byId('storeView'));
   hide(byId('cartBar'));

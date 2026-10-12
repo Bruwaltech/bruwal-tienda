@@ -21,6 +21,10 @@
 //   desconectar  -> borra la cuenta de la tienda
 //   resumen      -> { mes: 'AAAA-MM' } totales del mes
 // Y por GET la vuelta de Mercado Pago: /api/mp-callback?code=...&state=...
+//
+// Cobrar pedidos de la tienda (sin sesión: los usa el cliente):
+//   POST { accion: 'cobrar', pedido: <id> } -> { url } link de pago de MP
+//   ?accion=notificacion&tienda=<slug>      -> el aviso de MP cuando se paga
 
 const crypto = require('crypto');
 
@@ -258,6 +262,160 @@ async function accionResumen(slug, mes) {
   return { conectado: true, mes: mes, totales: totales, por_medio: porMedio, cortado: cortado };
 }
 
+// ---------- Cobrar pedidos de la tienda ----------
+//
+// El cliente eligió "Mercado Pago" en el checkout. El pedido ya está
+// guardado (pendiente) y acá se arma el link de pago con la cuenta de MP
+// DEL NEGOCIO: la plata va directo a él, BRUWAL no la toca.
+//
+// No pide sesión porque lo llama el cliente. Lo único que se puede hacer
+// con un id de pedido es generar un link para pagar ese mismo pedido por
+// su total, que es lo que cualquiera querría que pase.
+
+const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function baseDelSitio(req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return 'https://' + host;
+}
+
+function resumenDeItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((it) => Number(it.qty || 1).toLocaleString('es-AR', { maximumFractionDigits: 3 }) + 'x ' + (it.name || it.label || 'Producto'))
+    .join(', ')
+    .slice(0, 250);
+}
+
+async function accionCobrar(req, idPedido) {
+  if (!ES_UUID.test(String(idPedido || ''))) return { error: 'Pedido inválido' };
+
+  const pedidos = await sb('/rest/v1/orders?id=eq.' + encodeURIComponent(idPedido) +
+                           '&select=id,store_slug,items,total,estado,pagado,mp_pago_id');
+  const pedido = pedidos && pedidos[0];
+  if (!pedido) return { error: 'No encontramos el pedido' };
+  if (pedido.estado === 'cancelado') return { error: 'Este pedido está cancelado' };
+  if (pedido.mp_pago_id) return { error: 'Este pedido ya está pagado' };
+  const total = Math.round(Number(pedido.total || 0) * 100) / 100;
+  if (!(total > 0)) return { error: 'El pedido no tiene total para cobrar' };
+
+  const cuenta = await tokenDeTienda(pedido.store_slug);
+  // La tienda no conectó su Mercado Pago: el checkout sigue como siempre,
+  // coordinando el pago por WhatsApp.
+  if (!cuenta) return { conectado: false };
+
+  const tiendas = await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(pedido.store_slug) +
+                           '&select=business_name');
+  const negocio = (tiendas && tiendas[0] && tiendas[0].business_name) || pedido.store_slug;
+  const base = baseDelSitio(req);
+  const volver = (estado) => base + '/' + encodeURIComponent(pedido.store_slug) + '?pago=' + estado;
+
+  // Un solo renglón por el total: el total ya trae envío, agregados y el
+  // descuento del afiliado, y desarmarlo en renglones obligaría a repetir
+  // acá toda la cuenta del checkout.
+  const r = await fetch(MP_API + '/checkout/preferences', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + cuenta.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: [{
+        id: pedido.id,
+        title: 'Pedido en ' + negocio,
+        description: resumenDeItems(pedido.items),
+        quantity: 1,
+        unit_price: total,
+        currency_id: 'ARS'
+      }],
+      external_reference: pedido.id,
+      notification_url: base + '/api/mercadopago?accion=notificacion&tienda=' + encodeURIComponent(pedido.store_slug),
+      back_urls: { success: volver('aprobado'), pending: volver('pendiente'), failure: volver('error') },
+      auto_return: 'approved'
+    })
+  });
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok || !datos.init_point) {
+    throw new Error('Mercado Pago no armó el link: ' + (datos.message || ('HTTP ' + r.status)));
+  }
+  return { url: datos.init_point };
+}
+
+// Lo que se lleva MP de un cobro se anota como gasto, igual que la comisión
+// de Mercado Libre en ml-webhook.js: si no, Caja y Estadísticas muestran
+// más ganancia de la que hay.
+async function registrarComisionMp(pedido, pago) {
+  const d = desglosarCobro(pago);
+  const monto = Math.round((d.comision + d.impuestos) * 100) / 100;
+  if (monto <= 0) return;
+  await sb('/rest/v1/store_gastos', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: [{
+      store_slug: pedido.store_slug,
+      concepto: 'Comisión Mercado Pago — Pedido de ' + (pedido.customer_name || 'la tienda'),
+      categoria: 'Comisiones Mercado Pago',
+      monto: monto,
+      moneda: 'ARS',
+      monto_original: monto,
+      cotizacion: 1,
+      fecha: (pago.date_approved || pago.date_created || new Date().toISOString()).slice(0, 10),
+      medio_pago: 'Descontado por Mercado Pago',
+      notas: 'Registrada sola al aprobarse el pago ' + pago.id + '. Comisión $' + d.comision +
+             (d.impuestos ? ' + impuestos retenidos $' + d.impuestos : '') +
+             '. No se paga aparte: Mercado Pago acredita el total menos esto.'
+    }]
+  });
+}
+
+// El aviso de Mercado Pago. No se le cree nada de lo que manda: con el id
+// se va a buscar el pago con el token de la tienda, y solo si está aprobado,
+// es de esta tienda y apunta a uno de sus pedidos, se marca pagado.
+async function accionNotificacion(req) {
+  const q = req.query || {};
+  const b = (req.body && typeof req.body === 'object') ? req.body : {};
+  const tipo = q.type || q.topic || b.type || b.topic || '';
+  const idPago = q['data.id'] || (b.data && b.data.id) || (tipo === 'payment' ? q.id : null);
+  if (tipo !== 'payment' || !idPago) return { ignorado: 'no es un pago' };
+
+  const slug = String(q.tienda || '');
+  const cuenta = slug ? await tokenDeTienda(slug) : null;
+  if (!cuenta) return { ignorado: 'tienda sin Mercado Pago' };
+
+  const r = await fetch(MP_API + '/v1/payments/' + encodeURIComponent(String(idPago)), {
+    headers: { Authorization: 'Bearer ' + cuenta.token }
+  });
+  if (r.status === 404) return { ignorado: 'pago inexistente' };
+  const pago = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Mercado Pago: ' + (pago.message || ('HTTP ' + r.status)));
+
+  if (pago.status !== 'approved') return { ignorado: 'pago ' + pago.status };
+  if (pago.collector_id && String(pago.collector_id) !== String(cuenta.mpUserId)) return { ignorado: 'otro cobrador' };
+  const idPedido = String(pago.external_reference || '');
+  if (!ES_UUID.test(idPedido)) return { ignorado: 'no es un pedido de la tienda' };
+
+  // El filtro mp_pago_id=is.null hace que MP pueda avisar diez veces y el
+  // pago se registre una sola: el segundo PATCH no encuentra la fila.
+  const marcados = await sb('/rest/v1/orders?id=eq.' + encodeURIComponent(idPedido) +
+    '&store_slug=eq.' + encodeURIComponent(slug) + '&mp_pago_id=is.null', {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: {
+      pagado: true,
+      medio_pago: 'Mercado Pago',
+      mp_pago_id: String(pago.id),
+      mp_monto: Number(pago.transaction_amount || 0)
+    }
+  });
+  if (!marcados || !marcados.length) return { ignorado: 'ya registrado' };
+
+  // Si anotar la comisión falla, el pago ya quedó registrado y no se
+  // devuelve error: MP reintentaría, pero el PATCH de arriba ya no
+  // encontraría la fila y la comisión tampoco se anotaría.
+  try {
+    await registrarComisionMp(marcados[0], pago);
+  } catch (err) {
+    console.error('mercadopago.js comisión del pedido ' + idPedido, err);
+  }
+  return { pagado: idPedido };
+}
+
 // ---------- Conectar / desconectar ----------
 
 async function accionEstado(slug) {
@@ -321,7 +479,31 @@ module.exports = async (req, res) => {
   }
 
   if (req.method === 'GET' && (req.query || {}).accion === 'callback') return accionCallback(req, res);
+
+  // Mercado Pago avisa por POST (webhook) o GET (IPN viejo), según la cuenta.
+  // Se contesta 200 a todo lo que no es nuestro para que no reintente; un
+  // error real devuelve 500 y MP vuelve a avisar más tarde.
+  if ((req.query || {}).accion === 'notificacion') {
+    try {
+      return res.status(200).json(await accionNotificacion(req));
+    } catch (err) {
+      console.error('mercadopago.js notificacion', err);
+      return res.status(500).json({ error: String(err.message || err) });
+    }
+  }
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+
+  // El cliente de la tienda no tiene sesión: cobrar va antes del control.
+  if ((req.body || {}).accion === 'cobrar') {
+    try {
+      const r = await accionCobrar(req, req.body.pedido);
+      return res.status(r.error ? 400 : 200).json(r);
+    } catch (err) {
+      console.error('mercadopago.js cobrar', err);
+      return res.status(502).json({ error: 'No pudimos armar el link de pago. Coordiná el pago con el negocio.' });
+    }
+  }
 
   const cabecera = req.headers.authorization || '';
   const token = cabecera.startsWith('Bearer ') ? cabecera.slice(7) : '';
@@ -346,4 +528,4 @@ module.exports = async (req, res) => {
   }
 };
 
-module.exports._probar = { desglosarCobro, rangoDelMes, armarEstado, leerEstado };
+module.exports._probar = { desglosarCobro, rangoDelMes, armarEstado, leerEstado, accionNotificacion, accionCobrar };
