@@ -10608,13 +10608,21 @@ async function buscarVentasFaltantes() {
         'Puede ser que no haya avisado, o que el aviso haya llegado y fallado antes de dejar rastro ' +
         '\u2014 que es lo que pasaba con la venta que no se registraba.' +
       '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">' +
+        '<label style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--navy);cursor:pointer;">' +
+          '<input type="checkbox" id="vfTodas" style="width:auto;"> Seleccionar todas</label>' +
+        '<button type="button" id="vfTraerSel" class="btn btn-primary" disabled ' +
+          'style="width:auto;padding:8px 14px;font-size:13px;">\u2b07 Traer las seleccionadas</button>' +
+      '</div>' +
       '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-      '<thead><tr>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', '\u00bfAvis\u00f3 ML?', ''].map(t =>
+      '<thead><tr><th style="width:30px;padding:7px 9px;border-bottom:1px solid var(--line);"></th>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', '\u00bfAvis\u00f3 ML?', ''].map(t =>
         '<th style="text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);font-size:11.5px;' +
         'text-transform:uppercase;letter-spacing:.03em;color:var(--text-mute);">' + t + '</th>').join('') +
       '</tr></thead><tbody>' +
       faltantes.map(v =>
         '<tr>' +
+          '<td style="padding:9px;border-bottom:1px solid var(--line);">' +
+            '<input type="checkbox" data-vf-sel="' + escapeHtml(v.id) + '" data-total="' + v.total + '" style="width:auto;"></td>' +
           '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
             (v.fecha ? fechaAR(v.fecha, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '\u2014') + '</td>' +
           '<td style="padding:9px;border-bottom:1px solid var(--line);">' + escapeHtml(v.comprador || '\u2014') + '</td>' +
@@ -10639,6 +10647,23 @@ async function buscarVentasFaltantes() {
     cuerpo.querySelectorAll('[data-importar]').forEach(b => {
       b.addEventListener('click', () => importarVentaMl(b.dataset.importar, Number(b.dataset.total), b));
     });
+
+    // Seleccion para traer varias de una. "Todas" se marca sola cuando
+    // estan todas tildadas a mano, y el boton dice cuantas va a traer.
+    const casillas = [...cuerpo.querySelectorAll('[data-vf-sel]')];
+    const todas = byId('vfTodas');
+    const traerSel = byId('vfTraerSel');
+    const actualizarSeleccion = () => {
+      const marcadas = casillas.filter(c => c.checked);
+      todas.checked = marcadas.length === casillas.length;
+      todas.indeterminate = marcadas.length > 0 && marcadas.length < casillas.length;
+      traerSel.disabled = !marcadas.length;
+      traerSel.textContent = '\u2b07 Traer las seleccionadas' + (marcadas.length ? ' (' + marcadas.length + ')' : '');
+    };
+    todas.addEventListener('change', () => { casillas.forEach(c => { c.checked = todas.checked; }); actualizarSeleccion(); });
+    casillas.forEach(c => c.addEventListener('change', actualizarSeleccion));
+    traerSel.addEventListener('click', () => importarVentasMlSeleccionadas(
+      casillas.filter(c => c.checked).map(c => ({ id: c.dataset.vfSel, total: Number(c.dataset.total) })), traerSel));
   } catch (err) {
     cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
   } finally {
@@ -10688,6 +10713,54 @@ async function importarVentaMl(idOrden, total, boton) {
     boton.disabled = false;
     boton.textContent = '\u2b07 Traer a BRUWAL';
   }
+}
+
+// Trae varias ventas de una. Usa la misma accion del servidor que el boton
+// de cada fila, de a una (cada una mueve stock: en paralelo se pisarian), y
+// al final dice que entro y que no, en un solo cartel.
+async function importarVentasMlSeleccionadas(lista, boton) {
+  if (!puedeOperar() || !lista.length) return;
+  const suma = lista.reduce((s, v) => s + (v.total || 0), 0);
+  if (!await dialogoConfirmar('\u00bfTraer ' + lista.length + ' venta' + (lista.length === 1 ? '' : 's') +
+               ' (' + money(Math.round(suma)) + ') a BRUWAL?\n\n' +
+               'Se registra cada pedido, se descuenta el stock de los productos vinculados ' +
+               'y se anota la comisi\u00f3n de Mercado Libre.')) return;
+
+  boton.disabled = true;
+  let traidas = 0, ya = 0, descontados = 0, porFull = 0, comision = 0, sinVinculo = 0;
+  const fallidas = [];
+  for (let i = 0; i < lista.length; i++) {
+    boton.textContent = 'Trayendo ' + (i + 1) + ' de ' + lista.length + '\u2026';
+    try {
+      const r = await llamarApiMl('importar_venta', { ml_order_id: lista[i].id });
+      if (r.ok) {
+        traidas++;
+        descontados += r.descontados || 0;
+        porFull += r.por_full || 0;
+        comision += r.comision || 0;
+        sinVinculo += Array.isArray(r.sin_vinculo) ? r.sin_vinculo.length : 0;
+      } else if (r.ya) {
+        ya++;
+      } else {
+        fallidas.push(money(Math.round(lista[i].total)) + ': ' + (r.motivo || 'error desconocido'));
+      }
+    } catch (err) {
+      fallidas.push(money(Math.round(lista[i].total)) + ': ' + humano(err));
+    }
+  }
+
+  let detalle = traidas + ' venta' + (traidas === 1 ? '' : 's') + ' registrada' + (traidas === 1 ? '' : 's') + '.';
+  if (ya) detalle += '\n' + ya + ' ya estaba' + (ya === 1 ? '' : 'n') + ' registrada' + (ya === 1 ? '' : 's') + '.';
+  if (descontados) detalle += '\nStock descontado en ' + descontados + ' producto' + (descontados === 1 ? '' : 's') + '.';
+  if (porFull) detalle += '\n' + porFull + ' por Full: no se toc\u00f3 el stock del local.';
+  if (comision) detalle += '\nComisiones anotadas: ' + money(Math.round(comision)) + '.';
+  if (sinVinculo) detalle += '\n\nOJO: ' + sinVinculo + ' publicaci\u00f3n' + (sinVinculo === 1 ? '' : 'es') +
+    ' sin vincular, as\u00ed que ese stock NO se descont\u00f3. Ajustalo a mano y vincul\u00e1 la publicaci\u00f3n.';
+  if (fallidas.length) detalle += '\n\nNo se pudieron traer:\n' + fallidas.join('\n');
+  dialogoAviso(detalle);
+
+  await refreshData();
+  await buscarVentasFaltantes();
 }
 
 // El que no tiene Pro no ve la solapa, pero sí esta pantalla: es mejor
