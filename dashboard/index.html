@@ -11886,6 +11886,10 @@ async function refreshData() {
 
   const { data: mlVins } = await sb.from('store_ml_vinculos').select('*').eq('store_slug', currentStore.slug);
   mlVinculosPrevios = mlVins || [];
+  // Si la solapa de ML ya esta abierta (se toco antes de que terminara de
+  // cargar, o quedo abierta y esto es el refresco de cada minuto), se vuelve
+  // a pintar con lo que llego. Si no, quedaba en 0 hasta salir y volver.
+  if (byId('mercadoLibreView').classList.contains('visible')) renderMercadoLibre();
 
   const { data: emps } = await sb.from('store_empleados').select('*').eq('store_slug', currentStore.slug).order('nombre');
   empleados = emps || [];
