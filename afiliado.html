@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<script src="/seguimiento.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- El panel de un afiliado es privado: no se indexa. -->
+<meta name="robots" content="noindex, nofollow">
+<title>Mi panel de afiliado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #15294D;
+    --celeste: #2F8FE0;
+    --bg: #F4F7FB;
+    --line: #E3E9F2;
+    --text-dark: #15294D;
+    --text-mute: #6B7A99;
+    --danger: #DC2626;
+    --ok: #16A34A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text-dark);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  .encabezado {
+    display: flex; align-items: center; gap: 13px;
+    margin-bottom: 18px;
+  }
+  .encabezado img {
+    width: 52px; height: 52px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
+  }
+  .encabezado h1 { font-size: 19px; margin: 0 0 2px; }
+  .encabezado .sub { font-size: 13px; color: var(--text-mute); }
+
+  .tarjeta {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px; margin-bottom: 14px;
+  }
+
+  .saldo { text-align: center; padding: 24px 18px; }
+  .saldo .etiqueta { font-size: 13px; color: var(--text-mute); margin-bottom: 6px; }
+  .saldo .monto { font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+  .saldo.debe .monto { color: var(--danger); }
+  .saldo.aldia .monto { color: var(--ok); font-size: 26px; }
+
+  .titulo-seccion {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-mute); margin: 22px 0 9px;
+  }
+
+  .fila {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 11px 0; border-bottom: 1px solid var(--line);
+  }
+  .fila:last-child { border-bottom: none; }
+  .fila .detalle { font-size: 13.5px; line-height: 1.5; }
+  .fila .fecha { font-size: 12px; color: var(--text-mute); margin-top: 2px; }
+  .fila .monto { font-weight: 700; white-space: nowrap; }
+  .fila .monto.debe { color: var(--danger); }
+  .fila .monto.pago { color: var(--ok); }
+
+  .chip {
+    display: inline-block; padding: 3px 9px; border-radius: 20px;
+    font-size: 11.5px; font-weight: 700;
+  }
+  .chip.recibido { background: #EAF4FD; color: var(--navy); }
+  .chip.en_reparacion { background: #FEF3E2; color: #8A5200; }
+  .chip.listo { background: #E7F7EE; color: #12703A; }
+
+  .btn {
+    display: block; width: 100%; padding: 14px; border-radius: 10px;
+    border: none; background: var(--navy); color: #fff;
+    font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+    text-align: center; text-decoration: none; margin-top: 8px;
+  }
+  .btn.secundario {
+    background: #fff; color: var(--navy); border: 1px solid var(--line);
+  }
+
+  .aviso { text-align: center; padding: 50px 20px; color: var(--text-mute); }
+  .aviso h2 { color: var(--text-dark); font-size: 18px; margin: 0 0 8px; }
+
+  .pie {
+    text-align: center; font-size: 11.5px; color: var(--text-mute);
+    margin-top: 26px; line-height: 1.6;
+  }
+
+  /* Al imprimir (o "Guardar como PDF" desde el celular) se saca todo lo que
+     no es el estado de cuenta: botones, fondo de color, sombras. */
+  @media print {
+    body { background: #fff; }
+    .wrap { max-width: none; padding: 0; }
+    .no-imprimir { display: none !important; }
+    .tarjeta { border: 1px solid #ccc; break-inside: avoid; }
+  }
+
+  /* Lo propio del panel del afiliado */
+  .numeros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .numeros .tarjeta { margin: 0; padding: 14px 10px; text-align: center; }
+  .numeros .etiqueta { font-size: 11.5px; color: var(--text-mute); margin-bottom: 5px; line-height: 1.3; }
+  .numeros .valor { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+  .numeros .valor.ok { color: var(--ok); }
+  .link-caja {
+    background: var(--bg); border: 1px dashed var(--celeste); border-radius: 10px;
+    padding: 11px 12px; font-size: 13.5px; font-weight: 600; word-break: break-all; color: var(--navy);
+  }
+  .pista { font-size: 12.5px; color: var(--text-mute); line-height: 1.55; margin-top: 10px; }
+  .chip.pendiente { background: #FEF3E2; color: #8A5200; }
+  .mes-select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px;
+    font-family: inherit; font-size: 14px; background: #fff; color: var(--text-dark); margin-bottom: 12px;
+  }
+  @media (max-width: 420px) {
+    .numeros .valor { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="contenido">
+    <div class="aviso"><h2>Buscando tus ventas...</h2></div>
+  </div>
+</div>
+<script>
+const money = (n) => '$' + Math.round(Number(n || 0)).toLocaleString('es-AR');
+const fecha = (f) => new Date(f).toLocaleDateString('es-AR', {
+  day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires'
+});
+const NOMBRE_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+  'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const nombreMes = (m) => NOMBRE_MES[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4);
+
+function escapar(t) {
+  return String(t == null ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+let datos = null;
+let mesElegido = null;
+
+const linkParaCompartir = () =>
+  location.origin + '/' + encodeURIComponent(datos.afiliado.slug) + '?ref=' + encodeURIComponent(datos.afiliado.codigo);
+
+function textoParaCompartir() {
+  const a = datos.afiliado;
+  const tienda = datos.negocio.business_name || 'la tienda';
+  return (a.descuento_pct > 0
+    ? 'Pedí en ' + tienda + ' con mi link y tenés ' + a.descuento_pct + '% off: '
+    : 'Te recomiendo ' + tienda + ', pedí desde acá: ') + linkParaCompartir();
+}
+
+async function copiarLink(boton) {
+  try {
+    await navigator.clipboard.writeText(linkParaCompartir());
+    const antes = boton.textContent;
+    boton.textContent = '✓ Link copiado';
+    setTimeout(() => { boton.textContent = antes; }, 1600);
+  } catch (e) {
+    // Sin portapapeles (http o navegador viejo): que lo copie a mano.
+    window.prompt('Copiá tu link:', linkParaCompartir());
+  }
+}
+
+async function compartir() {
+  if (navigator.share) {
+    try { await navigator.share({ text: textoParaCompartir() }); } catch (e) { /* canceló */ }
+    return;
+  }
+  window.open('https://wa.me/?text=' + encodeURIComponent(textoParaCompartir()), '_blank');
+}
+
+function render() {
+  const d = datos;
+  const a = d.afiliado;
+  const negocio = d.negocio || {};
+  const meses = d.meses || [];
+  if (!mesElegido) mesElegido = d.mes_actual;
+  const resumen = meses.find((m) => m.mes === mesElegido) || { ventas: 0, vendido: 0, comision: 0, por_confirmar: 0 };
+  const ventasDelMes = (d.ventas || []).filter((v) => v.mes === mesElegido);
+
+  let html = '';
+  html += '<div class="encabezado">' +
+    (negocio.image_url ? '<img src="' + escapar(negocio.image_url) + '" alt="">' : '') +
+    '<div><h1>Hola, ' + escapar(a.nombre) + '</h1>' +
+    '<div class="sub">Tu panel de afiliado de ' + escapar(negocio.business_name || 'la tienda') + '</div></div></div>';
+
+  html += '<div class="tarjeta">' +
+    '<div class="titulo-seccion" style="margin-top:0;">Tu link para compartir</div>' +
+    '<div class="link-caja">' + escapar(linkParaCompartir()) + '</div>' +
+    '<button class="btn" id="btnCopiar">🔗 Copiar link</button>' +
+    '<button class="btn secundario" id="btnCompartir">📲 Compartir</button>' +
+    '<div class="pista">Ganás el <strong>' + a.comision_pct + '%</strong> de cada compra que entre por tu link ' +
+      'o con tu código <strong>' + escapar(a.codigo) + '</strong>.' +
+      (a.descuento_pct > 0 ? ' Tus clientes tienen <strong>' + a.descuento_pct + '% off</strong>.' : '') +
+      ' El link le queda guardado al cliente 30 días, aunque compre otro día.</div>' +
+    '</div>';
+
+  const opcionesMes = [d.mes_actual].concat(meses.map((m) => m.mes))
+    .filter((m, i, todos) => todos.indexOf(m) === i)
+    .sort().reverse();
+  html += '<select class="mes-select" id="selectorMes">' +
+    opcionesMes.map((m) => '<option value="' + m + '"' + (m === mesElegido ? ' selected' : '') + '>' +
+      (m === d.mes_actual ? 'Este mes (' + nombreMes(m) + ')' : nombreMes(m)) + '</option>').join('') +
+    '</select>';
+
+  html += '<div class="numeros">' +
+    '<div class="tarjeta"><div class="etiqueta">Ventas</div><div class="valor">' + resumen.ventas + '</div></div>' +
+    '<div class="tarjeta"><div class="etiqueta">Vendido</div><div class="valor">' + money(resumen.vendido) + '</div></div>' +
+    '<div class="tarjeta"><div class="etiqueta">Tu comisión</div><div class="valor ok">' + money(resumen.comision) + '</div></div>' +
+    '</div>';
+  if (resumen.por_confirmar > 0) {
+    html += '<div class="pista" style="margin:-4px 0 12px;">Además hay ' + resumen.por_confirmar +
+      (resumen.por_confirmar === 1 ? ' pedido' : ' pedidos') +
+      ' esperando que el negocio lo confirme. Se suma cuando se confirma.</div>';
+  }
+
+  html += '<div class="titulo-seccion">Ventas de ' + nombreMes(mesElegido) + '</div><div class="tarjeta">';
+  if (!ventasDelMes.length) {
+    html += '<div class="aviso" style="padding:22px 10px;">Todavía no hay ventas este mes.<br>Compartí tu link para empezar 💪</div>';
+  } else {
+    ventasDelMes.forEach((v) => {
+      const detalle = v.productos.map((p) =>
+        p.cantidad.toLocaleString('es-AR', { maximumFractionDigits: 3 }) + 'x ' + p.nombre).join(', ');
+      html += '<div class="fila"><div>' +
+        '<div class="detalle">' + escapar(detalle || 'Compra') + '</div>' +
+        '<div class="fecha">' + fecha(v.fecha) + ' · Vendido ' + money(v.vendido) +
+          (v.confirmado ? '' : ' · <span class="chip pendiente">Por confirmar</span>') + '</div>' +
+        '</div><div class="monto' + (v.confirmado ? ' pago' : '') + '">' + money(v.comision) + '</div></div>';
+    });
+  }
+  html += '</div>';
+
+  html += '<div class="no-imprimir">' +
+    (negocio.phone
+      ? '<a class="btn secundario" target="_blank" rel="noopener" href="https://wa.me/' +
+        escapar(String(negocio.phone).replace(/\D/g, '')) + '">💬 Escribirle al negocio</a>'
+      : '') +
+    '</div>';
+  html += '<div class="pie">Actualizado al ' + fecha(d.generado) + '. La comisión se calcula sobre los productos, sin el envío.<br>' +
+    'Si ves algo que no coincide, escribile al negocio.</div>';
+
+  document.getElementById('contenido').innerHTML = html;
+  document.getElementById('btnCopiar').addEventListener('click', (e) => copiarLink(e.currentTarget));
+  document.getElementById('btnCompartir').addEventListener('click', compartir);
+  document.getElementById('selectorMes').addEventListener('change', (e) => { mesElegido = e.target.value; render(); });
+  document.title = 'Afiliado · ' + (negocio.business_name || 'BRUWAL');
+}
+
+function mostrarError(mensaje) {
+  document.getElementById('contenido').innerHTML =
+    '<div class="aviso"><h2>No pudimos abrir tu panel</h2><p>' + escapar(mensaje) + '</p></div>';
+}
+
+(async () => {
+  const token = new URLSearchParams(location.search).get('t');
+  if (!token) return mostrarError('El link está incompleto. Pedile uno nuevo al negocio.');
+  try {
+    const r = await fetch('/api/afiliado?t=' + encodeURIComponent(token));
+    const d = await r.json();
+    if (!r.ok) return mostrarError(d.error || 'Probá de nuevo en un momento.');
+    datos = d;
+    render();
+  } catch (e) {
+    mostrarError('Revisá tu conexión y volvé a intentar.');
+  }
+})();
+</script>
+</body>
+</html>
