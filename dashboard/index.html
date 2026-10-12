@@ -39,6 +39,9 @@
 <script src="../avisos.js"></script>
 <!-- La imagen del producto para historias y estados, compartida con la tienda -->
 <script src="../imagen-producto.js"></script>
+<!-- Usuarios del equipo (cada empleado con su usuario y contraseña). Va
+     ANTES del script principal: onLoggedIn() usa sus funciones. -->
+<script src="equipo.js"></script>
 <style>
 :root {
   --navy: #15294D;
@@ -2273,7 +2276,7 @@ tr:last-child td { border-bottom: none; }
       <div class="pulso pronto hidden" id="avisoPendientes" style="display:block;"></div>
 
       <div class="panel">
-        <div class="panel-head">🛒 Pedidos recibidos</div>
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">🛒 Pedidos recibidos<select id="pedidosVista" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-weight:600;"><option value="hoy">Hoy</option><option value="todos">Todos</option></select></div>
         <table>
           <thead><tr><th>Cliente</th><th>Productos</th><th>Total</th><th>Fecha</th><th>Entrega</th><th>Estado</th><th></th></tr></thead>
           <tbody id="ordersBody"></tbody>
@@ -9739,6 +9742,18 @@ async function onLoggedIn() {
 
     misTiendas = tiendas || [];
 
+    // Usuario del equipo (cajero, cocina, encargado): no tiene tiendas
+    // propias, entra a la del dueño. La marca esta en app_metadata, que el
+    // usuario no puede editar. Va ANTES del alta de abajo: si no, a cada
+    // empleado se le crearia una tienda vacia al entrar. Ver equipo.js.
+    const marcaEquipo = user.app_metadata && user.app_metadata.bruwal_equipo;
+    if (!misTiendas.length && marcaEquipo) {
+      if (typeof entrarComoEquipo !== 'function') throw new Error('No cargo equipo.js');
+      const tiendaEquipo = await entrarComoEquipo(user);
+      if (!tiendaEquipo) return;   // pausado o sin plan: ya mostro el cartel y cerro la sesion
+      misTiendas = [tiendaEquipo];
+    }
+
     // La ultima que estuvo mirando. Se valida que siga siendo suya: si la
     // borro o cambio de cuenta en el mismo navegador, el slug guardado
     // apunta a un negocio que no le corresponde.
@@ -9834,6 +9849,8 @@ async function onLoggedIn() {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   if (byId('tabDashboard')) byId('tabDashboard').classList.add('active');
 
+  if (window.equipoMiembro && typeof aplicarModoEquipo === 'function') aplicarModoEquipo();
+
   await refreshData();
 
   show(byId('ayudaBotBtn'));
@@ -9841,6 +9858,12 @@ async function onLoggedIn() {
   // La hora del encabezado tiene que estar desde que entra, no recien cuando
   // abre Ventas: es el primer lugar donde se nota si el reloj esta corrido.
   pintarHoraLocal();
+
+  // Usuario del equipo: suscripcion, Mercado Libre y reloj son cosas del dueño.
+  if (window.equipoMiembro) {
+    if (typeof irAPrimeraSolapaEquipo === 'function') irAPrimeraSolapaEquipo();
+    return;
+  }
 
   // Si esta bloqueado, capaz ya pago y el aviso de Mercado Pago no llego.
   // Va sin await: que no demore la carga del panel.
@@ -14839,7 +14862,22 @@ function renderOrders() {
   // 20:40. Los que no tienen hora (rubros que no la usan, o pedidos
   // viejos) mantienen el orden de siempre, el mas nuevo arriba, y quedan
   // detras de los que si tienen una hora comprometida.
-  const enCola = [...pedidosTodos].sort((a, b) => {
+  // "Que aparezcan los del dia" (Empire, 4/10): con todos los dias juntos
+  // habia que bajar hasta el fondo para ver el ultimo cargado. Lo que sigue
+  // sin confirmar se muestra igual aunque sea de otro dia, para no perderlo.
+  const soloHoy = (byId('pedidosVista')?.value || 'hoy') === 'hoy';
+  const hoy = fechaLocalISO();
+  const enVista = soloHoy
+    ? pedidosTodos.filter(o => estadoPedido(o) === 'pendiente' || diaARDe(o.created_at) === hoy || diaARDe(o.hora_entrega) === hoy)
+    : pedidosTodos;
+
+  const enCola = [...enVista].sort((a, b) => {
+    // Lo que falta confirmar arriba, por hora de entrega. Lo ya cobrado, el
+    // mas nuevo primero: una venta de mostrador nace confirmada y con hora
+    // de entrega, y ordenarla por esa hora la mandaba al fondo de la lista.
+    const pa = estadoPedido(a) === 'pendiente', pb = estadoPedido(b) === 'pendiente';
+    if (pa !== pb) return pa ? -1 : 1;
+    if (!pa) return new Date(b.created_at) - new Date(a.created_at);
     const ha = a.hora_entrega ? new Date(a.hora_entrega).getTime() : null;
     const hb = b.hora_entrega ? new Date(b.hora_entrega).getTime() : null;
     if (ha && hb) return ha - hb;
@@ -14896,7 +14934,12 @@ function renderOrders() {
               escapeHtml(o.trade_in_descripcion) + ' (' + money(o.trade_in_valor) + ')</div>'
           : '') +
       '</td>' +
-      '<td style="font-weight:600;">' + money(o.total) + '</td>' +
+      '<td style="font-weight:600;">' + money(o.total) +
+        (e !== 'cancelado'
+          ? '<div><button type="button" class="icon-btn" data-medio-pedido="' + o.id + '" title="Cambiar con qué pagó" ' +
+            'style="font-size:11.5px;font-weight:600;padding:2px 7px;margin-top:4px;white-space:nowrap;color:' +
+            (o.medio_pago ? 'var(--navy)' : '#8A5200') + ';">💳 ' + escapeHtml(o.medio_pago || 'Sin especificar') + ' ✎</button></div>'
+          : '') + '</td>' +
       '<td style="font-size:12.5px;">' + fechaHoraAR(o.created_at, {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
       // La hora prometida, grande y aparte de la hora de carga: son dos
       // cosas distintas y mezclarlas es lo que hace que un pedido "para
@@ -14907,8 +14950,11 @@ function renderOrders() {
       '<td><span style="background:' + et.fondo + ';color:' + et.color + ';padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">' + et.texto + '</span></td>' +
       '<td>' + acciones + '</td>' +
       '</tr>';
-  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px;">' +
+    (soloHoy && pedidosTodos.length ? 'Sin pedidos hoy. Elegí <b>Todos</b> arriba para ver los anteriores.' : 'Sin pedidos') + '</td></tr>';
 
+  cuerpo.querySelectorAll('[data-medio-pedido]').forEach(b =>
+    b.addEventListener('click', () => editarMedioDePago(b.dataset.medioPedido)));
   cuerpo.querySelectorAll('[data-confirmar]').forEach(b =>
     b.addEventListener('click', () => cambiarEstadoPedido(b.dataset.confirmar, 'confirmado')));
   cuerpo.querySelectorAll('[data-cancelar]').forEach(b =>
@@ -15320,6 +15366,121 @@ async function eliminarPedido(id) {
     return;
   }
   await refreshData();
+}
+
+byId('pedidosVista')?.addEventListener('change', renderOrders);
+
+// Corregir con que pago un pedido, o partirlo en dos medios (Empire, 4/10):
+// "te dicen efectivo y despues pagan por transferencia", "mitad y mitad".
+// Con un medio se guarda como siempre en medio_pago. Con dos, medio_pago
+// queda "Efectivo + Transferencia" (lo que leen ticket y listados) y los
+// montos van en pagos_divididos, que es lo que usa la Caja para repartir.
+const MEDIOS_PEDIDO = ['Efectivo', 'Débito', 'Crédito', 'Transferencia', 'Mercado Pago'];
+
+function cobradoDelPedido(o) {
+  return Math.max(0, Number(o.total || 0) - Number(o.saldo_pendiente || 0) - Number(o.trade_in_valor || 0));
+}
+
+function editarMedioDePago(id) {
+  const o = pedidosTodos.find(x => String(x.id) === String(id));
+  if (!o) return;
+  const cobrado = cobradoDelPedido(o);
+  const div = Array.isArray(o.pagos_divididos) && o.pagos_divididos.length >= 2 ? o.pagos_divididos : null;
+  const opciones = (sel) => '<option value="">Elegí…</option>' +
+    MEDIOS_PEDIDO.map(m => '<option' + (m === sel ? ' selected' : '') + '>' + m + '</option>').join('');
+  const estilo = 'padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;';
+
+  document.getElementById('medioPedidoModal')?.remove();   // se crea en el momento, no está en el HTML
+  const capa = document.createElement('div');
+  capa.className = 'modal-overlay';
+  capa.id = 'medioPedidoModal';
+  capa.innerHTML =
+    '<div class="modal" style="max-width:420px;">' +
+      '<button class="modal-close" data-cerrar-medio>✕</button>' +
+      '<h3>💳 Con qué pagó</h3>' +
+      '<p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;">' + escapeHtml(o.customer_name || 'Pedido') +
+        ' — cobrado ' + money(cobrado) + '</p>' +
+      '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
+        '<select id="mpMedio1" style="flex:1;' + estilo + '">' + opciones(div ? div[0].medio : (o.medio_pago || '')) + '</select>' +
+        '<input id="mpMonto1" type="text" inputmode="decimal" class="mp-dividido" style="width:120px;' + estilo + '" value="' + (div ? div[0].monto : '') + '">' +
+      '</div>' +
+      '<div class="mp-dividido" style="display:flex;gap:8px;margin-bottom:8px;">' +
+        '<select id="mpMedio2" style="flex:1;' + estilo + '">' + opciones(div ? div[1].medio : '') + '</select>' +
+        '<input id="mpMonto2" type="text" readonly style="width:120px;background:var(--bg);' + estilo + '">' +
+      '</div>' +
+      (cobrado > 0
+        ? '<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0 14px;cursor:pointer;">' +
+            '<input type="checkbox" id="mpDividir"' + (div ? ' checked' : '') + '> Pagó con dos medios (ej. mitad efectivo, mitad transferencia)</label>'
+        : '') +
+      '<button type="button" class="btn btn-primary" id="mpGuardar">Guardar</button>' +
+    '</div>';
+  document.body.appendChild(capa);
+
+  const dividir = () => !!byId('mpDividir')?.checked;
+  const recalcular = () => {
+    capa.querySelectorAll('.mp-dividido').forEach(el => el.style.display = dividir() ? '' : 'none');
+    const m1 = numeroArgentino(byId('mpMonto1').value);
+    byId('mpMonto2').value = Number.isFinite(m1) ? money(Math.max(0, cobrado - m1)) : '';
+  };
+  byId('mpDividir')?.addEventListener('change', () => {
+    if (dividir() && !byId('mpMonto1').value) byId('mpMonto1').value = String(Math.round(cobrado / 2));
+    recalcular();
+  });
+  byId('mpMonto1').addEventListener('input', recalcular);
+  recalcular();
+
+  capa.querySelectorAll('[data-cerrar-medio]').forEach(b => b.addEventListener('click', () => capa.remove()));
+  capa.addEventListener('click', (ev) => { if (ev.target === capa) capa.remove(); });
+
+  byId('mpGuardar').addEventListener('click', async () => {
+    const m1 = byId('mpMedio1').value;
+    let cambios;
+    if (!dividir()) {
+      if (!m1) { alert('Elegí con qué pagó.'); return; }
+      cambios = { medio_pago: m1, pagos_divididos: null };
+    } else {
+      const m2 = byId('mpMedio2').value;
+      const monto1 = Math.round(numeroArgentino(byId('mpMonto1').value) * 100) / 100;
+      const monto2 = Math.round((cobrado - monto1) * 100) / 100;
+      if (!m1 || !m2) { alert('Elegí los dos medios.'); return; }
+      if (m1 === m2) { alert('Los dos medios son iguales. Destildá "dos medios" y elegí uno solo.'); return; }
+      if (!(monto1 > 0) || !(monto2 > 0)) {
+        alert('El primer monto tiene que ser mayor a 0 y menor a ' + money(cobrado) + '.');
+        byId('mpMonto1').focus();
+        return;
+      }
+      cambios = { medio_pago: m1 + ' + ' + m2, pagos_divididos: [{ medio: m1, monto: monto1 }, { medio: m2, monto: monto2 }] };
+    }
+
+    const boton = byId('mpGuardar');
+    boton.disabled = true;
+    const { error } = await sb.from('orders').update(cambios).eq('id', o.id);
+    boton.disabled = false;
+    if (error) {
+      alert(/pagos_divididos/.test(error.message || '')
+        ? 'Falta una actualización en la base: corré schema/55-pago-dividido.sql en Supabase.'
+        : 'No se pudo guardar:\n\n' + humano(error));
+      return;
+    }
+    capa.remove();
+    await refreshData();
+  });
+}
+
+// Las partes de un pago dividido, ajustadas a lo que entro de verdad (si
+// despues cambio el total, se reparte en la misma proporcion). Null si se
+// pago con un solo medio.
+function partesDelPago(o, cobrado) {
+  const d = Array.isArray(o.pagos_divididos) ? o.pagos_divididos.filter(x => x && x.medio && Number(x.monto) > 0) : [];
+  if (d.length < 2 || !(cobrado > 0)) return null;
+  const suma = d.reduce((s, x) => s + Number(x.monto), 0);
+  let acumulado = 0;
+  return d.map((x, k) => {
+    const monto = k === d.length - 1 ? Math.round((cobrado - acumulado) * 100) / 100
+                                     : Math.round(cobrado * Number(x.monto) / suma * 100) / 100;
+    acumulado += monto;
+    return { medio: x.medio, monto };
+  });
 }
 
 // 'extra' viaja en el MISMO update que el estado. Lo usa el tablero de
@@ -18475,6 +18636,14 @@ function renderCaja() {
         detalle: (Array.isArray(o.items) ? o.items : [])
           .map(it => (it.qty || 1) + '× ' + (it.name || 'Producto')).join(', ')
       });
+      // Pagado con dos medios: un renglon por medio, asi el efectivo del
+      // cierre cuenta solo la parte que entro en efectivo.
+      const partes = partesDelPago(o, cobradoDinero);
+      if (partes) {
+        const base = movimientos.pop();
+        partes.forEach(pt => movimientos.push({ ...base, medio: pt.medio, monto: pt.monto,
+          costo: base.costo * pt.monto / cobradoDinero }));
+      }
     }
     if (equipo > 0) {
       movimientos.push({
@@ -19774,8 +19943,85 @@ function aplicarArmadoDePorciones(lineas) {
     ajustes.push({ nombre: p.name, porciones: n, lista, armado: armado.precio, texto: armado.texto });
   });
 
+  armarPizzaDeVariosGustos(salida, ajustes);
+
   const total = salida.reduce((s, l) => s + l.importe, 0);
   return { lineas: salida, total, ajustes };
+}
+
+// Pizza de varios gustos (Empire Pizzas, 4/10): "si con cuartos formo una
+// pizza, cada cuarto vale el precio de ese gusto dividido 4". Cuatro cuartos
+// de cuatro gustos = una entera, y cada cuarto se cobra a 1/4 de la entera
+// de SU gusto (una mitad a 1/2, una porcion a 1/8). Corre despues del
+// armado por gusto, sobre lo que haya quedado suelto.
+//
+// Si sobran partes que no llegan a otra pizza, quedan a precio de lista; y
+// de todas las formas de completar pizzas se elige la que mas le ahorra al
+// cliente (mochila 0/1 sobre las unidades sueltas).
+function armarPizzaDeVariosGustos(salida, ajustes) {
+  const P = PORCIONES_POR_PIZZA;
+  const unidades = [];
+  salida.forEach((l, i) => {
+    const por = porcionesDeVariante(l.variante);
+    const qty = Number(l.qty);
+    if (!por || por >= P || !Number.isInteger(qty) || qty < 1) return;
+    const entera = tamaniosDePizza(l.product).find(t => t.porciones === P);
+    if (!entera) return;
+    const actual = l.importe / qty;
+    const parte = entera.precio * por / P;
+    for (let k = 0; k < qty; k++) unidades.push({ i, por, actual, parte });
+  });
+  if (unidades.length < 2 || unidades.length > 80) return;
+  if (new Set(unidades.map(u => String(salida[u.i].product.id))).size < 2) return;
+
+  const suma = unidades.reduce((s, u) => s + u.por, 0);
+  if (suma < P) return;
+
+  // mejor[k][s]: maximo ahorro usando las primeras k unidades y sumando s porciones.
+  const n = unidades.length;
+  const mejor = [new Array(suma + 1).fill(-Infinity)];
+  mejor[0][0] = 0;
+  for (let k = 1; k <= n; k++) {
+    const u = unidades[k - 1], ant = mejor[k - 1], fila = ant.slice();
+    for (let s = u.por; s <= suma; s++) {
+      const v = ant[s - u.por] + (u.actual - u.parte);
+      if (v > fila[s]) fila[s] = v;
+    }
+    mejor.push(fila);
+  }
+  let objetivo = 0;
+  for (let s = P; s <= suma; s += P) {
+    if (mejor[n][s] > 0.5 && (!objetivo || mejor[n][s] > mejor[n][objetivo])) objetivo = s;
+  }
+  if (!objetivo) return;
+
+  const elegidas = [];
+  for (let k = n, s = objetivo; k > 0; k--) {
+    if (mejor[k][s] !== mejor[k - 1][s]) { elegidas.push(unidades[k - 1]); s -= unidades[k - 1].por; }
+  }
+
+  const porLinea = {};
+  elegidas.forEach(u => { (porLinea[u.i] = porLinea[u.i] || []).push(u); });
+  let lista = 0, armado = 0;
+  const gustos = [];
+  Object.entries(porLinea).forEach(([i, us]) => {
+    const l = salida[i];
+    const antes = us.reduce((s, u) => s + u.actual, 0);
+    const despues = us.reduce((s, u) => s + u.parte, 0);
+    lista += antes; armado += despues;
+    l.importe = Math.round(l.importe - antes + despues);
+    l.precioCobrado = Math.round((l.importe / Number(l.qty)) * 100) / 100;
+    if (!gustos.includes(l.product.name)) gustos.push(l.product.name);
+  });
+
+  const pizzas = objetivo / P;
+  ajustes.push({
+    nombre: 'Pizza ' + gustos.join(' / '),
+    porciones: objetivo,
+    lista: Math.round(lista),
+    armado: Math.round(armado),
+    texto: pizzas + (pizzas === 1 ? ' entera' : ' enteras') + ' (cada parte a la entera de su gusto)'
+  });
 }
 
 function resumenVentaActual() {
@@ -22447,6 +22693,37 @@ byId('porMayorLeer')?.addEventListener('click', () => {
   byId('porMayorPegarTexto').value = '';
 });
 
+// "TypeError: Load failed" al guardar un producto (iPhone Store, 4/10).
+// En los logs de Supabase no aparecia NI UN intento: el pedido moria en el
+// telefono antes de salir. Es Safari de iOS: el formulario tiene 5 pasos,
+// en el medio el vendedor sale a buscar un precio o una foto, y al volver
+// el primer envio viaja por una conexion que el sistema ya cerro. El
+// segundo intento abre una nueva y anda. Asi que se reintenta solo.
+function esCorteDeRed(err) {
+  const t = String((err && err.message) != null ? err.message : (err || ''));
+  return /load failed|failed to fetch|networkerror|network request failed|connection appears to be offline/i.test(t);
+}
+
+const esperarMs = (ms) => new Promise(ok => setTimeout(ok, ms));
+
+async function guardarProductoConReintento(id, payload) {
+  for (let intento = 0; ; intento++) {
+    const r = id
+      ? await sb.from('store_products').update(payload).eq('id', id)
+      : await sb.from('store_products').insert(payload).select('id');
+    if (!r.error || !esCorteDeRed(r.error) || intento >= 2) return r;
+    await esperarMs(1200 * (intento + 1));
+    // Un alta no se repite a ciegas: si el pedido llego y lo que se perdio
+    // fue la respuesta, reintentar dejaria el producto duplicado. El numero
+    // interno es correlativo por tienda, asi que sirve para reconocerlo.
+    if (!id && payload.numero != null) {
+      const { data: ya } = await sb.from('store_products').select('id')
+        .eq('store_slug', payload.store_slug).eq('numero', payload.numero).eq('name', payload.name).limit(1);
+      if (ya && ya.length) return { data: ya, error: null };
+    }
+  }
+}
+
 byId('productForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!puedeOperar()) return;
@@ -22561,7 +22838,15 @@ byId('productForm').addEventListener('submit', async (e) => {
         const f = aSubir[i].file;
         const nombre = currentStore.slug + '/' + Date.now() + '_' + i + '_' +
                        f.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-        const { error } = await sb.storage.from('product-images').upload(nombre, f, { upsert: false });
+        let { error } = await sb.storage.from('product-images').upload(nombre, f, { upsert: false });
+        // Mismo corte de Safari que el guardado: se reintenta. Si la primera
+        // llego y solo se perdio la respuesta, la segunda dice "ya existe",
+        // y eso es que la foto esta subida.
+        for (let r = 0; error && esCorteDeRed(error) && r < 2; r++) {
+          await esperarMs(1200 * (r + 1));
+          ({ error } = await sb.storage.from('product-images').upload(nombre, f, { upsert: false }));
+          if (error && /already exists|duplicate/i.test(error.message || '')) error = null;
+        }
         if (error) throw error;
         const url = sb.storage.from('product-images').getPublicUrl(nombre).data.publicUrl;
 
@@ -22671,9 +22956,7 @@ byId('productForm').addEventListener('submit', async (e) => {
   // El error se ignoraba: si la base rechazaba el guardado, el formulario se
   // cerraba igual y el producto no aparecía en ningún lado. Un guardado que
   // falla en silencio es peor que uno que falla con un cartel.
-  const { data: dataGuardado, error: errorGuardado } = id
-    ? await sb.from('store_products').update(payload).eq('id', id)
-    : await sb.from('store_products').insert(payload).select('id');
+  const { data: dataGuardado, error: errorGuardado } = await guardarProductoConReintento(id, payload);
 
   if (errorGuardado) {
     const msg = errorGuardado.message || '';
@@ -22685,7 +22968,7 @@ byId('productForm').addEventListener('submit', async (e) => {
             'en varias categorías.\n\nCorré schema/48-varias-categorias.sql en Supabase.'
           : 'No se pudo guardar: falta la columna "' + falta[1] + '" en la base de datos.\n\n' +
             'Es una actualización pendiente. Avisale a soporte y mencioná este nombre.')
-      : 'No se pudo guardar el producto:\n\n' + msg);
+      : 'No se pudo guardar el producto:\n\n' + humano(errorGuardado));
     return;   // el formulario queda abierto, con todo lo que cargaste
   }
 
@@ -23755,6 +24038,7 @@ function renderEmpleados() {
         (r.valorHora > 0 ? money(r.aPagar) : '<span style="font-weight:400;color:var(--text-mute);font-size:11.5px;">falta el valor hora</span>') + '</td>' +
       '<td style="white-space:nowrap;">' +
         (r.aPagar > 0 ? '<button class="icon-btn" data-pagar-empleado="' + e.id + '" title="Registrar como gasto de sueldo">💸</button>' : '') +
+        (typeof botonAccesoEmpleado === 'function' ? botonAccesoEmpleado(e) : '') +
         '<button class="icon-btn" data-editar-empleado="' + e.id + '" title="Editar">✏️</button>' +
       '</td>' +
     '</tr>';
@@ -23814,6 +24098,8 @@ function abrirModalEmpleado(id) {
   byId('empleadoActivo').checked = e ? e.activo !== false : true;
   byId('eliminarEmpleadoBtn').classList.toggle('hidden', !e);
   byId('empleadoTarjetaNfcBtn').classList.toggle('hidden', !('NDEFReader' in window));
+  // Seccion "Va a usar el sistema" (usuario y contraseña): vive en equipo.js.
+  if (typeof prepararAccesoEnEmpleado === 'function') prepararAccesoEnEmpleado(e);
 
   show(byId('empleadoModal'));
   setTimeout(() => byId('empleadoNombre').focus(), 100);
@@ -23832,6 +24118,7 @@ async function guardarEmpleado() {
   // quién es. La base también lo frena, pero acá se explica de quién es.
   const repetida = tarjeta && empleados.find(x => normalizarTarjeta(x.tarjeta) === tarjeta && String(x.id) !== String(id));
   if (repetida) { dialogoAviso('Esa tarjeta ya es de ' + (repetida.nombre || 'otro empleado') + '.'); return; }
+  if (typeof accesoEmpleadoValido === 'function' && !accesoEmpleadoValido(id)) return;
 
   const datos = {
     store_slug: currentStore.slug,
@@ -23842,14 +24129,19 @@ async function guardarEmpleado() {
     activo: byId('empleadoActivo').checked
   };
 
-  const { error } = id
+  const { error, data: empleadoGuardado } = id
     ? await sb.from('store_empleados').update(datos).eq('id', id)
-    : await sb.from('store_empleados').insert([datos]);
+    : await sb.from('store_empleados').insert([datos]).select('id');
 
   if (error) { dialogoAviso('No se pudo guardar:\n\n' + humano(error)); return; }
 
   hide(byId('empleadoModal'));
   await refreshData();
+
+  // Usuario y contraseña del empleado (equipo.js): se crea recien ahora que
+  // el empleado ya existe, asi queda atado a sus horas y a su tarjeta.
+  const idEmpleado = id || (empleadoGuardado && empleadoGuardado[0] && empleadoGuardado[0].id);
+  if (idEmpleado && typeof accesoTrasGuardarEmpleado === 'function') await accesoTrasGuardarEmpleado(idEmpleado, nombre);
 }
 
 async function eliminarEmpleado() {
