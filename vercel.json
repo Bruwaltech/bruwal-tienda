@@ -5,12 +5,23 @@
       "destination": "/api/mercadolibre?accion=callback"
     },
     {
+      "source": "/api/mp-callback",
+      "destination": "/api/mercadopago?accion=callback"
+    },
+    {
+      "source": "/api/afiliado",
+      "destination": "/api/estado-cuenta?panel=afiliado"
+    },
+    {
       "source": "/:slug",
       "destination": "/api/tienda?slug=:slug"
     }
   ],
   "functions": {
     "api/leer-factura.js": {
+      "maxDuration": 30
+    },
+    "api/mercadopago.js": {
       "maxDuration": 30
     }
   },

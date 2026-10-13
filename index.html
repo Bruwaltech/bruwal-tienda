@@ -395,18 +395,13 @@
     position: relative;
     z-index: 0;
     isolation: isolate;
-    /* Mismo fondo que las tiles oscuras: sin esto, mientras cargan se ve
-       un parpadeo blanco. */
-    background: #0e1420;
+    /* Mismo tono que el fondo de las tiles mientras cargan. */
+    background: #f2efe9;
   }
 
-  /* Invertir y girar el color deja el mapa claro en oscuro manteniendo el
-     agua azul y los parques verdes. */
-  #map .tiles-oscuras { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
-
-  /* ---- Mapa oscuro (referencia: "Location Map" de 21st.dev) ----
-     Pines propios en celeste con un pulso suave, y los globitos y los
-     controles de Leaflet en oscuro para que no queden blancos encima. */
+  /* ---- Mapa claro con pines propios ----
+     Pines en celeste con un pulso suave; globitos y controles en blanco,
+     acordes al resto de la página. */
   .pin-tienda { position: relative; width: 22px; height: 22px; }
   .pin-tienda .pin-punto {
     position: absolute; inset: 5px; border-radius: 50%;
@@ -429,11 +424,11 @@
   }
   #map .leaflet-popup-content-wrapper,
   #map .leaflet-popup-tip {
-    background: #162033; color: #E6EDF7;
-    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    background: #fff; color: #1a2b3c;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
   }
-  #map .leaflet-popup-content-wrapper { border: 1px solid #26354F; border-radius: 12px; }
-  #map .leaflet-popup-content a { color: #5BB0F5; font-weight: 600; }
+  #map .leaflet-popup-content-wrapper { border: 1px solid #e3e8ef; border-radius: 12px; }
+  #map .leaflet-popup-content a { color: #2F8FE0; font-weight: 600; }
   #map .leaflet-popup-content { margin: 12px 14px; }
   .popup-tienda { display: flex; align-items: center; gap: 12px; min-width: 170px; }
   .popup-tienda b { display: block; font-size: 14px; margin-bottom: 3px; }
@@ -448,14 +443,7 @@
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; background: #fff;
   }
-  #map a.leaflet-popup-close-button { color: #8FA3BF; }
-  #map .leaflet-bar a {
-    background: #162033; color: #E6EDF7; border-bottom-color: #26354F;
-  }
-  #map .leaflet-bar a:hover { background: #1E2C45; }
-  #map .leaflet-bar { border: 1px solid #26354F; }
-  #map .leaflet-control-attribution { background: rgba(14,20,32,.75); color: #8FA3BF; }
-  #map .leaflet-control-attribution a { color: #5BB0F5; }
+  #map a.leaflet-popup-close-button { color: #8a96a3; }
 
   .stores-sidebar {
     background: #fff;
@@ -1937,12 +1925,9 @@ function storeCoords(store) {
 
 function initMap() {
   map = L.map('map').setView([-38.0, -63.6], 4); // Argentina
-  // Las tiles de siempre de OpenStreetMap, oscurecidas por CSS (ver
-  // .tiles-oscuras). Las oscuras de CARTO pasaron a pedir clave y en
-  // produccion se veia "API KEY REQUIRED" en vez del mapa.
+  // Las tiles claras de siempre de OpenStreetMap.
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    className: 'tiles-oscuras',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 }
