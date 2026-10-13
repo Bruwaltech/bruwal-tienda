@@ -4463,6 +4463,11 @@ tr:last-child td { border-bottom: none; }
       <div class="field"><label>Su comisión (%)</label><input type="number" id="afiliadoComision" min="0" max="100" step="0.5" value="15"></div>
       <div class="field"><label>Descuento al cliente (%)</label><input type="number" id="afiliadoDescuento" min="0" max="50" step="0.5" value="0"></div>
     </div>
+    <div class="field">
+      <label>Día de pago</label>
+      <input type="number" id="afiliadoDiaPago" min="1" max="28" step="1" value="10">
+      <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;">Lo de cada mes se le paga ese día del mes siguiente. Lo ve en su panel, así sabe cuándo cobra.</small>
+    </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:12px;">
       <input type="checkbox" id="afiliadoActivo" checked> Activo (si lo pausás, su link deja de sumarle)
     </label>
@@ -5143,6 +5148,7 @@ setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispara
 
 let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [], gastos = [], pagos = [], movimientosCaja = [];
 let afiliados = [];
+let afiliadoPagos = [];
 let empleados = [], fichadas = [];
 
 // Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
@@ -12011,6 +12017,9 @@ async function refreshData() {
   // Sin la migracion 60 vuelve con error y la solapa queda vacia.
   const { data: afs } = await sb.from('store_afiliados').select('*').eq('store_slug', currentStore.slug).order('nombre');
   afiliados = afs || [];
+  // Sin la migracion 63 vuelve con error: no se ven los pagos, nada mas.
+  const { data: aps } = await sb.from('store_afiliado_pagos').select('*').eq('store_slug', currentStore.slug).order('pagado_en', { ascending: false });
+  afiliadoPagos = aps || [];
 
   const { data: pgs } = await sb.from('store_pagos').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
   pagos = pgs || [];
@@ -12064,6 +12073,10 @@ async function refreshData() {
   refrescarListaDeCategorias();
   pintarCampanita();
   await renderAgendaDia();
+
+  // Al final, con productos y pedidos ya cargados. Si confirmó alguno, se
+  // vuelve a cargar para que se vea el stock descontado.
+  if (await confirmarPagadosConMp()) await refreshData();
 }
 
 // ===================== CAMPANITA DE NOVEDADES =====================
@@ -15075,6 +15088,10 @@ function renderOrders() {
         (o.afiliado_codigo
           ? '<div style="font-size:11px;color:var(--celeste);margin-top:2px;">🤝 Recomendó: ' + escapeHtml(nombreDeAfiliado(o.afiliado_codigo)) + '</div>'
           : '') +
+        (o.mp_pago_id
+          ? '<div style="font-size:11px;color:#0077B6;font-weight:600;margin-top:2px;">💳 Pagado con Mercado Pago: ' + money(o.mp_monto) +
+            (e === 'pendiente' ? ' · revisalo y confirmalo' : '') + '</div>'
+          : '') +
       '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(items) +
         (o.aclaraciones
@@ -15514,9 +15531,13 @@ async function eliminarPedido(id) {
 
 // 'extra' viaja en el MISMO update que el estado. Lo usa el tablero de
 // comandas: "Aceptar y preparar" confirma y pasa a En preparacion de una.
-async function cambiarEstadoPedido(id, nuevo, extra = {}) {
+// opciones.solo: lo llama confirmarPagadosConMp(), sin nadie mirando. No
+// abre carteles ni refresca: quien lo llamó refresca una vez al final.
+// Devuelve true si el pedido cambió de estado.
+async function cambiarEstadoPedido(id, nuevo, extra = {}, opciones = {}) {
   const pedido = pedidosTodos.find(o => String(o.id) === String(id));
-  if (!pedido) return;
+  if (!pedido) return false;
+  const avisar = opciones.solo ? (m) => console.warn(m) : dialogoAviso;
 
   const anterior = estadoPedido(pedido);
 
@@ -15525,7 +15546,7 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
   const transicionValida =
     (anterior === 'pendiente'  && (nuevo === 'confirmado' || nuevo === 'cancelado')) ||
     (anterior === 'confirmado' && nuevo === 'cancelado');
-  if (!transicionValida) return;
+  if (!transicionValida) return false;
 
   // Un pedido que entra por la tienda no trae hora: el cliente pidio, pero
   // para cuando esta lo decide la cocina. Este es el momento en que se
@@ -15545,7 +15566,7 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     // Cancelar en el prompt cancela la confirmacion entera: es mejor no
     // confirmar que confirmar sin hora y que despues nadie sepa para
     // cuando era.
-    if (escrita === null) return;
+    if (escrita === null) return false;
     horaConfirmada = horaEntregaISO(String(escrita).trim());
   }
 
@@ -15574,15 +15595,15 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     .select('id');
 
   if (error) {
-    dialogoAviso('No se pudo actualizar el pedido:\n\n' + humano(error) +
+    avisar('No se pudo actualizar el pedido:\n\n' + humano(error) +
           (extra.etapa ? '\n\n(Si dice que falta la columna, correr schema/56-comandas.sql en Supabase.)' : ''));
-    return;
+    return false;
   }
   if (!data || !data.length) {
-    dialogoAviso('No se pudo actualizar el pedido: la base rechazó el cambio, o ya lo habías cambiado en otro momento.\n\n' +
+    avisar('No se pudo actualizar el pedido: la base rechazó el cambio, o ya lo habías cambiado en otro momento.\n\n' +
           'Si el problema persiste, avisale a soporte y mencioná "política de update en orders".');
-    await refreshData();   // por si el estado real ya cambió, refrescar la vista
-    return;
+    if (!opciones.solo) await refreshData();   // por si el estado real ya cambió, refrescar la vista
+    return false;
   }
 
   // El stock se toca DESPUES de que el cambio de estado en la base fue
@@ -15615,7 +15636,68 @@ async function cambiarEstadoPedido(id, nuevo, extra = {}) {
     imprimirTicketDeOrden(id);
   }
 
-  await refreshData();
+  if (!opciones.solo) await refreshData();
+  return true;
+}
+
+// ---------- Pedidos pagados con Mercado Pago ----------
+// api/mercadopago.js marca el pedido como pagado cuando Mercado Pago avisa
+// que el pago se aprobó. El servidor no lo confirma: el stock (variantes,
+// equipos con IMEI, insumos) se descuenta acá, en cambiarEstadoPedido(), y
+// repetir eso en el servidor sería tener dos versiones de la misma cuenta.
+// Así que el panel lo confirma solo en el próximo refresco.
+
+// El precio más bajo al que la tienda vende ese producto: lista, oferta,
+// por mayor o cualquier variante o equipo.
+function precioMinimoDeProducto(p) {
+  const precios = [Number(p.price), Number(p.precio_oferta)];
+  (Array.isArray(p.precios_por_cantidad) ? p.precios_por_cantidad : [])
+    .forEach(e => precios.push(Number(e && e.precio)));
+  (Array.isArray(p.variantes) ? p.variantes : []).forEach(v => {
+    precios.push(Number(v && v.precio));
+    (Array.isArray(v && v.imeis) ? v.imeis : []).forEach(u => precios.push(Number(u && u.precio)));
+  });
+  const validos = precios.filter(x => x > 0);
+  return validos.length ? Math.min(...validos) : 0;
+}
+
+// El pedido lo arma el navegador del cliente, precios incluidos. Pagar
+// $100 un pedido inventado a $100 es un pago aprobado de verdad, así que
+// antes de confirmar solo se mira que los precios sean los de la tienda.
+// Si algo no cierra, queda pendiente con el cartel de pagado y lo mira el
+// dueño.
+function pagoCubrePedido(o) {
+  if (!(Number(o.mp_monto) >= Number(o.total || 0) - 1)) return false;
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return false;
+  let productos = 0;
+  for (const it of items) {
+    const p = products.find(x => String(x.id) === String(it.product_id));
+    if (!p) return false;
+    if (Number(it.price) < precioMinimoDeProducto(p) - 1) return false;
+    productos += Number(it.price) * Number(it.qty || 0);
+  }
+  // El descuento de un afiliado llega como mucho al 50%.
+  return Number(o.total || 0) >= productos / 2 - 1;
+}
+
+let confirmandoPagadosMp = false;
+async function confirmarPagadosConMp() {
+  // Gastronomía no: confirmar es mandar a la cocina y pide la hora.
+  if (confirmandoPagadosMp || rubroEsComida() || estadoSuscripcion() === 'vencido') return false;
+  const listos = (pedidosTodos || []).filter(o =>
+    estadoPedido(o) === 'pendiente' && o.mp_pago_id && pagoCubrePedido(o));
+  if (!listos.length) return false;
+  confirmandoPagadosMp = true;
+  let alguno = false;
+  try {
+    for (const o of listos) {
+      if (await cambiarEstadoPedido(o.id, 'confirmado', {}, { solo: true })) alguno = true;
+    }
+  } finally {
+    confirmandoPagadosMp = false;
+  }
+  return alguno;
 }
 
 function renderClientes() {
@@ -24699,6 +24781,107 @@ function baseDeComision(o) {
   return Math.max(0, base);
 }
 
+// ---------- Cuándo se le paga a cada afiliado ----------
+// Lo de un mes se paga el mes siguiente, el día arreglado con cada uno.
+// El mismo cálculo está en api/_afiliado.js, que es lo que ve el afiliado.
+
+function fechaDePagoAfiliado(mes, dia) {
+  let [a, m] = mes.split('-').map(Number);
+  m += 1;
+  if (m > 12) { m = 1; a += 1; }
+  return a + '-' + String(m).padStart(2, '0') + '-' + String(dia || 10).padStart(2, '0');
+}
+
+const hoyAR = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit'
+}).format(new Date());
+
+const diaMesCorto = (f) => f.slice(8, 10) + '/' + f.slice(5, 7);
+
+// Por cada mes ya cerrado: cuánto se le debe (comisión menos lo pagado).
+// `orders` son solo los pedidos que cuentan como venta.
+function cuentaDeAfiliado(a) {
+  const codigo = String(a.codigo).toLowerCase();
+  const comisionPorMes = {};
+  orders.filter(o => o.afiliado_codigo && String(o.afiliado_codigo).toLowerCase() === codigo).forEach(o => {
+    const mes = mesDeAR(o.created_at);
+    comisionPorMes[mes] = (comisionPorMes[mes] || 0) + baseDeComision(o) * Number(o.afiliado_comision_pct || 0) / 100;
+  });
+  const pagos = afiliadoPagos.filter(p => String(p.afiliado_id) === String(a.id));
+  const pagadoPorMes = {};
+  pagos.forEach(p => { pagadoPorMes[p.mes] = (pagadoPorMes[p.mes] || 0) + Number(p.monto || 0); });
+
+  const mesActual = mesActualAR();
+  const hoy = hoyAR();
+  const pendientes = [];   // meses cerrados con plata por pagar
+  Object.keys(comisionPorMes).sort().forEach(mes => {
+    if (mes >= mesActual) return;
+    const falta = Math.round(comisionPorMes[mes] - (pagadoPorMes[mes] || 0));
+    if (falta > 1) pendientes.push({ mes, falta, fecha: fechaDePagoAfiliado(mes, a.dia_pago), vencido: hoy >= fechaDePagoAfiliado(mes, a.dia_pago) });
+  });
+  return {
+    pendientes,
+    deuda: pendientes.reduce((s, p) => s + p.falta, 0),
+    vencida: pendientes.filter(p => p.vencido).reduce((s, p) => s + p.falta, 0),
+    proxima: pendientes.length ? pendientes[0].fecha : null,
+    ultimoPago: pagos[0] || null   // vienen ordenados del más nuevo al más viejo
+  };
+}
+
+async function pagarAfiliado(id) {
+  if (!puedeOperar()) return;
+  const a = afiliados.find(x => String(x.id) === String(id));
+  if (!a) return;
+  const c = cuentaDeAfiliado(a);
+  if (!c.deuda) return;
+  const meses = c.pendientes.map(p => nombreMesLargo(p.mes)).join(', ');
+  if (!await dialogoConfirmar('¿Ya le pagaste ' + money(c.deuda) + ' a ' + a.nombre + '?\n\nCorresponde a ' + meses +
+      '. Se anota como gasto en Caja y él lo ve como cobrado en su panel.')) return;
+
+  // Primero el gasto, para que cada pago quede atado a él y "deshacer"
+  // borre los dos juntos.
+  const { data: gasto, error: errGasto } = await sb.from('store_gastos').insert([{
+    store_slug: currentStore.slug,
+    concepto: 'Comisión afiliado — ' + a.nombre + ' (' + meses + ')',
+    categoria: 'Comisiones afiliados',
+    monto: c.deuda,
+    moneda: 'ARS',
+    monto_original: c.deuda,
+    cotizacion: 1,
+    fecha: hoyAR(),
+    medio_pago: 'Transferencia',
+    notas: 'Registrado desde la solapa Afiliados.'
+  }]).select('id').single();
+  if (errGasto) { dialogoAviso('No se pudo anotar el pago:\n\n' + humano(errGasto)); return; }
+
+  const { error } = await sb.from('store_afiliado_pagos').insert(c.pendientes.map(p => ({
+    store_slug: currentStore.slug,
+    afiliado_id: a.id,
+    mes: p.mes,
+    monto: p.falta,
+    gasto_id: gasto.id
+  })));
+  if (error) {
+    await sb.from('store_gastos').delete().eq('id', gasto.id);
+    dialogoAviso('No se pudo anotar el pago:\n\n' + humano(error) +
+      '\n\n(Si dice que falta la tabla, hay que correr schema/63-pagos-afiliados.sql.)');
+    return;
+  }
+  await refreshData();
+}
+
+async function deshacerPagoAfiliado(gastoId) {
+  if (!puedeOperar() || !gastoId) return;
+  if (!await dialogoConfirmar('¿Deshacer este pago? Se borra el gasto de Caja y vuelve a figurar como pendiente.')) return;
+  const { error } = await sb.from('store_afiliado_pagos').delete().eq('gasto_id', gastoId);
+  if (error) { dialogoAviso('No se pudo deshacer:\n\n' + humano(error)); return; }
+  await sb.from('store_gastos').delete().eq('id', gastoId);
+  await refreshData();
+}
+
+const nombreMesLargo = (mes) => ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+  'septiembre', 'octubre', 'noviembre', 'diciembre'][Number(mes.slice(5, 7)) - 1] + ' ' + mes.slice(0, 4);
+
 function renderAfiliados() {
   const cuerpo = byId('afiliadosBody');
   if (!cuerpo || !currentStore) return;
@@ -24719,6 +24902,15 @@ function renderAfiliados() {
     r.comision += base * Number(o.afiliado_comision_pct || 0) / 100;
   });
 
+  // Desde que empezó cada uno, sin importar el mes elegido.
+  const historico = {};
+  orders.filter(o => o.afiliado_codigo).forEach(o => {
+    const k = String(o.afiliado_codigo).toLowerCase();
+    const h = historico[k] || (historico[k] = { pedidos: 0, comision: 0 });
+    h.pedidos += 1;
+    h.comision += baseDeComision(o) * Number(o.afiliado_comision_pct || 0) / 100;
+  });
+
   const totales = Object.values(porCodigo).reduce((t, r) => {
     t.pedidos += r.pedidos; t.vendido += r.vendido; t.comision += r.comision; return t;
   }, { pedidos: 0, vendido: 0, comision: 0 });
@@ -24728,12 +24920,27 @@ function renderAfiliados() {
 
   cuerpo.innerHTML = afiliados.length ? afiliados.map(a => {
     const r = porCodigo[String(a.codigo).toLowerCase()] || { pedidos: 0, vendido: 0, comision: 0 };
+    const h = historico[String(a.codigo).toLowerCase()];
+    const c = cuentaDeAfiliado(a);
     const descuento = Number(a.descuento_pct || 0);
     return '<tr' + (a.activo ? '' : ' style="opacity:.55;"') + '>' +
       '<td><strong>' + escapeHtml(a.nombre) + '</strong>' +
         '<div style="font-size:11.5px;color:var(--text-mute);">' + escapeHtml(a.codigo) +
           (descuento > 0 ? ' · ' + descuento + '% off al cliente' : '') +
-          (a.activo ? '' : ' · pausado') + '</div></td>' +
+          (a.activo ? '' : ' · pausado') + '</div>' +
+        (h ? '<div style="font-size:11.5px;color:var(--text-mute);">Desde que empezó: ' + h.pedidos +
+          (h.pedidos === 1 ? ' pedido' : ' pedidos') + ' · ' + money(Math.round(h.comision)) + ' de comisión</div>' : '') +
+        (c.vencida > 0
+          ? '<div style="font-size:11.5px;color:var(--danger);font-weight:600;">Le debés ' + money(c.vencida) + ' (vencía el ' + diaMesCorto(c.proxima) + ')</div>'
+          : c.deuda > 0
+            ? '<div style="font-size:11.5px;color:var(--text-mute);">Le pagás ' + money(c.deuda) + ' el ' + diaMesCorto(c.proxima) + '</div>'
+            : '') +
+        (c.ultimoPago
+          ? '<div style="font-size:11.5px;color:var(--stock);">✓ Último pago: ' + money(c.ultimoPago.monto) + ' el ' + fechaAR(c.ultimoPago.pagado_en) +
+            (c.ultimoPago.gasto_id ? ' · <a href="#" data-deshacer-pago="' + c.ultimoPago.gasto_id + '" style="color:var(--text-mute);">deshacer</a>' : '') + '</div>'
+          : '') +
+        '<div style="font-size:11px;color:var(--text-mute);">Cobra el día ' + (a.dia_pago || 10) + ' de cada mes</div>' +
+        '</td>' +
       '<td><button class="icon-btn" data-copiar-afiliado="' + a.id + '" title="Copiar su link">🔗 Copiar</button>' +
         (a.token ? ' <button class="icon-btn" data-panel-afiliado="' + a.id + '" title="Copiar el link de su panel, donde ve sus ventas y su comisión">📊 Panel</button>' : '') +
         (a.telefono ? ' <button class="icon-btn" data-wa-afiliado="' + a.id + '" title="Mandarle su link por WhatsApp">📱</button>' : '') +
@@ -24743,6 +24950,7 @@ function renderAfiliados() {
       '<td style="text-align:right;">' + money(Math.round(r.vendido)) + '</td>' +
       '<td style="text-align:right;font-weight:600;">' + money(Math.round(r.comision)) + '</td>' +
       '<td><div class="row-actions">' +
+        (c.deuda > 0 ? '<button class="icon-btn" data-pagar-afiliado="' + a.id + '" title="Anotar que le pagaste lo que se le debe">💸 Pagar ' + money(c.deuda) + '</button>' : '') +
         '<button class="icon-btn" data-editar-afiliado="' + a.id + '" title="Editar">✎</button>' +
         '<button class="icon-btn danger" data-eliminar-afiliado="' + a.id + '" title="Eliminar">🗑</button>' +
       '</div></td>' +
@@ -24764,9 +24972,16 @@ function renderAfiliados() {
     if (!a) return;
     const texto = 'Hola ' + a.nombre + '! Este es tu link de ' + (currentStore.business_name || 'la tienda') + ': ' +
       linkDeAfiliado(a) + '\n\nCada pedido que entre por ahí (o con tu código ' + a.codigo + ') te suma un ' +
-      Number(a.comision_pct || 0) + '% de comisión.' +
-      (panelDeAfiliado(a) ? '\n\nEn tu panel ves tus ventas y lo que llevás ganado: ' + panelDeAfiliado(a) : '');
+      Number(a.comision_pct || 0) + '% de comisión. Lo de cada mes te lo pago el ' + (a.dia_pago || 10) + ' del mes siguiente.' +
+      (panelDeAfiliado(a) ? '\n\nEn tu panel ves tus ventas y lo que llevás ganado: ' + panelDeAfiliado(a) +
+        '\nAbrilo y tocá "Instalar" para tenerlo en el celular como una app.' : '');
     window.open('https://wa.me/' + numeroWhatsApp(a.telefono) + '?text=' + encodeURIComponent(texto), '_blank');
+  }));
+  cuerpo.querySelectorAll('[data-pagar-afiliado]').forEach(b =>
+    b.addEventListener('click', () => pagarAfiliado(b.getAttribute('data-pagar-afiliado'))));
+  cuerpo.querySelectorAll('[data-deshacer-pago]').forEach(b => b.addEventListener('click', (e) => {
+    e.preventDefault();
+    deshacerPagoAfiliado(b.getAttribute('data-deshacer-pago'));
   }));
   cuerpo.querySelectorAll('[data-editar-afiliado]').forEach(b =>
     b.addEventListener('click', () => abrirModalAfiliado(b.getAttribute('data-editar-afiliado'))));
@@ -24792,6 +25007,7 @@ function abrirModalAfiliado(id) {
   byId('afiliadoComision').value = a ? Number(a.comision_pct) : 15;
   byId('afiliadoDescuento').value = a ? Number(a.descuento_pct) : 0;
   byId('afiliadoActivo').checked = a ? !!a.activo : true;
+  byId('afiliadoDiaPago').value = a && a.dia_pago ? a.dia_pago : 10;
   show(byId('afiliadoModal'));
 }
 
@@ -24810,6 +25026,11 @@ async function guardarAfiliado() {
   }
   if (!(comision >= 0 && comision <= 100)) { dialogoAviso('La comisión tiene que estar entre 0 y 100%.'); return; }
   if (!(descuento >= 0 && descuento <= 50)) { dialogoAviso('El descuento al cliente puede ir de 0 a 50%.'); return; }
+  const diaPago = Number(byId('afiliadoDiaPago').value || 10);
+  if (!(Number.isInteger(diaPago) && diaPago >= 1 && diaPago <= 28)) {
+    dialogoAviso('El día de pago va del 1 al 28, para que exista en todos los meses.');
+    return;
+  }
 
   const payload = {
     store_slug: currentStore.slug,
@@ -24818,6 +25039,7 @@ async function guardarAfiliado() {
     telefono: byId('afiliadoTelefono').value.trim() || null,
     comision_pct: comision,
     descuento_pct: descuento,
+    dia_pago: diaPago,
     activo: byId('afiliadoActivo').checked
   };
 

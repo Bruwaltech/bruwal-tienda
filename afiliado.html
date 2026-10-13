@@ -7,6 +7,25 @@
 <!-- El panel de un afiliado es privado: no se indexa. -->
 <meta name="robots" content="noindex, nofollow">
 <title>Mi panel de afiliado</title>
+<!-- Instalable en el celular, como el panel del dueño. -->
+<meta name="theme-color" content="#15294D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mi panel">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<script>
+  // El manifest no es un archivo fijo: lleva el token en start_url, para
+  // que el ícono del celular abra el panel de ESTE afiliado y no uno vacío.
+  // Lo arma api/_afiliado.js.
+  (function () {
+    var t = new URLSearchParams(location.search).get('t') || '';
+    if (!/^[0-9a-f]{64}$/.test(t)) return;
+    var l = document.createElement('link');
+    l.rel = 'manifest';
+    l.href = '/api/afiliado?manifest=1&t=' + t;
+    document.head.appendChild(l);
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -122,6 +141,10 @@
   @media (max-width: 420px) {
     .numeros .valor { font-size: 16px; }
   }
+  .instalar { display: flex; align-items: center; gap: 12px; }
+  .instalar img { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; }
+  .instalar .texto { flex: 1; font-size: 13.5px; line-height: 1.45; }
+  .instalar .btn { width: auto; margin: 0; padding: 10px 14px; font-size: 14px; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -138,6 +161,48 @@ const fecha = (f) => new Date(f).toLocaleDateString('es-AR', {
 const NOMBRE_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const nombreMes = (m) => NOMBRE_MES[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4);
+// '2026-11-10' -> '10/11'
+const diaMes = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) : '';
+
+// Lo que muestra Mercado Pago al negocio, pero para el afiliado: cuánto
+// tiene para cobrar ya y cuándo cobra lo que viene.
+function tarjetaCobros(c) {
+  if (!c) return '';
+  const filas = [];
+  if (c.disponible > 0) {
+    filas.push('<div class="fila"><div><div class="detalle"><strong>Para cobrar ya</strong></div>' +
+      '<div class="fecha">Ya pasó el día de pago. Escribile al negocio si todavía no te llegó.</div></div>' +
+      '<div class="monto pago">' + money(c.disponible) + '</div></div>');
+  }
+  if (c.por_cobrar > 0) {
+    filas.push('<div class="fila"><div><div class="detalle"><strong>Cobrás el ' + diaMes(c.proxima_fecha) + '</strong></div>' +
+      '<div class="fecha">Lo del mes pasado.</div></div>' +
+      '<div class="monto">' + money(c.por_cobrar) + '</div></div>');
+  }
+  filas.push('<div class="fila"><div><div class="detalle"><strong>Este mes, hasta ahora</strong></div>' +
+    '<div class="fecha">Lo cobrás el ' + diaMes(c.fecha_mes_actual) + '. Sigue sumando con cada venta.</div></div>' +
+    '<div class="monto">' + money(c.en_curso) + '</div></div>');
+  if (c.cobrado > 0) {
+    filas.push('<div class="fila"><div><div class="detalle">Ya cobraste</div>' +
+      '<div class="fecha">Desde que empezaste.</div></div><div class="monto">' + money(c.cobrado) + '</div></div>');
+  }
+  return '<div class="tarjeta">' +
+    '<div class="titulo-seccion" style="margin-top:0;">Tu plata</div>' + filas.join('') +
+    '<div class="pista">Las comisiones de cada mes se pagan el día ' + c.dia_pago + ' del mes siguiente.</div></div>';
+}
+
+// La línea del mes elegido: si ya se pagó, cuándo se cobra o si está disponible.
+function lineaDeCobroDelMes(r) {
+  if (!r || !r.estado || r.estado === 'sin_comision') return '';
+  const t = {
+    en_curso: 'El mes sigue abierto. Lo cobrás el ' + diaMes(r.fecha_pago) + '.',
+    por_cobrar: 'Lo cobrás el ' + diaMes(r.fecha_pago) + '.',
+    disponible: 'Disponible desde el ' + diaMes(r.fecha_pago) + '.' +
+      (r.pagado > 0 ? ' Ya te pagaron ' + money(r.pagado) + ', falta ' + money(r.comision - r.pagado) + '.' : ''),
+    pagado: '✓ Cobrado' + (r.pagado_en ? ' el ' + fecha(r.pagado_en) : '') + '.'
+  }[r.estado];
+  return t ? '<div class="pista" style="margin:-4px 0 12px;">' + t + '</div>' : '';
+}
 
 function escapar(t) {
   return String(t == null ? '' : t)
@@ -186,6 +251,7 @@ function render() {
   const meses = d.meses || [];
   if (!mesElegido) mesElegido = d.mes_actual;
   const resumen = meses.find((m) => m.mes === mesElegido) || { ventas: 0, vendido: 0, comision: 0, por_confirmar: 0 };
+  const cobroDelMes = meses.find((m) => m.mes === mesElegido);
   const ventasDelMes = (d.ventas || []).filter((v) => v.mes === mesElegido);
 
   let html = '';
@@ -193,6 +259,8 @@ function render() {
     (negocio.image_url ? '<img src="' + escapar(negocio.image_url) + '" alt="">' : '') +
     '<div><h1>Hola, ' + escapar(a.nombre) + '</h1>' +
     '<div class="sub">Tu panel de afiliado de ' + escapar(negocio.business_name || 'la tienda') + '</div></div></div>';
+
+  html += tarjetaCobros(d.cobros);
 
   html += '<div class="tarjeta">' +
     '<div class="titulo-seccion" style="margin-top:0;">Tu link para compartir</div>' +
@@ -203,6 +271,15 @@ function render() {
       'o con tu código <strong>' + escapar(a.codigo) + '</strong>.' +
       (a.descuento_pct > 0 ? ' Tus clientes tienen <strong>' + a.descuento_pct + '% off</strong>.' : '') +
       ' El link le queda guardado al cliente 30 días, aunque compre otro día.</div>' +
+    '</div>';
+
+  // Lo muestra pintarInstalar() solo si el navegador deja instalar.
+  html += '<div class="tarjeta no-imprimir" id="instalarCaja" style="display:none;">' +
+    '<div class="instalar"><img src="/icon-192.png" alt="">' +
+    '<div class="texto"><strong>Tenelo en el celular</strong><br>Abrí tu panel con un toque, como una app.</div>' +
+    '<button class="btn" id="btnInstalar">Instalar</button></div>' +
+    '<div class="pista" id="ayudaIOS" style="display:none;">En iPhone: tocá <strong>Compartir</strong> ' +
+    '(el cuadradito con la flecha hacia arriba) y después <strong>Agregar a inicio</strong>.</div>' +
     '</div>';
 
   const opcionesMes = [d.mes_actual].concat(meses.map((m) => m.mes))
@@ -218,6 +295,12 @@ function render() {
     '<div class="tarjeta"><div class="etiqueta">Vendido</div><div class="valor">' + money(resumen.vendido) + '</div></div>' +
     '<div class="tarjeta"><div class="etiqueta">Tu comisión</div><div class="valor ok">' + money(resumen.comision) + '</div></div>' +
     '</div>';
+  html += lineaDeCobroDelMes(cobroDelMes);
+  if (d.total && d.total.ventas > 0) {
+    html += '<div class="tarjeta" style="padding:13px 16px;font-size:13.5px;line-height:1.5;">' +
+      '<strong>Desde que empezaste:</strong> ' + d.total.ventas + (d.total.ventas === 1 ? ' venta' : ' ventas') +
+      ' · ' + money(d.total.vendido) + ' vendido · <strong style="color:var(--ok);">' + money(d.total.comision) + '</strong> de comisión</div>';
+  }
   if (resumen.por_confirmar > 0) {
     html += '<div class="pista" style="margin:-4px 0 12px;">Además hay ' + resumen.por_confirmar +
       (resumen.por_confirmar === 1 ? ' pedido' : ' pedidos') +
@@ -253,7 +336,51 @@ function render() {
   document.getElementById('btnCopiar').addEventListener('click', (e) => copiarLink(e.currentTarget));
   document.getElementById('btnCompartir').addEventListener('click', compartir);
   document.getElementById('selectorMes').addEventListener('change', (e) => { mesElegido = e.target.value; render(); });
+  document.getElementById('btnInstalar').addEventListener('click', instalar);
+  pintarInstalar();
   document.title = 'Afiliado · ' + (negocio.business_name || 'BRUWAL');
+}
+
+// ---------- Instalar en el celular ----------
+// Chrome avisa con beforeinstallprompt cuando se puede instalar. En iPhone
+// no hay instalación automática: se explica cómo agregarlo a inicio.
+let promptDeInstalacion = null;
+const yaInstalado = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  promptDeInstalacion = e;
+  pintarInstalar();
+});
+window.addEventListener('appinstalled', () => {
+  promptDeInstalacion = null;
+  pintarInstalar();
+});
+
+function pintarInstalar() {
+  const caja = document.getElementById('instalarCaja');
+  if (!caja) return;
+  caja.style.display = (!yaInstalado() && (promptDeInstalacion || esIOS)) ? '' : 'none';
+}
+
+async function instalar() {
+  if (promptDeInstalacion) {
+    promptDeInstalacion.prompt();
+    await promptDeInstalacion.userChoice.catch(() => null);
+    promptDeInstalacion = null;
+    pintarInstalar();
+    return;
+  }
+  if (esIOS) document.getElementById('ayudaIOS').style.display = '';
+}
+
+// El service worker es el mismo del resto de BRUWAL (red primero). Si no
+// se registra, el panel anda igual: solo no se ofrece instalarlo.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
 }
 
 function mostrarError(mensaje) {
