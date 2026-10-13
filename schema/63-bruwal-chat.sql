@@ -27,7 +27,7 @@ alter table public.clientes
 insert into public.clientes (slug, nombre, tipo, wa_phone_number_id, prompt, activo)
 values (
   'walter-monedas',
-  'Walter · Monedas y metales',
+  'Punto Metales',
   'monedas',
   -- Su número de WhatsApp NO va acá: lo atiende walter-bot con la app de Meta
   -- de Walter. La columna es obligatoria y única, así que lleva un valor que
