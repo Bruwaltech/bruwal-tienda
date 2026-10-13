@@ -9848,6 +9848,20 @@ async function onLoggedIn() {
     if (store) {
       currentStore = store;
     } else {
+      // Un cliente de Bruwal Chat (solo chatbot, sin tienda) que entra por
+      // "Panel Admin" se quedaba con una tienda vacia creada aca abajo. Si
+      // tiene un chatbot vinculado, va a su panel. Si la consulta falla, no
+      // se crea nada, por lo mismo que con la de tiendas.
+      const { data: chatbots, error: errorChatbots } = await sb
+        .from('clientes')
+        .select('id')
+        .limit(1);
+      if (errorChatbots) throw errorChatbots;
+      if (chatbots.length) {
+        window.location.replace('/chat');
+        return;
+      }
+
       const business_name = user.user_metadata?.business_name || 'Mi Tienda';
       const phone = user.user_metadata?.phone || '';
       let slug = generarSlug(business_name);

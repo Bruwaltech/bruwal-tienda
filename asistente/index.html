@@ -825,8 +825,11 @@ $('btnOlvide').addEventListener('click', async () => {
     return ver($('avisoLogin'));
   }
 
+  // El link del mail abre el panel de tiendas, que es el que tiene la pantalla
+  // para elegir la contraseña nueva. Con la clave cambiada, a quien tiene
+  // chatbot y no tienda lo devuelve solo a /chat.
   const { error } = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + '/asistente'
+    redirectTo: window.location.origin + '/dashboard'
   });
 
   if (error) {
