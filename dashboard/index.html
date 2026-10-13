@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/seguimiento.js"></script>
+<script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BRUWALTECH v3.0 — Panel de Control</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -1965,6 +1966,11 @@ tr:last-child td { border-bottom: none; }
       <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
+      <!-- Trampa para robots: una persona no ve este campo y lo deja vacío.
+           Los programas que llenan formularios solos completan todo. -->
+      <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;">
+        <label>Sitio web<input type="text" id="regSitioWeb" name="sitio_web" tabindex="-1" autocomplete="off"></label>
+      </div>
       <div class="field"><label>Contraseña</label>
         <div style="position:relative;">
           <input type="password" id="regPassword" required minlength="6" style="padding-right:44px;">
@@ -9627,6 +9633,13 @@ function renderRubrosRegistro() {
 renderRubrosRegistro();
 actualizarVisibilidadReparacionesRegistro();
 
+// Cuándo se vio el formulario de registro por primera vez (para el
+// anti-spam del submit). Se marca al primer toque o tecla dentro del form.
+let registroAbiertoEn = 0;
+['focusin', 'pointerdown'].forEach(ev => byId('registerForm').addEventListener(ev, () => {
+  if (!registroAbiertoEn) registroAbiertoEn = Date.now();
+}));
+
 byId('registerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const business_name = byId('regBusiness').value.trim();
@@ -9635,6 +9648,18 @@ byId('registerForm').addEventListener('submit', async (e) => {
   const password = byId('regPassword').value;
   const hace_reparaciones = byId('regReparaciones').checked;
   const rubro_manual = rubroElegidoRegistro;
+
+  // Anti-spam: si el campo trampa vino lleno, o el formulario se mandó en
+  // menos de 3 segundos desde que se abrió, es un robot. Le mostramos lo
+  // mismo que a una persona (así no aprende a esquivarlo) y no creamos nada.
+  const esRobot = byId('regSitioWeb').value !== '' ||
+    (registroAbiertoEn && Date.now() - registroAbiertoEn < 3000);
+  if (esRobot) {
+    byId('authError').classList.add('exito');
+    byId('authError').textContent = 'Revisá tu mail para confirmar la cuenta.';
+    show(byId('authError'));
+    return;
+  }
 
   if (!rubro_manual) {
   byId('authError').classList.remove('exito');
@@ -9668,6 +9693,7 @@ byId('registerForm').addEventListener('submit', async (e) => {
   }
 
   boton.disabled = false;
+  if (window.bruwalEvento) bruwalEvento('sign_up', { method: 'email', rubro: rubro_manual });
 
   // El alta no termina con la cuenta creada: para poder cargar productos y
   // vender hace falta un plan. Decirlo ACA, con los pasos a la vista, evita
