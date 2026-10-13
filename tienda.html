@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/seguimiento.js"></script>
+<script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tienda — BRUWAL</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -3703,6 +3704,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
     const waLink = 'https://wa.me/' + numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent(detalles);
     window.open(waLink, '_blank');
+    if (window.bruwalEvento) bruwalEvento('pedido_whatsapp', { tienda: store.slug || '', tipo: turnoTexto ? 'turno' : 'pedido' });
 
     // Ahora el horario queda efectivamente bloqueado en la agenda, asi que
     // ya podemos decir "reservado" sin mentirle al cliente.

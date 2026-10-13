@@ -9,6 +9,8 @@
 // etiquetas og: del HTML y lo devuelve ya armado. El navegador de una
 // persona sigue recibiendo exactamente la misma página de siempre.
 
+const armarSitemap = require('./_sitemap');
+
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
 
@@ -41,9 +43,13 @@ function paraVistaPrevia(url, base) {
 module.exports = async (req, res) => {
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const base = 'https://' + host;
+
+  // /sitemap.xml llega acá por el rewrite de vercel.json (ver _sitemap.js).
+  if (req.query && req.query.sitemap) return armarSitemap(req, res, base);
   const slug = String((req.query && req.query.slug) || '').trim();
 
   let html = '';
+  let estado = 200;
 
   try {
     // La página base, desde el mismo despliegue
@@ -193,6 +199,11 @@ module.exports = async (req, res) => {
       const filas = await r.json();
       const tienda = Array.isArray(filas) ? filas[0] : null;
 
+      // Supabase respondió bien y la tienda no existe: la página dice "No
+      // encontramos esta tienda", pero sin el 404 Google la toma como una
+      // página válida y la guarda.
+      if (r.ok && Array.isArray(filas) && !tienda) estado = 404;
+
       if (tienda) {
         const titulo = escapar(tienda.business_name || 'Tienda');
         const bajada = escapar(
@@ -213,6 +224,16 @@ module.exports = async (req, res) => {
           .replace(/(<meta property="og:image" content=")[^"]*(")/,       '$1' + imagen + '$2')
           .replace(/(<meta property="og:url" content=")[^"]*(")/,         '$1' + base + '/' + escapar(slug) + '$2')
           .replace(/<title>[^<]*<\/title>/, '<title>' + titulo + '</title>');
+
+        // tienda.html trae noindex porque, sola (tienda.html?slug=...), es
+        // una copia de esta página. Por /<slug> es la dirección buena de la
+        // tienda: esa sí queremos que aparezca en Google, con su descripción.
+        html = html.replace(
+          '<meta name="robots" content="noindex, follow">',
+          '<meta name="robots" content="index, follow">\n' +
+          '<meta name="description" content="' + bajada + '">\n' +
+          '<link rel="canonical" href="' + base + '/' + escapar(slug) + '">'
+        );
 
         // El logo suele ser cuadrado, no 1200x630: sacamos las medidas
         // fijas para que WhatsApp no lo estire.
@@ -235,6 +256,6 @@ module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   // Cache corto: si el vendedor cambia su logo, se refleja en minutos
   res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
-  res.statusCode = 200;
+  res.statusCode = estado;
   res.end(html);
 };

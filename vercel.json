@@ -13,6 +13,10 @@
       "destination": "/api/estado-cuenta?panel=afiliado"
     },
     {
+      "source": "/sitemap.xml",
+      "destination": "/api/tienda?sitemap=1"
+    },
+    {
       "source": "/:slug",
       "destination": "/api/tienda?slug=:slug"
     }
