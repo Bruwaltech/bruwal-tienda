@@ -17,6 +17,10 @@
       "destination": "/api/tienda?sitemap=1"
     },
     {
+      "source": "/chat",
+      "destination": "/asistente/index.html"
+    },
+    {
       "source": "/:slug",
       "destination": "/api/tienda?slug=:slug"
     }

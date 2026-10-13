@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script src="/seguimiento.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Asistente IA — Panel de contactos · BRUWAL</title>
+<title>Bruwal Chat — Panel de tu chatbot · BRUWAL</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="theme-color" content="#15294D">
 <meta name="robots" content="noindex, nofollow">
@@ -249,11 +249,114 @@ tbody tr:hover { background: #F8FBFF; }
 .acciones .btn { flex: 1; min-width: 150px; }
 .btn-ok { background: var(--ok); color: #fff; }
 .btn-ok:hover { background: #17806c; }
+.btn:disabled { opacity: .55; cursor: default; }
+
+/* ---------------- panel de monedas (Walter) ---------------- */
+.tarjeta-boton { text-align: left; font-family: inherit; color: inherit; cursor: pointer; }
+.tarjeta-boton:hover { border-color: var(--celeste); }
+
+.pestanas {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 14px;
+}
+.pestana {
+  border: 1px solid var(--line); background: #fff; color: var(--text-mute);
+  border-radius: 8px; padding: 9px 15px; font-size: 14.5px; font-weight: 600;
+  font-family: inherit; cursor: pointer;
+}
+.pestana.activa { background: var(--navy); color: #fff; border-color: var(--navy); }
+.pestanas .btn-suave { margin-left: auto; }
+
+.nota-panel {
+  padding: 12px 18px; font-size: 13.5px; color: var(--text-mute); line-height: 1.45;
+  border-bottom: 1px solid var(--line);
+}
+
+.pedido {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 10px 22px; padding: 15px 18px; border-top: 1px solid var(--line);
+  font-size: 14.5px; line-height: 1.5;
+}
+.pedido:first-child { border-top: none; }
+.pedido-cerrado { opacity: .6; }
+.fila-agenda { display: flex; gap: 6px; flex-wrap: wrap; }
+.fila-agenda input, .fila-agenda select, .selector {
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 14px; font-family: inherit; background: #fff; color: var(--text-dark);
+}
+.fila-agenda input:focus, .fila-agenda select:focus, .selector:focus {
+  outline: none; border-color: var(--celeste);
+}
+.aviso-pedido { margin-top: 7px; font-size: 13px; color: var(--text-mute); }
+
+.chip-alerta { background: #FEE2E2; color: #991B1B; }
+.chip-prioridad { background: var(--navy); color: #fff; }
+
+.paradas { list-style: none; }
+.parada {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px;
+  align-items: start; padding: 13px 18px; border-top: 1px solid var(--line);
+  font-size: 14.5px; line-height: 1.5;
+}
+.parada:first-child { border-top: none; }
+.numero-parada {
+  width: 30px; height: 30px; border-radius: 50%; background: var(--navy); color: #fff;
+  display: grid; place-items: center; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 14px;
+}
+.parada-base .numero-parada { background: var(--celeste); }
+.tramo { color: var(--text-mute); font-size: 13px; white-space: nowrap; }
+.resumen-ruta {
+  display: flex; flex-wrap: wrap; gap: 10px 26px; padding: 14px 18px;
+  border-top: 1px solid var(--line); background: #F8FBFF;
+}
+.resumen-ruta:empty { display: none; }
+.resumen-ruta .rotulo {
+  display: block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-mute); font-weight: 600;
+}
+.resumen-ruta b { font-family: 'Space Grotesk', sans-serif; font-size: 18px; }
+.acciones-ruta {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  padding: 14px 18px; border-top: 1px solid var(--line); font-size: 14px;
+}
+.acciones-ruta .btn { padding: 10px 16px; font-size: 14.5px; text-decoration: none; }
+
+.titulo-grupo {
+  padding: 16px 18px 0; font-size: 13px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-mute); font-weight: 600;
+}
+.grilla-campos {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0 18px; padding: 14px 18px 0;
+}
+.pie-form {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 14px 18px; border-top: 1px solid var(--line);
+}
+.pie-form .btn-primario { width: auto; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  background: var(--navy); color: #fff; padding: 10px 18px; border-radius: 8px;
+  font-size: 14px; z-index: 50; box-shadow: 0 8px 24px -10px rgba(21, 41, 77, .5);
+}
 
 @media (max-width: 720px) {
   .contenido { padding: 15px; }
   .panel-cabecera h2 { width: 100%; margin-bottom: 4px; }
   th.opcional, td.opcional { display: none; }
+  .pedido { grid-template-columns: 1fr; gap: 8px; }
+}
+
+/* La hoja de ruta se imprime sola, para llevarla en el recorrido. */
+@media print {
+  body { background: #fff; }
+  .barra, #vistaMonedas .tarjetas, .pestanas, .nota-panel, .acciones-ruta,
+  #mDiaRuta, #mTurnoRuta, #mError, .toast { display: none !important; }
+  #vistaMonedas [data-seccion]:not([data-seccion="ruta"]) { display: none !important; }
+  .contenido { padding: 0; max-width: none; }
+  .panel { border: none; }
+  .parada { break-inside: avoid; }
 }
 </style>
 </head>
@@ -264,9 +367,9 @@ tbody tr:hover { background: #F8FBFF; }
   <div class="caja-login">
     <div class="marca">
       <div class="marca-cuadro">B</div>
-      <div class="marca-nombre">BRUWALTECH</div>
+      <div class="marca-nombre">Bruwal Chat</div>
     </div>
-    <p class="bajada">Panel de contactos de tu asistente IA</p>
+    <p class="bajada">El panel de tu chatbot</p>
 
     <div class="aviso aviso-error hidden" id="avisoLogin"></div>
     <div class="aviso aviso-ok hidden" id="avisoOk"></div>
@@ -309,6 +412,8 @@ tbody tr:hover { background: #F8FBFF; }
   </div>
 
   <div class="contenido">
+    <!-- Chatbot con IA (tipo ia): contactos que capturó el asistente -->
+    <div id="vistaContactos">
     <div class="aviso aviso-error hidden" id="avisoConsumo" style="margin-bottom:18px;"></div>
 
     <div class="tarjetas">
@@ -362,6 +467,161 @@ tbody tr:hover { background: #F8FBFF; }
       </div>
       <div class="vacio hidden" id="sinResultados"></div>
     </div>
+    </div>
+
+    <!-- Bot de Walter (tipo monedas): lo maneja /asistente/monedas.js -->
+    <div class="hidden" id="vistaMonedas">
+      <div class="tarjetas">
+        <button type="button" class="tarjeta tarjeta-boton" data-ir="charlas">
+          <div class="rotulo">Quieren hablar con vos</div>
+          <div class="numero" id="mNumHumano">0</div>
+        </button>
+        <button type="button" class="tarjeta tarjeta-boton" data-ir="pedidos">
+          <div class="rotulo">Sin día asignado</div>
+          <div class="numero" id="mNumSinDia">0</div>
+        </button>
+        <button type="button" class="tarjeta tarjeta-boton" data-ir="ruta">
+          <div class="rotulo">Retiros mañana</div>
+          <div class="numero" id="mNumManana">0</div>
+        </button>
+        <div class="tarjeta">
+          <div class="rotulo">Pedidos, últimos 7 días</div>
+          <div class="numero" id="mNumSemana">0</div>
+        </div>
+      </div>
+
+      <div class="pestanas" role="tablist">
+        <button type="button" class="pestana activa" data-pestana="pedidos" role="tab">Pedidos</button>
+        <button type="button" class="pestana" data-pestana="ruta" role="tab">Hoja de ruta</button>
+        <button type="button" class="pestana" data-pestana="charlas" role="tab">Charlas</button>
+        <button type="button" class="pestana" data-pestana="precios" role="tab">Precios y ajustes</button>
+        <button type="button" class="btn btn-suave" id="mActualizar">Actualizar</button>
+      </div>
+
+      <div class="aviso aviso-error hidden" id="mError"></div>
+
+      <div class="panel" data-seccion="pedidos">
+        <div class="panel-cabecera">
+          <h2>Pedidos</h2>
+          <div class="filtros" id="mFiltrosPedidos">
+            <button type="button" class="filtro activo" data-filtro="pendientes">Pendientes</button>
+            <button type="button" class="filtro" data-filtro="retirados">Retirados</button>
+            <button type="button" class="filtro" data-filtro="cancelados">Cancelados</button>
+            <button type="button" class="filtro" data-filtro="todos">Todos</button>
+          </div>
+          <input type="search" class="buscador" id="mBuscador" placeholder="Buscar nombre, localidad…">
+        </div>
+        <p class="nota-panel">Poné día y turno a cada retiro. El bot le avisa al cliente la noche
+          anterior si es a la mañana, o esa misma mañana si es a la tarde, y le pide que confirme.</p>
+        <div id="mListaPedidos"></div>
+        <div class="vacio hidden" id="mSinPedidos"></div>
+      </div>
+
+      <div class="panel hidden" data-seccion="ruta">
+        <div class="panel-cabecera">
+          <h2 id="mTituloRuta">Hoja de ruta</h2>
+          <select id="mDiaRuta" class="selector" aria-label="Día"></select>
+          <select id="mTurnoRuta" class="selector" aria-label="Turno">
+            <option>Mañana</option>
+            <option>Tarde</option>
+          </select>
+        </div>
+        <p class="nota-panel">Sale de la base en Pueblo Andino. Primero van los pedidos de monedas
+          con prioridad y después siempre la parada más cercana a la anterior. Las distancias son en
+          línea recta entre localidades, como referencia.</p>
+        <ol class="paradas" id="mParadas"></ol>
+        <div class="resumen-ruta" id="mResumenRuta"></div>
+        <div class="acciones-ruta">
+          <button type="button" class="btn btn-ok" id="mAprobar">Aprobar hoja de ruta</button>
+          <button type="button" class="btn btn-suave" id="mImprimir">Imprimir</button>
+          <a class="btn btn-suave" id="mMapa" target="_blank" rel="noopener">Abrir en Google Maps</a>
+          <span class="dato-secundario" id="mEstadoRuta"></span>
+        </div>
+      </div>
+
+      <div class="panel hidden" data-seccion="charlas">
+        <div class="panel-cabecera">
+          <h2>Charlas</h2>
+          <div class="filtros" id="mFiltrosCharlas">
+            <button type="button" class="filtro activo" data-filtro="humano">Quieren hablar con vos</button>
+            <button type="button" class="filtro" data-filtro="todas">Todas</button>
+          </div>
+        </div>
+        <div class="tabla-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th class="opcional">Canal</th>
+                <th class="opcional">Último mensaje</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="mCuerpoCharlas"></tbody>
+          </table>
+        </div>
+        <div class="vacio hidden" id="mSinCharlas"></div>
+      </div>
+
+      <form class="panel hidden" data-seccion="precios" id="mFormPrecios" novalidate>
+        <div class="panel-cabecera"><h2>Precios y ajustes</h2></div>
+        <p class="nota-panel">Lo que guardes acá lo usa el bot desde el mensaje siguiente.</p>
+
+        <h3 class="titulo-grupo">Precios de compra</h3>
+        <div class="grilla-campos">
+          <div class="campo"><label for="mMonedaKg">Monedas, por kilo ($)</label>
+            <input id="mMonedaKg" data-cfg="monedaKg" type="number" min="0" step="any" inputmode="decimal"></div>
+          <div class="campo"><label for="mMonedaU">Monedas, por unidad ($)</label>
+            <input id="mMonedaU" data-cfg="monedaU" type="number" min="0" step="any" inputmode="decimal"></div>
+          <div class="campo"><label for="mCobreMin">Cobre minorista, por kilo ($)</label>
+            <input id="mCobreMin" data-cfg="cobreMin" type="number" min="0" step="any" inputmode="decimal"></div>
+          <div class="campo"><label for="mCobreMay">Cobre mayorista, por kilo ($)</label>
+            <input id="mCobreMay" data-cfg="cobreMay" type="number" min="0" step="any" inputmode="decimal"></div>
+          <div class="campo"><label for="mBronceMin">Bronce minorista, por kilo ($)</label>
+            <input id="mBronceMin" data-cfg="bronceMin" type="number" min="0" step="any" inputmode="decimal"></div>
+          <div class="campo"><label for="mBronceMay">Bronce mayorista, por kilo ($)</label>
+            <input id="mBronceMay" data-cfg="bronceMay" type="number" min="0" step="any" inputmode="decimal"></div>
+        </div>
+
+        <h3 class="titulo-grupo">Reglas</h3>
+        <div class="grilla-campos">
+          <div class="campo"><label for="mUmbralMay">Cobre y bronce: mayorista desde (kg)</label>
+            <input id="mUmbralMay" data-cfg="umbralMay" type="number" min="0" step="any" inputmode="decimal"></div>
+          <div class="campo"><label for="mUmbralPrio">Monedas: prioridad desde (kg)</label>
+            <input id="mUmbralPrio" data-cfg="umbralPrio" type="number" min="0" step="any" inputmode="decimal"></div>
+        </div>
+
+        <h3 class="titulo-grupo">Avisos al cliente</h3>
+        <div class="grilla-campos">
+          <div class="campo"><label for="mHoraNoche">Turno mañana: la noche anterior a las</label>
+            <input id="mHoraNoche" data-cfg="horaNoche" type="time"></div>
+          <div class="campo"><label for="mHoraManana">Turno tarde: ese mismo día a las</label>
+            <input id="mHoraManana" data-cfg="horaManana" type="time"></div>
+        </div>
+
+        <h3 class="titulo-grupo">Depósitos y saludo</h3>
+        <div class="grilla-campos">
+          <div class="campo"><label for="mDepPA">Pueblo Andino, dirección</label>
+            <input id="mDepPA" data-cfg="depPA" type="text"></div>
+          <div class="campo"><label for="mDepPAh">Pueblo Andino, horario</label>
+            <input id="mDepPAh" data-cfg="depPAh" type="text"></div>
+          <div class="campo"><label for="mDepSL">San Lorenzo, dirección</label>
+            <input id="mDepSL" data-cfg="depSL" type="text"></div>
+          <div class="campo"><label for="mDepSLh">San Lorenzo, horario</label>
+            <input id="mDepSLh" data-cfg="depSLh" type="text"></div>
+        </div>
+        <div class="grilla-campos" style="grid-template-columns:1fr;">
+          <div class="campo"><label for="mSaludo">Saludo de bienvenida</label>
+            <textarea id="mSaludo" data-cfg="saludo" rows="3"></textarea></div>
+        </div>
+
+        <div class="aviso aviso-error hidden" id="mPreciosError" style="margin:0 18px 14px;"></div>
+        <div class="pie-form">
+          <button type="submit" class="btn btn-primario" id="mGuardarPrecios">Guardar cambios</button>
+          <span class="dato-secundario" id="mPreciosEstado"></span>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -400,6 +660,40 @@ tbody tr:hover { background: #F8FBFF; }
   </div>
 </div>
 
+<!-- ===================== FICHA DE UNA CHARLA (monedas) ===================== -->
+<div class="telon hidden" id="mTelon">
+  <div class="ficha">
+    <div class="ficha-cabecera">
+      <div>
+        <h3 id="mFichaNombre"></h3>
+        <div class="dato-secundario" id="mFichaCanal"></div>
+      </div>
+      <button class="cerrar" id="mCerrarFicha" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="ficha-cuerpo">
+      <div class="bloque">
+        <h4>Pedidos</h4>
+        <div class="datos" id="mFichaPedidos"></div>
+      </div>
+      <div class="bloque">
+        <h4>Conversación</h4>
+        <div class="charla" id="mFichaCharla"></div>
+      </div>
+      <div class="aviso aviso-error hidden" id="mFichaError"></div>
+      <div class="acciones">
+        <button class="btn btn-ok" id="mBtnAtendida">Ya hablé con esta persona</button>
+        <button class="btn btn-suave" id="mBtnAbrir">Escribirle por WhatsApp</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast hidden" id="mToast" role="status"></div>
+
+<!-- Antes que el script de la página: cuando entra un cliente de Walter, el
+     panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
+     misma página se sirve también en /chat. -->
+<script src="/asistente/monedas.js"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
@@ -559,7 +853,7 @@ async function entrar() {
   // de las políticas, no de acá.
   const { data, error } = await sb
     .from('clientes')
-    .select('id, slug, nombre, plan, limite_conversaciones, tope_duro')
+    .select('id, slug, nombre, tipo, plan, limite_conversaciones, tope_duro')
     .order('nombre');
 
   if (error) {
@@ -579,7 +873,7 @@ async function entrar() {
   }
 
   clienteActual = clientes[0];
-  $('quienSoy').textContent = user.email;
+  $('quienSoy').textContent = 'Bruwal Chat · ' + user.email;
 
   // El selector solo aparece para quien atiende a más de un negocio.
   if (clientes.length > 1) {
@@ -589,14 +883,27 @@ async function entrar() {
       .join('');
     sel.addEventListener('change', () => {
       clienteActual = clientes.find((c) => c.id === sel.value);
-      cargarLeads();
+      mostrarCliente();
     });
     ver(sel);
   }
 
   ocultar($('pantallaLogin'));
   ver($('pantallaPanel'));
-  await cargarLeads();
+  await mostrarCliente();
+}
+
+// Cada tipo de chatbot tiene su panel: el asistente con IA muestra los
+// contactos que capturó; el bot de Walter, pedidos, hoja de ruta y precios.
+async function mostrarCliente() {
+  const esMonedas = clienteActual.tipo === 'monedas';
+  $('nombreCliente').textContent = clienteActual.nombre;
+  $('vistaContactos').classList.toggle('hidden', esMonedas);
+  $('btnExportar').classList.toggle('hidden', esMonedas);
+  $('vistaMonedas').classList.toggle('hidden', !esMonedas);
+
+  if (esMonedas) await panelMonedas.abrir();
+  else await cargarLeads();
 }
 
 async function cargarLeads() {
@@ -746,9 +1053,9 @@ $('buscador').addEventListener('input', (e) => {
   pintarTabla();
 });
 
-document.querySelectorAll('.filtro').forEach((b) => {
+document.querySelectorAll('#vistaContactos .filtro').forEach((b) => {
   b.addEventListener('click', () => {
-    document.querySelectorAll('.filtro').forEach((x) => x.classList.remove('activo'));
+    document.querySelectorAll('#vistaContactos .filtro').forEach((x) => x.classList.remove('activo'));
     b.classList.add('activo');
     filtro = b.dataset.filtro;
     pintarTabla();
