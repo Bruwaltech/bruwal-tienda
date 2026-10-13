@@ -406,6 +406,9 @@
   .success-screen .mark{width:70px;height:70px;border-radius:50%;background:var(--stock);color:#fff;font-size:36px;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;box-shadow:0 8px 24px rgba(31,160,136,0.3);}
   .success-screen h2{color:var(--navy);font-size:24px;margin-bottom:12px;}
   .success-screen p{color:var(--text-mute);line-height:1.6;}
+  .legales{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px;font-size:13px;padding:28px 16px 0;}
+  .legales a{color:var(--text-mute);text-decoration:none;}
+  .legales a:hover{text-decoration:underline;}
   .powered{text-align:center;font-size:12px;color:var(--text-mute);padding:24px 0;font-family:'IBM Plex Mono',monospace;}
 
   .store-layout{display:grid;grid-template-columns:180px 1fr;gap:24px;align-items:start;}
@@ -545,6 +548,12 @@
     </div>
   </main>
 
+  <nav class="legales" id="legales">
+    <a data-legal href="/legal/terminos.html">Términos y condiciones</a>
+    <a data-legal href="/legal/privacidad.html">Privacidad</a>
+    <a data-legal href="/legal/devoluciones.html">Cambios y devoluciones</a>
+    <a data-legal href="/legal/arrepentimiento.html"><strong>Botón de arrepentimiento</strong></a>
+  </nav>
   <div class="powered">Tienda hecha con BRUWAL Technologies</div>
 
   <div class="cart-bar" id="cartBar" style="display:none;">
@@ -1032,6 +1041,10 @@ async function init(){
 
   perfilTienda = store;
   aplicarTema(store.tema);
+  // Las páginas legales hablan en nombre de esta tienda.
+  document.querySelectorAll('#legales a[data-legal]').forEach(a => {
+    a.href = a.getAttribute('href').split('?')[0] + '?tienda=' + encodeURIComponent(store.slug);
+  });
   // Sin await: la tienda se muestra igual mientras se valida el codigo.
   cargarAfiliado(slug);
 

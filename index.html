@@ -848,6 +848,15 @@
   .footer-politica-texto p:last-child { margin-bottom: 0; }
   .footer-politica-texto strong { color: #15294D; }
 
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-top: 24px;
+    font-size: 13px;
+  }
+  .footer-links a { color: #667085; text-decoration: none; }
+  .footer-links a:hover { color: #2F8FE0; text-decoration: underline; }
   .footer-legal {
     margin-top: 32px;
     padding-top: 20px;
@@ -1818,7 +1827,9 @@
           por adelantado. Si cancelás, dejamos de cobrarte a partir del próximo
           vencimiento, pero el período que ya pagaste queda cubierto hasta el final.
           No hacemos devoluciones ni reintegros parciales por el tiempo que no llegaste
-          a usar dentro de un período ya cobrado.
+          a usar dentro de un período ya cobrado. La excepción son los primeros 10 días
+          desde que contratás: si te arrepentís, te devolvemos todo desde el
+          <a href="/legal/arrepentimiento.html">botón de arrepentimiento</a>.
         </p>
         <p>
           <strong>Qué pasa con tu cuenta:</strong> mientras dure el período ya pagado, tu
@@ -1834,6 +1845,14 @@
         </p>
       </div>
     </details>
+
+    <nav class="footer-links">
+      <a href="/legal/terminos.html">Términos y condiciones</a>
+      <a href="/legal/privacidad.html">Privacidad</a>
+      <a href="/legal/cookies.html">Cookies</a>
+      <a href="/legal/devoluciones.html">Cambios y devoluciones</a>
+      <a href="/legal/arrepentimiento.html">Botón de arrepentimiento</a>
+    </nav>
 
     <div class="footer-legal">© <span id="footerAnio"></span> BRUWAL Technologies</div>
   </div>

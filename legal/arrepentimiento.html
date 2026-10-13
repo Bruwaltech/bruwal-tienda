@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Botón de arrepentimiento · BRUWAL</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;600&family=IBM+Plex+Mono:wght@600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/legal/legal.css">
+</head>
+<body>
+<div class="barra"><div class="barra-inner">
+  <a class="marca" href="/">BRUWAL</a>
+  <a class="volver" id="volver" href="/">← Volver al inicio</a>
+</div></div>
+<main>
+<div class="hoja">
+<h1>Botón de arrepentimiento</h1>
+<p class="actualizado">Última actualización: 13 de octubre de 2026</p>
+<p>Si compraste un producto o contrataste un servicio a distancia, podés revocar la compra dentro de los <strong>10 días corridos</strong> desde que lo recibiste o lo contrataste, sin dar motivos y sin costo (art. 34, Ley 24.240; art. 1110, Código Civil y Comercial; Resolución 424/2020). No necesitás registrarte.</p>
+<p data-si="tienda">La solicitud le llega a <strong data-c="responsable"></strong>.</p>
+<p data-si="bruwal">Usá este formulario para revocar la contratación de un plan de BRUWAL. Si tu compra fue en una tienda, entrá desde el link «Botón de arrepentimiento» que está al pie de esa tienda, así la solicitud le llega al vendedor.</p>
+
+<form id="formArrepentimiento" style="margin-top:18px;">
+  <div class="campo"><label for="arrNombre">Nombre y apellido</label><input id="arrNombre" required autocomplete="name"></div>
+  <div class="campo"><label for="arrContacto">Teléfono o email para responderte</label><input id="arrContacto" required></div>
+  <div class="campo"><label for="arrDetalle">Qué compraste o contrataste</label><input id="arrDetalle" required placeholder="Producto, plan o número de pedido"></div>
+  <div class="campo"><label for="arrFecha">Fecha de compra o de entrega</label><input id="arrFecha" type="date" required></div>
+  <div class="campo"><label for="arrMotivo">Comentario (opcional)</label><textarea id="arrMotivo"></textarea></div>
+  <button type="submit" class="boton">Quiero revocar mi compra</button>
+</form>
+
+<div id="arrListo" class="oculto" style="margin-top:18px;">
+  <h2 style="margin-top:0;">Tu código de revocación</h2>
+  <div class="codigo" id="arrCodigo"></div>
+  <p>Guardá este código. Para que tu solicitud llegue, enviala por alguno de estos medios (el mensaje ya va escrito):</p>
+  <p style="display:flex;flex-wrap:wrap;gap:10px;">
+    <a class="boton oculto" id="arrWhatsapp" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+    <a class="boton oculto" id="arrMail">Enviar por email</a>
+  </p>
+  <p class="nota">El vendedor tiene que confirmarte la recepción dentro de las 24 horas y coordinar la devolución. Los gastos corren por su cuenta y el reintegro es por el mismo medio de pago.</p>
+</div>
+
+<p style="margin-top:22px;">Más detalles en la <a data-legal href="/legal/devoluciones.html">política de cambios y devoluciones</a>.</p>
+</div>
+<nav class="indice">
+  <a data-legal href="/legal/terminos.html">Términos y condiciones</a>
+  <a data-legal href="/legal/privacidad.html">Privacidad</a>
+  <a data-legal href="/legal/cookies.html">Cookies</a>
+  <a data-legal href="/legal/devoluciones.html">Cambios y devoluciones</a>
+  <a data-legal href="/legal/arrepentimiento.html">Botón de arrepentimiento</a>
+</nav>
+<p class="nota" style="border:0;text-align:center;margin-top:14px;">© <span id="anio"></span> BRUWAL Technologies</p>
+</main>
+<script src="/legal/legal.js"></script>
+</body>
+</html>
