@@ -744,7 +744,8 @@ const panelMonedas = (() => {
     // Si Walter está escribiendo, un "Actualizar" no le pisa lo que tipeó.
     if (preciosEditados) return;
     document.querySelectorAll('#mFormPrecios [data-cfg]').forEach((el) => {
-      el.value = cfg[el.dataset.cfg] == null ? '' : cfg[el.dataset.cfg];
+      const v = cfg[el.dataset.cfg];
+      el.value = v == null ? ('cero' in el.dataset ? 0 : '') : v;
     });
     pintarTipos(cfg.monedas || []);
     ocultar($('mPreciosError'));
@@ -762,8 +763,11 @@ const panelMonedas = (() => {
       const nombre = el.closest('.campo').querySelector('label').textContent;
       if (el.type === 'number') {
         const n = Number(el.value);
-        if (el.value === '' || !Number.isFinite(n) || n <= 0) {
-          $('mPreciosError').textContent = 'Revisá "' + nombre + '": tiene que ser un número mayor que cero.';
+        // data-cero: el campo acepta 0 (por ejemplo, sin mínimo para pasar a buscar)
+        const cero = 'cero' in el.dataset;
+        if (el.value === '' || !Number.isFinite(n) || n < 0 || (n === 0 && !cero)) {
+          $('mPreciosError').textContent = 'Revisá "' + nombre + '": tiene que ser un número ' +
+            (cero ? 'desde cero.' : 'mayor que cero.');
           el.focus();
           return ver($('mPreciosError'));
         }

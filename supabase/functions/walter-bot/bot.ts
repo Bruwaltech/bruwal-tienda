@@ -9,6 +9,8 @@ export type Config = {
   monedaKg: number; monedaU?: number; monedas?: TipoMoneda[];
   cobreMin: number; cobreMay: number; bronceMin: number; bronceMay: number;
   umbralMay: number; umbralPrio: number;
+  // Desde cuántos kilos pasamos a buscar (a domicilio o a un punto de encuentro); con menos, al depósito
+  minRetiro?: number;
   depPA: string; depPAh: string; depSL: string; depSLh: string;
   horaNoche?: string; horaManana?: string;
   saludo: string;
@@ -115,6 +117,23 @@ const cantTxt = (d: Datos) => {
 // "300 monedas de $10", "12,5 kg de cobre"
 const queTxt = (d: Datos) => (d.tipo ? cantTxt(d) : cantTxt(d) + " de " + d.mat?.toLowerCase());
 
+// Kilos estimados: las contadas se pasan a kilos con cuántas hacen un kilo; null si el tipo no lo dice
+function kilosDe(d: Datos, c: Config): number | null {
+  if (d.modo !== "u") return d.cant ?? 0;
+  const kg = tipoPorNombre(c, d.tipo)?.kg;
+  return kg ? (d.cant ?? 0) / kg : null;
+}
+const soloDeposito = (d: Datos, c: Config) => {
+  const k = kilosDe(d, c);
+  return !!c.minRetiro && k !== null && k < c.minRetiro;
+};
+// "Pasamos a buscar desde 2 kg (unas 222 monedas de $10)."
+function minTxt(d: Datos, c: Config) {
+  const kg = d.modo === "u" ? tipoPorNombre(c, d.tipo)?.kg : undefined;
+  const eq = kg && d.tipo ? ` (unas ${Math.ceil(c.minRetiro! * kg).toLocaleString("es-AR")} ${nombreTipo(d.tipo)})` : "";
+  return `Pasamos a buscar desde ${kgf(c.minRetiro!)}${eq}. Con menos, lo podés traer a uno de nuestros depósitos.`;
+}
+
 function depositos(c: Config) {
   return `📍 Depósito San Lorenzo: ${c.depSL}\n${c.depSLh}\n\n📍 Depósito Pueblo Andino: ${c.depPA}\n${c.depPAh}`;
 }
@@ -145,7 +164,9 @@ function pregunta(e: Estado, c: Config): Respuesta {
         return { text: `¿Cuántas ${d.tipo ? nombreTipo(d.tipo) : "monedas"} son, más o menos?` };
       }
       return { text: `¿Cuántos kilos de ${d.mat?.toLowerCase()} tenés en total?` };
-    case "mod": return { text: "¿Cómo preferís hacerlo?", options: ["Retiro a domicilio", "Punto de encuentro", "Llevo al depósito"] };
+    case "mod":
+      if (soloDeposito(d, c)) return { text: "¿Lo traés al depósito?", options: ["Llevo al depósito", "Hablar con Walter"] };
+      return { text: "¿Cómo preferís hacerlo?", options: ["Retiro a domicilio", "Punto de encuentro", "Llevo al depósito"] };
     case "name": return { text: "¿A nombre de quién lo anotamos?" };
     case "addr": return {
       text: d.ret === "Punto de encuentro"
@@ -252,6 +273,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       else if (/encuentro|punto|nos vemos/.test(n)) d.ret = "Punto de encuentro";
       else if (/deposito|llevo|voy/.test(n)) d.ret = "Depósito";
       else return out(pregunta(e, c));
+      if (d.ret !== "Depósito" && soloDeposito(d, c)) { delete d.ret; return out({ text: minTxt(d, c) }, pregunta(e, c)); }
       e.step = "name"; return out(pregunta(e, c));
     }
     case "name": {
@@ -259,7 +281,9 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       if (d.ret === "Depósito") {
         e.step = "done";
         return {
-          ...out({ text: `Perfecto, ${d.nombre}. Te esperamos en el depósito:\n\n${depositos(c)}\n\nTraelas y las pesamos ahí mismo.`, options: ["Empezar de nuevo"] }),
+          ...out({ text: `Perfecto, ${d.nombre}. Te esperamos en el depósito:\n\n${depositos(c)}\n\n` +
+            (d.mat !== "Monedas" ? "Traelo y lo pesamos" : d.modo === "u" ? "Traelas y las contamos" : "Traelas y las pesamos") +
+            " ahí mismo.", options: ["Empezar de nuevo"] }),
           pedido: armarPedido(d, c, null),
         };
       }
@@ -294,14 +318,14 @@ function cantidad(e: Estado, q: number, c: Config): Resultado {
   else text = `Por ${kgf(q)} de ${d.mat!.toLowerCase()} te pagamos ${fmt(r.total)} (${fmt(r.precio)} el kilo, precio ${r.tarifa}).` +
     (r.tarifa === "mayorista" ? "" : `\nDesde ${c.umbralMay} kg pagamos precio mayorista.`);
   e.step = "mod";
-  return { estado: e, respuestas: [{ text: text + "\nEl monto final se confirma al pesar en el momento del retiro." }, pregunta(e, c)] };
+  const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al pesar en el momento del retiro.";
+  return { estado: e, respuestas: [{ text: text + "\n" + fin }, pregunta(e, c)] };
 }
 
 function armarPedido(d: Datos, c: Config, dir: string | null): Pedido {
   const r = cotizar(c, d.mat!, d.modo!, d.cant!, d.tipo);
   // Las contadas también cuentan para la prioridad, pasadas a kilos; las llaves no son monedas.
-  const t = tipoPorNombre(c, d.tipo);
-  const kilos = d.modo === "kg" ? d.cant! : t?.kg ? d.cant! / t.kg : 0;
+  const kilos = kilosDe(d, c) ?? 0;
   return {
     loc: d.loc!, mat: d.mat!, modo: d.modo!, tipo: d.tipo ?? null, cant: d.cant!, ret: d.ret!, nombre: d.nombre!, dir,
     monto: Math.round(r.total), tarifa: r.tarifa,
