@@ -987,6 +987,43 @@ input[type="checkbox"].switch:disabled { opacity: 0.5; cursor: not-allowed; }
   box-shadow: 0 4px 12px rgba(47,143,224,.35);
 }
 
+/* ---- Barra de la cuenta demo ---- */
+.demo-bar {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+  background: #F1EBFD;
+  color: #3B1E78;
+  border-bottom: 1px solid #DDD0FA;
+}
+.demo-bar select,
+.demo-bar input {
+  padding: 7px 10px;
+  border: 1px solid #CDBDF5;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 13px;
+  background: #fff;
+  color: var(--text-dark);
+  max-width: 100%;
+}
+.demo-bar input { width: 230px; }
+.demo-bar button {
+  border: none;
+  border-radius: 7px;
+  padding: 8px 15px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, #5B21B6, #7C3AED);
+  color: #fff;
+}
+.demo-bar button:disabled { opacity: .7; cursor: wait; }
+
 /* Boton de adhesion, siempre visible en el encabezado */
 .btn-adherir {
   border: none;
@@ -2053,6 +2090,9 @@ tr:last-child td { border-bottom: none; }
     <button class="btn-ghost" id="copyStoreLinkBtn" style="padding:5px 10px;font-size:12px;">Copiar link</button>
     <button class="btn-ghost" id="openConfigBtn" style="padding:5px 10px;font-size:12px;">⚙️ Configurar</button>
   </div>
+
+  <!-- Solo en la cuenta demo (store_profiles.es_demo): ver demo.js -->
+  <div class="demo-bar hidden" id="demoBar"></div>
 
   <div class="trial-bar hidden" id="trialBar">
     <span id="trialTexto"></span>
@@ -5424,6 +5464,27 @@ function diasParaElCorte() {
   const corte = venceEnHoraArgentina(currentStore.plan_vence);
   if (!corte) return null;
   return Math.ceil((corte.getTime() - Date.now()) / 86400000) - 1;
+}
+
+// La cuenta demo (store_profiles.es_demo, lo pone el admin con
+// schema/62-cuenta-demo.sql). demo.js se pide solo aca: el resto de las
+// tiendas no lo descarga nunca. En la demo el cartel del plan no suma nada
+// y le quita lugar a la barra, asi que se esconde.
+function montarBarraDemo() {
+  const listo = () => {
+    hide(byId('trialBar'));
+    window.bruwalDemo.montarBarra({
+      sb, store: currentStore, contenedor: byId('demoBar'),
+      confirmar: dialogoConfirmar, aviso: dialogoAviso,
+      listo: () => window.location.reload()
+    });
+    show(byId('demoBar'));
+  };
+  if (window.bruwalDemo) { listo(); return; }
+  const s = document.createElement('script');
+  s.src = '../demo.js';
+  s.onload = listo;
+  document.head.appendChild(s);
 }
 
 function renderTrialBar() {
@@ -9942,6 +10003,7 @@ async function onLoggedIn() {
   }
 
   renderTrialBar();
+  if (currentStore.es_demo === true) montarBarraDemo();
 
   hide(byId('authView'));
   show(byId('appView'));
