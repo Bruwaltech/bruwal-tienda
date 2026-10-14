@@ -953,7 +953,7 @@ module.exports = async (req, res) => {
     if (admin) {
       // Las tiendas con plan pago en BRUWAL, con el email de su dueno.
       const conPlan = await sb('/rest/v1/store_profiles?plan=in.(basic,pro)' +
-                               '&select=slug,business_name,plan,user_id,mp_preapproval_id&limit=200');
+                               '&select=slug,business_name,plan,plan_vence,user_id,mp_preapproval_id&limit=200');
 
       // Todas las suscripciones de nuestros planes, con su email.
       const suscripciones = [];
@@ -1011,7 +1011,10 @@ module.exports = async (req, res) => {
           suscripcion: suya ? suya.id : null,
           monto: suya && suya.auto_recurring ? suya.auto_recurring.transaction_amount : null,
           proximo_cobro: suya ? (suya.next_payment_date ||
-            (suya.auto_recurring && suya.auto_recurring.next_payment_date) || null) : null
+            (suya.auto_recurring && suya.auto_recurring.next_payment_date) || null) : null,
+          // La fecha en que se le corta el acceso: la de la baja en Mercado
+          // Pago, o la que se le puso a mano a quien paga por transferencia.
+          corta: t.plan_vence || null
         });
       }
       cobranza.sort((a, b) => (a.paga === b.paga) ? 0 : (a.paga ? 1 : -1));
