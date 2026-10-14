@@ -453,7 +453,11 @@
       categorias: rubro.categorias,
       tema: rubro.tema,
       turnos: rubro.turnos || TURNOS_APAGADOS,
-      demora_minutos: rubro.demora_minutos || 0
+      demora_minutos: rubro.demora_minutos || 0,
+      // El logo y la portada del cliente anterior no pasan a la reunión
+      // siguiente: "Gas Jorge" no puede aparecer en la demo de una peluquería.
+      image_url: null,
+      portada_url: null
     };
     var rp = await sb.from('store_profiles').update(perfil).eq('slug', slug);
     if (rp.error) throw rp.error;
