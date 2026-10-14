@@ -26,10 +26,15 @@ function escaparXml(t) {
 module.exports = async (req, res, base) => {
   let slugs = [];
   try {
-    const r = await fetch(
-      SUPABASE_URL + '/rest/v1/store_profiles?select=slug&slug=not.is.null&order=slug&limit=5000',
+    const pedir = (filtro) => fetch(
+      SUPABASE_URL + '/rest/v1/store_profiles?select=slug&slug=not.is.null' + filtro + '&order=slug&limit=5000',
       { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } }
     );
+    // La cuenta demo no es un negocio de verdad: no va a Google. Si la
+    // columna es_demo todavia no existe (falta correr 62-cuenta-demo.sql)
+    // la consulta falla y se repite sin el filtro, como antes.
+    let r = await pedir('&es_demo=not.is.true');
+    if (!r.ok) r = await pedir('');
     const filas = r.ok ? await r.json() : [];
     if (Array.isArray(filas)) slugs = filas.map((f) => f.slug).filter(Boolean);
   } catch (err) {
