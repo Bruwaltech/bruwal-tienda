@@ -5386,6 +5386,22 @@ function puedeOperar() {
 
 // Cuantos dias faltan para que se corte un plan CON fecha de corte. null =
 // no tiene fecha, o sea que no se corta solo.
+// "Corta el 29/10 · le quedan 14 días", para la tabla de cobranza del
+// admin. Mismo criterio que diasParaElCorte: el acceso dura hasta el dia
+// anterior a la fecha.
+function textoCorteCobranza(fecha) {
+  const corte = venceEnHoraArgentina(fecha);
+  if (!corte) return escapeHtml(String(fecha));
+  const dias = Math.ceil((corte.getTime() - Date.now()) / 86400000) - 1;
+  const dd = String(fecha).slice(8, 10) + '/' + String(fecha).slice(5, 7);
+  const color = dias <= 3 ? 'var(--danger)' : dias <= 7 ? '#B45309' : 'var(--navy)';
+  const resto = dias < 0 ? 'ya venció'
+    : dias === 0 ? 'hoy es su último día'
+    : 'le quedan ' + dias + (dias === 1 ? ' día' : ' días');
+  return '<span style="font-weight:700;color:' + color + ';">Corta el ' + escapeHtml(dd) + '</span>' +
+    '<div style="font-size:10px;color:var(--text-mute);">' + resto + '</div>';
+}
+
 function diasParaElCorte() {
   if (!currentStore || !currentStore.plan_vence) return null;
   const corte = venceEnHoraArgentina(currentStore.plan_vence);
@@ -21727,7 +21743,7 @@ async function diagnosticoMercadoPago() {
         '<thead><tr style="text-align:left;color:var(--text-mute);font-size:10.5px;text-transform:uppercase;">' +
         '<th style="padding:5px 7px;">Negocio</th><th style="padding:5px 7px;">Email</th>' +
         '<th style="padding:5px 7px;text-align:center;">Cobro</th>' +
-        '<th style="padding:5px 7px;">Próximo</th></tr></thead><tbody>';
+        '<th style="padding:5px 7px;">Próximo / corte</th></tr></thead><tbody>';
 
       d.cobranza.forEach((c) => {
         html += '<tr>' +
@@ -21739,8 +21755,9 @@ async function diagnosticoMercadoPago() {
             (c.por ? '<div style="font-size:9.5px;font-weight:400;color:var(--text-mute);">por ' +
                      escapeHtml(c.por) + '</div>' : '') + '</td>' +
           '<td style="padding:5px 7px;font-size:11px;">' +
-            (c.proximo_cobro ? escapeHtml(String(c.proximo_cobro).slice(0, 10)) +
-              (c.monto ? ' · $' + c.monto : '') : '—') + '</td>' +
+            (c.corta ? textoCorteCobranza(c.corta)
+              : c.proximo_cobro ? escapeHtml(String(c.proximo_cobro).slice(0, 10)) +
+                (c.monto ? ' · $' + c.monto : '') : '—') + '</td>' +
         '</tr>';
       });
       html += '</tbody></table></div>' +
