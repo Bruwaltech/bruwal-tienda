@@ -5402,6 +5402,23 @@ function textoCorteCobranza(fecha) {
     '<div style="font-size:10px;color:var(--text-mute);">' + resto + '</div>';
 }
 
+// "Se libera el 01/11 · faltan 18 días" para el último cobro de una
+// suscripción: Mercado Pago retiene la plata unos días antes de dejarla usar.
+function textoLiberacionCobro(u) {
+  if (!u) return '—';
+  const ddmm = (f) => String(f).slice(8, 10) + '/' + String(f).slice(5, 7);
+  const cobro = (u.fecha ? 'Cobró el ' + ddmm(u.fecha) : 'Cobró') +
+    (u.neto ? ' · neto $' + Math.round(u.neto) : (u.monto ? ' · $' + Math.round(u.monto) : ''));
+  if (!u.libera) return escapeHtml(cobro);
+  const libera = new Date(u.libera);
+  const dias = Math.ceil((libera.getTime() - Date.now()) / 86400000);
+  const liberada = u.liberado || dias <= 0;
+  return '<span style="font-weight:700;color:' + (liberada ? 'var(--stock)' : 'var(--navy)') + ';">' +
+      (liberada ? 'Disponible desde el ' : 'Se libera el ') + escapeHtml(ddmm(u.libera)) + '</span>' +
+    '<div style="font-size:10px;color:var(--text-mute);">' + escapeHtml(cobro) +
+      (liberada ? '' : ' · faltan ' + dias + (dias === 1 ? ' día' : ' días')) + '</div>';
+}
+
 function diasParaElCorte() {
   if (!currentStore || !currentStore.plan_vence) return null;
   const corte = venceEnHoraArgentina(currentStore.plan_vence);
@@ -21743,7 +21760,8 @@ async function diagnosticoMercadoPago() {
         '<thead><tr style="text-align:left;color:var(--text-mute);font-size:10.5px;text-transform:uppercase;">' +
         '<th style="padding:5px 7px;">Negocio</th><th style="padding:5px 7px;">Email</th>' +
         '<th style="padding:5px 7px;text-align:center;">Cobro</th>' +
-        '<th style="padding:5px 7px;">Próximo / corte</th></tr></thead><tbody>';
+        '<th style="padding:5px 7px;">Próximo / corte</th>' +
+        '<th style="padding:5px 7px;">Plata del último cobro</th></tr></thead><tbody>';
 
       d.cobranza.forEach((c) => {
         html += '<tr>' +
@@ -21758,12 +21776,20 @@ async function diagnosticoMercadoPago() {
             (c.corta ? textoCorteCobranza(c.corta)
               : c.proximo_cobro ? escapeHtml(String(c.proximo_cobro).slice(0, 10)) +
                 (c.monto ? ' · $' + c.monto : '') : '—') + '</td>' +
+          '<td style="padding:5px 7px;font-size:11px;">' + textoLiberacionCobro(c.ultimo_cobro) + '</td>' +
         '</tr>';
       });
       html += '</tbody></table></div>' +
         '<div style="font-size:11px;color:var(--text-mute);margin-top:6px;">' +
         '✗ NO = tiene el plan activo en BRUWAL pero Mercado Pago no le cobra. ' +
         'Antes de cortar, fijate si te paga por transferencia o si pagó con otro email.</div>';
+
+      // Lo que entró por suscripciones en el mes y cuándo se acredita.
+      html += '<div style="margin:18px 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+        '<span style="font-weight:800;color:var(--navy);">Ingresos por suscripciones</span>' +
+        '<input type="month" id="ingresosMpMes" value="' + new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 7) + '" ' +
+          'style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;font-family:inherit;">' +
+        '</div><div id="ingresosMp" style="font-size:12px;"></div>';
     }
 
     Object.entries(d.por_plan || {}).forEach(([plan, filas]) => {
@@ -21834,6 +21860,12 @@ async function diagnosticoMercadoPago() {
 
     caja.innerHTML = html;
 
+    const mesIngresos = byId('ingresosMpMes');
+    if (mesIngresos) {
+      mesIngresos.addEventListener('change', () => cargarIngresosMp(mesIngresos.value));
+      cargarIngresosMp(mesIngresos.value);
+    }
+
     // El boton nace recién ahora, con el innerHTML: el addEventListener
     // tiene que ir después o se engancha a un elemento que no existe.
     const botonMail = byId('probarMailBtn');
@@ -21851,6 +21883,74 @@ async function diagnosticoMercadoPago() {
     caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
   } finally {
     boton.disabled = false;
+  }
+}
+
+// El panel de ingresos del mes: bruto, lo que se queda Mercado Pago, el
+// neto, cuánto ya está acreditado y cuándo termina de acreditarse el resto
+// (Mercado Pago retiene cada cobro unos 18 días).
+async function cargarIngresosMp(mes) {
+  const caja = byId('ingresosMp');
+  if (!caja) return;
+  caja.textContent = 'Buscando los cobros del mes en Mercado Pago\u2026';
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
+    const r = await fetch('/api/suscripcion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore && currentStore.slug, accion: 'ingresos', mes })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+
+    const t = d.totales || {};
+    const pesos = (n) => '$' + Math.round(Number(n || 0)).toLocaleString('es-AR');
+    const ddmm = (f) => f ? String(f).slice(8, 10) + '/' + String(f).slice(5, 7) : '';
+    const tarjeta = (titulo, valor, abajo, color) =>
+      '<div style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px;">' +
+        '<div style="font-size:10.5px;color:var(--text-mute);text-transform:uppercase;">' + titulo + '</div>' +
+        '<div style="font-size:16px;font-weight:800;color:' + (color || 'var(--navy)') + ';">' + valor + '</div>' +
+        (abajo ? '<div style="font-size:10.5px;color:var(--text-mute);">' + abajo + '</div>' : '') +
+      '</div>';
+
+    let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' +
+      tarjeta('Bruto', pesos(t.bruto), (t.cobros || 0) + (t.cobros === 1 ? ' cobro' : ' cobros')) +
+      tarjeta('Se queda MP', pesos(t.descuentos), 'comisión e impuestos', 'var(--danger)') +
+      tarjeta('Neto', pesos(t.neto), '') +
+      tarjeta('Ya acreditado', pesos(t.acreditado), 'disponible hoy', 'var(--stock)') +
+      tarjeta('Por acreditar', pesos(t.pendiente),
+        t.pendiente > 0 && d.termina_de_acreditarse
+          ? 'todo acreditado el ' + ddmm(d.termina_de_acreditarse) : 'nada pendiente', '#B45309') +
+      '</div>';
+
+    const cobros = Array.isArray(d.cobros) ? d.cobros : [];
+    if (!cobros.length) {
+      html += '<div style="color:var(--text-mute);">No hubo cobros aprobados en este mes.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;">' +
+        '<thead><tr style="text-align:left;color:var(--text-mute);font-size:10.5px;text-transform:uppercase;">' +
+        '<th style="padding:5px 7px;">Cobro</th><th style="padding:5px 7px;">Tienda</th>' +
+        '<th style="padding:5px 7px;text-align:right;">Bruto</th><th style="padding:5px 7px;text-align:right;">MP</th>' +
+        '<th style="padding:5px 7px;text-align:right;">Neto</th><th style="padding:5px 7px;">Acreditación</th>' +
+        '</tr></thead><tbody>';
+      cobros.forEach((c) => {
+        html += '<tr style="border-top:1px solid var(--line);">' +
+          '<td style="padding:5px 7px;">' + escapeHtml(ddmm(c.fecha)) + '</td>' +
+          '<td style="padding:5px 7px;">' + escapeHtml(c.tienda || c.detalle || '¿?') + '</td>' +
+          '<td style="padding:5px 7px;text-align:right;">' + pesos(c.bruto) + '</td>' +
+          '<td style="padding:5px 7px;text-align:right;color:var(--danger);">-' + pesos(c.descuentos) + '</td>' +
+          '<td style="padding:5px 7px;text-align:right;font-weight:700;">' + pesos(c.neto) + '</td>' +
+          '<td style="padding:5px 7px;font-weight:700;color:' + (c.liberado ? 'var(--stock)' : '#B45309') + ';">' +
+            (c.libera ? (c.liberado ? 'Acreditado ' : 'Se acredita el ') + escapeHtml(ddmm(c.libera)) : '—') + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    if (d.cortado) html += '<div style="color:var(--text-mute);margin-top:6px;">Hay más de 1000 cobros: se muestran los primeros.</div>';
+    caja.innerHTML = html;
+  } catch (err) {
+    caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
   }
 }
 

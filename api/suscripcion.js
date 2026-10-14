@@ -252,6 +252,135 @@ async function suscripcionesDelPlan(planId) {
   return { ok: true, resultados: (datos && datos.results) || [] };
 }
 
+// El ultimo cobro aprobado de una suscripcion, con la fecha en que Mercado
+// Pago libera esa plata (money_release_date). Mercado Pago la retiene unos
+// dias segun como este configurada la cuenta -- en la practica, unos 18 --
+// y hasta entonces no se puede usar. null si todavia no cobro nada o si
+// Mercado Pago no contesta: es un dato de mas, no puede romper la tabla.
+async function ultimoCobroDe(preapprovalId) {
+  try {
+    const auth = { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } };
+    const r = await fetch(MP_API + '/authorized_payments/search?preapproval_id=' +
+                          encodeURIComponent(preapprovalId) + '&limit=50', auth);
+    if (!r.ok) return null;
+    const datos = await r.json().catch(() => null);
+    const cobros = ((datos && datos.results) || [])
+      .filter((c) => c.payment && c.payment.id && c.payment.status === 'approved')
+      .sort((a, b) => String(b.date_created || '').localeCompare(String(a.date_created || '')));
+    if (!cobros.length) return null;
+
+    const p = await fetch(MP_API + '/v1/payments/' + encodeURIComponent(cobros[0].payment.id), auth);
+    if (!p.ok) return null;
+    const pago = await p.json().catch(() => null);
+    if (!pago) return null;
+    const det = pago.transaction_details || {};
+    return {
+      fecha: pago.date_approved || pago.date_created || null,
+      monto: pago.transaction_amount || null,
+      neto: det.net_received_amount || null,
+      libera: pago.money_release_date || null,
+      // 'released' = ya esta disponible; 'pending' = todavia retenida.
+      liberado: pago.money_release_status === 'released'
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+// El mes actual en Argentina, "2026-10".
+function mesActual() {
+  return new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 7);
+}
+
+async function ingresosDelMes(mesPedido) {
+  const { desglosarCobro, rangoDelMes } = require('./mercadopago')._probar;
+  const mes = /^\d{4}-\d{2}$/.test(String(mesPedido || '')) ? mesPedido : mesActual();
+  const { desde, hasta } = rangoDelMes(mes);
+  const auth = { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } };
+
+  // Quienes somos en Mercado Pago: la busqueda tambien trae los pagos que
+  // HIZO la cuenta, y esos no son ingresos.
+  const yo = await fetch(MP_API + '/users/me', auth).then((r) => r.ok ? r.json() : null).catch(() => null);
+  const miId = yo && yo.id ? String(yo.id) : null;
+
+  // De quien es cada cobro: por la suscripcion guardada en la tienda, y si
+  // no, por el email de quien paga.
+  const tiendas = await sb('/rest/v1/store_profiles?select=slug,business_name,user_id,mp_preapproval_id&limit=1000') || [];
+  const porSuscripcion = {};
+  tiendas.forEach((t) => { if (t.mp_preapproval_id) porSuscripcion[String(t.mp_preapproval_id)] = t; });
+  let porEmail = null;
+  async function tiendaPorEmail(email) {
+    if (!email) return null;
+    if (!porEmail) {
+      porEmail = {};
+      const r = await fetch(SUPABASE_URL + '/auth/v1/admin/users?per_page=1000', {
+        headers: {
+          apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY
+        }
+      }).catch(() => null);
+      const datos = r && r.ok ? await r.json().catch(() => null) : null;
+      const usuarios = (datos && datos.users) || [];
+      usuarios.forEach((u) => {
+        const t = tiendas.find((x) => x.user_id === u.id);
+        if (t && u.email) porEmail[String(u.email).toLowerCase()] = t;
+      });
+    }
+    return porEmail[String(email).toLowerCase()] || null;
+  }
+
+  const cobros = [];
+  let cortado = false;
+  for (let pagina = 0; ; pagina++) {
+    if (pagina >= 10) { cortado = true; break; }
+    const r = await fetch(MP_API + '/v1/payments/search?sort=date_created&criteria=asc' +
+      '&range=date_created&begin_date=' + encodeURIComponent(desde) + '&end_date=' + encodeURIComponent(hasta) +
+      '&limit=100&offset=' + (pagina * 100), auth);
+    const datos = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error('Mercado Pago: ' + (datos.message || ('HTTP ' + r.status)));
+
+    for (const p of (datos.results || [])) {
+      if (miId && p.collector_id && String(p.collector_id) !== miId) continue;
+      if (p.status !== 'approved') continue;
+      const d = desglosarCobro(p);
+      const meta = p.metadata || {};
+      const sus = meta.preapproval_id ||
+        ((p.point_of_interaction || {}).transaction_data || {}).subscription_id || null;
+      const tienda = (sus && porSuscripcion[String(sus)]) ||
+        await tiendaPorEmail((p.payer || {}).email);
+      cobros.push({
+        id: p.id,
+        fecha: p.date_approved || p.date_created,
+        tienda: tienda ? (tienda.business_name || tienda.slug) : null,
+        detalle: p.description || null,
+        suscripcion: p.operation_type === 'recurring_payment' || !!sus,
+        bruto: d.bruto,
+        descuentos: Math.round((d.comision + d.impuestos) * 100) / 100,
+        neto: d.neto,
+        libera: p.money_release_date || null,
+        liberado: p.money_release_status === 'released' ||
+          (!!p.money_release_date && new Date(p.money_release_date).getTime() <= Date.now())
+      });
+    }
+
+    const total = Number((datos.paging || {}).total || 0);
+    if ((pagina + 1) * 100 >= total || !(datos.results || []).length) break;
+  }
+
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const totales = { cobros: cobros.length, bruto: 0, descuentos: 0, neto: 0, acreditado: 0, pendiente: 0 };
+  let ultimaLiberacion = null;
+  cobros.forEach((c) => {
+    totales.bruto += c.bruto; totales.descuentos += c.descuentos; totales.neto += c.neto;
+    if (c.liberado) totales.acreditado += c.neto;
+    else totales.pendiente += c.neto;
+    if (c.libera && (!ultimaLiberacion || c.libera > ultimaLiberacion)) ultimaLiberacion = c.libera;
+  });
+  Object.keys(totales).forEach((k) => { totales[k] = r2(totales[k]); });
+
+  return { mes, totales, termina_de_acreditarse: ultimaLiberacion, cobros, cortado };
+}
+
 // Le escribe nuestro slug a una suscripcion que nacio sin el. Es lo que
 // convierte el arreglo en definitivo: la proxima vez se encuentra por
 // external_reference, como siempre debio ser.
@@ -844,6 +973,22 @@ module.exports = async (req, res) => {
     });
   }
 
+  // ---- Ingresos del mes por suscripciones (solo admin) ----
+  //
+  // Lo que cobro Bruwal por las suscripciones de un mes: bruto, lo que se
+  // quedo Mercado Pago (comision e impuestos), el neto, y cuanto de ese neto
+  // ya esta disponible y cuanto sigue retenido -- Mercado Pago libera cada
+  // cobro unos 18 dias despues --, con la fecha en que termina de liberarse
+  // todo el mes.
+  if ((req.body || {}).accion === 'ingresos') {
+    if (!esAdmin(usuario.email)) return res.status(403).json({ error: 'Solo para el admin' });
+    try {
+      return res.status(200).json(await ingresosDelMes((req.body || {}).mes));
+    } catch (err) {
+      return res.status(500).json({ error: String((err && err.message) || err) });
+    }
+  }
+
   if ((req.body || {}).accion === 'diagnostico') {
     // Un cliente comun ve SOLO lo suyo. Antes veia el email y el monto de
     // todos los demas, que es de lo peor que puede filtrar una plataforma
@@ -1017,6 +1162,11 @@ module.exports = async (req, res) => {
           corta: t.plan_vence || null
         });
       }
+      // Cuando se libera la plata del ultimo cobro de cada uno. En paralelo:
+      // son dos llamadas a Mercado Pago por tienda que paga.
+      await Promise.all(cobranza.map(async (c) => {
+        c.ultimo_cobro = c.suscripcion ? await ultimoCobroDe(c.suscripcion) : null;
+      }));
       cobranza.sort((a, b) => (a.paga === b.paga) ? 0 : (a.paga ? 1 : -1));
     }
 
