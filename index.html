@@ -3,8 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <script src="/seguimiento.js"></script>
+<script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BRUWAL - Tu tienda en la palma de tu mano</title>
+<meta name="description" content="Creá la tienda online de tu negocio en minutos: catálogo, pedidos por WhatsApp, stock, caja y facturación. Para comercios de Argentina.">
+<link rel="canonical" href="https://bruwaltech.com.ar/">
+<!-- Vista previa al compartir el link (WhatsApp, Facebook, Telegram).
+     El robot de WhatsApp no ejecuta JavaScript: tiene que estar en el HTML. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="BRUWAL">
+<meta property="og:locale" content="es_AR">
+<meta property="og:title" content="BRUWAL - Tu tienda en la palma de tu mano">
+<meta property="og:description" content="Creá la tienda online de tu negocio en minutos y recibí los pedidos por WhatsApp.">
+<meta property="og:url" content="https://bruwaltech.com.ar/">
+<meta property="og:image" content="https://bruwaltech.com.ar/og-bruwal.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="manifest" href="/manifest-tiendas.json">
 <meta name="theme-color" content="#15294D">
@@ -395,18 +410,13 @@
     position: relative;
     z-index: 0;
     isolation: isolate;
-    /* Mismo fondo que las tiles oscuras: sin esto, mientras cargan se ve
-       un parpadeo blanco. */
-    background: #0e1420;
+    /* Mismo tono que el fondo de las tiles mientras cargan. */
+    background: #f2efe9;
   }
 
-  /* Invertir y girar el color deja el mapa claro en oscuro manteniendo el
-     agua azul y los parques verdes. */
-  #map .tiles-oscuras { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
-
-  /* ---- Mapa oscuro (referencia: "Location Map" de 21st.dev) ----
-     Pines propios en celeste con un pulso suave, y los globitos y los
-     controles de Leaflet en oscuro para que no queden blancos encima. */
+  /* ---- Mapa claro con pines propios ----
+     Pines en celeste con un pulso suave; globitos y controles en blanco,
+     acordes al resto de la página. */
   .pin-tienda { position: relative; width: 22px; height: 22px; }
   .pin-tienda .pin-punto {
     position: absolute; inset: 5px; border-radius: 50%;
@@ -429,11 +439,11 @@
   }
   #map .leaflet-popup-content-wrapper,
   #map .leaflet-popup-tip {
-    background: #162033; color: #E6EDF7;
-    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    background: #fff; color: #1a2b3c;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
   }
-  #map .leaflet-popup-content-wrapper { border: 1px solid #26354F; border-radius: 12px; }
-  #map .leaflet-popup-content a { color: #5BB0F5; font-weight: 600; }
+  #map .leaflet-popup-content-wrapper { border: 1px solid #e3e8ef; border-radius: 12px; }
+  #map .leaflet-popup-content a { color: #2F8FE0; font-weight: 600; }
   #map .leaflet-popup-content { margin: 12px 14px; }
   .popup-tienda { display: flex; align-items: center; gap: 12px; min-width: 170px; }
   .popup-tienda b { display: block; font-size: 14px; margin-bottom: 3px; }
@@ -448,14 +458,7 @@
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; background: #fff;
   }
-  #map a.leaflet-popup-close-button { color: #8FA3BF; }
-  #map .leaflet-bar a {
-    background: #162033; color: #E6EDF7; border-bottom-color: #26354F;
-  }
-  #map .leaflet-bar a:hover { background: #1E2C45; }
-  #map .leaflet-bar { border: 1px solid #26354F; }
-  #map .leaflet-control-attribution { background: rgba(14,20,32,.75); color: #8FA3BF; }
-  #map .leaflet-control-attribution a { color: #5BB0F5; }
+  #map a.leaflet-popup-close-button { color: #8a96a3; }
 
   .stores-sidebar {
     background: #fff;
@@ -860,6 +863,15 @@
   .footer-politica-texto p:last-child { margin-bottom: 0; }
   .footer-politica-texto strong { color: #15294D; }
 
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-top: 24px;
+    font-size: 13px;
+  }
+  .footer-links a { color: #667085; text-decoration: none; }
+  .footer-links a:hover { color: #2F8FE0; text-decoration: underline; }
   .footer-legal {
     margin-top: 32px;
     padding-top: 20px;
@@ -1830,7 +1842,9 @@
           por adelantado. Si cancelás, dejamos de cobrarte a partir del próximo
           vencimiento, pero el período que ya pagaste queda cubierto hasta el final.
           No hacemos devoluciones ni reintegros parciales por el tiempo que no llegaste
-          a usar dentro de un período ya cobrado.
+          a usar dentro de un período ya cobrado. La excepción son los primeros 10 días
+          desde que contratás: si te arrepentís, te devolvemos todo desde el
+          <a href="/legal/arrepentimiento.html">botón de arrepentimiento</a>.
         </p>
         <p>
           <strong>Qué pasa con tu cuenta:</strong> mientras dure el período ya pagado, tu
@@ -1846,6 +1860,14 @@
         </p>
       </div>
     </details>
+
+    <nav class="footer-links">
+      <a href="/legal/terminos.html">Términos y condiciones</a>
+      <a href="/legal/privacidad.html">Privacidad</a>
+      <a href="/legal/cookies.html">Cookies</a>
+      <a href="/legal/devoluciones.html">Cambios y devoluciones</a>
+      <a href="/legal/arrepentimiento.html">Botón de arrepentimiento</a>
+    </nav>
 
     <div class="footer-legal">© <span id="footerAnio"></span> BRUWAL Technologies</div>
   </div>
@@ -1937,12 +1959,9 @@ function storeCoords(store) {
 
 function initMap() {
   map = L.map('map').setView([-38.0, -63.6], 4); // Argentina
-  // Las tiles de siempre de OpenStreetMap, oscurecidas por CSS (ver
-  // .tiles-oscuras). Las oscuras de CARTO pasaron a pedir clave y en
-  // produccion se veia "API KEY REQUIRED" en vez del mapa.
+  // Las tiles claras de siempre de OpenStreetMap.
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    className: 'tiles-oscuras',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 }

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/seguimiento.js"></script>
+<script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BRUWALTECH v3.0 — Panel de Control</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -1708,6 +1709,87 @@ tr:last-child td { border-bottom: none; }
   .comandas-tablero { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:10px; padding-bottom:6px; }
   .comandas-col { flex:0 0 86%; scroll-snap-align:start; }
 }
+/* ---- Panel de Mercado Libre, separado por secciones ----
+   Referencia: "Card Tabs" de 21st.dev (una barra de solapas tipo
+   segmented control y una tarjeta por tema). Portado a mano: el panel no
+   usa React ni build. */
+.mlx-cabecera {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #FFF9D6 0%, #FFFFFF 60%);
+  border: 1px solid #F3E39A; border-radius: 14px;
+  padding: 16px 18px; margin-bottom: 16px;
+}
+.mlx-cuenta { display: flex; align-items: center; gap: 13px; min-width: 0; font-size: 13.5px; line-height: 1.5; }
+.mlx-logo { width: 44px; height: 44px; border-radius: 12px; object-fit: contain; background: #FFE600; padding: 6px; flex-shrink: 0; }
+.mlx-cuenta-titulo { font-weight: 700; color: var(--navy); font-size: 15px; }
+.mlx-cuenta-nota { color: var(--text-mute); font-size: 12px; margin-top: 2px; }
+.mlx-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.mlx-accion {
+  width: auto; padding: 8px 14px; font-size: 13px;
+  background: #fff; color: var(--navy); border: 1px solid var(--line);
+}
+
+.mlx-solapas {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  background: #E8EEF6; border-radius: 12px; padding: 4px;
+  margin-bottom: 18px;
+}
+.mlx-solapa {
+  flex: 1 1 auto; min-width: 0;
+  border: 0; background: transparent; border-radius: 9px;
+  padding: 9px 14px; font: 600 13.5px 'Inter', sans-serif; color: var(--text-mute);
+  cursor: pointer; white-space: nowrap;
+  transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.mlx-solapa:hover { color: var(--navy); }
+.mlx-solapa.active {
+  background: #fff; color: var(--navy);
+  box-shadow: 0 1px 3px rgba(21,41,77,.12), 0 1px 1px rgba(21,41,77,.05);
+}
+.mlx-solapa:focus-visible { outline: 2px solid var(--celeste); outline-offset: 1px; }
+
+.mlx-seccion { animation: subirSuave .35s ease-out; }
+.mlx-intro {
+  display: flex; gap: 12px; align-items: flex-start;
+  margin: 0 2px 16px;
+}
+.mlx-num {
+  flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--navy); color: #fff; font-weight: 700; font-size: 13px;
+}
+.mlx-intro strong { color: var(--navy); font-size: 16px; font-family: 'Space Grotesk', 'Inter', sans-serif; }
+.mlx-intro p { color: var(--text-mute); font-size: 13.5px; line-height: 1.55; margin-top: 2px; max-width: 720px; }
+
+.mlx-grupo { margin-bottom: 18px; }
+.mlx-grupo-titulo {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-mute); margin: 0 2px 8px;
+}
+.mlx-par { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mlx-flujo { display: flex; align-items: stretch; gap: 8px; }
+.mlx-flujo .stat-card { flex: 1 1 0; min-width: 0; }
+.mlx-op {
+  align-self: center; color: #A9B8CB; font-size: 20px; font-weight: 700; flex-shrink: 0;
+}
+.mlx-dato .value { font-size: 22px; }
+.mlx-ayuda { font-size: 12px; color: var(--text-mute); line-height: 1.45; margin-top: 6px; }
+.mlx-final { background: linear-gradient(180deg, #EFFAF7, #FFFFFF); border-color: #BFE7DD; }
+.mlx-final .value { color: var(--stock); }
+
+@media (max-width: 860px) {
+  .mlx-flujo { flex-direction: column; }
+  .mlx-flujo .stat-card { flex: none; }
+  .mlx-op { transform: rotate(90deg); line-height: 1; margin: -2px 0; }
+}
+@media (max-width: 560px) {
+  .mlx-cabecera { padding: 14px; }
+  .mlx-acciones { width: 100%; }
+  .mlx-accion { flex: 1 1 calc(50% - 4px); }
+  .mlx-solapa { flex: 1 1 calc(33% - 4px); padding: 9px 6px; font-size: 12.5px; }
+  .mlx-par { grid-template-columns: 1fr 1fr; }
+}
 </style>
 <link rel="stylesheet" href="dashboard-motion.css">
 </head>
@@ -1884,6 +1966,11 @@ tr:last-child td { border-bottom: none; }
       <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
+      <!-- Trampa para robots: una persona no ve este campo y lo deja vacío.
+           Los programas que llenan formularios solos completan todo. -->
+      <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;">
+        <label>Sitio web<input type="text" id="regSitioWeb" name="sitio_web" tabindex="-1" autocomplete="off"></label>
+      </div>
       <div class="field"><label>Contraseña</label>
         <div style="position:relative;">
           <input type="password" id="regPassword" required minlength="6" style="padding-right:44px;">
@@ -1899,6 +1986,10 @@ tr:last-child td { border-bottom: none; }
       </label>
       <div style="font-size:12px;color:var(--text-mute);margin-bottom:14px;background:#EAF4FD;padding:10px 12px;border-radius:8px;">
         💡 Tip: Los pedidos de tus clientes se enviarán a este número de WhatsApp
+      </div>
+      <div style="font-size:12px;color:var(--text-mute);margin-bottom:12px;line-height:1.5;">
+        Al crear tu cuenta aceptás los <a href="/legal/terminos.html" target="_blank">términos y condiciones</a>
+        y la <a href="/legal/privacidad.html" target="_blank">política de privacidad</a>.
       </div>
       <button type="submit" class="btn btn-primary">Crear cuenta</button>
     </form>
@@ -1983,6 +2074,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabFiado"><i class="fa-solid fa-book"></i> <span class="tab-texto-largo">Cuentas corrientes (Fiados)</span><span class="tab-texto-corto">Ctas. corrientes</span></button>
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
       <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
+      <button class="app-tab" id="tabAfiliados"><i class="fa-solid fa-handshake"></i> Afiliados</button>
     </div>
   </div>
 
@@ -2297,6 +2389,7 @@ tr:last-child td { border-bottom: none; }
                        autocomplete="off" inputmode="tel"
                        style="flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
               </div>
+              <div id="barcodeStockRestante" class="hidden" style="font-size:13px;margin:-6px 0 12px;line-height:1.5;font-weight:600;"></div>
               <div id="barcodeTelAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;"></div>
               <div id="barcodeBalanzaAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;color:var(--stock);font-weight:600;"></div>
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
@@ -2626,202 +2719,294 @@ tr:last-child td { border-bottom: none; }
       </div>
     </div>
 
-    <!-- EMPLEADOS -->
-    <div id="mercadoLibreView" class="hidden">
+    <!-- AFILIADOS -->
+    <div id="afiliadosView" class="hidden">
       <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
         <div class="stat-card">
-          <div class="label">Ventas de ML este mes</div>
-          <div class="value" id="mlVentasMes">0</div>
+          <div class="label">Vendido por afiliados</div>
+          <div class="value" id="afiliadosVendido">$0</div>
         </div>
         <div class="stat-card">
-          <div class="label">Facturado este mes</div>
-          <div class="value" id="mlFacturadoMes">$0</div>
+          <div class="label">Pedidos con código</div>
+          <div class="value" id="afiliadosPedidos">0</div>
         </div>
         <div class="stat-card">
-          <div class="label">Publicaciones vinculadas</div>
-          <div class="value" id="mlVinculadas">0</div>
+          <div class="label">Comisiones a pagar</div>
+          <div class="value" id="afiliadosComision" style="color:var(--danger);">$0</div>
         </div>
       </div>
 
-      <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
-        <div class="stat-card">
-          <div class="label">Comisiones e impuestos de ML (mes)</div>
-          <div class="value" id="mlComisionMes" style="color:var(--danger);">$0</div>
+      <div class="panel">
+        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>🤝 Afiliados</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="month" id="afiliadosMes" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+            <button type="button" id="nuevoAfiliadoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Nuevo afiliado</button>
+          </div>
         </div>
-        <div class="stat-card">
-          <div class="label">Neto después de ML</div>
-          <div class="value" id="mlNetoMes">$0</div>
+        <div style="padding:10px 14px 0;font-size:12.5px;line-height:1.55;color:var(--text-mute);">
+          Cada afiliado comparte su link. Los pedidos que entran por ahí, o con su código escrito en el checkout, quedan a su nombre.
+          La comisión se cuenta sobre los productos de los pedidos confirmados, sin el envío.
         </div>
-        <div class="stat-card">
-          <div class="label">Ganancia estimada</div>
-          <div class="value" id="mlGananciaMes">—</div>
-          <div class="sub" id="mlGananciaNota" style="font-size:11.5px;color:var(--text-mute);"></div>
+        <table>
+          <thead><tr><th>Afiliado</th><th>Link</th><th style="text-align:right;">Comisión</th><th style="text-align:right;">Pedidos</th><th style="text-align:right;">Vendido</th><th style="text-align:right;">A pagar</th><th></th></tr></thead>
+          <tbody id="afiliadosBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- EMPLEADOS -->
+    <div id="mercadoLibreView" class="hidden">
+      <!-- El panel de ML esta separado por temas: arriba la cuenta, abajo
+           una solapa por cada pregunta que uno se hace (como me fue, me
+           cuadra el stock, me rinde la publicidad...). Antes eran diez
+           bloques uno abajo del otro y lo importante quedaba al fondo. -->
+      <div class="mlx-cabecera">
+        <div class="mlx-cuenta">
+          <img src="../ml-logo.webp" alt="" class="mlx-logo">
+          <div>
+            <div class="mlx-cuenta-titulo">Tu cuenta de Mercado Libre</div>
+            <div id="mlEstadoTab" style="color:var(--text-mute);">—</div>
+            <div class="mlx-cuenta-nota">Se conecta y se desconecta desde Configuración → Mercado Libre.</div>
+          </div>
+        </div>
+        <div class="mlx-acciones">
+          <button type="button" id="mlBeneficiosBtn" class="btn mlx-accion">✨ Beneficios de tenerlo acá</button>
+          <button type="button" id="mlPublicacionesBtn2" class="btn mlx-accion">Publicaciones y vínculos</button>
+          <button type="button" id="mlEmbudoBtn" class="btn mlx-accion">📊 Embudo</button>
+          <button type="button" id="mlPreguntasBtn" class="btn mlx-accion">💬 Preguntas<span id="mlPreguntasBadge" class="hidden" style="margin-left:7px;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;"></span></button>
         </div>
       </div>
 
       <div id="mlAvisoSinDescontar" class="hidden" style="background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:13px;line-height:1.55;"></div>
 
-      <div class="panel">
-        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span>🔗 Tu cuenta</span>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" id="mlBeneficiosBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">✨ Beneficios de tenerlo acá</button>
-            <button type="button" id="mlPublicacionesBtn2" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Publicaciones y vínculos</button>
-            <button type="button" id="mlEmbudoBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">📊 Embudo</button>
-            <button type="button" id="mlPreguntasBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">💬 Preguntas<span id="mlPreguntasBadge" class="hidden" style="margin-left:7px;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;"></span></button>
-          </div>
-        </div>
-        <div style="padding:12px 14px;font-size:13.5px;line-height:1.6;">
-          <div id="mlEstadoTab" style="color:var(--text-mute);">—</div>
-          <div style="color:var(--text-mute);font-size:12.5px;margin-top:6px;">
-            La cuenta se conecta y se desconecta desde Configuración → Mercado Libre.
-          </div>
-        </div>
+      <div class="mlx-solapas" role="tablist" aria-label="Secciones de Mercado Libre">
+        <button type="button" role="tab" class="mlx-solapa active" id="mlxTab-resumen" data-mlx="resumen" aria-selected="true">📈 Resumen</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-stock" data-mlx="stock" aria-selected="false">⚖️ Stock</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-publicidad" data-mlx="publicidad" aria-selected="false">📢 Publicidad</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-publicaciones" data-mlx="publicaciones" aria-selected="false">⭐ Publicaciones</button>
+        <button type="button" role="tab" class="mlx-solapa" id="mlxTab-costos" data-mlx="costos" aria-selected="false">🧾 Costos</button>
       </div>
 
-      <div class="panel">
-        <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span>📢 Publicidad</span>
-          <button type="button" id="mlPublicidadBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Consultar campañas</button>
+      <section class="mlx-seccion" data-mlx-seccion="resumen" role="tabpanel" aria-labelledby="mlxTab-resumen">
+        <div class="mlx-intro">
+          <span class="mlx-num">1</span>
+          <div><strong>Cómo te va</strong><p>Las ventas del mes y cuánta plata te queda de verdad después de lo que cobra Mercado Libre y de lo que te costó el producto.</p></div>
         </div>
-        <!-- El interruptor va ARRIBA de las campanas: es una decision sobre
-             ellas, y esconderlo abajo de una tabla larga es esconderlo. -->
-        <div class="sal-caja" id="saludAdsCaja" style="margin:12px 14px;">
-          <div class="sal-linea">
-            <div class="sal-texto">
-              <label class="sal-switch">
-                <input type="checkbox" id="autoPausarAdsChk">
-                Pausar solas las campañas que queman plata
-              </label>
-              <small>Pausa las que gastan sin vender o se pasan por mucho del ACOS objetivo.
-                     Nunca las reactiva: volver a prenderla es decisión tuya.</small>
+        <div class="mlx-grupo">
+          <div class="mlx-grupo-titulo">Cómo viene el mes</div>
+          <div class="mlx-par">
+            <div class="stat-card mlx-dato">
+              <div class="label">Ventas de ML este mes</div>
+              <div class="value" id="mlVentasMes">0</div>
+              <div class="mlx-ayuda">Ventas pagadas desde el 1° del mes.</div>
             </div>
-            <button type="button" id="revisarAdsBtn" class="btn"
-                    style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">
-              Revisar ahora
-            </button>
+            <div class="stat-card mlx-dato">
+              <div class="label">Publicaciones vinculadas</div>
+              <div class="value" id="mlVinculadas">0</div>
+              <div class="mlx-ayuda">Publicaciones que ya saben qué producto tuyo son.</div>
+            </div>
           </div>
-          <div id="saludAdsResultado"></div>
         </div>
 
-        <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
+        <div class="mlx-grupo">
+          <div class="mlx-grupo-titulo">De lo que vendés a lo que te queda</div>
+          <div class="mlx-flujo">
+            <div class="stat-card mlx-dato">
+              <div class="label">Facturado este mes</div>
+              <div class="value" id="mlFacturadoMes">$0</div>
+              <div class="mlx-ayuda">Lo que pagaron los compradores.</div>
+            </div>
+            <span class="mlx-op" aria-hidden="true">→</span>
+            <div class="stat-card mlx-dato">
+              <div class="label">Comisiones e impuestos de ML (mes)</div>
+              <div class="value" id="mlComisionMes" style="color:var(--danger);">$0</div>
+              <div class="mlx-ayuda">Lo que se queda Mercado Libre.</div>
+            </div>
+            <span class="mlx-op" aria-hidden="true">→</span>
+            <div class="stat-card mlx-dato">
+              <div class="label">Neto después de ML</div>
+              <div class="value" id="mlNetoMes">$0</div>
+              <div class="mlx-ayuda">Lo que queda después de comisión, impuestos y envío.</div>
+            </div>
+            <span class="mlx-op" aria-hidden="true">→</span>
+            <div class="stat-card mlx-dato mlx-final">
+              <div class="label">Ganancia estimada</div>
+              <div class="value" id="mlGananciaMes">—</div>
+              <div class="mlx-ayuda">El neto menos lo que te costaron los productos.</div>
+              <div class="sub" id="mlGananciaNota" style="font-size:11.5px;color:var(--text-mute);"></div>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>⚖️ Stock: acá contra Mercado Libre</span>
-          <button type="button" id="verStockCruzadoBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Comparar
-          </button>
+        <div class="panel">
+          <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
+          <table>
+            <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión e imp.</th><th style="text-align:right;">Envío</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Ganancia</th><th>Estado</th><th>Stock</th></tr></thead>
+            <tbody id="mlVentasBody"></tbody>
+          </table>
         </div>
-        <div id="stockCruzadoCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Compara lo que tenés acá con lo que dice cada publicación. Busca las dos
-          cosas que cuestan plata: <strong>vender lo que no tenés</strong> (activo
-          en ML y sin stock acá) y <strong>plata que no entra</strong> (con stock
-          acá y pausado o en cero allá).
-        </div>
-      </div>
+      </section>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>🎯 Qué conviene publicitar</span>
-          <button type="button" id="verAsesorAdsBtn" class="btn btn-primary"
-                  style="width:auto;padding:8px 14px;font-size:13px;">
-            Analizar
-          </button>
+      <section class="mlx-seccion hidden" data-mlx-seccion="stock" role="tabpanel" aria-labelledby="mlxTab-stock">
+        <div class="mlx-intro">
+          <span class="mlx-num">2</span>
+          <div><strong>Que no se te descuadre el stock</strong><p>Lo que tenés acá contra lo que dice cada publicación, y las ventas que por algún motivo no llegaron a registrarse.</p></div>
         </div>
-        <div id="asesorAdsCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Cruza lo que gastás en campañas con lo que te deja cada producto
-          después de costo, comisión, envío e impuestos. Te dice
-          <strong>hasta qué ACOS te conviene pagar</strong> en cada uno, cuáles
-          están pasados y a cuáles todavía no les hiciste campaña y valdría la pena.
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>⭐ Opiniones de tus publicaciones</span>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="opinionesTexto" maxlength="40" placeholder="Ej: creatina — o vacío para todas"
-                   style="width:auto;min-width:210px;padding:7px 10px;font-size:13px;">
-            <button type="button" id="verOpinionesBtn" class="btn"
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>⚖️ Stock: acá contra Mercado Libre</span>
+            <button type="button" id="verStockCruzadoBtn" class="btn"
                     style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-              Ver
-            </button>
-            <button type="button" id="guardarOpinionesBtn" class="btn btn-primary"
-                    style="width:auto;padding:8px 14px;font-size:13px;">
-              Mostrarlas en mi tienda
+              Comparar
             </button>
           </div>
+          <div id="stockCruzadoCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Compara lo que tenés acá con lo que dice cada publicación. Busca las dos
+            cosas que cuestan plata: <strong>vender lo que no tenés</strong> (activo
+            en ML y sin stock acá) y <strong>plata que no entra</strong> (con stock
+            acá y pausado o en cero allá).
+          </div>
         </div>
-        <div id="opinionesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Las estrellas que tienen tus publicaciones en Mercado Libre, y tu
-          reputación como vendedor. <strong>Ver</strong> no cambia nada;
-          <strong>Mostrarlas en mi tienda</strong> las guarda y salen en la
-          ficha de cada producto. Conviene repetirlo cada tanto para que no
-          queden viejas.
-        </div>
-      </div>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>🧾 Lo que te cobra Mercado Libre</span>
-          <button type="button" id="verFacturacionBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Ver la factura del mes
-          </button>
+        <!-- Red de seguridad: si un aviso de Mercado Libre no llega o se
+             procesa mal, esa venta no aparece en ningun lado y nadie se
+             entera. Esto la va a buscar. -->
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>🔎 ¿Falta alguna venta?</span>
+            <button type="button" id="buscarVentasFaltantesBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+              Buscar en Mercado Libre
+            </button>
+          </div>
+          <div id="ventasFaltantesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Le pregunta a Mercado Libre por tus ventas pagadas de los últimos días y
+            las compara con las que tenés acá. Si alguna no quedó registrada, la
+            traigo con su stock y su comisión.
+          </div>
         </div>
-        <div id="facturacionCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Hay costos que <strong>no vienen en la venta</strong>: el almacenamiento y la
-          gestión de FULL, y la publicidad. Se facturan por período, así que la
-          ganancia por venta los deja afuera. Acá están, con nombre y monto.
-        </div>
-      </div>
+      </section>
 
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>⭐ Cómo mejorar tus publicaciones</span>
-          <button type="button" id="verCalidadBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Revisar mis publicaciones
-          </button>
+      <section class="mlx-seccion hidden" data-mlx-seccion="publicidad" role="tabpanel" aria-labelledby="mlxTab-publicidad">
+        <div class="mlx-intro">
+          <span class="mlx-num">3</span>
+          <div><strong>Que la publicidad rinda</strong><p>Tus campañas de Product Ads, cuáles queman plata y en qué productos te conviene invertir.</p></div>
         </div>
-        <div id="calidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Mercado Libre le pone un nivel a cada publicación (Básica, Estándar o
-          Profesional) según las fotos, la ficha técnica y los datos cargados.
-          Acá te traigo ese nivel y <strong>qué falta en cada una</strong>, con el
-          link para arreglarlo.
-        </div>
-      </div>
+        <div class="panel">
+          <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span>📢 Publicidad</span>
+            <button type="button" id="mlPublicidadBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">Consultar campañas</button>
+          </div>
+          <!-- El interruptor va ARRIBA de las campanas: es una decision sobre
+               ellas, y esconderlo abajo de una tabla larga es esconderlo. -->
+          <div class="sal-caja" id="saludAdsCaja" style="margin:12px 14px;">
+            <div class="sal-linea">
+              <div class="sal-texto">
+                <label class="sal-switch">
+                  <input type="checkbox" id="autoPausarAdsChk">
+                  Pausar solas las campañas que queman plata
+                </label>
+                <small>Pausa las que gastan sin vender o se pasan por mucho del ACOS objetivo.
+                       Nunca las reactiva: volver a prenderla es decisión tuya.</small>
+              </div>
+              <button type="button" id="revisarAdsBtn" class="btn"
+                      style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">
+                Revisar ahora
+              </button>
+            </div>
+            <div id="saludAdsResultado"></div>
+          </div>
 
-      <!-- Red de seguridad: si un aviso de Mercado Libre no llega o se
-           procesa mal, esa venta no aparece en ningun lado y nadie se
-           entera. Esto la va a buscar. -->
-      <div class="panel" style="margin-bottom:20px;">
-        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <span>🔎 ¿Falta alguna venta?</span>
-          <button type="button" id="buscarVentasFaltantesBtn" class="btn"
-                  style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
-            Buscar en Mercado Libre
-          </button>
+          <div id="mlPublicidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Tocá "Consultar campañas" para ver si tu cuenta tiene Product Ads habilitado y qué devuelve.
+          </div>
         </div>
-        <div id="ventasFaltantesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
-          Le pregunta a Mercado Libre por tus ventas pagadas de los últimos días y
-          las compara con las que tenés acá. Si alguna no quedó registrada, la
-          traigo con su stock y su comisión.
-        </div>
-      </div>
 
-      <div class="panel">
-        <div class="panel-head">💰 Ventas que entraron desde Mercado Libre</div>
-        <table>
-          <thead><tr><th>Fecha</th><th>Comprador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Comisión e imp.</th><th style="text-align:right;">Envío</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Ganancia</th><th>Estado</th><th>Stock</th></tr></thead>
-          <tbody id="mlVentasBody"></tbody>
-        </table>
-      </div>
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>🎯 Qué conviene publicitar</span>
+            <button type="button" id="verAsesorAdsBtn" class="btn btn-primary"
+                    style="width:auto;padding:8px 14px;font-size:13px;">
+              Analizar
+            </button>
+          </div>
+          <div id="asesorAdsCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Cruza lo que gastás en campañas con lo que te deja cada producto
+            después de costo, comisión, envío e impuestos. Te dice
+            <strong>hasta qué ACOS te conviene pagar</strong> en cada uno, cuáles
+            están pasados y a cuáles todavía no les hiciste campaña y valdría la pena.
+          </div>
+        </div>
+      </section>
+
+      <section class="mlx-seccion hidden" data-mlx-seccion="publicaciones" role="tabpanel" aria-labelledby="mlxTab-publicaciones">
+        <div class="mlx-intro">
+          <span class="mlx-num">4</span>
+          <div><strong>Publicaciones que venden más</strong><p>Qué le falta a cada publicación para subir de nivel, y las opiniones que podés mostrar en tu tienda.</p></div>
+        </div>
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>⭐ Cómo mejorar tus publicaciones</span>
+            <button type="button" id="verCalidadBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+              Revisar mis publicaciones
+            </button>
+          </div>
+          <div id="calidadCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Mercado Libre le pone un nivel a cada publicación (Básica, Estándar o
+            Profesional) según las fotos, la ficha técnica y los datos cargados.
+            Acá te traigo ese nivel y <strong>qué falta en cada una</strong>, con el
+            link para arreglarlo.
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>⭐ Opiniones de tus publicaciones</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              <input type="text" id="opinionesTexto" maxlength="40" placeholder="Ej: creatina — o vacío para todas"
+                     style="width:auto;min-width:210px;padding:7px 10px;font-size:13px;">
+              <button type="button" id="verOpinionesBtn" class="btn"
+                      style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+                Ver
+              </button>
+              <button type="button" id="guardarOpinionesBtn" class="btn btn-primary"
+                      style="width:auto;padding:8px 14px;font-size:13px;">
+                Mostrarlas en mi tienda
+              </button>
+            </div>
+          </div>
+          <div id="opinionesCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Las estrellas que tienen tus publicaciones en Mercado Libre, y tu
+            reputación como vendedor. <strong>Ver</strong> no cambia nada;
+            <strong>Mostrarlas en mi tienda</strong> las guarda y salen en la
+            ficha de cada producto. Conviene repetirlo cada tanto para que no
+            queden viejas.
+          </div>
+        </div>
+      </section>
+
+      <section class="mlx-seccion hidden" data-mlx-seccion="costos" role="tabpanel" aria-labelledby="mlxTab-costos">
+        <div class="mlx-intro">
+          <span class="mlx-num">5</span>
+          <div><strong>Lo que no viene en la venta</strong><p>FULL, almacenamiento y publicidad se facturan aparte. Acá los ves para que la ganancia no te engañe.</p></div>
+        </div>
+        <div class="panel" style="margin-bottom:20px;">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <span>🧾 Lo que te cobra Mercado Libre</span>
+            <button type="button" id="verFacturacionBtn" class="btn"
+                    style="width:auto;padding:8px 14px;font-size:13px;background:var(--bg);color:var(--navy);border:1px solid var(--line);">
+              Ver la factura del mes
+            </button>
+          </div>
+          <div id="facturacionCuerpo" style="padding:12px 14px;font-size:13.5px;line-height:1.6;color:var(--text-mute);">
+            Hay costos que <strong>no vienen en la venta</strong>: el almacenamiento y la
+            gestión de FULL, y la publicidad. Se facturan por período, así que la
+            ganancia por venta los deja afuera. Acá están, con nombre y monto.
+          </div>
+        </div>
+      </section>
     </div>
 
     <div id="empleadosView" class="hidden">
@@ -4270,6 +4455,32 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL AFILIADO -->
+<div class="modal-overlay hidden" id="afiliadoModal">
+  <div class="modal" style="max-width:460px;">
+    <button class="modal-close" id="closeAfiliadoModal">✕</button>
+    <h3 id="afiliadoModalTitulo"><i class="fa-solid fa-handshake" style="color:var(--celeste);"></i> Nuevo afiliado</h3>
+
+    <div class="field"><label>Nombre</label><input type="text" id="afiliadoNombre" placeholder="Ej: Juan Pérez (entrenador)"></div>
+    <div class="field">
+      <label>Código</label>
+      <input type="text" id="afiliadoCodigo" maxlength="30" placeholder="Ej: JUAN" style="text-transform:uppercase;">
+      <small style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;">Letras, números, guion. Es lo que va en su link y lo que el cliente puede escribir al pedir.</small>
+    </div>
+    <div class="field"><label>WhatsApp (opcional)</label><input type="tel" id="afiliadoTelefono" placeholder="Para mandarle su link"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>Su comisión (%)</label><input type="number" id="afiliadoComision" min="0" max="100" step="0.5" value="15"></div>
+      <div class="field"><label>Descuento al cliente (%)</label><input type="number" id="afiliadoDescuento" min="0" max="50" step="0.5" value="0"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:12px;">
+      <input type="checkbox" id="afiliadoActivo" checked> Activo (si lo pausás, su link deja de sumarle)
+    </label>
+
+    <button type="button" id="guardarAfiliadoBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar afiliado</button>
+  </div>
+</div>
+
 <!-- MODAL MOVIMIENTO DE CAJA -->
 <div class="modal-overlay hidden" id="movimientoCajaModal">
   <div class="modal" style="max-width:460px;">
@@ -4941,6 +5152,7 @@ sb.auth.onAuthStateChange((evento) => {
 setTimeout(limpiarTokensDeLaUrl, 1500);   // por si el evento no llega a dispararse
 
 let currentUser = null, currentStore = null, products = [], orders = [], reparaciones = [], gastos = [], pagos = [], movimientosCaja = [];
+let afiliados = [];
 let empleados = [], fichadas = [];
 
 // Todos los pedidos, incluidos los pendientes. 'orders' guarda solo los
@@ -9421,6 +9633,13 @@ function renderRubrosRegistro() {
 renderRubrosRegistro();
 actualizarVisibilidadReparacionesRegistro();
 
+// Cuándo se vio el formulario de registro por primera vez (para el
+// anti-spam del submit). Se marca al primer toque o tecla dentro del form.
+let registroAbiertoEn = 0;
+['focusin', 'pointerdown'].forEach(ev => byId('registerForm').addEventListener(ev, () => {
+  if (!registroAbiertoEn) registroAbiertoEn = Date.now();
+}));
+
 byId('registerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const business_name = byId('regBusiness').value.trim();
@@ -9429,6 +9648,18 @@ byId('registerForm').addEventListener('submit', async (e) => {
   const password = byId('regPassword').value;
   const hace_reparaciones = byId('regReparaciones').checked;
   const rubro_manual = rubroElegidoRegistro;
+
+  // Anti-spam: si el campo trampa vino lleno, o el formulario se mandó en
+  // menos de 3 segundos desde que se abrió, es un robot. Le mostramos lo
+  // mismo que a una persona (así no aprende a esquivarlo) y no creamos nada.
+  const esRobot = byId('regSitioWeb').value !== '' ||
+    (registroAbiertoEn && Date.now() - registroAbiertoEn < 3000);
+  if (esRobot) {
+    byId('authError').classList.add('exito');
+    byId('authError').textContent = 'Revisá tu mail para confirmar la cuenta.';
+    show(byId('authError'));
+    return;
+  }
 
   if (!rubro_manual) {
   byId('authError').classList.remove('exito');
@@ -9462,6 +9693,7 @@ byId('registerForm').addEventListener('submit', async (e) => {
   }
 
   boton.disabled = false;
+  if (window.bruwalEvento) bruwalEvento('sign_up', { method: 'email', rubro: rubro_manual });
 
   // El alta no termina con la cuenta creada: para poder cargar productos y
   // vender hace falta un plan. Decirlo ACA, con los pasos a la vista, evita
@@ -10471,13 +10703,21 @@ async function buscarVentasFaltantes() {
         'Puede ser que no haya avisado, o que el aviso haya llegado y fallado antes de dejar rastro ' +
         '\u2014 que es lo que pasaba con la venta que no se registraba.' +
       '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">' +
+        '<label style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--navy);cursor:pointer;">' +
+          '<input type="checkbox" id="vfTodas" style="width:auto;"> Seleccionar todas</label>' +
+        '<button type="button" id="vfTraerSel" class="btn btn-primary" disabled ' +
+          'style="width:auto;padding:8px 14px;font-size:13px;">\u2b07 Traer las seleccionadas</button>' +
+      '</div>' +
       '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-      '<thead><tr>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', '\u00bfAvis\u00f3 ML?', ''].map(t =>
+      '<thead><tr><th style="width:30px;padding:7px 9px;border-bottom:1px solid var(--line);"></th>' + ['Fecha', 'Comprador', 'Qu\u00e9 se vendi\u00f3', 'Total', '\u00bfAvis\u00f3 ML?', ''].map(t =>
         '<th style="text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);font-size:11.5px;' +
         'text-transform:uppercase;letter-spacing:.03em;color:var(--text-mute);">' + t + '</th>').join('') +
       '</tr></thead><tbody>' +
       faltantes.map(v =>
         '<tr>' +
+          '<td style="padding:9px;border-bottom:1px solid var(--line);">' +
+            '<input type="checkbox" data-vf-sel="' + escapeHtml(v.id) + '" data-total="' + v.total + '" style="width:auto;"></td>' +
           '<td style="padding:9px;border-bottom:1px solid var(--line);white-space:nowrap;">' +
             (v.fecha ? fechaAR(v.fecha, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '\u2014') + '</td>' +
           '<td style="padding:9px;border-bottom:1px solid var(--line);">' + escapeHtml(v.comprador || '\u2014') + '</td>' +
@@ -10502,6 +10742,23 @@ async function buscarVentasFaltantes() {
     cuerpo.querySelectorAll('[data-importar]').forEach(b => {
       b.addEventListener('click', () => importarVentaMl(b.dataset.importar, Number(b.dataset.total), b));
     });
+
+    // Seleccion para traer varias de una. "Todas" se marca sola cuando
+    // estan todas tildadas a mano, y el boton dice cuantas va a traer.
+    const casillas = [...cuerpo.querySelectorAll('[data-vf-sel]')];
+    const todas = byId('vfTodas');
+    const traerSel = byId('vfTraerSel');
+    const actualizarSeleccion = () => {
+      const marcadas = casillas.filter(c => c.checked);
+      todas.checked = marcadas.length === casillas.length;
+      todas.indeterminate = marcadas.length > 0 && marcadas.length < casillas.length;
+      traerSel.disabled = !marcadas.length;
+      traerSel.textContent = '\u2b07 Traer las seleccionadas' + (marcadas.length ? ' (' + marcadas.length + ')' : '');
+    };
+    todas.addEventListener('change', () => { casillas.forEach(c => { c.checked = todas.checked; }); actualizarSeleccion(); });
+    casillas.forEach(c => c.addEventListener('change', actualizarSeleccion));
+    traerSel.addEventListener('click', () => importarVentasMlSeleccionadas(
+      casillas.filter(c => c.checked).map(c => ({ id: c.dataset.vfSel, total: Number(c.dataset.total) })), traerSel));
   } catch (err) {
     cuerpo.innerHTML = '<span style="color:var(--danger);">No se pudo consultar: ' + escapeHtml(err.message) + '</span>';
   } finally {
@@ -10551,6 +10808,54 @@ async function importarVentaMl(idOrden, total, boton) {
     boton.disabled = false;
     boton.textContent = '\u2b07 Traer a BRUWAL';
   }
+}
+
+// Trae varias ventas de una. Usa la misma accion del servidor que el boton
+// de cada fila, de a una (cada una mueve stock: en paralelo se pisarian), y
+// al final dice que entro y que no, en un solo cartel.
+async function importarVentasMlSeleccionadas(lista, boton) {
+  if (!puedeOperar() || !lista.length) return;
+  const suma = lista.reduce((s, v) => s + (v.total || 0), 0);
+  if (!await dialogoConfirmar('\u00bfTraer ' + lista.length + ' venta' + (lista.length === 1 ? '' : 's') +
+               ' (' + money(Math.round(suma)) + ') a BRUWAL?\n\n' +
+               'Se registra cada pedido, se descuenta el stock de los productos vinculados ' +
+               'y se anota la comisi\u00f3n de Mercado Libre.')) return;
+
+  boton.disabled = true;
+  let traidas = 0, ya = 0, descontados = 0, porFull = 0, comision = 0, sinVinculo = 0;
+  const fallidas = [];
+  for (let i = 0; i < lista.length; i++) {
+    boton.textContent = 'Trayendo ' + (i + 1) + ' de ' + lista.length + '\u2026';
+    try {
+      const r = await llamarApiMl('importar_venta', { ml_order_id: lista[i].id });
+      if (r.ok) {
+        traidas++;
+        descontados += r.descontados || 0;
+        porFull += r.por_full || 0;
+        comision += r.comision || 0;
+        sinVinculo += Array.isArray(r.sin_vinculo) ? r.sin_vinculo.length : 0;
+      } else if (r.ya) {
+        ya++;
+      } else {
+        fallidas.push(money(Math.round(lista[i].total)) + ': ' + (r.motivo || 'error desconocido'));
+      }
+    } catch (err) {
+      fallidas.push(money(Math.round(lista[i].total)) + ': ' + humano(err));
+    }
+  }
+
+  let detalle = traidas + ' venta' + (traidas === 1 ? '' : 's') + ' registrada' + (traidas === 1 ? '' : 's') + '.';
+  if (ya) detalle += '\n' + ya + ' ya estaba' + (ya === 1 ? '' : 'n') + ' registrada' + (ya === 1 ? '' : 's') + '.';
+  if (descontados) detalle += '\nStock descontado en ' + descontados + ' producto' + (descontados === 1 ? '' : 's') + '.';
+  if (porFull) detalle += '\n' + porFull + ' por Full: no se toc\u00f3 el stock del local.';
+  if (comision) detalle += '\nComisiones anotadas: ' + money(Math.round(comision)) + '.';
+  if (sinVinculo) detalle += '\n\nOJO: ' + sinVinculo + ' publicaci\u00f3n' + (sinVinculo === 1 ? '' : 'es') +
+    ' sin vincular, as\u00ed que ese stock NO se descont\u00f3. Ajustalo a mano y vincul\u00e1 la publicaci\u00f3n.';
+  if (fallidas.length) detalle += '\n\nNo se pudieron traer:\n' + fallidas.join('\n');
+  dialogoAviso(detalle);
+
+  await refreshData();
+  await buscarVentasFaltantes();
 }
 
 // El que no tiene Pro no ve la solapa, pero sí esta pantalla: es mejor
@@ -11080,6 +11385,7 @@ function mostrarVistaMercadoLibre() {
   byId('tabMercadoLibre').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('mercadoLibreView').classList.add('visible');
+  mostrarSeccionMl('resumen');
   renderMercadoLibre();
   cargarEstadoMl();
 
@@ -11732,6 +12038,10 @@ async function refreshData() {
   const { data: gts } = await sb.from('store_gastos').select('*').eq('store_slug', currentStore.slug).order('fecha', { ascending: false });
   gastos = gts || [];
 
+  // Sin la migracion 60 vuelve con error y la solapa queda vacia.
+  const { data: afs } = await sb.from('store_afiliados').select('*').eq('store_slug', currentStore.slug).order('nombre');
+  afiliados = afs || [];
+
   const { data: pgs } = await sb.from('store_pagos').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
   pagos = pgs || [];
 
@@ -11748,6 +12058,10 @@ async function refreshData() {
 
   const { data: mlVins } = await sb.from('store_ml_vinculos').select('*').eq('store_slug', currentStore.slug);
   mlVinculosPrevios = mlVins || [];
+  // Si la solapa de ML ya esta abierta (se toco antes de que terminara de
+  // cargar, o quedo abierta y esto es el refresco de cada minuto), se vuelve
+  // a pintar con lo que llego. Si no, quedaba en 0 hasta salir y volver.
+  if (byId('mercadoLibreView').classList.contains('visible')) renderMercadoLibre();
 
   const { data: emps } = await sb.from('store_empleados').select('*').eq('store_slug', currentStore.slug).order('nombre');
   empleados = emps || [];
@@ -11770,6 +12084,7 @@ async function refreshData() {
   renderFiado();
   renderReparaciones();
   renderGastos();
+  renderAfiliados();
   renderCaja();
   await sincronizarFichadasPendientes();
   renderEmpleados();
@@ -13663,6 +13978,7 @@ async function actualizarCotizacionBanner() {
 // hasta que se borre — "Quitar" vuelve a la automática de dolarapi.com.
 async function editarCotizacionManual(moneda) {
   const actual = cotizacionManual(moneda) || await obtenerCotizacion(moneda);
+  const anterior = Number(actual?.venta);
   const nombre = moneda === 'USD' ? 'dólar blue' : 'euro';
   const entrada = await dialogoPedir(
     '¿A cuánto está el ' + nombre + ' hoy? (dejalo vacío para volver a la cotización automática)',
@@ -13681,6 +13997,7 @@ async function editarCotizacionManual(moneda) {
   await actualizarCotizacionBanner();
   if (rubroEsElectronica()) renderDashboard();
   await ofrecerRepreciarProductos(moneda);
+  if (moneda === 'USD') await ofrecerAjustarProductosEnPesos(anterior);
 }
 
 // Los productos cargados en dólares/euros guardan el precio ya pasado a
@@ -13708,6 +14025,44 @@ async function ofrecerRepreciarProductos(moneda) {
   if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
   else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
   renderProducts();
+}
+
+// Muchas tiendas de electrónica (ej. Kitzone) cargan todo en pesos pero
+// piensan los precios en dólares: si el dólar sube 5%, quieren que sus
+// precios en pesos suban 5%. Esos productos no tienen moneda ni cotización
+// guardada, así que el repreciado de arriba no los veía. Al cambiar el
+// dólar a mano se ofrece ajustarlos en la misma proporción que cambió
+// (precio, oferta, por mayor y variantes). Es opcional: hay quien carga en
+// pesos justamente porque no quiere que sigan al dólar.
+async function ofrecerAjustarProductosEnPesos(anterior) {
+  if (!puedeOperar() || !(anterior > 0)) return;
+  const cot = await obtenerCotizacion('USD');
+  const nueva = Number(cot?.venta);
+  if (!(nueva > 0) || nueva === anterior) return;
+
+  const enPesos = products.filter(p => !p.moneda && Number(p.price) > 0);
+  if (!enPesos.length) return;
+
+  const factor = nueva / anterior;
+  const pct = Math.round((factor - 1) * 1000) / 10;
+  const cuantos = enPesos.length + (enPesos.length === 1 ? ' producto cargado' : ' productos cargados');
+  if (!await dialogoConfirmar('Tenés ' + cuantos + ' en pesos.\n\n' +
+               'El dólar pasó de ' + money(anterior) + ' a ' + money(nueva) +
+               ' (' + (pct > 0 ? '+' : '') + String(pct).replace('.', ',') + '%).\n\n' +
+               '¿Les ' + (pct > 0 ? 'subo' : 'bajo') + ' el precio en pesos en la misma proporción?')) return;
+
+  const r = await aplicarUnoPorUno(enPesos, (p) => camposAjustadosEnPesos(p, factor));
+  if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
+  else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
+  renderProducts();
+}
+
+function camposAjustadosEnPesos(p, factor) {
+  const campos = { price: aPesosConFactor(p.price, factor) };
+  if (p.precio_oferta != null) campos.precio_oferta = aPesosConFactor(p.precio_oferta, factor);
+  if (Array.isArray(p.precios_por_cantidad)) campos.precios_por_cantidad = preciosEnPesos(p.precios_por_cantidad, factor);
+  if (Array.isArray(p.variantes)) campos.variantes = preciosEnPesos(p.variantes, factor);
+  return campos;
 }
 
 function camposRepreciados(p, nueva) {
@@ -14746,6 +15101,9 @@ function renderOrders() {
           : '') +
         (o.vendedor
           ? '<div style="font-size:11px;color:var(--text-mute);margin-top:2px;">Atendió: ' + escapeHtml(o.vendedor) + '</div>'
+          : '') +
+        (o.afiliado_codigo
+          ? '<div style="font-size:11px;color:var(--celeste);margin-top:2px;">🤝 Recomendó: ' + escapeHtml(nombreDeAfiliado(o.afiliado_codigo)) + '</div>'
           : '') +
       '</td>' +
       '<td style="font-size:13px;">' + escapeHtml(items) +
@@ -19095,8 +19453,7 @@ async function searchByBarcode() {
       byId('barcodeInput').select();
       return;
     }
-    seleccionarProductoVenta(delaBalanza.id, cantidadDesdeBalanza(pesada, delaBalanza));
-    byId('barcodeInput').value = '';
+    escaneoAutomaticoVenta(delaBalanza, cantidadDesdeBalanza(pesada, delaBalanza));
     return;
   }
 
@@ -19107,7 +19464,7 @@ async function searchByBarcode() {
   const porEan = products.find(p => normalizarTexto(p.ean) === query);
   const porImei = !porEan && products.find(p => normalizarTexto(p.imei) === query);
   if (porEan || porImei) {
-    seleccionarProductoVenta((porEan || porImei).id);
+    escaneoAutomaticoVenta(porEan || porImei, null, !!porImei);
     return;
   }
 
@@ -19144,6 +19501,110 @@ async function searchByBarcode() {
   }
 
   mostrarCoincidencias(coincidencias, huboTipeo);
+}
+
+// ---- Escaneo seguido con el lector ----
+// Con el lector en modo automatico se escanea un producto atras del otro sin
+// tocar la pantalla. Cada codigo exacto (EAN, IMEI o etiqueta de balanza):
+//  - si es el mismo producto que esta en pantalla, suma una unidad;
+//  - si es otro, el de pantalla pasa solo al pedido y se muestra el nuevo.
+// El buscador queda vacio y con el foco puesto para el proximo codigo.
+// La busqueda por nombre sigue como siempre: ahi el vendedor elige.
+function escaneoAutomaticoVenta(product, cantidad, porImei) {
+  const input = byId('barcodeInput');
+  const actual = currentBarcodeProduct;
+  const sumar = (cantidad != null && Number(cantidad) > 0) ? Number(cantidad) : 1;
+
+  if (actual && String(actual.id) === String(product.id)) {
+    // El mismo IMEI dos veces es el mismo equipo: no son dos unidades.
+    // Con talle/color sin elegir tampoco se sabe a que combinacion sumar.
+    const faltaVariante = productoDeVentaTieneVariantes() &&
+      Object.keys(varianteSeleccionadaVenta).length < actual.variante_campos.length;
+    if (!porImei && !faltaVariante) {
+      const previa = Number(byId('barcodeQty').value) || 0;
+      const nueva = previa + sumar;
+      byId('barcodeQty').value = seVendePorMedida(actual) ? redondearMedida(nueva) : nueva;
+      calculateTotal();
+    }
+    avisarLectura();
+    input.value = '';
+    input.focus();
+    return;
+  }
+
+  // Otro producto: el que estaba en pantalla pasa al pedido. Si le falta algo
+  // (talle, equipo, stock) validarLineaVentaEnPantalla avisa y el codigo queda
+  // escrito para volver a escanearlo despues de completarlo.
+  if (actual) {
+    if (!puedeOperar()) return;
+    if (byId('barcodeTradeIn')?.checked) {
+      dialogoAviso('Un pedido de varios productos no puede tomar un equipo en parte de pago.\n\nRegistrá esa venta sola.');
+      return;
+    }
+    const linea = validarLineaVentaEnPantalla();
+    if (!linea) return;
+    sumarLineaAlPedido(linea);
+  }
+
+  seleccionarProductoVenta(product.id, cantidad);
+  avisarLectura();
+  input.value = '';
+  input.focus();
+}
+
+// Mete una linea al pedido. Si ya hay una del mismo producto y combinacion
+// (sin IMEI puntual), suma la cantidad ahi en vez de repetir la linea.
+function sumarLineaAlPedido(linea) {
+  const clave = (l) => String(l.product.id) + '|' + claveVariante(l.variante || {});
+  const igual = !linea.imei && carritoVenta.find(l => !l.imei && clave(l) === clave(linea) &&
+    Number(l.precioUnitario) === Number(linea.precioUnitario));
+  if (igual) {
+    const total = Number(igual.qty) + Number(linea.qty);
+    igual.qty = seVendePorMedida(linea.product) ? redondearMedida(total) : total;
+  } else {
+    carritoVenta.push(linea);
+  }
+}
+
+// Debajo de la cantidad: cuanto stock queda si se vende lo que hay en
+// pantalla (contando lo que ya esta en el pedido del mismo producto).
+function actualizarStockRestanteVenta() {
+  const caja = byId('barcodeStockRestante');
+  if (!caja) return;
+  const p = currentBarcodeProduct;
+  if (!p || !esProductoFisico(p)) { caja.classList.add('hidden'); return; }
+
+  let stock;
+  let variante = null;
+  if (productoDeVentaTieneVariantes()) {
+    stock = stockDeVarianteVenta();
+    // Sin combinacion elegida ya lo dice el bloque de talle/color.
+    if (stock === null) { caja.classList.add('hidden'); return; }
+    variante = varianteSeleccionadaVenta;
+  } else {
+    stock = Number(p.stock || 0);
+  }
+
+  const clave = String(p.id) + '|' + claveVariante(variante || {});
+  const enPedido = carritoVenta
+    .filter(l => String(l.product.id) + '|' + claveVariante(l.variante || {}) === clave)
+    .reduce((s, l) => s + Number(l.qty || 0), 0);
+  const qty = Number(byId('barcodeQty').value) || 0;
+  const queda = stock - enPedido - qty;
+  const cuanto = (n) => formatearCantidad(n, p);
+
+  if (queda < 0) {
+    caja.textContent = '⚠️ No alcanza el stock: hay ' + cuanto(Math.max(0, stock - enPedido)) +
+      (enPedido ? ' (además de lo que ya está en el pedido)' : '') + '.';
+    caja.style.color = 'var(--danger)';
+  } else if (queda === 0) {
+    caja.textContent = '📦 Con esta venta te quedás sin stock.';
+    caja.style.color = '#B26A00';
+  } else {
+    caja.textContent = '📦 Te ' + (queda === 1 ? 'queda ' : 'quedan ') + cuanto(queda) + ' en stock.';
+    caja.style.color = 'var(--text-mute)';
+  }
+  caja.classList.remove('hidden');
 }
 
 function mostrarCoincidencias(lista, huboTipeo) {
@@ -19390,6 +19851,7 @@ function calculateTotal() {
   byId('barcodeTotal').textContent = money(total);
   pintarTotalConCarrito();
   calculateChange();
+  actualizarStockRestanteVenta();
 }
 
 // ---- La tasacion del equipo tomado, con su moneda ----
@@ -19699,6 +20161,7 @@ function entrarEnModoPedido() {
   varianteSeleccionadaVenta = {};
   imeiSeleccionadoVenta = null;
   byId('barcodeVarianteBloque').classList.add('hidden');
+  byId('barcodeStockRestante')?.classList.add('hidden');
   hide(byId('barcodeMatches'));
   const n = carritoVenta.length;
   byId('barcodeProductName').textContent = '🛒 Pedido de ' + n + ' producto' + (n === 1 ? '' : 's');
@@ -19724,7 +20187,7 @@ function agregarAlPedidoVenta() {
   }
   const linea = validarLineaVentaEnPantalla();
   if (!linea) return;
-  carritoVenta.push(linea);
+  sumarLineaAlPedido(linea);
   entrarEnModoPedido();
 }
 
@@ -20416,6 +20879,29 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
 // Permitir escanear con Enter en el input
 byId('barcodeInput').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') searchByBarcode();
+});
+
+// Si el vendedor toco la cantidad y despues escanea, el lector "tipea" el
+// codigo en ese campo (13 digitos de cantidad). Se detecta por el largo, se
+// devuelve la cantidad que habia y el codigo va al buscador como si nada.
+// Enter con una cantidad normal vuelve el foco al buscador para seguir.
+let cantidadAntesDeEscanear = '1';
+byId('barcodeQty').addEventListener('focus', (e) => { cantidadAntesDeEscanear = e.target.value; });
+byId('barcodeQty').addEventListener('input', (e) => {
+  if (String(e.target.value).replace(/\D/g, '').length < 6) cantidadAntesDeEscanear = e.target.value;
+});
+byId('barcodeQty').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const valor = String(e.target.value);
+  if (valor.replace(/\D/g, '').length >= 6) {
+    e.target.value = cantidadAntesDeEscanear;
+    calculateTotal();
+    byId('barcodeInput').value = valor;
+    searchByBarcode();
+    return;
+  }
+  byId('barcodeInput').focus();
 });
 
 // ============ ESCANEO CON LA CAMARA ============
@@ -21887,6 +22373,25 @@ byId('sincronizarPreguntasBtn')?.addEventListener('click', sincronizarMlPregunta
 byId('closeMlPreguntasModal')?.addEventListener('click', () => hide(byId('mlPreguntasModal')));
 
 byId('mlPublicacionesBtn').addEventListener('click', abrirMlPublicaciones);
+// ---------- Mercado Libre: solapas del panel ----------
+// Solo muestran y esconden secciones. Lo que hay adentro funciona igual
+// que antes. Al entrar a la pestana siempre se arranca en Resumen: los
+// avisos de "vendiste por ML" y "venta sin descontar" mandan aca, y eso
+// esta en Resumen.
+function mostrarSeccionMl(clave) {
+  document.querySelectorAll('.mlx-solapa').forEach((b) => {
+    const activa = b.dataset.mlx === clave;
+    b.classList.toggle('active', activa);
+    b.setAttribute('aria-selected', activa ? 'true' : 'false');
+  });
+  document.querySelectorAll('.mlx-seccion').forEach((s) => {
+    s.classList.toggle('hidden', s.dataset.mlxSeccion !== clave);
+  });
+}
+document.querySelectorAll('.mlx-solapa').forEach((b) => {
+  b.addEventListener('click', () => mostrarSeccionMl(b.dataset.mlx));
+});
+
 byId('mlPublicacionesBtn2').addEventListener('click', abrirMlPublicaciones);
 byId('mlPublicidadBtn').addEventListener('click', consultarPublicidadMl);
 byId('buscarVentasFaltantesBtn').addEventListener('click', buscarVentasFaltantes);
@@ -24190,6 +24695,205 @@ function mostrarVistaGastos() {
 byId('tabGastos').addEventListener('click', () => {
   if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaGastos); return; }
   mostrarVistaGastos();
+});
+
+// ===================== AFILIADOS =====================
+// Gente que recomienda la tienda con su link (?ref=CODIGO) y cobra un
+// porcentaje. El pedido llega con el codigo y la comision ya congelada por
+// la base (schema/60-afiliados.sql); aca solo se suma y se muestra.
+
+function nombreDeAfiliado(codigo) {
+  const a = afiliados.find(x => String(x.codigo).toLowerCase() === String(codigo || '').toLowerCase());
+  return a ? a.nombre + ' (' + a.codigo + ')' : codigo;
+}
+
+function linkDeAfiliado(a) {
+  return window.location.origin + '/' + currentStore.slug + '?ref=' + encodeURIComponent(a.codigo);
+}
+
+// Su panel privado (afiliado.html): ve su link, sus ventas y su comision.
+// Sin token todavia no se corrio schema/61-panel-afiliados.sql.
+function panelDeAfiliado(a) {
+  return a.token ? window.location.origin + '/afiliado.html?t=' + a.token : null;
+}
+
+const mesDeAR = (fecha) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit'
+}).format(comoFecha(fecha)).slice(0, 7);
+
+// Lo que se cobro por los productos: sin envio y con el descuento del
+// codigo ya restado. Sobre eso va la comision.
+function baseDeComision(o) {
+  const productos = (o.items || []).reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 0), 0);
+  const base = (productos || Number(o.total || 0)) - Number(o.afiliado_descuento || 0);
+  return Math.max(0, base);
+}
+
+function renderAfiliados() {
+  const cuerpo = byId('afiliadosBody');
+  if (!cuerpo || !currentStore) return;
+
+  const selector = byId('afiliadosMes');
+  if (!selector.value) selector.value = mesActualAR();
+  const mes = selector.value;
+
+  // `orders` ya son solo los que cuentan como venta: ni pendientes ni cancelados.
+  const delMes = orders.filter(o => o.afiliado_codigo && mesDeAR(o.created_at) === mes);
+  const porCodigo = {};
+  delMes.forEach(o => {
+    const k = String(o.afiliado_codigo).toLowerCase();
+    const r = porCodigo[k] || (porCodigo[k] = { pedidos: 0, vendido: 0, comision: 0 });
+    const base = baseDeComision(o);
+    r.pedidos += 1;
+    r.vendido += base;
+    r.comision += base * Number(o.afiliado_comision_pct || 0) / 100;
+  });
+
+  const totales = Object.values(porCodigo).reduce((t, r) => {
+    t.pedidos += r.pedidos; t.vendido += r.vendido; t.comision += r.comision; return t;
+  }, { pedidos: 0, vendido: 0, comision: 0 });
+  byId('afiliadosVendido').textContent = money(Math.round(totales.vendido));
+  byId('afiliadosPedidos').textContent = totales.pedidos;
+  byId('afiliadosComision').textContent = money(Math.round(totales.comision));
+
+  cuerpo.innerHTML = afiliados.length ? afiliados.map(a => {
+    const r = porCodigo[String(a.codigo).toLowerCase()] || { pedidos: 0, vendido: 0, comision: 0 };
+    const descuento = Number(a.descuento_pct || 0);
+    return '<tr' + (a.activo ? '' : ' style="opacity:.55;"') + '>' +
+      '<td><strong>' + escapeHtml(a.nombre) + '</strong>' +
+        '<div style="font-size:11.5px;color:var(--text-mute);">' + escapeHtml(a.codigo) +
+          (descuento > 0 ? ' · ' + descuento + '% off al cliente' : '') +
+          (a.activo ? '' : ' · pausado') + '</div></td>' +
+      '<td><button class="icon-btn" data-copiar-afiliado="' + a.id + '" title="Copiar su link">🔗 Copiar</button>' +
+        (a.token ? ' <button class="icon-btn" data-panel-afiliado="' + a.id + '" title="Copiar el link de su panel, donde ve sus ventas y su comisión">📊 Panel</button>' : '') +
+        (a.telefono ? ' <button class="icon-btn" data-wa-afiliado="' + a.id + '" title="Mandarle su link por WhatsApp">📱</button>' : '') +
+      '</td>' +
+      '<td style="text-align:right;">' + Number(a.comision_pct || 0) + '%</td>' +
+      '<td style="text-align:right;">' + r.pedidos + '</td>' +
+      '<td style="text-align:right;">' + money(Math.round(r.vendido)) + '</td>' +
+      '<td style="text-align:right;font-weight:600;">' + money(Math.round(r.comision)) + '</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="icon-btn" data-editar-afiliado="' + a.id + '" title="Editar">✎</button>' +
+        '<button class="icon-btn danger" data-eliminar-afiliado="' + a.id + '" title="Eliminar">🗑</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px;">Todavía no cargaste ningún afiliado</td></tr>';
+
+  cuerpo.querySelectorAll('[data-copiar-afiliado]').forEach(b => b.addEventListener('click', () => {
+    const a = afiliados.find(x => String(x.id) === b.getAttribute('data-copiar-afiliado'));
+    if (a) copiarTexto(linkDeAfiliado(a), 'Link de ' + a.nombre + ' copiado:\n\n' + linkDeAfiliado(a));
+  }));
+  cuerpo.querySelectorAll('[data-panel-afiliado]').forEach(b => b.addEventListener('click', () => {
+    const a = afiliados.find(x => String(x.id) === b.getAttribute('data-panel-afiliado'));
+    if (a && panelDeAfiliado(a)) {
+      copiarTexto(panelDeAfiliado(a), 'Link del panel de ' + a.nombre + ' copiado. Es privado, mandáselo solo a él:\n\n' + panelDeAfiliado(a));
+    }
+  }));
+  cuerpo.querySelectorAll('[data-wa-afiliado]').forEach(b => b.addEventListener('click', () => {
+    const a = afiliados.find(x => String(x.id) === b.getAttribute('data-wa-afiliado'));
+    if (!a) return;
+    const texto = 'Hola ' + a.nombre + '! Este es tu link de ' + (currentStore.business_name || 'la tienda') + ': ' +
+      linkDeAfiliado(a) + '\n\nCada pedido que entre por ahí (o con tu código ' + a.codigo + ') te suma un ' +
+      Number(a.comision_pct || 0) + '% de comisión.' +
+      (panelDeAfiliado(a) ? '\n\nEn tu panel ves tus ventas y lo que llevás ganado: ' + panelDeAfiliado(a) : '');
+    window.open('https://wa.me/' + numeroWhatsApp(a.telefono) + '?text=' + encodeURIComponent(texto), '_blank');
+  }));
+  cuerpo.querySelectorAll('[data-editar-afiliado]').forEach(b =>
+    b.addEventListener('click', () => abrirModalAfiliado(b.getAttribute('data-editar-afiliado'))));
+  cuerpo.querySelectorAll('[data-eliminar-afiliado]').forEach(b =>
+    b.addEventListener('click', () => eliminarAfiliado(b.getAttribute('data-eliminar-afiliado'))));
+}
+
+// "Juan Pérez" -> "JUANPEREZ": un codigo que se pueda dictar por telefono.
+function codigoSugerido(nombre) {
+  return String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/\s+/)[0].toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+}
+
+function abrirModalAfiliado(id) {
+  const a = id ? afiliados.find(x => String(x.id) === String(id)) : null;
+  byId('afiliadoModal').dataset.id = a ? a.id : '';
+  byId('afiliadoModalTitulo').innerHTML = '<i class="fa-solid fa-handshake" style="color:var(--celeste);"></i> ' +
+    (a ? 'Editar afiliado' : 'Nuevo afiliado');
+  byId('afiliadoNombre').value = a ? a.nombre : '';
+  byId('afiliadoCodigo').value = a ? a.codigo : '';
+  byId('afiliadoCodigo').dataset.tocado = a ? '1' : '';
+  byId('afiliadoTelefono').value = a ? (a.telefono || '') : '';
+  byId('afiliadoComision').value = a ? Number(a.comision_pct) : 15;
+  byId('afiliadoDescuento').value = a ? Number(a.descuento_pct) : 0;
+  byId('afiliadoActivo').checked = a ? !!a.activo : true;
+  show(byId('afiliadoModal'));
+}
+
+async function guardarAfiliado() {
+  if (!puedeOperar()) return;
+
+  const nombre = byId('afiliadoNombre').value.trim();
+  const codigo = byId('afiliadoCodigo').value.trim().toUpperCase();
+  const comision = Number(byId('afiliadoComision').value);
+  const descuento = Number(byId('afiliadoDescuento').value || 0);
+
+  if (!nombre) { dialogoAviso('Poné el nombre del afiliado.'); return; }
+  if (!/^[A-Z0-9_-]{2,30}$/.test(codigo)) {
+    dialogoAviso('El código tiene que tener entre 2 y 30 letras o números, sin espacios ni acentos.');
+    return;
+  }
+  if (!(comision >= 0 && comision <= 100)) { dialogoAviso('La comisión tiene que estar entre 0 y 100%.'); return; }
+  if (!(descuento >= 0 && descuento <= 50)) { dialogoAviso('El descuento al cliente puede ir de 0 a 50%.'); return; }
+
+  const payload = {
+    store_slug: currentStore.slug,
+    nombre,
+    codigo,
+    telefono: byId('afiliadoTelefono').value.trim() || null,
+    comision_pct: comision,
+    descuento_pct: descuento,
+    activo: byId('afiliadoActivo').checked
+  };
+
+  const id = byId('afiliadoModal').dataset.id;
+  const { error } = id
+    ? await sb.from('store_afiliados').update(payload).eq('id', id)
+    : await sb.from('store_afiliados').insert([payload]);
+
+  if (error) {
+    const repetido = error.code === '23505' || /duplicate|unique/i.test(error.message || '');
+    dialogoAviso(repetido
+      ? 'Ya tenés un afiliado con el código ' + codigo + '. Elegí otro.'
+      : 'No se pudo guardar el afiliado:\n\n' + humano(error));
+    return;
+  }
+
+  hide(byId('afiliadoModal'));
+  await refreshData();
+}
+
+async function eliminarAfiliado(id) {
+  if (!puedeOperar()) return;
+  if (!await dialogoConfirmar('¿Borrar este afiliado? Sus pedidos viejos quedan con el código, pero su link deja de funcionar. Si solo querés frenarlo, mejor pausalo.')) return;
+
+  const { error } = await sb.from('store_afiliados').delete().eq('id', id);
+  if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
+  await refreshData();
+}
+
+byId('tabAfiliados').addEventListener('click', () => {
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabAfiliados').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('afiliadosView').classList.add('visible');
+  renderAfiliados();
+});
+byId('afiliadosMes').addEventListener('change', renderAfiliados);
+byId('nuevoAfiliadoBtn').addEventListener('click', () => {
+  if (!puedeOperar()) return;
+  abrirModalAfiliado(null);
+});
+byId('closeAfiliadoModal').addEventListener('click', () => hide(byId('afiliadoModal')));
+byId('guardarAfiliadoBtn').addEventListener('click', guardarAfiliado);
+byId('afiliadoCodigo').addEventListener('input', () => { byId('afiliadoCodigo').dataset.tocado = '1'; });
+byId('afiliadoNombre').addEventListener('input', () => {
+  if (!byId('afiliadoCodigo').dataset.tocado) byId('afiliadoCodigo').value = codigoSugerido(byId('afiliadoNombre').value);
 });
 
 byId('verCostosReparacionesBtn').addEventListener('click', () => {

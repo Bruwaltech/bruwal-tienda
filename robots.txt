@@ -1,0 +1,13 @@
+# Las tiendas y la portada se pueden indexar. El panel, la administración
+# y las páginas privadas (estado de cuenta, afiliados) no.
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /admin.html
+Disallow: /asistente
+Disallow: /cuenta.html
+Disallow: /afiliado.html
+Disallow: /api/
+Allow: /api/foto
+
+Sitemap: https://bruwaltech.com.ar/sitemap.xml
