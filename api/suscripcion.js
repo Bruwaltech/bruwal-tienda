@@ -353,7 +353,13 @@ async function ingresosDelMes(mesPedido) {
         fecha: p.date_approved || p.date_created,
         tienda: tienda ? (tienda.business_name || tienda.slug) : null,
         detalle: p.description || null,
-        suscripcion: p.operation_type === 'recurring_payment' || !!sus,
+        // Por la misma cuenta entran tambien las ventas de Mercado Libre y
+        // transferencias: el panel las separa para no mezclarlas con lo que
+        // pagan las tiendas.
+        tipo: (p.operation_type === 'recurring_payment' || sus || tienda) ? 'suscripcion'
+          : (p.marketplace === 'MELI' || /mercado\s*libre/i.test(String(p.description || ''))) ? 'mercadolibre'
+          : 'otros',
+        operacion: p.operation_type || null,
         bruto: d.bruto,
         descuentos: Math.round((d.comision + d.impuestos) * 100) / 100,
         neto: d.neto,

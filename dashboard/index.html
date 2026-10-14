@@ -21889,22 +21889,44 @@ async function diagnosticoMercadoPago() {
 // El panel de ingresos del mes: bruto, lo que se queda Mercado Pago, el
 // neto, cuánto ya está acreditado y cuándo termina de acreditarse el resto
 // (Mercado Pago retiene cada cobro unos 18 días).
-async function cargarIngresosMp(mes) {
+let ultimosIngresosMp = null;
+
+// `yaTraidos`: al cambiar de pestaña se reusan los cobros ya buscados, sin
+// volver a pedirle todo el mes a Mercado Pago.
+async function cargarIngresosMp(mes, yaTraidos) {
   const caja = byId('ingresosMp');
   if (!caja) return;
-  caja.textContent = 'Buscando los cobros del mes en Mercado Pago\u2026';
   try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
-    const r = await fetch('/api/suscripcion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
-      body: JSON.stringify({ slug: currentStore && currentStore.slug, accion: 'ingresos', mes })
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+    let d = yaTraidos;
+    if (!d || d.mes !== mes) {
+      caja.textContent = 'Buscando los cobros del mes en Mercado Pago\u2026';
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
+      const r = await fetch('/api/suscripcion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+        body: JSON.stringify({ slug: currentStore && currentStore.slug, accion: 'ingresos', mes })
+      });
+      d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+    }
 
-    const t = d.totales || {};
+    // Por la misma cuenta de Mercado Pago entran también ventas de Mercado
+    // Libre y transferencias: se filtran por tipo y los totales se calculan
+    // sobre lo que se está mirando.
+    const filtroTipo = byId('ingresosMpTipo') ? byId('ingresosMpTipo').value : 'suscripcion';
+    const todos = Array.isArray(d.cobros) ? d.cobros : [];
+    const cuenta = (tipo) => todos.filter((c) => tipo === 'todo' || c.tipo === tipo);
+    const t = { cobros: 0, bruto: 0, descuentos: 0, neto: 0, acreditado: 0, pendiente: 0 };
+    let terminaDeAcreditarse = null;
+    cuenta(filtroTipo).forEach((c) => {
+      t.cobros += 1; t.bruto += c.bruto; t.descuentos += c.descuentos; t.neto += c.neto;
+      if (c.liberado) t.acreditado += c.neto;
+      else {
+        t.pendiente += c.neto;
+        if (c.libera && (!terminaDeAcreditarse || c.libera > terminaDeAcreditarse)) terminaDeAcreditarse = c.libera;
+      }
+    });
     const pesos = (n) => '$' + Math.round(Number(n || 0)).toLocaleString('es-AR');
     const ddmm = (f) => f ? String(f).slice(8, 10) + '/' + String(f).slice(5, 7) : '';
     const tarjeta = (titulo, valor, abajo, color) =>
@@ -21920,11 +21942,20 @@ async function cargarIngresosMp(mes) {
       tarjeta('Neto', pesos(t.neto), '') +
       tarjeta('Ya acreditado', pesos(t.acreditado), 'disponible hoy', 'var(--stock)') +
       tarjeta('Por acreditar', pesos(t.pendiente),
-        t.pendiente > 0 && d.termina_de_acreditarse
-          ? 'todo acreditado el ' + ddmm(d.termina_de_acreditarse) : 'nada pendiente', '#B45309') +
+        t.pendiente > 0 && terminaDeAcreditarse
+          ? 'todo acreditado el ' + ddmm(terminaDeAcreditarse) : 'nada pendiente', '#B45309') +
       '</div>';
 
-    const cobros = Array.isArray(d.cobros) ? d.cobros : [];
+    const nombres = { suscripcion: 'Suscripciones', mercadolibre: 'Mercado Libre', otros: 'Otros ingresos', todo: 'Todo' };
+    html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' +
+      ['suscripcion', 'mercadolibre', 'otros', 'todo'].map((k) =>
+        '<button type="button" data-ingresos-tipo="' + k + '" style="padding:5px 11px;border-radius:999px;font-size:12px;' +
+          'font-family:inherit;cursor:pointer;border:1px solid ' + (k === filtroTipo ? 'var(--navy)' : 'var(--line)') + ';' +
+          'background:' + (k === filtroTipo ? 'var(--navy)' : 'transparent') + ';color:' + (k === filtroTipo ? '#fff' : 'var(--navy)') + ';">' +
+          nombres[k] + ' (' + cuenta(k).length + ')</button>').join('') +
+      '</div>' + html;
+
+    const cobros = cuenta(filtroTipo);
     if (!cobros.length) {
       html += '<div style="color:var(--text-mute);">No hubo cobros aprobados en este mes.</div>';
     } else {
@@ -21948,7 +21979,13 @@ async function cargarIngresosMp(mes) {
       html += '</tbody></table></div>';
     }
     if (d.cortado) html += '<div style="color:var(--text-mute);margin-top:6px;">Hay más de 1000 cobros: se muestran los primeros.</div>';
+    html += '<input type="hidden" id="ingresosMpTipo" value="' + filtroTipo + '">';
     caja.innerHTML = html;
+    ultimosIngresosMp = d;
+    caja.querySelectorAll('[data-ingresos-tipo]').forEach((b) => b.addEventListener('click', () => {
+      byId('ingresosMpTipo').value = b.dataset.ingresosTipo;
+      cargarIngresosMp(mes, ultimosIngresosMp);
+    }));
   } catch (err) {
     caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
   }
