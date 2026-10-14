@@ -21889,16 +21889,12 @@ async function diagnosticoMercadoPago() {
 // El panel de ingresos del mes: bruto, lo que se queda Mercado Pago, el
 // neto, cuánto ya está acreditado y cuándo termina de acreditarse el resto
 // (Mercado Pago retiene cada cobro unos 18 días).
-let ultimosIngresosMp = null;
-
-// `yaTraidos`: al cambiar de pestaña se reusan los cobros ya buscados, sin
-// volver a pedirle todo el mes a Mercado Pago.
-async function cargarIngresosMp(mes, yaTraidos) {
+async function cargarIngresosMp(mes) {
   const caja = byId('ingresosMp');
   if (!caja) return;
   try {
-    let d = yaTraidos;
-    if (!d || d.mes !== mes) {
+    let d = null;
+    {
       caja.textContent = 'Buscando los cobros del mes en Mercado Pago\u2026';
       const { data: { session } } = await sb.auth.getSession();
       if (!session) throw new Error('Volv\u00e9 a iniciar sesi\u00f3n.');
@@ -21912,14 +21908,12 @@ async function cargarIngresosMp(mes, yaTraidos) {
     }
 
     // Por la misma cuenta de Mercado Pago entran también ventas de Mercado
-    // Libre y transferencias: se filtran por tipo y los totales se calculan
-    // sobre lo que se está mirando.
-    const filtroTipo = byId('ingresosMpTipo') ? byId('ingresosMpTipo').value : 'suscripcion';
+    // Libre, compras y transferencias: acá se muestran SOLO las suscripciones.
     const todos = Array.isArray(d.cobros) ? d.cobros : [];
-    const cuenta = (tipo) => todos.filter((c) => tipo === 'todo' || c.tipo === tipo);
+    const soloSuscripciones = todos.filter((c) => c.tipo === 'suscripcion');
     const t = { cobros: 0, bruto: 0, descuentos: 0, neto: 0, acreditado: 0, pendiente: 0 };
     let terminaDeAcreditarse = null;
-    cuenta(filtroTipo).forEach((c) => {
+    soloSuscripciones.forEach((c) => {
       t.cobros += 1; t.bruto += c.bruto; t.descuentos += c.descuentos; t.neto += c.neto;
       if (c.liberado) t.acreditado += c.neto;
       else {
@@ -21946,18 +21940,9 @@ async function cargarIngresosMp(mes, yaTraidos) {
           ? 'todo acreditado el ' + ddmm(terminaDeAcreditarse) : 'nada pendiente', '#B45309') +
       '</div>';
 
-    const nombres = { suscripcion: 'Suscripciones', mercadolibre: 'Mercado Libre', otros: 'Otros ingresos', todo: 'Todo' };
-    html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' +
-      ['suscripcion', 'mercadolibre', 'otros', 'todo'].map((k) =>
-        '<button type="button" data-ingresos-tipo="' + k + '" style="padding:5px 11px;border-radius:999px;font-size:12px;' +
-          'font-family:inherit;cursor:pointer;border:1px solid ' + (k === filtroTipo ? 'var(--navy)' : 'var(--line)') + ';' +
-          'background:' + (k === filtroTipo ? 'var(--navy)' : 'transparent') + ';color:' + (k === filtroTipo ? '#fff' : 'var(--navy)') + ';">' +
-          nombres[k] + ' (' + cuenta(k).length + ')</button>').join('') +
-      '</div>' + html;
-
-    const cobros = cuenta(filtroTipo);
+    const cobros = soloSuscripciones;
     if (!cobros.length) {
-      html += '<div style="color:var(--text-mute);">No hubo cobros aprobados en este mes.</div>';
+      html += '<div style="color:var(--text-mute);">No hubo cobros de suscripciones en este mes.</div>';
     } else {
       html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;">' +
         '<thead><tr style="text-align:left;color:var(--text-mute);font-size:10.5px;text-transform:uppercase;">' +
@@ -21979,13 +21964,7 @@ async function cargarIngresosMp(mes, yaTraidos) {
       html += '</tbody></table></div>';
     }
     if (d.cortado) html += '<div style="color:var(--text-mute);margin-top:6px;">Hay más de 1000 cobros: se muestran los primeros.</div>';
-    html += '<input type="hidden" id="ingresosMpTipo" value="' + filtroTipo + '">';
     caja.innerHTML = html;
-    ultimosIngresosMp = d;
-    caja.querySelectorAll('[data-ingresos-tipo]').forEach((b) => b.addEventListener('click', () => {
-      byId('ingresosMpTipo').value = b.dataset.ingresosTipo;
-      cargarIngresosMp(mes, ultimosIngresosMp);
-    }));
   } catch (err) {
     caja.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(err.message) + '</span>';
   }
