@@ -335,6 +335,31 @@ tbody tr:hover { background: #F8FBFF; }
 }
 .pie-form .btn-primario { width: auto; }
 
+.nota-tipos { padding: 8px 18px 0; font-size: 13.5px; color: var(--text-mute); line-height: 1.45; }
+.tipos-moneda { display: grid; gap: 8px; padding: 12px 18px 0; }
+.tipos-cabecera, .tipo-moneda {
+  display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1fr) 40px;
+  gap: 8px; align-items: center;
+}
+.tipos-cabecera {
+  font-size: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--text-mute);
+}
+.tipo-moneda input {
+  width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff; color: var(--text-dark);
+}
+.tipo-moneda input:focus { outline: none; border-color: var(--celeste); }
+.quitar-tipo { width: 40px; height: 40px; padding: 0; font-size: 20px; line-height: 1; }
+.acciones-tipos { padding: 10px 18px 0; }
+/* En el celular el nombre va arriba, entero, y los dos números abajo */
+@media (max-width: 560px) {
+  .tipos-cabecera, .tipo-moneda { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px; }
+  .tipos-cabecera span:first-child { display: none; }
+  .tipo-moneda [data-t="n"] { grid-column: 1 / -1; font-weight: 600; }
+  .tipo-moneda + .tipo-moneda { border-top: 1px solid var(--line); padding-top: 10px; }
+}
+
 .toast {
   position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
   background: var(--navy); color: #fff; padding: 10px 18px; border-radius: 8px;
@@ -571,8 +596,6 @@ tbody tr:hover { background: #F8FBFF; }
         <div class="grilla-campos">
           <div class="campo"><label for="mMonedaKg">Monedas, por kilo ($)</label>
             <input id="mMonedaKg" data-cfg="monedaKg" type="number" min="0" step="any" inputmode="decimal"></div>
-          <div class="campo"><label for="mMonedaU">Monedas, por unidad ($)</label>
-            <input id="mMonedaU" data-cfg="monedaU" type="number" min="0" step="any" inputmode="decimal"></div>
           <div class="campo"><label for="mCobreMin">Cobre minorista, por kilo ($)</label>
             <input id="mCobreMin" data-cfg="cobreMin" type="number" min="0" step="any" inputmode="decimal"></div>
           <div class="campo"><label for="mCobreMay">Cobre mayorista, por kilo ($)</label>
@@ -582,6 +605,11 @@ tbody tr:hover { background: #F8FBFF; }
           <div class="campo"><label for="mBronceMay">Bronce mayorista, por kilo ($)</label>
             <input id="mBronceMay" data-cfg="bronceMay" type="number" min="0" step="any" inputmode="decimal"></div>
         </div>
+
+        <h3 class="titulo-grupo">Monedas y llaves contadas</h3>
+        <p class="nota-tipos">Lo que pagás por cada una cuando las traen contadas. Con cuántas hacen un kilo, las contadas también entran en la prioridad de la hoja de ruta.</p>
+        <div class="tipos-moneda" id="mTiposMoneda"></div>
+        <div class="acciones-tipos"><button type="button" class="btn btn-suave" id="mAgregarTipo">Agregar un tipo</button></div>
 
         <h3 class="titulo-grupo">Reglas</h3>
         <div class="grilla-campos">
@@ -612,7 +640,8 @@ tbody tr:hover { background: #F8FBFF; }
         </div>
         <div class="grilla-campos" style="grid-template-columns:1fr;">
           <div class="campo"><label for="mSaludo">Saludo de bienvenida</label>
-            <textarea id="mSaludo" data-cfg="saludo" rows="3"></textarea></div>
+            <textarea id="mSaludo" data-cfg="saludo" rows="3"></textarea>
+            <div class="dato-secundario">Si el saludo no pregunta la localidad, el bot la pregunta después.</div></div>
         </div>
 
         <div class="aviso aviso-error hidden" id="mPreciosError" style="margin:0 18px 14px;"></div>

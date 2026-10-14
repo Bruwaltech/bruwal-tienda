@@ -38,7 +38,7 @@ const panelMonedas = (() => {
   // En qué paso de la charla quedó cada cliente (estado.step de walter-bot).
   const PASOS = {
     loc: 'Diciendo de qué localidad es', cat: 'Eligiendo qué vende',
-    unit: 'Eligiendo unidades o kilos', qty: 'Diciendo la cantidad',
+    unit: 'Eligiendo unidades o kilos', tipo: 'Eligiendo el tipo de moneda', qty: 'Diciendo la cantidad',
     mod: 'Eligiendo cómo lo entrega', name: 'Dando su nombre',
     addr: 'Dando la dirección', done: 'Pedido tomado', out: 'Fuera de la zona'
   };
@@ -65,8 +65,12 @@ const panelMonedas = (() => {
 
   const plata = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-AR');
   const kilos = (n) => (Math.round(Number(n) * 10) / 10).toLocaleString('es-AR') + ' kg';
+  // Las llaves se compran como las monedas contadas: walter-bot las guarda como
+  // Monedas con tipo "Llaves".
+  const esLlave = (p) => /llave/i.test(p.tipo || '');
+  const materialDe = (p) => (esLlave(p) ? 'Llaves' : p.material);
   const cantidadDe = (p) => p.modo === 'u'
-    ? Number(p.cantidad).toLocaleString('es-AR') + ' unidades'
+    ? Number(p.cantidad).toLocaleString('es-AR') + (p.tipo && !esLlave(p) ? ' de ' + p.tipo : ' unidades')
     : kilos(p.cantidad);
   const canalDe = (c) => (c === 'messenger' ? 'Messenger' : 'WhatsApp');
 
@@ -96,9 +100,15 @@ const panelMonedas = (() => {
   };
 
   // Mismo criterio que walter-bot, con el umbral de hoy: si Walter lo cambia,
-  // la hoja de ruta lo toma en el momento.
-  const esPrioridad = (p) =>
-    p.material === 'Monedas' && p.modo === 'kg' && Number(p.cantidad) >= Number(cfg.umbralPrio);
+  // la hoja de ruta lo toma en el momento. Las contadas se pasan a kilos con
+  // cuántas de ese tipo hacen un kilo.
+  const esPrioridad = (p) => {
+    if (p.material !== 'Monedas' || esLlave(p)) return false;
+    if (p.modo === 'kg') return Number(p.cantidad) >= Number(cfg.umbralPrio);
+    const tipo = (cfg.monedas || []).find((t) => t.n === p.tipo);
+    if (!tipo || !tipo.kg) return !!p.prioridad;
+    return Number(p.cantidad) / tipo.kg >= Number(cfg.umbralPrio);
+  };
 
   const cerrado = (p) => p.estado === 'retirado' || p.estado === 'cancelado';
 
@@ -291,7 +301,7 @@ const panelMonedas = (() => {
           escapar(canalDe(p.canal) + ' · pidió el ' + fechaHora(p.creado)) + '</div>' +
       '</div>' +
       '<div>' +
-        '<div><b>' + escapar(p.material) + '</b> · ' + escapar(cantidadDe(p)) + '</div>' +
+        '<div><b>' + escapar(materialDe(p)) + '</b> · ' + escapar(cantidadDe(p)) + '</div>' +
         '<div class="dato-secundario">' + escapar(plata(p.monto) + ' · ' + p.tarifa) + '</div>' +
         '<div class="dato-secundario">' + escapar(p.retiro) + '</div>' +
       '</div>' +
@@ -474,7 +484,7 @@ const panelMonedas = (() => {
               '<div class="dato-secundario">' +
                 escapar([p.direccion, p.localidad].filter(Boolean).join(', ') + ' · ' + p.retiro) + '</div>' +
               '<div class="dato-secundario">' +
-                escapar(p.material + ' · ' + cantidadDe(p) + ' · ' + plata(p.monto) +
+                escapar(materialDe(p) + ' · ' + cantidadDe(p) + ' · ' + plata(p.monto) +
                   (p.canal === 'whatsapp' ? ' · Tel. +' + p.usuario : '')) + '</div>' +
             '</div>' +
             '<span class="tramo">' + (tramo < 1 ? 'misma zona' : '+' + Math.round(tramo) + ' km') + '</span>' +
@@ -488,7 +498,7 @@ const panelMonedas = (() => {
     $('mResumenRuta').innerHTML = !ruta.length ? '' : [
       ['Paradas', ruta.length],
       ['Kilos', kilos(totalKg)],
-      unidades ? ['Monedas sueltas', unidades.toLocaleString('es-AR') + ' u.'] : null,
+      unidades ? ['Contadas', unidades.toLocaleString('es-AR') + ' u.'] : null,
       ['Efectivo a llevar', plata(efectivo)],
       ['Recorrido aprox.', Math.round(recorrido) + ' km']
     ].filter(Boolean).map(([k, v]) =>
@@ -590,7 +600,7 @@ const panelMonedas = (() => {
     $('mFichaPedidos').innerHTML = suyos.length
       ? suyos.map((p) =>
           '<div class="dato"><span class="k">' + escapar(fechaHora(p.creado)) + '</span>' +
-          '<span class="v">' + escapar(p.material + ' · ' + cantidadDe(p) + ' · ' + plata(p.monto) +
+          '<span class="v">' + escapar(materialDe(p) + ' · ' + cantidadDe(p) + ' · ' + plata(p.monto) +
             ' · ' + ESTADOS[p.estado]) + '</span></div>').join('')
       : '<div class="dato"><span class="v dato-secundario">Todavía no hizo ningún pedido.</span></div>';
 
@@ -663,12 +673,80 @@ const panelMonedas = (() => {
 
   // ---------------------------------------------------------- precios
 
+  // Cada tipo de moneda contada (y las llaves): nombre, precio por unidad y
+  // cuántas hacen un kilo. walter-bot los ofrece en este orden.
+  function htmlTipo(t) {
+    // escapar no toca las comillas, y estos valores van dentro de atributos
+    const v = (x) => (x == null ? '' : escapar(x).replace(/"/g, '&quot;'));
+    return '<div class="tipo-moneda">' +
+      '<input data-t="n" type="text" aria-label="Tipo" placeholder="ej. $5" value="' + v(t.n) + '">' +
+      '<input data-t="u" type="number" min="0" step="any" inputmode="decimal" aria-label="Precio por unidad ($)" value="' + v(t.u) + '">' +
+      '<input data-t="kg" type="number" min="0" step="any" inputmode="decimal" aria-label="Cuántas hacen un kilo" value="' + v(t.kg) + '">' +
+      '<button type="button" class="btn btn-suave quitar-tipo" aria-label="Quitar ' + v(t.n || 'este tipo') + '" title="Quitar">×</button>' +
+    '</div>';
+  }
+
+  function pintarTipos(lista) {
+    $('mTiposMoneda').innerHTML =
+      '<div class="tipos-cabecera" aria-hidden="true"><span>Tipo</span><span>Precio c/u ($)</span><span>Hacen 1 kg</span><span></span></div>' +
+      lista.map(htmlTipo).join('');
+  }
+
+  function marcarPreciosEditados() {
+    preciosEditados = true;
+    ocultar($('mPreciosError'));
+    $('mPreciosEstado').textContent = 'Hay cambios sin guardar';
+  }
+
+  function agregarTipo() {
+    $('mTiposMoneda').insertAdjacentHTML('beforeend', htmlTipo({}));
+    $('mTiposMoneda').lastElementChild.querySelector('input').focus();
+    marcarPreciosEditados();
+  }
+
+  function quitarTipo(e) {
+    const boton = e.target.closest('.quitar-tipo');
+    if (!boton) return;
+    boton.closest('.tipo-moneda').remove();
+    marcarPreciosEditados();
+  }
+
+  // Los tipos de la pantalla, o un mensaje con lo que hay que corregir
+  function leerTipos() {
+    const lista = [];
+    for (const fila of document.querySelectorAll('#mTiposMoneda .tipo-moneda')) {
+      const n = fila.querySelector('[data-t="n"]');
+      const u = fila.querySelector('[data-t="u"]');
+      const kg = fila.querySelector('[data-t="kg"]');
+      if (!n.value.trim() && !u.value && !kg.value) continue;
+      const nombre = n.value.trim();
+      if (!nombre) return { error: 'Poné el nombre de cada tipo de moneda.', campo: n };
+      if (lista.some((t) => t.n.toLowerCase() === nombre.toLowerCase())) {
+        return { error: 'El tipo "' + nombre + '" está dos veces.', campo: n };
+      }
+      if (!(Number(u.value) > 0)) {
+        return { error: 'Revisá el precio de "' + nombre + '": tiene que ser un número mayor que cero.', campo: u };
+      }
+      if (kg.value !== '' && !(Number(kg.value) > 0)) {
+        return { error: 'Revisá cuántas "' + nombre + '" hacen un kilo: tiene que ser un número mayor que cero.', campo: kg };
+      }
+      const tipo = { n: nombre, u: Number(u.value) };
+      if (kg.value !== '') tipo.kg = Number(kg.value);
+      lista.push(tipo);
+    }
+    if (!lista.length) {
+      return { error: 'Dejá al menos un tipo de moneda: el bot los usa para cotizar las contadas.' };
+    }
+    return { lista };
+  }
+
   function pintarPrecios() {
     // Si Walter está escribiendo, un "Actualizar" no le pisa lo que tipeó.
     if (preciosEditados) return;
     document.querySelectorAll('#mFormPrecios [data-cfg]').forEach((el) => {
       el.value = cfg[el.dataset.cfg] == null ? '' : cfg[el.dataset.cfg];
     });
+    pintarTipos(cfg.monedas || []);
     ocultar($('mPreciosError'));
     $('mPreciosEstado').textContent = cfgActualizado
       ? 'Último cambio: ' + fechaHora(cfgActualizado)
@@ -700,6 +778,14 @@ const panelMonedas = (() => {
         nuevo[el.dataset.cfg] = v;
       }
     }
+
+    const tipos = leerTipos();
+    if (tipos.error) {
+      $('mPreciosError').textContent = tipos.error;
+      if (tipos.campo) tipos.campo.focus();
+      return ver($('mPreciosError'));
+    }
+    nuevo.monedas = tipos.lista;
 
     const boton = $('mGuardarPrecios');
     boton.disabled = true;
@@ -791,11 +877,9 @@ const panelMonedas = (() => {
     $('mBtnAtendida').addEventListener('click', marcarAtendida);
     $('mBtnAbrir').addEventListener('click', abrirAfuera);
 
-    $('mFormPrecios').addEventListener('input', () => {
-      preciosEditados = true;
-      ocultar($('mPreciosError'));
-      $('mPreciosEstado').textContent = 'Hay cambios sin guardar';
-    });
+    $('mFormPrecios').addEventListener('input', marcarPreciosEditados);
+    $('mAgregarTipo').addEventListener('click', agregarTipo);
+    $('mTiposMoneda').addEventListener('click', quitarTipo);
     $('mFormPrecios').addEventListener('submit', guardarPrecios);
 
     // Los pedidos entran solos: al volver a la pestaña del navegador, y cada

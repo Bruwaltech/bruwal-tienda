@@ -126,7 +126,7 @@ async function atender(canal: Canal, usuario: string, texto: string, nombrePerfi
     if (r.pedido) {
       const p = r.pedido;
       await db.from("walter_pedidos").insert({
-        canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, cantidad: p.cant,
+        canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, tipo: p.tipo, cantidad: p.cant,
         retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad,
       });
     }
@@ -139,12 +139,15 @@ async function atender(canal: Canal, usuario: string, texto: string, nombrePerfi
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
   for (const r of respuestas) {
     await log(canal, usuario, "sale", r.text);
-    const opts = (r.options ?? []).slice(0, canal === "whatsapp" ? 3 : 13);
+    const opts = (r.options ?? []).slice(0, canal === "whatsapp" ? 10 : 13);
     if (canal === "whatsapp") {
-      const msg = opts.length
+      // WhatsApp muestra hasta 3 botones; con más opciones (los tipos de moneda) va una lista
+      const msg = !opts.length ? { type: "text", text: { body: r.text } }
+        : opts.length <= 3
         ? { type: "interactive", interactive: { type: "button", body: { text: r.text.slice(0, 1024) },
             action: { buttons: opts.map((t, i) => ({ type: "reply", reply: { id: "op" + i, title: t.slice(0, 20) } })) } } }
-        : { type: "text", text: { body: r.text } };
+        : { type: "interactive", interactive: { type: "list", body: { text: r.text.slice(0, 1024) },
+            action: { button: "Elegir", sections: [{ title: "Opciones", rows: opts.map((t, i) => ({ id: "op" + i, title: t.slice(0, 24) })) }] } } };
       await graph(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"), { messaging_product: "whatsapp", to: usuario, ...msg });
     } else {
       await graph("me/messages", await secreto("FB_PAGE_TOKEN"), {
@@ -205,7 +208,8 @@ async function enviarAvisos() {
       .eq("dia", g.dia).eq("turno", g.turno).is("aviso_enviado", null).neq("estado", "cancelado").neq("retiro", "Depósito");
     for (const p of pedidos ?? []) {
       const nombre = String(p.nombre).split(" ")[0];
-      const que = p.material === "Monedas" ? "las monedas" : "el " + String(p.material).toLowerCase();
+      const que = /llave/i.test(p.tipo ?? "") ? "las llaves"
+        : p.material === "Monedas" ? "las monedas" : "el " + String(p.material).toLowerCase();
       const cuando = g.turno === "Mañana" ? "mañana a la mañana" : "hoy a la tarde";
       let ok: boolean;
       if (p.canal === "whatsapp") {

@@ -1,8 +1,12 @@
 // Lógica de la charla del bot de Walter. Sin dependencias: recibe el estado guardado,
 // el texto del cliente y la configuración, y devuelve el estado nuevo y las respuestas.
 
+// Un tipo de moneda (o las llaves): precio por unidad y cuántas entran en un kilo
+export type TipoMoneda = { n: string; u: number; kg?: number };
+
 export type Config = {
-  monedaKg: number; monedaU: number;
+  // monedaU es el precio por unidad de antes de los tipos: se usa solo si no hay tipos
+  monedaKg: number; monedaU?: number; monedas?: TipoMoneda[];
   cobreMin: number; cobreMay: number; bronceMin: number; bronceMay: number;
   umbralMay: number; umbralPrio: number;
   depPA: string; depPAh: string; depSL: string; depSLh: string;
@@ -11,13 +15,13 @@ export type Config = {
 };
 
 export type Datos = {
-  loc?: string; mat?: "Monedas" | "Cobre" | "Bronce"; modo?: "kg" | "u"; cant?: number;
+  loc?: string; mat?: "Monedas" | "Cobre" | "Bronce"; modo?: "kg" | "u"; tipo?: string; cant?: number;
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
 };
 export type Estado = { step: string; d: Datos };
 export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
-  dir: string | null; monto: number; tarifa: string; prioridad: boolean;
+  tipo: string | null; dir: string | null; monto: number; tarifa: string; prioridad: boolean;
 };
 export type Resultado = { estado: Estado; respuestas: Respuesta[]; pedido?: Pedido; derivar?: boolean };
 
@@ -43,7 +47,7 @@ export const LOCALIDADES: { n: string; a: string[] }[] = [
 const fmt = (n: number) => "$" + Math.round(n).toLocaleString("es-AR");
 const kgf = (n: number) => (Math.round(n * 10) / 10).toLocaleString("es-AR") + " kg";
 export const norm = (s: string) =>
-  (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9 .,]/g, " ").replace(/\s+/g, " ").trim();
 
 export function parseNum(s: string): number | null {
@@ -65,9 +69,37 @@ export function findLoc(s: string): string | null {
   return best ? best.n : null;
 }
 
-export function cotizar(c: Config, mat: string, modo: string, cant: number) {
+export const MEZCLADAS = "Mezcladas";
+export const tiposDe = (c: Config) => (c.monedas ?? []).filter((t) => t && t.n && t.u > 0);
+const esLlave = (n?: string) => /llave/i.test(n ?? "");
+const tipoPorNombre = (c: Config, n?: string) => tiposDe(c).find((t) => t.n === n);
+// "monedas de $10", "llaves"
+const nombreTipo = (n: string) => (esLlave(n) ? "llaves" : "monedas de " + n);
+
+/** El tipo que nombra el cliente: un tipo de la configuración, MEZCLADAS, o null si no se entiende. */
+export function findTipo(c: Config, s: string): string | null {
+  const n = norm(s);
+  if (/mezcl|varias|surtid|de todo/.test(n)) return MEZCLADAS;
+  const tipos = tiposDe(c);
+  const exacto = tipos.find((t) => norm(t.n) === n);
+  if (exacto) return exacto.n;
+  // Por el número ("10", "50") o, en las llaves, por la palabra. Si quedan dos
+  // (25 dorada y 25 plateada), decide la otra palabra del nombre.
+  const palabras = new Set(n.split(/[ .,]+/));
+  let cand = tipos.filter((t) => {
+    const num = norm(t.n).match(/\d+/)?.[0];
+    return num ? palabras.has(num) : esLlave(t.n) && /llave/.test(n);
+  });
+  if (cand.length > 1) {
+    cand = cand.filter((t) => norm(t.n).split(" ").filter((w) => !/^\d+$/.test(w) && w !== "centavos")
+      .every((w) => palabras.has(w) || palabras.has(w + "s")));
+  }
+  return cand.length === 1 ? cand[0].n : null;
+}
+
+export function cotizar(c: Config, mat: string, modo: string, cant: number, tipo?: string) {
   if (mat === "Monedas") {
-    const precio = modo === "u" ? c.monedaU : c.monedaKg;
+    const precio = modo === "u" ? (tipoPorNombre(c, tipo)?.u ?? c.monedaU ?? 0) : c.monedaKg;
     return { precio, total: cant * precio, tarifa: modo === "u" ? "por unidad" : "por kilo" };
   }
   const may = cant >= c.umbralMay;
@@ -75,26 +107,43 @@ export function cotizar(c: Config, mat: string, modo: string, cant: number) {
   return { precio, total: cant * precio, tarifa: may ? "mayorista" : "minorista" };
 }
 
-const cantTxt = (modo?: string, cant?: number) =>
-  modo === "u" ? (cant ?? 0).toLocaleString("es-AR") + " unidades" : kgf(cant ?? 0);
+const cantTxt = (d: Datos) => {
+  if (d.modo !== "u") return kgf(d.cant ?? 0);
+  const n = (d.cant ?? 0).toLocaleString("es-AR");
+  return d.tipo ? n + " " + nombreTipo(d.tipo) : n + " unidades";
+};
+// "300 monedas de $10", "12,5 kg de cobre"
+const queTxt = (d: Datos) => (d.tipo ? cantTxt(d) : cantTxt(d) + " de " + d.mat?.toLowerCase());
 
 function depositos(c: Config) {
   return `📍 Depósito San Lorenzo: ${c.depSL}\n${c.depSLh}\n\n📍 Depósito Pueblo Andino: ${c.depPA}\n${c.depPAh}`;
 }
 function precios(c: Config) {
-  return `Precios de hoy:\n• Monedas: ${fmt(c.monedaKg)} el kilo o ${fmt(c.monedaU)} por unidad\n` +
+  const tipos = tiposDe(c);
+  const monedas = tipos.length
+    ? `• Monedas: ${fmt(c.monedaKg)} el kilo. Contadas, cada una:\n` +
+      tipos.map((t) => `   – ${esLlave(t.n) ? "Llaves" : "De " + t.n}: ${fmt(t.u)}`).join("\n") + "\n"
+    : `• Monedas: ${fmt(c.monedaKg)} el kilo o ${fmt(c.monedaU ?? 0)} por unidad\n`;
+  return `Precios de hoy:\n${monedas}` +
     `• Cobre: ${fmt(c.cobreMin)}/kg (desde ${c.umbralMay} kg: ${fmt(c.cobreMay)}/kg)\n` +
     `• Bronce: ${fmt(c.bronceMin)}/kg (desde ${c.umbralMay} kg: ${fmt(c.bronceMay)}/kg)`;
 }
 
-function pregunta(e: Estado): Respuesta {
+function pregunta(e: Estado, c: Config): Respuesta {
   const d = e.d;
   switch (e.step) {
     case "loc": return { text: "¿De qué localidad nos escribís?" };
     case "cat": return { text: "¿Qué querés vender?", options: ["Monedas", "Cobre", "Bronce"] };
     case "unit": return { text: "¿Las tenés contadas o pesadas?", options: ["Por kilo", "Por unidad"] };
+    case "tipo": return {
+      text: "¿De qué monedas son? Si tenés de varias, elegí Mezcladas y las cotizamos por kilo.",
+      options: [...tiposDe(c).map((t) => t.n), MEZCLADAS],
+    };
     case "qty":
-      if (d.mat === "Monedas") return { text: d.modo === "u" ? "¿Cuántas monedas son, más o menos?" : "¿Cuántos kilos tenés, aproximadamente?" };
+      if (d.mat === "Monedas") {
+        if (d.modo !== "u") return { text: "¿Cuántos kilos tenés, aproximadamente?" };
+        return { text: `¿Cuántas ${d.tipo ? nombreTipo(d.tipo) : "monedas"} son, más o menos?` };
+      }
       return { text: `¿Cuántos kilos de ${d.mat?.toLowerCase()} tenés en total?` };
     case "mod": return { text: "¿Cómo preferís hacerlo?", options: ["Retiro a domicilio", "Punto de encuentro", "Llevo al depósito"] };
     case "name": return { text: "¿A nombre de quién lo anotamos?" };
@@ -116,7 +165,10 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     // Primer mensaje: saludo. Si ya dijo la localidad, la tomamos de una.
     const e = nuevoEstado();
     if (findLoc(texto)) return procesar(e, texto, c);
-    return { estado: e, respuestas: [{ text: c.saludo }] };
+    // Lo que sigue necesita la localidad: si el saludo no la pide, la pide el bot.
+    const respuestas: Respuesta[] = [{ text: c.saludo }];
+    if (!/localidad/.test(norm(c.saludo))) respuestas.push(pregunta(e, c));
+    return { estado: e, respuestas };
   }
   const e: Estado = { step: estado.step, d: { ...estado.d } };
   const d = e.d;
@@ -125,16 +177,16 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   const out = (...r: Respuesta[]): Resultado => ({ estado: e, respuestas: r });
 
   if (/(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
-  if (n === "otra localidad") { e.step = "loc"; return out(pregunta(e)); }
+  if (n === "otra localidad") { e.step = "loc"; return out(pregunta(e, c)); }
   if (/(hablar|humano|persona|walter)/.test(n) && e.step !== "name" && e.step !== "addr") {
-    return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e)), derivar: true };
+    return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
   }
-  if (/(horario|deposito|donde estan)/.test(n) && e.step !== "addr" && e.step !== "mod") return out({ text: depositos(c) }, pregunta(e));
-  if (/(precio|cuanto pagan|cotizacion|a cuanto)/.test(n) && parseNum(t) === null) return out({ text: precios(c) }, pregunta(e));
+  if (/(horario|deposito|donde estan)/.test(n) && e.step !== "addr" && e.step !== "mod") return out({ text: depositos(c) }, pregunta(e, c));
+  if (/(precio|cuanto pagan|cotizacion|a cuanto)/.test(n) && parseNum(t) === null) return out({ text: precios(c) }, pregunta(e, c));
 
   switch (e.step) {
     case "out":
-      if (!findLoc(t)) return out(pregunta(e));
+      if (!findLoc(t)) return out(pregunta(e, c));
       e.step = "loc";
     // falls through
     case "loc": {
@@ -151,31 +203,56 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       return out({ text: `¡Genial, en ${l} trabajamos! ¿Qué querés vender?`, options: ["Monedas", "Cobre", "Bronce"] });
     }
     case "cat": {
+      const llave = /llave/.test(n) ? tiposDe(c).find((x) => esLlave(x.n)) : undefined;
+      if (llave) {
+        d.mat = "Monedas"; d.modo = "u"; d.tipo = llave.n; e.step = "qty";
+        return out(pregunta(e, c));
+      }
       const mat = /moneda/.test(n) ? "Monedas" : /cobre/.test(n) ? "Cobre" : /bronce/.test(n) ? "Bronce" : null;
-      if (!mat) return out({ text: "Compramos monedas, cobre y bronce. ¿Cuál de esos tenés?", options: ["Monedas", "Cobre", "Bronce"] });
+      if (!mat) {
+        const llaves = tiposDe(c).some((x) => esLlave(x.n)) ? "llaves, " : "";
+        return out({ text: `Compramos monedas, ${llaves}cobre y bronce. ¿Cuál de esos tenés?`, options: ["Monedas", "Cobre", "Bronce"] });
+      }
       d.mat = mat;
-      if (mat === "Monedas") { e.step = "unit"; return out(pregunta(e)); }
-      d.modo = "kg"; e.step = "qty"; return out(pregunta(e));
+      if (mat === "Monedas") { e.step = "unit"; return out(pregunta(e, c)); }
+      d.modo = "kg"; e.step = "qty"; return out(pregunta(e, c));
     }
     case "unit": {
       if (/unidad|contad|cantidad/.test(n)) d.modo = "u";
       else if (/kilo|kg|pesad/.test(n)) d.modo = "kg";
-      else return out(pregunta(e));
+      else return out(pregunta(e, c));
+      delete d.tipo;
+      if (d.modo === "u" && tiposDe(c).length) { e.step = "tipo"; return out(pregunta(e, c)); }
       e.step = "qty";
       const q = parseNum(t);
-      return q ? cantidad(e, q, c) : out(pregunta(e));
+      return q ? cantidad(e, q, c) : out(pregunta(e, c));
+    }
+    case "tipo": {
+      const tipo = findTipo(c, t);
+      if (!tipo) return out(pregunta(e, c));
+      e.step = "qty";
+      if (tipo === MEZCLADAS) {
+        d.modo = "kg";
+        return out({ text: `Si están mezcladas, las pesamos: pagamos ${fmt(c.monedaKg)} el kilo.` }, pregunta(e, c));
+      }
+      d.tipo = tipo;
+      return out(pregunta(e, c));
     }
     case "qty": {
       const q = parseNum(t);
-      if (!q || q <= 0) return out({ text: d.modo === "u" ? "Pasame un número aproximado de monedas, por ejemplo 2500." : "Pasame los kilos con un número, por ejemplo 12 o 7,5." });
+      if (!q || q <= 0) {
+        return out({ text: d.modo === "u"
+          ? `Pasame un número aproximado de ${esLlave(d.tipo) ? "llaves" : "monedas"}, por ejemplo 2500.`
+          : "Pasame los kilos con un número, por ejemplo 12 o 7,5." });
+      }
       return cantidad(e, q, c);
     }
     case "mod": {
       if (/domicilio|casa|busquen|retir/.test(n)) d.ret = "Retiro a domicilio";
       else if (/encuentro|punto|nos vemos/.test(n)) d.ret = "Punto de encuentro";
       else if (/deposito|llevo|voy/.test(n)) d.ret = "Depósito";
-      else return out(pregunta(e));
-      e.step = "name"; return out(pregunta(e));
+      else return out(pregunta(e, c));
+      e.step = "name"; return out(pregunta(e, c));
     }
     case "name": {
       d.nombre = t.slice(0, 40);
@@ -186,7 +263,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
           pedido: armarPedido(d, c, null),
         };
       }
-      e.step = "addr"; return out(pregunta(e));
+      e.step = "addr"; return out(pregunta(e, c));
     }
     case "addr": {
       d.dir = t.slice(0, 120);
@@ -194,7 +271,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       const p = armarPedido(d, c, d.dir);
       return {
         ...out({
-          text: `¡Listo, ${d.nombre}! Quedó anotado:\n• ${cantTxt(d.modo, d.cant)} de ${d.mat?.toLowerCase()}\n• ${d.ret} en ${d.loc}\n• Estimado: ${fmt(p.monto)}\n\n` +
+          text: `¡Listo, ${d.nombre}! Quedó anotado:\n• ${queTxt(d)}\n• ${d.ret} en ${d.loc}\n• Estimado: ${fmt(p.monto)}\n\n` +
             `Walter arma los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.` +
             (p.prioridad ? "\n\nComo es una buena cantidad, te ponemos entre los primeros del recorrido." : ""),
           options: ["Empezar de nuevo"],
@@ -202,26 +279,32 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         pedido: p,
       };
     }
-    default: return out(pregunta(e));
+    default: return out(pregunta(e, c));
   }
 }
 
 function cantidad(e: Estado, q: number, c: Config): Resultado {
   const d = e.d; d.cant = q;
-  const r = cotizar(c, d.mat!, d.modo!, q);
+  const r = cotizar(c, d.mat!, d.modo!, q, d.tipo);
   let text: string;
-  if (d.mat === "Monedas") text = `Por ${cantTxt(d.modo, q)} de monedas te pagamos ${fmt(r.total)} (hoy ${fmt(r.precio)} ${r.tarifa}).`;
+  if (d.mat === "Monedas") {
+    text = `Por ${queTxt(d)} te pagamos ${fmt(r.total)} (` +
+      (d.modo === "u" ? `${fmt(r.precio)} cada una` : `hoy ${fmt(r.precio)} el kilo`) + ").";
+  }
   else text = `Por ${kgf(q)} de ${d.mat!.toLowerCase()} te pagamos ${fmt(r.total)} (${fmt(r.precio)} el kilo, precio ${r.tarifa}).` +
     (r.tarifa === "mayorista" ? "" : `\nDesde ${c.umbralMay} kg pagamos precio mayorista.`);
   e.step = "mod";
-  return { estado: e, respuestas: [{ text: text + "\nEl monto final se confirma al pesar en el momento del retiro." }, pregunta(e)] };
+  return { estado: e, respuestas: [{ text: text + "\nEl monto final se confirma al pesar en el momento del retiro." }, pregunta(e, c)] };
 }
 
 function armarPedido(d: Datos, c: Config, dir: string | null): Pedido {
-  const r = cotizar(c, d.mat!, d.modo!, d.cant!);
+  const r = cotizar(c, d.mat!, d.modo!, d.cant!, d.tipo);
+  // Las contadas también cuentan para la prioridad, pasadas a kilos; las llaves no son monedas.
+  const t = tipoPorNombre(c, d.tipo);
+  const kilos = d.modo === "kg" ? d.cant! : t?.kg ? d.cant! / t.kg : 0;
   return {
-    loc: d.loc!, mat: d.mat!, modo: d.modo!, cant: d.cant!, ret: d.ret!, nombre: d.nombre!, dir,
+    loc: d.loc!, mat: d.mat!, modo: d.modo!, tipo: d.tipo ?? null, cant: d.cant!, ret: d.ret!, nombre: d.nombre!, dir,
     monto: Math.round(r.total), tarifa: r.tarifa,
-    prioridad: d.mat === "Monedas" && d.modo === "kg" && d.cant! >= c.umbralPrio,
+    prioridad: d.mat === "Monedas" && !esLlave(d.tipo) && kilos >= c.umbralPrio,
   };
 }
