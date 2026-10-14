@@ -5402,6 +5402,23 @@ function textoCorteCobranza(fecha) {
     '<div style="font-size:10px;color:var(--text-mute);">' + resto + '</div>';
 }
 
+// "Se libera el 01/11 · faltan 18 días" para el último cobro de una
+// suscripción: Mercado Pago retiene la plata unos días antes de dejarla usar.
+function textoLiberacionCobro(u) {
+  if (!u) return '—';
+  const ddmm = (f) => String(f).slice(8, 10) + '/' + String(f).slice(5, 7);
+  const cobro = (u.fecha ? 'Cobró el ' + ddmm(u.fecha) : 'Cobró') +
+    (u.neto ? ' · neto $' + Math.round(u.neto) : (u.monto ? ' · $' + Math.round(u.monto) : ''));
+  if (!u.libera) return escapeHtml(cobro);
+  const libera = new Date(u.libera);
+  const dias = Math.ceil((libera.getTime() - Date.now()) / 86400000);
+  const liberada = u.liberado || dias <= 0;
+  return '<span style="font-weight:700;color:' + (liberada ? 'var(--stock)' : 'var(--navy)') + ';">' +
+      (liberada ? 'Disponible desde el ' : 'Se libera el ') + escapeHtml(ddmm(u.libera)) + '</span>' +
+    '<div style="font-size:10px;color:var(--text-mute);">' + escapeHtml(cobro) +
+      (liberada ? '' : ' · faltan ' + dias + (dias === 1 ? ' día' : ' días')) + '</div>';
+}
+
 function diasParaElCorte() {
   if (!currentStore || !currentStore.plan_vence) return null;
   const corte = venceEnHoraArgentina(currentStore.plan_vence);
@@ -21743,7 +21760,8 @@ async function diagnosticoMercadoPago() {
         '<thead><tr style="text-align:left;color:var(--text-mute);font-size:10.5px;text-transform:uppercase;">' +
         '<th style="padding:5px 7px;">Negocio</th><th style="padding:5px 7px;">Email</th>' +
         '<th style="padding:5px 7px;text-align:center;">Cobro</th>' +
-        '<th style="padding:5px 7px;">Próximo / corte</th></tr></thead><tbody>';
+        '<th style="padding:5px 7px;">Próximo / corte</th>' +
+        '<th style="padding:5px 7px;">Plata del último cobro</th></tr></thead><tbody>';
 
       d.cobranza.forEach((c) => {
         html += '<tr>' +
@@ -21758,6 +21776,7 @@ async function diagnosticoMercadoPago() {
             (c.corta ? textoCorteCobranza(c.corta)
               : c.proximo_cobro ? escapeHtml(String(c.proximo_cobro).slice(0, 10)) +
                 (c.monto ? ' · $' + c.monto : '') : '—') + '</td>' +
+          '<td style="padding:5px 7px;font-size:11px;">' + textoLiberacionCobro(c.ultimo_cobro) + '</td>' +
         '</tr>';
       });
       html += '</tbody></table></div>' +

@@ -252,6 +252,41 @@ async function suscripcionesDelPlan(planId) {
   return { ok: true, resultados: (datos && datos.results) || [] };
 }
 
+// El ultimo cobro aprobado de una suscripcion, con la fecha en que Mercado
+// Pago libera esa plata (money_release_date). Mercado Pago la retiene unos
+// dias segun como este configurada la cuenta -- en la practica, unos 18 --
+// y hasta entonces no se puede usar. null si todavia no cobro nada o si
+// Mercado Pago no contesta: es un dato de mas, no puede romper la tabla.
+async function ultimoCobroDe(preapprovalId) {
+  try {
+    const auth = { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } };
+    const r = await fetch(MP_API + '/authorized_payments/search?preapproval_id=' +
+                          encodeURIComponent(preapprovalId) + '&limit=50', auth);
+    if (!r.ok) return null;
+    const datos = await r.json().catch(() => null);
+    const cobros = ((datos && datos.results) || [])
+      .filter((c) => c.payment && c.payment.id && c.payment.status === 'approved')
+      .sort((a, b) => String(b.date_created || '').localeCompare(String(a.date_created || '')));
+    if (!cobros.length) return null;
+
+    const p = await fetch(MP_API + '/v1/payments/' + encodeURIComponent(cobros[0].payment.id), auth);
+    if (!p.ok) return null;
+    const pago = await p.json().catch(() => null);
+    if (!pago) return null;
+    const det = pago.transaction_details || {};
+    return {
+      fecha: pago.date_approved || pago.date_created || null,
+      monto: pago.transaction_amount || null,
+      neto: det.net_received_amount || null,
+      libera: pago.money_release_date || null,
+      // 'released' = ya esta disponible; 'pending' = todavia retenida.
+      liberado: pago.money_release_status === 'released'
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
 // Le escribe nuestro slug a una suscripcion que nacio sin el. Es lo que
 // convierte el arreglo en definitivo: la proxima vez se encuentra por
 // external_reference, como siempre debio ser.
@@ -1017,6 +1052,11 @@ module.exports = async (req, res) => {
           corta: t.plan_vence || null
         });
       }
+      // Cuando se libera la plata del ultimo cobro de cada uno. En paralelo:
+      // son dos llamadas a Mercado Pago por tienda que paga.
+      await Promise.all(cobranza.map(async (c) => {
+        c.ultimo_cobro = c.suscripcion ? await ultimoCobroDe(c.suscripcion) : null;
+      }));
       cobranza.sort((a, b) => (a.paga === b.paga) ? 0 : (a.paga ? 1 : -1));
     }
 
