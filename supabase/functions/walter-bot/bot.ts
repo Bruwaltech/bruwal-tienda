@@ -74,6 +74,8 @@ export function findLoc(s: string): string | null {
 }
 
 export const MEZCLADAS = "Mezcladas";
+// La opción de la lista de tipos para las que van por kilo, sean de una clase o mezcladas
+const OPCION_KILO = "Por kilo o mezcladas";
 export const tiposDe = (c: Config) => (c.monedas ?? []).filter((t) => t && t.n && t.u > 0);
 const esLlave = (n?: string) => /llave/i.test(n ?? "");
 const tipoPorNombre = (c: Config, n?: string) => tiposDe(c).find((t) => t.n === n);
@@ -83,7 +85,7 @@ const nombreTipo = (n: string) => (esLlave(n) ? "llaves" : "monedas de " + n);
 /** El tipo que nombra el cliente: un tipo de la configuración, MEZCLADAS, o null si no se entiende. */
 export function findTipo(c: Config, s: string): string | null {
   const n = norm(s);
-  if (/mezcl|varias|surtid|de todo/.test(n)) return MEZCLADAS;
+  if (/mezcl|varias|surtid|de todo|kilo|kg|pesad/.test(n)) return MEZCLADAS;
   const tipos = tiposDe(c);
   const exacto = tipos.find((t) => norm(t.n) === n);
   if (exacto) return exacto.n;
@@ -157,8 +159,8 @@ function pregunta(e: Estado, c: Config): Respuesta {
     case "cat": return { text: "¿Qué querés vender?", options: ["Monedas", "Cobre", "Bronce"] };
     case "unit": return { text: "¿Las tenés contadas o pesadas?", options: ["Por kilo", "Por unidad"] };
     case "tipo": return {
-      text: "¿De qué monedas son? Si tenés de varias, elegí Mezcladas y las cotizamos por kilo.",
-      options: [...tiposDe(c).map((t) => t.n), MEZCLADAS],
+      text: `¿De qué monedas son? Si las tenés pesadas o son de varias clases, elegí "${OPCION_KILO}".`,
+      options: [...tiposDe(c).map((t) => t.n), OPCION_KILO],
     };
     case "qty":
       if (d.mat === "Monedas") {
@@ -168,7 +170,11 @@ function pregunta(e: Estado, c: Config): Respuesta {
       return { text: `¿Cuántos kilos de ${d.mat?.toLowerCase()} tenés en total?` };
     case "mod":
       if (soloDeposito(d, c)) return { text: "¿Lo traés al depósito?", options: ["Llevo al depósito", "Hablar con Walter"] };
-      return { text: "¿Cómo preferís hacerlo?", options: ["Retiro a domicilio", "Punto de encuentro", "Llevo al depósito"] };
+      // La dirección escrita ya elige el retiro a domicilio: un mensaje menos que tocar el botón y después escribirla
+      return {
+        text: `¿Cómo lo hacemos? Si querés que lo pasemos a buscar, escribime la dirección en ${d.loc} (calle y número). Si no, elegí una opción.`,
+        options: ["Punto de encuentro", "Llevo al depósito"],
+      };
     case "name": return { text: "¿A nombre de quién lo anotamos?" };
     case "addr": return {
       text: d.ret === "Punto de encuentro"
@@ -255,7 +261,16 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         return out({ text: `Compramos monedas, ${llaves}cobre y bronce. ¿Cuál de esos tenés?`, options: ["Monedas", "Cobre", "Bronce"] });
       }
       d.mat = mat;
-      if (mat === "Monedas") { e.step = "unit"; return out(pregunta(e, c)); }
+      if (mat === "Monedas") {
+        // Sin preguntar si están contadas o pesadas: la lista de tipos trae la opción por kilo
+        if (/kilo|kg|pesad/.test(n)) {
+          d.modo = "kg"; e.step = "qty";
+          const q = parseNum(t);
+          return q ? cantidad(e, q, c) : out(pregunta(e, c));
+        }
+        if (!tiposDe(c).length) { e.step = "unit"; return out(pregunta(e, c)); }
+        e.step = "tipo"; return out(pregunta(e, c));
+      }
       d.modo = "kg"; e.step = "qty"; return out(pregunta(e, c));
     }
     case "unit": {
@@ -273,10 +288,10 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       if (!tipo) return out(pregunta(e, c));
       e.step = "qty";
       if (tipo === MEZCLADAS) {
-        d.modo = "kg";
-        return out({ text: `Si están mezcladas, las pesamos: pagamos ${fmt(c.monedaKg)} el kilo.` }, pregunta(e, c));
+        d.modo = "kg"; delete d.tipo;
+        return out({ text: `Por kilo pagamos ${fmt(c.monedaKg)}.` }, pregunta(e, c));
       }
-      d.tipo = tipo;
+      d.modo = "u"; d.tipo = tipo;
       return out(pregunta(e, c));
     }
     case "qty": {
@@ -290,11 +305,12 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       return cantidad(e, q, c);
     }
     case "mod": {
-      if (/domicilio|casa|busquen|retir/.test(n)) d.ret = "Retiro a domicilio";
-      else if (/encuentro|punto|nos vemos/.test(n)) d.ret = "Punto de encuentro";
+      if (/encuentro|punto|nos vemos/.test(n)) d.ret = "Punto de encuentro";
       else if (/deposito|llevo|voy/.test(n)) d.ret = "Depósito";
+      else if (esDireccion(n)) { d.ret = "Retiro a domicilio"; d.dir = t.slice(0, 120); }
+      else if (/domicilio|casa|busquen|retir/.test(n)) d.ret = "Retiro a domicilio";
       else return out(pregunta(e, c));
-      if (d.ret !== "Depósito" && soloDeposito(d, c)) { delete d.ret; return out({ text: minTxt(d, c) }, pregunta(e, c)); }
+      if (d.ret !== "Depósito" && soloDeposito(d, c)) { delete d.ret; delete d.dir; return out({ text: minTxt(d, c) }, pregunta(e, c)); }
       e.step = "name"; return out(pregunta(e, c));
     }
     case "name": {
@@ -308,24 +324,54 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
           pedido: armarPedido(d, c, null),
         };
       }
+      if (d.dir) return anotar(e, c);
       e.step = "addr"; return out(pregunta(e, c));
     }
     case "addr": {
       d.dir = t.slice(0, 120);
-      e.step = "done";
-      const p = armarPedido(d, c, d.dir);
-      return {
-        ...out({
-          text: `¡Listo, ${d.nombre}! Quedó anotado:\n• ${queTxt(d)}\n• ${d.ret} en ${d.loc}\n• Estimado: ${fmt(p.monto)}\n\n` +
-            `Walter arma los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.` +
-            (p.prioridad ? "\n\nComo es una buena cantidad, te ponemos entre los primeros del recorrido." : ""),
-          options: ["Empezar de nuevo"],
-        }),
-        pedido: p,
-      };
+      return anotar(e, c);
     }
     default: return out(pregunta(e, c));
   }
+}
+
+// Una dirección escrita en vez de elegir cómo entregarlo: calle y número, sin horarios ni cantidades
+const esDireccion = (n: string) =>
+  /\d/.test(n) && /[a-z]{3,}/.test(n) && !/\b(hs|hora|horas|manana|tarde|noche|kilo|kilos|kg|monedas?)\b/.test(n);
+
+// Cierra un pedido con retiro a domicilio o punto de encuentro
+function anotar(e: Estado, c: Config): Resultado {
+  const d = e.d;
+  e.step = "done";
+  const p = armarPedido(d, c, d.dir!);
+  return {
+    estado: e,
+    respuestas: [{
+      // Con la dirección a la vista, para que el cliente la corrija si la escribió mal
+      text: `¡Listo, ${d.nombre}! Quedó anotado:\n• ${queTxt(d)}\n• ${d.ret}: ${d.dir}, ${d.loc}\n• Estimado: ${fmt(p.monto)}\n\n` +
+        `Walter arma los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.` +
+        (p.prioridad ? "\n\nComo es una buena cantidad, te ponemos entre los primeros del recorrido." : ""),
+      options: ["Empezar de nuevo"],
+    }],
+    pedido: p,
+  };
+}
+
+/** El nombre del perfil de WhatsApp sin emojis, o null si no parece un nombre. */
+export function nombreDePerfil(s?: string): string | null {
+  const x = (s ?? "").replace(/[^\p{L}\p{M} .'-]/gu, " ").replace(/\s+/g, " ").trim();
+  return /\p{L}.*\p{L}/u.test(x) ? x.slice(0, 40) : null;
+}
+
+/** Si el bot iba a preguntar a nombre de quién anotarlo y ya lo sabemos por el perfil, contesta solo. */
+export function conPerfil(r: Resultado, nombre: string | null, c: Config): Resultado {
+  if (!nombre || r.estado.step !== "name" || r.derivar) return r;
+  const r2 = procesar(r.estado, nombre, c);
+  return {
+    ...r2,
+    estado: r.estado.p ? { ...r2.estado, p: r.estado.p } : r2.estado,
+    respuestas: [...r.respuestas.slice(0, -1), ...r2.respuestas],
+  };
 }
 
 // Lo que la IA entendió de un mensaje. otraLoc: nombró una localidad que no está en la lista.
@@ -338,12 +384,16 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
     case "loc": case "out": return p.loc ? { texto: p.loc, campo: "loc" } : null;
     case "cat":
       if (esLlave(p.tipo)) return { texto: "llaves", campo: "tipo" };
+      // Pesadas: directo a los kilos, sin pasar por la lista de tipos
+      if (p.mat === "Monedas" && (p.modo === "kg" || p.tipo === MEZCLADAS)) return { texto: "monedas por kilo", campo: "mat" };
       return p.mat ? { texto: p.mat, campo: "mat" } : null;
     case "unit":
       if (p.modo) return { texto: p.modo === "u" ? "Por unidad" : "Por kilo", campo: "modo" };
       if (p.tipo) return { texto: p.tipo === MEZCLADAS ? "Por kilo" : "Por unidad", campo: "modo" };
       return null;
-    case "tipo": return p.tipo ? { texto: p.tipo, campo: "tipo" } : null;
+    case "tipo":
+      if (p.tipo) return { texto: p.tipo, campo: "tipo" };
+      return p.modo === "kg" ? { texto: OPCION_KILO, campo: "modo" } : null;
     // Una cantidad en kilos no sirve si estamos contando unidades, y al revés
     case "qty": return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
     case "mod":
