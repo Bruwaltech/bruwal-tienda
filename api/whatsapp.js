@@ -96,9 +96,12 @@ async function supabase(ruta, opciones = {}) {
 // Se traen tambien los inactivos, a proposito: sin eso no habria forma de
 // distinguir "cliente apagado" de "numero mal configurado", y son dos
 // problemas muy distintos de diagnosticar.
+//
+// Solo los de tipo ia: los otros chatbots de Bruwal Chat (el de Walter) tienen
+// su propio webhook y nunca tienen que pasar por Claude.
 async function buscarCliente(phoneNumberId) {
   const filas = await supabase(
-    'clientes?wa_phone_number_id=eq.' + encodeURIComponent(phoneNumberId) +
+    'clientes?wa_phone_number_id=eq.' + encodeURIComponent(phoneNumberId) + '&tipo=eq.ia' +
       '&select=id,slug,nombre,activo,mensaje_inactivo,modelo,prompt,' +
       'numero_derivacion,telefono_guardia,' +
       'limite_conversaciones,tope_duro,texto_upgrade,' +
