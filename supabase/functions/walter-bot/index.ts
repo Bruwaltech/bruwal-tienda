@@ -5,7 +5,8 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { type Config, type Estado, norm, procesar, type Respuesta } from "./bot.ts";
+import { type Config, type Estado, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { leer } from "./ia.ts";
 
 const env = (k: string, def = "") => Deno.env.get(k) ?? def;
 const GRAPH = `https://graph.facebook.com/${env("GRAPH_VERSION", "v21.0")}`;
@@ -71,7 +72,7 @@ Deno.serve(async (req) => {
         const texto = m.type === "text" ? m.text?.body
           : m.type === "interactive" ? (m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title)
           : m.type === "button" ? m.button?.text : null;
-        if (texto) tareas.push(atender("whatsapp", m.from, texto, nombres[m.from]));
+        if (texto) tareas.push(atender("whatsapp", m.from, texto, m.type === "text", nombres[m.from]));
         else tareas.push(enviar("whatsapp", m.from, [{ text: "Por ahora solo leo mensajes de texto. ¿Me lo escribís?" }]));
       }
     }
@@ -79,7 +80,8 @@ Deno.serve(async (req) => {
     for (const entry of body.entry ?? []) for (const ev of entry.messaging ?? []) {
       if (ev.message?.is_echo) continue;
       const texto = ev.message?.quick_reply ? ev.message.text : ev.message?.text ?? ev.postback?.title;
-      if (texto && ev.sender?.id) tareas.push(atender("messenger", ev.sender.id, texto));
+      const libre = !!ev.message?.text && !ev.message?.quick_reply;
+      if (texto && ev.sender?.id) tareas.push(atender("messenger", ev.sender.id, texto, libre));
     }
   }
   await Promise.allSettled(tareas);
@@ -92,7 +94,8 @@ async function config(): Promise<Config> {
   return data.data as Config;
 }
 
-async function atender(canal: Canal, usuario: string, texto: string, nombrePerfil?: string) {
+// libre: el cliente lo escribió (no tocó un botón ni una opción de la lista)
+async function atender(canal: Canal, usuario: string, texto: string, libre: boolean, nombrePerfil?: string) {
   try {
     await log(canal, usuario, "entra", texto);
     const [cfg, conv] = await Promise.all([
@@ -117,7 +120,11 @@ async function atender(canal: Canal, usuario: string, texto: string, nombrePerfi
       }
     }
 
-    const r = procesar(estado, texto, cfg);
+    // Lo escrito libremente lo lee Haiku antes, salvo el nombre y la dirección, que se anotan tal cual
+    const lectura = libre && !["name", "addr", "done"].includes(estado?.step ?? "")
+      ? await leer(await secreto("ANTHROPIC_API_KEY"), texto, estado, cfg) : null;
+    // Con pistas guardadas de un mensaje anterior, también cuando toca un botón
+    const r = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);
     await db.from("walter_conversaciones").upsert({
       canal, usuario, estado: r.estado, actualizado: new Date().toISOString(),
       ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
