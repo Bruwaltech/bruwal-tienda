@@ -121,7 +121,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
     }
 
     // Lo escrito libremente lo lee Haiku antes, salvo el nombre y la dirección, que se anotan tal cual
-    const lectura = libre && !["name", "addr", "done"].includes(estado?.step ?? "")
+    const lectura = libre && !["name", "addr"].includes(estado?.step ?? "")
       ? await leer(await secreto("ANTHROPIC_API_KEY"), texto, estado, cfg) : null;
     // Con pistas guardadas de un mensaje anterior, también cuando toca un botón
     const r = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);

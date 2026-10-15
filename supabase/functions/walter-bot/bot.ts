@@ -215,7 +215,9 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   const n = norm(t);
   const out = (...r: Respuesta[]): Resultado => ({ estado: e, respuestas: r });
 
-  if (/(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
+  // Un saludo suelto a mitad de la charla (volvió, o se perdió) arranca de nuevo
+  const saludo = /^(hola|buenas|buen dia|buenos dias|buenas tardes|buenas noches)$/.test(n) && e.step !== "name" && e.step !== "addr";
+  if (saludo || /(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
   if (n === "otra localidad") { e.step = "loc"; return out(pregunta(e, c)); }
   if (/(hablar|humano|persona|walter)/.test(n) && e.step !== "name" && e.step !== "addr") {
     return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
@@ -280,9 +282,10 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     case "qty": {
       const q = parseNum(t);
       if (!q || q <= 0) {
+        // Con las opciones para salir, si no sabe cuánto tiene o quiere preguntar otra cosa
         return out({ text: d.modo === "u"
           ? `Pasame un número aproximado de ${esLlave(d.tipo) ? "llaves" : "monedas"}, por ejemplo 2500.`
-          : "Pasame los kilos con un número, por ejemplo 12 o 7,5." });
+          : "Pasame los kilos con un número, por ejemplo 12 o 7,5.", options: ["Hablar con Walter", "Empezar de nuevo"] });
       }
       return cantidad(e, q, c);
     }
@@ -360,6 +363,8 @@ const PALABRA_INTENCION = { precios: "precios", depositos: "deposito", humano: "
  * Con l null (tocó un botón, o la IA no respondió) solo se usan las pistas que ya estaban guardadas.
  */
 export function procesarConLectura(estado: Estado | null, texto: string, c: Config, l: Lectura | null): Resultado {
+  // Después de un pedido, si cuenta que tiene otra cosa, cotizamos de nuevo en la misma localidad
+  if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo)) estado = { step: "cat", d: { loc: estado.d.loc } };
   let r = procesar(estado, texto, c);
   const sinAvance = !!estado && JSON.stringify(r.estado.d) === JSON.stringify(estado.d);
   // Lo que procesar no reconoce por palabras clave ("¿dónde quedan?")
