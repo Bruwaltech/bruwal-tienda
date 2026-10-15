@@ -5,7 +5,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { type Config, type Estado, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { type Config, type Estado, juntar, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
 import { leer } from "./ia.ts";
 
 const env = (k: string, def = "") => Deno.env.get(k) ?? def;
@@ -137,7 +137,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
         retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad,
       });
     }
-    await enviar(canal, usuario, r.respuestas);
+    await enviar(canal, usuario, juntar(r.respuestas));
   } catch (e) {
     console.error("atender", canal, usuario, e);
   }

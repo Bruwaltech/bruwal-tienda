@@ -182,6 +182,22 @@ function pregunta(e: Estado, c: Config): Respuesta {
 
 export function nuevoEstado(): Estado { return { step: "loc", d: {} }; }
 
+/**
+ * Junta las respuestas seguidas en un solo mensaje, porque Meta cobra cada mensaje.
+ * Solo el último de cada grupo puede llevar opciones; el texto no pasa de lo que acepta
+ * un mensaje con botones (1024) o uno de Messenger (2000).
+ */
+export function juntar(rs: Respuesta[]): Respuesta[] {
+  const out: Respuesta[] = [];
+  for (const r of rs) {
+    const prev = out[out.length - 1];
+    const text = prev ? prev.text + "\n\n" + r.text : r.text;
+    if (prev && !prev.options?.length && text.length <= (r.options?.length ? 1024 : 2000)) out[out.length - 1] = { ...r, text };
+    else out.push(r);
+  }
+  return out;
+}
+
 /** Procesa un mensaje del cliente. `estado` es null en el primer mensaje. */
 export function procesar(estado: Estado | null, texto: string, c: Config): Resultado {
   if (!estado) {
