@@ -20,7 +20,9 @@ export type Datos = {
   loc?: string; mat?: "Monedas" | "Cobre" | "Bronce"; modo?: "kg" | "u"; tipo?: string; cant?: number;
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
 };
-export type Estado = { step: string; d: Datos };
+// Pistas: lo que la IA entendió de un mensaje escrito libremente y todavía no se usó
+export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret">>;
+export type Estado = { step: string; d: Datos; p?: Pistas };
 export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
   tipo: string | null; dir: string | null; monto: number; tarifa: string; prioridad: boolean;
@@ -180,6 +182,22 @@ function pregunta(e: Estado, c: Config): Respuesta {
 
 export function nuevoEstado(): Estado { return { step: "loc", d: {} }; }
 
+/**
+ * Junta las respuestas seguidas en un solo mensaje, porque Meta cobra cada mensaje.
+ * Solo el último de cada grupo puede llevar opciones; el texto no pasa de lo que acepta
+ * un mensaje con botones (1024) o uno de Messenger (2000).
+ */
+export function juntar(rs: Respuesta[]): Respuesta[] {
+  const out: Respuesta[] = [];
+  for (const r of rs) {
+    const prev = out[out.length - 1];
+    const text = prev ? prev.text + "\n\n" + r.text : r.text;
+    if (prev && !prev.options?.length && text.length <= (r.options?.length ? 1024 : 2000)) out[out.length - 1] = { ...r, text };
+    else out.push(r);
+  }
+  return out;
+}
+
 /** Procesa un mensaje del cliente. `estado` es null en el primer mensaje. */
 export function procesar(estado: Estado | null, texto: string, c: Config): Resultado {
   if (!estado) {
@@ -197,7 +215,9 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   const n = norm(t);
   const out = (...r: Respuesta[]): Resultado => ({ estado: e, respuestas: r });
 
-  if (/(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
+  // Un saludo suelto a mitad de la charla (volvió, o se perdió) arranca de nuevo
+  const saludo = /^(hola|buenas|buen dia|buenos dias|buenas tardes|buenas noches)$/.test(n) && e.step !== "name" && e.step !== "addr";
+  if (saludo || /(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
   if (n === "otra localidad") { e.step = "loc"; return out(pregunta(e, c)); }
   if (/(hablar|humano|persona|walter)/.test(n) && e.step !== "name" && e.step !== "addr") {
     return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
@@ -262,9 +282,10 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     case "qty": {
       const q = parseNum(t);
       if (!q || q <= 0) {
+        // Con las opciones para salir, si no sabe cuánto tiene o quiere preguntar otra cosa
         return out({ text: d.modo === "u"
           ? `Pasame un número aproximado de ${esLlave(d.tipo) ? "llaves" : "monedas"}, por ejemplo 2500.`
-          : "Pasame los kilos con un número, por ejemplo 12 o 7,5." });
+          : "Pasame los kilos con un número, por ejemplo 12 o 7,5.", options: ["Hablar con Walter", "Empezar de nuevo"] });
       }
       return cantidad(e, q, c);
     }
@@ -305,6 +326,92 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     }
     default: return out(pregunta(e, c));
   }
+}
+
+// Lo que la IA entendió de un mensaje. otraLoc: nombró una localidad que no está en la lista.
+export type Lectura = Pistas & { otraLoc?: boolean; intencion?: "precios" | "depositos" | "humano" };
+
+// El texto con el que el cliente habría contestado la pregunta actual, si las pistas ya la responden
+function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo: keyof Pistas } | null {
+  const d = e.d;
+  switch (e.step) {
+    case "loc": case "out": return p.loc ? { texto: p.loc, campo: "loc" } : null;
+    case "cat":
+      if (esLlave(p.tipo)) return { texto: "llaves", campo: "tipo" };
+      return p.mat ? { texto: p.mat, campo: "mat" } : null;
+    case "unit":
+      if (p.modo) return { texto: p.modo === "u" ? "Por unidad" : "Por kilo", campo: "modo" };
+      if (p.tipo) return { texto: p.tipo === MEZCLADAS ? "Por kilo" : "Por unidad", campo: "modo" };
+      return null;
+    case "tipo": return p.tipo ? { texto: p.tipo, campo: "tipo" } : null;
+    // Una cantidad en kilos no sirve si estamos contando unidades, y al revés
+    case "qty": return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
+    case "mod":
+      // Con pocos kilos solo queda el depósito: eso ya se lo dijimos con la cotización
+      if (!p.ret || (p.ret !== "Depósito" && soloDeposito(d, c))) return null;
+      return { texto: p.ret === "Depósito" ? "Llevo al depósito" : p.ret, campo: "ret" };
+    default: return null;
+  }
+}
+
+const PALABRA_INTENCION = { precios: "precios", depositos: "deposito", humano: "hablar con Walter" } as const;
+
+/**
+ * Como procesar, con lo que la IA entendió del mensaje: contesta de una las preguntas que el
+ * cliente ya respondió ("tengo 3 kilos de cobre en Funes") y guarda el resto para más adelante.
+ * Los precios, las cuentas y los textos siguen saliendo de procesar.
+ * Con l null (tocó un botón, o la IA no respondió) solo se usan las pistas que ya estaban guardadas.
+ */
+export function procesarConLectura(estado: Estado | null, texto: string, c: Config, l: Lectura | null): Resultado {
+  // Después de un pedido, si cuenta que tiene otra cosa, cotizamos de nuevo en la misma localidad
+  if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo)) estado = { step: "cat", d: { loc: estado.d.loc } };
+  let r = procesar(estado, texto, c);
+  const sinAvance = !!estado && JSON.stringify(r.estado.d) === JSON.stringify(estado.d);
+  // Lo que procesar no reconoce por palabras clave ("¿dónde quedan?")
+  if (sinAvance && l?.intencion && !r.derivar) r = procesar(estado, PALABRA_INTENCION[l.intencion], c);
+
+  // Empezar de nuevo descarta las pistas viejas
+  const reinicio = !!estado && r.estado.step === "loc" && !Object.keys(r.estado.d).length;
+  const p: Pistas = { ...(reinicio ? {} : estado?.p), ...(l ? pistasDe(l, c) : {}) };
+
+  // Si no nombró ningún lugar, en vez de "por ahora no retiramos ahí" le volvemos a preguntar
+  if (l && estado?.step === "loc" && r.estado.step === "out" && !l.otraLoc && !p.loc && !l.intencion) {
+    r = { estado: { step: "loc", d: r.estado.d }, respuestas: [{ text: "¿De qué localidad nos escribís? Así te digo si pasamos por ahí." }] };
+  }
+
+  const respuestas: Respuesta[] = [];
+  let prefijo = "";
+  for (let i = 0; i < 8 && !r.derivar && !r.pedido; i++) {
+    const a = respuestaDesde(r.estado, p, c);
+    if (!a) break;
+    delete p[a.campo];
+    // La última respuesta de cada paso es la pregunta que ahora contestamos solos.
+    // De la confirmación de la localidad queda el "trabajamos ahí", sumado al mensaje que sigue.
+    if (r.estado.step === "cat" && !prefijo && r.estado.d.loc && r.estado.d.loc !== estado?.d.loc) prefijo = `¡Genial, en ${r.estado.d.loc} trabajamos! `;
+    respuestas.push(...r.respuestas.slice(0, -1));
+    r = procesar(r.estado, a.texto, c);
+  }
+  respuestas.push(...r.respuestas);
+  if (prefijo && respuestas.length && !respuestas.some((x) => x.text.startsWith("¡Genial, en "))) {
+    respuestas[0] = { ...respuestas[0], text: prefijo + respuestas[0].text };
+  }
+
+  // Lo que ya quedó anotado no hace falta guardarlo como pista
+  for (const k of Object.keys(p) as (keyof Pistas)[]) if (r.estado.d[k] !== undefined) delete p[k];
+  const estadoFinal: Estado = { step: r.estado.step, d: r.estado.d };
+  if (Object.keys(p).length) estadoFinal.p = p;
+  return { ...r, estado: estadoFinal, respuestas };
+}
+
+function pistasDe(l: Lectura, c: Config): Pistas {
+  const p: Pistas = {};
+  if (l.loc && LOCALIDADES.some((x) => x.n === l.loc)) p.loc = l.loc;
+  if (l.mat === "Monedas" || l.mat === "Cobre" || l.mat === "Bronce") p.mat = l.mat;
+  if (l.modo === "kg" || l.modo === "u") p.modo = l.modo;
+  if (l.tipo && (l.tipo === MEZCLADAS || tipoPorNombre(c, l.tipo))) p.tipo = l.tipo;
+  if (typeof l.cant === "number" && l.cant > 0) p.cant = l.cant;
+  if (l.ret === "Retiro a domicilio" || l.ret === "Punto de encuentro" || l.ret === "Depósito") p.ret = l.ret;
+  return p;
 }
 
 function cantidad(e: Estado, q: number, c: Config): Resultado {
