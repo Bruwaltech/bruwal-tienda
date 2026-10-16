@@ -93,8 +93,37 @@ function firmar(texto) {
     .update('mp:' + texto).digest('base64url');
 }
 
-function armarEstado(slug) {
-  const datos = Buffer.from(JSON.stringify({ slug: slug, t: Date.now() })).toString('base64url');
+// El state firmado prueba que el pedido salió de BRUWAL, pero no que la
+// vuelta llegue al MISMO navegador que lo pidió. Sin esto, alguien podía
+// iniciar la conexión para su propia tienda, mandarle el link de
+// autorización a otra persona y, si esa persona aceptaba, la cuenta de
+// ella quedaba conectada a la tienda de él. Por eso el state lleva un
+// número al azar que también se guarda en una cookie de este navegador,
+// y la vuelta solo se acepta si los dos coinciden.
+const COOKIE_ESTADO = 'bruwal_mp_estado';
+
+function cookieDeEstado(valor, segundos) {
+  return COOKIE_ESTADO + '=' + valor + '; Path=/api; HttpOnly; Secure; SameSite=Lax; Max-Age=' + segundos;
+}
+
+function leerCookie(req, nombre) {
+  const partes = String((req.headers && req.headers.cookie) || '').split(';');
+  for (const p of partes) {
+    const i = p.indexOf('=');
+    if (i > 0 && p.slice(0, i).trim() === nombre) return p.slice(i + 1).trim();
+  }
+  return '';
+}
+
+function mismoNavegador(req, datosEstado) {
+  const esperado = String((datosEstado && datosEstado.n) || '');
+  const cookie = leerCookie(req, COOKIE_ESTADO);
+  if (!esperado || esperado.length !== cookie.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(esperado), Buffer.from(cookie));
+}
+
+function armarEstado(slug, nonce) {
+  const datos = Buffer.from(JSON.stringify({ slug: slug, t: Date.now(), n: nonce || '' })).toString('base64url');
   return datos + '.' + firmar(datos);
 }
 
@@ -268,12 +297,14 @@ async function accionEstado(slug) {
   return { conectado: true, nickname: cuenta.nickname, conectado_en: cuenta.conectado_en };
 }
 
-function accionConectar(req, slug) {
+function accionConectar(req, res, slug) {
+  const nonce = crypto.randomBytes(16).toString('base64url');
+  res.setHeader('Set-Cookie', cookieDeEstado(nonce, STATE_VALIDO_MS / 1000));
   return {
     url: MP_AUTH_URL +
       '?client_id=' + encodeURIComponent(process.env.MP_CLIENT_ID) +
       '&response_type=code&platform_id=mp' +
-      '&state=' + encodeURIComponent(armarEstado(slug)) +
+      '&state=' + encodeURIComponent(armarEstado(slug, nonce)) +
       '&redirect_uri=' + encodeURIComponent(urlDeRetorno(req))
   };
 }
@@ -286,12 +317,18 @@ async function accionDesconectar(slug) {
 }
 
 async function accionCallback(req, res) {
-  const volver = (p) => res.writeHead(302, { Location: '/dashboard/?' + new URLSearchParams(p).toString() }).end();
+  const volver = (p) => res.writeHead(302, {
+    Location: '/dashboard/?' + new URLSearchParams(p).toString(),
+    'Set-Cookie': cookieDeEstado('', 0)
+  }).end();
   const { code, state, error } = req.query || {};
   if (error) return volver({ mp: 'error', motivo: String(error).slice(0, 120) });
   if (!code) return volver({ mp: 'error', motivo: 'Mercado Pago no devolvió el código' });
   const estado = leerEstado(state);
   if (!estado) return volver({ mp: 'error', motivo: 'El pedido de conexión venció o no es válido. Probá de nuevo.' });
+  if (!mismoNavegador(req, estado)) {
+    return volver({ mp: 'error', motivo: 'Terminá la conexión en el mismo navegador donde tocaste Conectar. Probá de nuevo.' });
+  }
 
   try {
     const datos = await pedirToken({ grant_type: 'authorization_code', code: code, redirect_uri: urlDeRetorno(req) });
@@ -336,7 +373,7 @@ module.exports = async (req, res) => {
 
   try {
     if (accion === 'estado') return res.status(200).json(await accionEstado(tienda.slug));
-    if (accion === 'conectar') return res.status(200).json(accionConectar(req, tienda.slug));
+    if (accion === 'conectar') return res.status(200).json(accionConectar(req, res, tienda.slug));
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'resumen') return res.status(200).json(await accionResumen(tienda.slug, cuerpo.mes));
     return res.status(400).json({ error: 'Acción desconocida' });
@@ -346,4 +383,4 @@ module.exports = async (req, res) => {
   }
 };
 
-module.exports._probar = { desglosarCobro, rangoDelMes, armarEstado, leerEstado };
+module.exports._probar = { desglosarCobro, rangoDelMes, armarEstado, leerEstado, mismoNavegador };

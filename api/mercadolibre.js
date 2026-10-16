@@ -116,8 +116,37 @@ function firmar(texto) {
     .update(texto).digest('base64url');
 }
 
-function armarEstado(slug) {
-  const datos = Buffer.from(JSON.stringify({ slug: slug, t: Date.now() })).toString('base64url');
+// El state firmado prueba que el pedido salió de BRUWAL, pero no que la
+// vuelta llegue al MISMO navegador que lo pidió. Sin esto, alguien podía
+// iniciar la conexión para su propia tienda, mandarle el link de
+// autorización a otra persona y, si esa persona aceptaba, la cuenta de
+// ella quedaba conectada a la tienda de él. Por eso el state lleva un
+// número al azar que también se guarda en una cookie de este navegador,
+// y la vuelta solo se acepta si los dos coinciden.
+const COOKIE_ESTADO = 'bruwal_ml_estado';
+
+function cookieDeEstado(valor, segundos) {
+  return COOKIE_ESTADO + '=' + valor + '; Path=/api; HttpOnly; Secure; SameSite=Lax; Max-Age=' + segundos;
+}
+
+function leerCookie(req, nombre) {
+  const partes = String((req.headers && req.headers.cookie) || '').split(';');
+  for (const p of partes) {
+    const i = p.indexOf('=');
+    if (i > 0 && p.slice(0, i).trim() === nombre) return p.slice(i + 1).trim();
+  }
+  return '';
+}
+
+function mismoNavegador(req, datosEstado) {
+  const esperado = String((datosEstado && datosEstado.n) || '');
+  const cookie = leerCookie(req, COOKIE_ESTADO);
+  if (!esperado || esperado.length !== cookie.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(esperado), Buffer.from(cookie));
+}
+
+function armarEstado(slug, nonce) {
+  const datos = Buffer.from(JSON.stringify({ slug: slug, t: Date.now(), n: nonce || '' })).toString('base64url');
   return datos + '.' + firmar(datos);
 }
 
@@ -1399,12 +1428,14 @@ async function accionEstado(slug) {
   };
 }
 
-function accionConectar(req, slug) {
+function accionConectar(req, res, slug) {
+  const nonce = crypto.randomBytes(16).toString('base64url');
+  res.setHeader('Set-Cookie', cookieDeEstado(nonce, STATE_VALIDO_MS / 1000));
   const url = ML_AUTH_URL +
     '?response_type=code' +
     '&client_id=' + encodeURIComponent(process.env.ML_CLIENT_ID) +
     '&redirect_uri=' + encodeURIComponent(urlDeRetorno(req)) +
-    '&state=' + encodeURIComponent(armarEstado(slug));
+    '&state=' + encodeURIComponent(armarEstado(slug, nonce));
   return { url: url };
 }
 
@@ -1420,7 +1451,10 @@ async function accionDesconectar(slug) {
 // nunca mostrando un JSON: del otro lado hay una persona, no un programa.
 async function accionCallback(req, res) {
   const volverAlPanel = (parametros) =>
-    res.writeHead(302, { Location: '/dashboard/?' + new URLSearchParams(parametros).toString() }).end();
+    res.writeHead(302, {
+      Location: '/dashboard/?' + new URLSearchParams(parametros).toString(),
+      'Set-Cookie': cookieDeEstado('', 0)
+    }).end();
 
   const { code, state, error } = req.query || {};
   if (error) return volverAlPanel({ ml: 'error', motivo: String(error).slice(0, 120) });
@@ -1428,6 +1462,9 @@ async function accionCallback(req, res) {
 
   const datosEstado = leerEstado(state);
   if (!datosEstado) return volverAlPanel({ ml: 'error', motivo: 'El pedido de conexión venció o no es válido. Probá de nuevo.' });
+  if (!mismoNavegador(req, datosEstado)) {
+    return volverAlPanel({ ml: 'error', motivo: 'Terminá la conexión en el mismo navegador donde tocaste Conectar. Probá de nuevo.' });
+  }
 
   try {
     const datos = await pedirTokenAMl({
@@ -1487,7 +1524,7 @@ module.exports = async (req, res) => {
 
   try {
     if (accion === 'estado') return res.status(200).json(await accionEstado(tienda.slug));
-    if (accion === 'conectar') return res.status(200).json(accionConectar(req, tienda.slug));
+    if (accion === 'conectar') return res.status(200).json(accionConectar(req, res, tienda.slug));
     if (accion === 'desconectar') return res.status(200).json(await accionDesconectar(tienda.slug));
     if (accion === 'publicaciones') return res.status(200).json(await accionPublicaciones(tienda.slug));
     if (accion === 'publicidad') return res.status(200).json(await accionPublicidad(tienda.slug));
