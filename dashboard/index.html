@@ -2000,7 +2000,7 @@ tr:last-child td { border-bottom: none; }
         </small>
       </div>
       <div class="field"><label>Logo/Imagen de tu tienda</label><input type="file" id="regLogo" accept="image/*"><small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">JPG, PNG o WebP. La achicamos sola si es muy grande.</small></div>
-      <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: Hamburguesas artesanales, Delivery 24hs"></div>
+      <div class="field"><label>Descripción (rubro, especialidad)</label><input type="text" id="regDesc" list="listaRubros" autocomplete="off" placeholder="Ej: lo que vendés y algo que te distinga"></div>
       <div class="field"><label>Teléfono para recibir pedidos (WhatsApp)</label><input type="tel" id="regPhone" placeholder="ej: 3413005232" required></div>
       <div class="field"><label>Email</label><input type="email" id="regEmail" required></div>
       <!-- Trampa para robots: una persona no ve este campo y lo deja vacío.
@@ -4501,7 +4501,7 @@ tr:last-child td { border-bottom: none; }
     <button class="modal-close" id="closeAfiliadoModal">✕</button>
     <h3 id="afiliadoModalTitulo"><i class="fa-solid fa-handshake" style="color:var(--celeste);"></i> Nuevo afiliado</h3>
 
-    <div class="field"><label>Nombre</label><input type="text" id="afiliadoNombre" placeholder="Ej: Juan Pérez (entrenador)"></div>
+    <div class="field"><label>Nombre</label><input type="text" id="afiliadoNombre" placeholder="Ej: Juan Pérez"></div>
     <div class="field">
       <label>Código</label>
       <input type="text" id="afiliadoCodigo" maxlength="30" placeholder="Ej: JUAN" style="text-transform:uppercase;">
@@ -5074,7 +5074,7 @@ tr:last-child td { border-bottom: none; }
         </div>
         <div class="field">
           <label>🏦 Datos para transferencia <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
-          <input type="text" id="configAlias" maxlength="60" autocomplete="off" placeholder="Alias — ej: empire.pizzas.mp" style="margin-bottom:6px;">
+          <input type="text" id="configAlias" maxlength="60" autocomplete="off" placeholder="Alias — ej: mi.negocio.mp" style="margin-bottom:6px;">
           <input type="text" id="configCbu" maxlength="30" autocomplete="off" inputmode="numeric" placeholder="CBU o CVU (opcional)" style="margin-bottom:6px;">
           <input type="text" id="configTitular" maxlength="80" autocomplete="off" placeholder="A nombre de (opcional)">
           <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -9711,6 +9711,7 @@ function renderRubrosRegistro() {
       rubroElegidoRegistro = b.dataset.rubro;
       const r = RUBROS_REGISTRO.find(x => x.valor === rubroElegidoRegistro);
       byId('regRubroAyuda').textContent = r ? r.ayuda : '';
+      byId('regDesc').placeholder = 'Ej: ' + ejemplosDelRubro(rubroElegidoRegistro).desc;
       // La casilla de reparaciones ya no hace falta si eligió electrónica:
       // es exactamente lo mismo, y verla dos veces confunde.
       const campoRep = byId('campoRegReparaciones');
@@ -13337,9 +13338,58 @@ function calcularTotalDeCajas() {
 // El nombre de la unidad cambia como se lee el total ("240 hojas").
 if (byId('pUnidadNombre')) byId('pUnidadNombre').addEventListener('input', calcularTotalDeCajas);
 
+// Ejemplos de los campos que ve cualquier tienda. Estaban fijos y mezclaban
+// rubros: una casa de celulares veia "Hamburguesas artesanales" en la
+// descripcion y una pizzeria "Auriculares" al crear una categoria. Ahora
+// cada rubro ve los suyos. Las categorias de ejemplo salen de las mismas
+// sugeridas para el rubro (sugerenciasParaMiRubro), asi no se contradicen.
+const EJEMPLOS_POR_RUBRO = {
+  electronica:  { desc: 'Celulares, accesorios y servicio técnico', eslogan: 'Tecnología con garantía',
+                  detalle: 'Funda y templado para iPhone 13', sub: 'Usados', buscar: 'iphone' },
+  indumentaria: { desc: 'Ropa de mujer y accesorios', eslogan: 'Moda para todos los días',
+                  detalle: '2 remeras talle M y un pantalón', sub: 'Oversize', buscar: 'jean' },
+  comida:       { desc: 'Hamburguesas artesanales, delivery', eslogan: 'Las mejores del barrio, desde 1998',
+                  detalle: '2 hamburguesas dobles y una gaseosa', sub: 'Dobles', buscar: 'doble' },
+  bebidas:      { desc: 'Cafetería y bar', eslogan: 'El mejor café de la zona',
+                  detalle: '2 cafés con leche y 4 medialunas', sub: 'Con leche', buscar: 'latte' },
+  servicios:    { desc: 'Peluquería y barbería', eslogan: 'Tu estilo, en buenas manos',
+                  detalle: 'Corte y barba', sub: 'Degradé', buscar: 'corte' },
+  vape:         { desc: 'Vapes, pods y líquidos', eslogan: 'Todo para tu vape',
+                  detalle: '1 descartable y 2 líquidos', sub: 'Frutales', buscar: 'menta' }
+};
+const EJEMPLOS_GENERICOS = { desc: 'Almacén y despensa', eslogan: 'Atención de siempre, desde 1998',
+                             detalle: 'Lo que se llevó', categoria: 'Almacén', sub: 'Lácteos', buscar: 'leche' };
+
+function ejemplosDelRubro(rubro) {
+  return EJEMPLOS_POR_RUBRO[rubro] || EJEMPLOS_GENERICOS;
+}
+
+function aplicarEjemplosPorRubro() {
+  const rubro = currentStore?.rubro_manual === 'vape' ? 'vape' : categoriaDeRubro();
+  const ej = ejemplosDelRubro(rubro);
+  // "Destacados" u "Ofertas" no sirven de ejemplo de categoria: son las
+  // genericas que se sugieren cuando no reconocemos el rubro.
+  const sugerida = (sugerenciasParaMiRubro() || [])[0];
+  const categoria = ej.categoria || (sugerida && !CATEGORIAS_GENERICAS.includes(sugerida) ? sugerida : 'Almacén');
+  const poner = (id, texto) => { const el = byId(id); if (el) el.placeholder = texto; };
+
+  poner('configDesc', 'Ej: ' + ej.desc);
+  poner('configEslogan', 'Ej: ' + ej.eslogan);
+  poner('fmDetalle', 'Ej: ' + ej.detalle);
+  poner('pSubcategoria', 'Ej: ' + ej.sub);
+  poner('nuevaCategoria', 'Ej: ' + categoria);
+  poner('selCategoriaNueva', 'Ej: ' + categoria);
+  poner('importarCategoriaFija', 'Ej: ' + categoria);
+  poner('acomFiltro', 'Ej: ' + ej.buscar + ' — filtra por nombre adentro de esa categoría');
+  poner('acomDestinoNueva', 'Ej: ' + categoria + ' — o “' + categoria + ' > ' + ej.sub +
+                            '” para un estante adentro');
+  poner('opinionesTexto', 'Ej: ' + ej.buscar + ' — o vacío para todas');
+}
+
 function aplicarVisibilidadPorRubro() {
   const esElectronica = rubroEsElectronica();
   actualizarTextoVariantes();
+  aplicarEjemplosPorRubro();
   aplicarVentaPorMedidaVisibilidad();
   // La excepción de electrónica para el precio de lo interno depende del
   // rubro, así que se recalcula cuando el rubro cambia.
