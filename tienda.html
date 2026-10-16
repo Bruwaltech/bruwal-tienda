@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/seguimiento.js"></script>
+<script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tienda — BRUWAL</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -406,6 +407,9 @@
   .success-screen .mark{width:70px;height:70px;border-radius:50%;background:var(--stock);color:#fff;font-size:36px;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;box-shadow:0 8px 24px rgba(31,160,136,0.3);}
   .success-screen h2{color:var(--navy);font-size:24px;margin-bottom:12px;}
   .success-screen p{color:var(--text-mute);line-height:1.6;}
+  .legales{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px;font-size:13px;padding:28px 16px 0;}
+  .legales a{color:var(--text-mute);text-decoration:none;}
+  .legales a:hover{text-decoration:underline;}
   .powered{text-align:center;font-size:12px;color:var(--text-mute);padding:24px 0;font-family:'IBM Plex Mono',monospace;}
 
   .store-layout{display:grid;grid-template-columns:180px 1fr;gap:24px;align-items:start;}
@@ -488,6 +492,8 @@
   <!-- Cartel de abierto/cerrado. Lo llena pintarEstadoLocal() y queda
        oculto si la tienda no configuró horario. -->
   <div id="hlBanner" class="hidden" style="text-align:center;padding:10px 16px;font-size:13.5px;font-weight:600;line-height:1.5;"></div>
+  <!-- Aparece cuando el cliente entró con el link de un afiliado (?ref=CODIGO). -->
+  <div id="afiliadoBanner" class="hidden" style="text-align:center;padding:10px 16px;font-size:13.5px;font-weight:600;line-height:1.5;background:#EAF4FD;color:#0B3B66;"></div>
 
   <main class="wrap">
     <!-- Buscador y orden. Van ARRIBA de todo el listado: el cliente que ya
@@ -543,6 +549,12 @@
     </div>
   </main>
 
+  <nav class="legales" id="legales">
+    <a data-legal href="/legal/terminos.html">Términos y condiciones</a>
+    <a data-legal href="/legal/privacidad.html">Privacidad</a>
+    <a data-legal href="/legal/devoluciones.html">Cambios y devoluciones</a>
+    <a data-legal href="/legal/arrepentimiento.html"><strong>Botón de arrepentimiento</strong></a>
+  </nav>
   <div class="powered">Tienda hecha con BRUWAL Technologies</div>
 
   <div class="cart-bar" id="cartBar" style="display:none;">
@@ -643,6 +655,11 @@
     </div>
 
     <div id="hlAvisoCheckout" class="hidden" style="padding:11px 13px;border-radius:9px;margin-bottom:12px;font-size:13px;line-height:1.5;"></div>
+    <div class="field">
+      <label>¿Te recomendó alguien? <span style="font-weight:400;color:var(--text-mute);">(código, opcional)</span></label>
+      <input type="text" id="custCodigoAfiliado" maxlength="30" autocomplete="off" autocapitalize="characters" placeholder="Ej: JUAN">
+      <small id="afiliadoHint" class="hidden" style="display:block;margin-top:6px;font-size:12.5px;line-height:1.45;"></small>
+    </div>
     <div class="field">
       <label>Aclaraciones <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
       <textarea id="custAclaraciones" rows="2" maxlength="300" placeholder="Ej: sin sal, cortada en 8, el timbre no anda"
@@ -911,6 +928,100 @@ let filteredProducts = [];
 let cart = {}; // { productId: qty }
 let selectedCategory = null;
 
+// ===================== AFILIADOS =====================
+// Entrenadores, gimnasios o conocidos que recomiendan la tienda y cobran un
+// porcentaje de lo que venden. Comparten tienda.com/slug?ref=CODIGO; el
+// codigo se recuerda en el aparato un tiempo, porque mucha gente mira hoy y
+// compra a los dias. La comision NO se ve ni se manda desde aca: la congela
+// la base al guardar el pedido (schema/60-afiliados.sql).
+let afiliado = null;   // { codigo, nombre, descuento_pct } validado contra la base
+const DIAS_QUE_SE_RECUERDA_AFILIADO = 30;
+
+const claveAfiliado = (slug) => 'bruwal_ref_' + slug;
+
+function codigoAfiliadoGuardado(slug){
+  try {
+    const g = JSON.parse(localStorage.getItem(claveAfiliado(slug)) || 'null');
+    if (!g || !g.codigo) return null;
+    if (Date.now() - Number(g.desde || 0) > DIAS_QUE_SE_RECUERDA_AFILIADO * 864e5) {
+      localStorage.removeItem(claveAfiliado(slug));
+      return null;
+    }
+    return g.codigo;
+  } catch (e) { return null; }   // modo incognito o storage bloqueado
+}
+
+function recordarCodigoAfiliado(slug, codigo){
+  try { localStorage.setItem(claveAfiliado(slug), JSON.stringify({ codigo, desde: Date.now() })); }
+  catch (e) { /* sin storage se pierde el recuerdo, no el pedido */ }
+}
+
+// null si el codigo no existe, esta dado de baja, o todavia no se corrio la
+// migracion 60. En ninguno de esos casos se frena nada: la tienda anda igual.
+async function buscarAfiliado(slug, codigo){
+  const limpio = String(codigo || '').trim();
+  if (!limpio) return null;
+  try {
+    const { data, error } = await sb.rpc('afiliado_de_tienda', { p_slug: slug, p_codigo: limpio });
+    if (error || !data || !data.length) return null;
+    return data[0];
+  } catch (e) { return null; }
+}
+
+function pintarAfiliado(){
+  const banner = byId('afiliadoBanner');
+  const hint = byId('afiliadoHint');
+  if (!afiliado){
+    hide(banner);
+    hide(hint);
+    return;
+  }
+  const pct = Number(afiliado.descuento_pct || 0);
+  banner.textContent = pct > 0
+    ? '🎟️ Te recomendó ' + afiliado.nombre + ': tenés ' + pct + '% off, se descuenta al hacer el pedido.'
+    : '🤝 Te recomendó ' + afiliado.nombre + '.';
+  show(banner);
+  byId('custCodigoAfiliado').value = afiliado.codigo;
+  hint.style.color = '#1E7B3A';
+  hint.textContent = '✓ ' + afiliado.nombre + (pct > 0 ? ' · ' + pct + '% off en los productos' : '');
+  show(hint);
+}
+
+async function cargarAfiliado(slug){
+  const delLink = (new URLSearchParams(window.location.search).get('ref') || '').trim();
+  const codigo = delLink || codigoAfiliadoGuardado(slug);
+  if (!codigo) return;
+  const a = await buscarAfiliado(slug, codigo);
+  if (!a) return;
+  afiliado = a;
+  // Se guarda recien cuando el codigo es valido: un link mal copiado no
+  // tiene que pisar el de alguien que si existe.
+  if (delLink) recordarCodigoAfiliado(slug, a.codigo);
+  pintarAfiliado();
+}
+
+byId('custCodigoAfiliado').addEventListener('change', async () => {
+  const escrito = byId('custCodigoAfiliado').value.trim();
+  const hint = byId('afiliadoHint');
+  if (!escrito){
+    afiliado = null;
+    pintarAfiliado();
+    return;
+  }
+  const a = await buscarAfiliado(getSlugFromUrl(), escrito);
+  if (a){
+    afiliado = a;
+    recordarCodigoAfiliado(getSlugFromUrl(), a.codigo);
+    pintarAfiliado();
+  } else {
+    afiliado = null;
+    hide(byId('afiliadoBanner'));
+    hint.style.color = '#8A5200';
+    hint.textContent = 'No encontramos ese código. Podés hacer el pedido igual.';
+    show(hint);
+  }
+});
+
 async function init(){
   hide(byId('notFoundState'));
   hide(byId('storeView'));
@@ -931,6 +1042,12 @@ async function init(){
 
   perfilTienda = store;
   aplicarTema(store.tema);
+  // Las páginas legales hablan en nombre de esta tienda.
+  document.querySelectorAll('#legales a[data-legal]').forEach(a => {
+    a.href = a.getAttribute('href').split('?')[0] + '?tienda=' + encodeURIComponent(store.slug);
+  });
+  // Sin await: la tienda se muestra igual mientras se valida el codigo.
+  cargarAfiliado(slug);
 
   // Horario del local: de esto dependen el cartel de abierto/cerrado y el
   // aviso del checkout. Si la tienda no lo configuró, queda en null y no
@@ -3405,6 +3522,23 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
   byId('confirmOrderBtn').disabled = true;
 
+  // El codigo que quedo en el campo manda: el cliente pudo borrarlo o
+  // escribir otro despues de entrar por un link.
+  const codigoEscrito = byId('custCodigoAfiliado').value.trim();
+  if (!codigoEscrito) {
+    afiliado = null;
+  } else if (!afiliado || afiliado.codigo.toLowerCase() !== codigoEscrito.toLowerCase()) {
+    afiliado = await buscarAfiliado(getSlugFromUrl(), codigoEscrito);
+  }
+  const afiliadoDelPedido = afiliado;
+
+  // El descuento va sobre los productos, nunca sobre el envio.
+  let descuentoAfiliado = 0;
+  if (afiliadoDelPedido && Number(afiliadoDelPedido.descuento_pct) > 0) {
+    descuentoAfiliado = Math.round(total * Number(afiliadoDelPedido.descuento_pct) / 100);
+    total -= descuentoAfiliado;
+  }
+
   const slug = getSlugFromUrl();
   const { data: store } = await sb.from('store_profiles').select('phone,business_name,mensaje_envio,costo_envio')
     .eq('slug', slug).maybeSingle();
@@ -3421,6 +3555,13 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
     detalles += '👤 *Cliente:* ' + name + '\n';
     detalles += '📱 *Teléfono:* ' + phone + '\n\n';
     detalles += (turnoTexto ? '*Servicio:*\n' : '*Productos:*\n') + listaProductos;
+    if (descuentoAfiliado > 0) {
+      detalles += '🎟️ Descuento ' + Number(afiliadoDelPedido.descuento_pct) + '% (código ' + afiliadoDelPedido.codigo + '): -$' +
+        descuentoAfiliado.toLocaleString('es-AR') + '\n';
+    }
+    if (afiliadoDelPedido) {
+      detalles += '🤝 *Recomendado por:* ' + afiliadoDelPedido.nombre + ' (' + afiliadoDelPedido.codigo + ')\n';
+    }
 
     // Recargo por ir hasta el cliente: el mismo campo cubre el envío de un
     // producto y el servicio a domicilio (ver configRecargoDomicilio). Se
@@ -3539,12 +3680,23 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
           referencias ? 'Ref: ' + referencias : ''
         ].filter(Boolean).join(' · ') || null : null
       } : {};
-      const { error: errPedido } = await sb.from('orders').insert({ ...pedido, ...entregaDelPedido });
-      // Si todavia no se corrio schema/56-comandas.sql, la base rechaza las
-      // columnas de entrega. Se guarda igual sin ellas: perder la direccion
-      // en el panel es mucho menos grave que perder el pedido.
-      if (errPedido && Object.keys(entregaDelPedido).length) {
-        await sb.from('orders').insert(pedido);
+      // Solo el codigo: el porcentaje de comision lo pone la base.
+      const afiliadoEnPedido = afiliadoDelPedido ? {
+        afiliado_codigo: afiliadoDelPedido.codigo,
+        afiliado_descuento: descuentoAfiliado || null
+      } : {};
+      // Si todavia no se corrieron schema/56-comandas.sql o 60-afiliados.sql,
+      // la base rechaza esas columnas. Se reintenta sacando de a una: perder
+      // la direccion o el afiliado en el panel es mucho menos grave que
+      // perder el pedido.
+      const intentos = [
+        { ...pedido, ...entregaDelPedido, ...afiliadoEnPedido },
+        { ...pedido, ...entregaDelPedido },
+        pedido
+      ].filter((p, i, todos) => i === 0 || Object.keys(p).length < Object.keys(todos[i - 1]).length);
+      for (const intento of intentos) {
+        const { error: errPedido } = await sb.from('orders').insert(intento);
+        if (!errPedido) break;
       }
     } catch (e) {
       console.warn('No se pudo registrar el pedido:', e);
@@ -3552,6 +3704,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 
     const waLink = 'https://wa.me/' + numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent(detalles);
     window.open(waLink, '_blank');
+    if (window.bruwalEvento) bruwalEvento('pedido_whatsapp', { tienda: store.slug || '', tipo: turnoTexto ? 'turno' : 'pedido' });
 
     // Ahora el horario queda efectivamente bloqueado en la agenda, asi que
     // ya podemos decir "reservado" sin mentirle al cliente.
