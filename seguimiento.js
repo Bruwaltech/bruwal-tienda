@@ -124,6 +124,9 @@
   // (sesión vencida), 404 y 406 (supabase .single() sin filas) y 409
   // (duplicado): son parte del uso normal, no errores del sitio.
   function esNuestro(url) {
+    // El login: una contraseña mal escrita o una sesión vieja que ya no
+    // existe dan 400, y eso es uso normal, no un error del sitio.
+    if (url.indexOf('/auth/v1/token') !== -1) return false;
     return url.indexOf('/api/') !== -1 && (url.charAt(0) === '/' || url.indexOf(location.origin) === 0)
       || url.indexOf('.supabase.co/') !== -1;
   }
