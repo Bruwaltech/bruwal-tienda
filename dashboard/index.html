@@ -6077,7 +6077,7 @@ function avisarMonedaDelFormulario() {
   const moneda = byId('pPriceMoneda')?.value || 'ARS';
   if (!aviso) return;
   aviso.textContent = moneda === 'ARS' ? '' :
-    'La oferta, los precios por mayor y los de cada variante también van en ' + moneda +
+    'La oferta, los precios por mayor, los de cada variante y el costo también van en ' + moneda +
     '. Todo se guarda en pesos con la cotización del día, y en la tienda se ve en pesos.';
   aviso.classList.toggle('hidden', moneda === 'ARS');
 }
@@ -6325,6 +6325,12 @@ function valoresProveedorParaGuardar() {
 
 // ---- Costo de un producto (para el margen en Estadísticas) — mismo PIN ----
 let costoEnEdicion = 0;
+// El costo tal como está guardado (siempre en pesos). costoEnEdicion, en
+// cambio, está en la moneda del formulario: si el precio va en USD, el
+// costo también se escribe en USD y se convierte al guardar, igual que la
+// oferta y el por mayor. Antes se guardaba tal cual: US$270 quedaban en
+// $270 pesos y el margen de Estadísticas daba cualquier cosa.
+let costoPesosGuardado = 0;
 
 function renderCampoCosto() {
   const bloqueado = requiereDesbloqueoCostos();
@@ -6403,9 +6409,10 @@ function calcularCostoUnitario() {
 // Mismo criterio que valoresProveedorParaGuardar: si el campo sigue tapado
 // (nunca se desbloqueó en esta carga), se manda lo que el producto ya
 // tenía — leer el input oculto mandaría 0 y borraría el costo sin querer.
-function valorCostoParaGuardar() {
-  if (byId('pCosto').classList.contains('hidden')) return costoEnEdicion || null;
-  return Number(byId('pCosto').value) || null;
+function valorCostoParaGuardar(factorMoneda) {
+  if (byId('pCosto').classList.contains('hidden')) return costoPesosGuardado || null;
+  const escrito = Number(byId('pCosto').value) || null;
+  return escrito == null ? null : aPesosConFactor(escrito, factorMoneda || 1);
 }
 // ============================================================================
 
@@ -21398,7 +21405,7 @@ function abrirFormularioNuevo(tipo) {
     if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
     proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
     renderCampoProveedor();
-    costoEnEdicion = 0;
+    costoEnEdicion = 0; costoPesosGuardado = 0;
     if (byId('pCostoTotal')) byId('pCostoTotal').value = '';
     renderCampoCosto();
     if (byId('pImageFile')) byId('pImageFile').value = '';
@@ -23236,7 +23243,7 @@ byId('productForm').addEventListener('submit', async (e) => {
     moneda: precioConv.moneda,
     precio_original: precioConv.monto_original,
     cotizacion: precioConv.cotizacion,
-    costo: valorCostoParaGuardar(),
+    costo: valorCostoParaGuardar(factorMoneda),
     stock: stockGeneral,
     unidad_medida: unidadAGuardar,
     unidad_nombre: (byId('pUnidadNombre')?.value || '').trim() || null,
@@ -23393,7 +23400,8 @@ async function editProduct(id) {
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = p.estado_equipo || '';
   proveedorEnEdicion = { nombre: p.proveedor_nombre || '', telefono: p.proveedor_telefono || '', email: p.proveedor_email || '' };
   renderCampoProveedor();
-  costoEnEdicion = Number(p.costo || 0);
+  costoPesosGuardado = Number(p.costo || 0);
+  costoEnEdicion = enMonedaDelProducto(costoPesosGuardado, p);
   renderCampoCosto();
   if (byId('pImageFile')) byId('pImageFile').value = '';
 
@@ -24028,7 +24036,7 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
   if (byId('pEstadoEquipo')) byId('pEstadoEquipo').value = '';
   proveedorEnEdicion = { nombre: '', telefono: '', email: '' };
   renderCampoProveedor();
-  costoEnEdicion = 0;
+  costoEnEdicion = 0; costoPesosGuardado = 0;
   renderCampoCosto();
   cargarVariantesEnFormulario(null);
   opcionesEnEdicion = [];
