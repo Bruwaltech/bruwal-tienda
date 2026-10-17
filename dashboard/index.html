@@ -1827,6 +1827,12 @@ tr:last-child td { border-bottom: none; }
   .mlx-solapa { flex: 1 1 calc(33% - 4px); padding: 9px 6px; font-size: 12.5px; }
   .mlx-par { grid-template-columns: 1fr 1fr; }
 }
+
+/* iPad/iPhone: Safari hace zoom al tocar un campo con letra de menos de
+   16px, y la pantalla de ventas quedaba corrida. */
+@supports (-webkit-touch-callout: none) {
+  input[type=text], input[type=tel], input[type=number], input[type=search], select, textarea { font-size: 16px !important; }
+}
 </style>
 <link rel="stylesheet" href="dashboard-motion.css">
 </head>
@@ -5128,6 +5134,10 @@ tr:last-child td { border-bottom: none; }
 </div>
 
 <script>
+// iPad/iPhone (los iPad nuevos se presentan como Mac con pantalla tactil).
+const ES_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let nombresDeClientes = [];
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
 // Donde se guarda la sesion depende de "Mantenerme conectado":
@@ -15796,8 +15806,56 @@ function renderClientes() {
 
   // El desplegable de clientes en la pantalla de ventas
   const dl = byId('listaClientes');
-  if (dl) dl.innerHTML = sorted.map(c => '<option value="' + escapeHtml(c.name) + '">').join('');
+  nombresDeClientes = sorted.map(c => c.name);
+  // En iPad/iPhone no hay datalist (ver sugerenciasDeClientesIOS): tocarlo
+  // mientras alguien escribe es lo que le trababa la casilla.
+  if (dl && !ES_IOS) dl.innerHTML = sorted.map(c => '<option value="' + escapeHtml(c.name) + '">').join('');
 }
+
+// ---- Sugerencias de clientes en iPad/iPhone ----
+// Safari de iOS maneja muy mal el <datalist>: en el iPad de Walter la
+// casilla de Cliente se trababa al escribir (la lista se arma con todos los
+// clientes y encima se rearma con el refresco de cada minuto). En iOS se
+// saca el datalist y se muestra una lista propia, chica, debajo del campo.
+// En la compu sigue el datalist de siempre, que ahí anda bien.
+
+function sugerenciasDeClientesIOS(input, alElegir) {
+  if (!input) return;
+  input.removeAttribute('list');
+  const caja = document.createElement('div');
+  caja.style.cssText = 'position:absolute;z-index:50;background:#fff;border:1px solid var(--line);' +
+    'border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:220px;overflow-y:auto;display:none;';
+  document.body.appendChild(caja);
+
+  const cerrar = () => { caja.style.display = 'none'; };
+  const mostrar = () => {
+    const q = input.value.trim().toLowerCase();
+    const encontrados = q ? nombresDeClientes.filter(n => n.toLowerCase().includes(q)).slice(0, 8) : [];
+    if (!encontrados.length || (encontrados.length === 1 && encontrados[0].toLowerCase() === q)) { cerrar(); return; }
+    const r = input.getBoundingClientRect();
+    caja.style.left = (r.left + window.scrollX) + 'px';
+    caja.style.top = (r.bottom + window.scrollY + 4) + 'px';
+    caja.style.width = Math.max(r.width, 200) + 'px';
+    caja.innerHTML = encontrados.map(n =>
+      '<div data-nombre="' + escapeHtml(n) + '" style="padding:11px 12px;font-size:16px;' +
+      'border-bottom:1px solid var(--line);cursor:pointer;">' + escapeHtml(n) + '</div>').join('');
+    caja.style.display = 'block';
+  };
+
+  input.addEventListener('input', mostrar);
+  input.addEventListener('blur', () => setTimeout(cerrar, 150));
+  // pointerdown + preventDefault: el campo no pierde el foco antes de que
+  // el toque llegue a la opcion (en iOS el blur llega primero y la cerraba).
+  caja.addEventListener('pointerdown', (e) => {
+    const fila = e.target.closest('[data-nombre]');
+    if (!fila) return;
+    e.preventDefault();
+    input.value = fila.dataset.nombre;
+    cerrar();
+    if (alElegir) alElegir();
+  });
+}
+
 
 // 'scanner' era el centinela de "venta de mostrador, sin telefono" cuando
 // la pantalla de ventas todavia no pedia uno. Sigue guardandose asi cuando
@@ -20844,6 +20902,10 @@ function avisoBalanzaVenta(datos) {
 
 byId('barcodeCliente').addEventListener('input', autocompletarTelefonoCliente);
 byId('barcodeCliente').addEventListener('change', autocompletarTelefonoCliente);
+if (ES_IOS) {
+  sugerenciasDeClientesIOS(byId('barcodeCliente'), autocompletarTelefonoCliente);
+  sugerenciasDeClientesIOS(byId('fmNombre'), () => byId('fmNombre').dispatchEvent(new Event('input')));
+}
 byId('barcodeClienteTel').addEventListener('input', () => {
   telefonoVentaAutocompletado = false;
   avisoTelefonoVenta();
