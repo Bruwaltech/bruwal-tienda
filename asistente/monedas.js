@@ -617,6 +617,8 @@ const panelMonedas = (() => {
     const abierta = ultimoDelCliente && Date.now() - new Date(ultimoDelCliente).getTime() < VENTANA;
     $('mRespuesta').disabled = !abierta;
     $('mEnviar').disabled = !abierta;
+    // Las fotos salen solo por WhatsApp
+    $('mFotoBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp');
     $('mVentana').textContent = abierta
       ? 'Sale por el número del bot. Mientras atendés vos, el bot no contesta.'
       : ultimoDelCliente
@@ -624,18 +626,62 @@ const panelMonedas = (() => {
       : 'Todavía no te escribió: WhatsApp solo deja escribirle primero con el saludo aprobado.';
   }
 
+  // Lo que queda como texto de una foto o un audio sin epígrafe: en la burbuja se ve el archivo
+  const SOLO_ETIQUETA = /^\[(Foto|Audio|Video|Archivo|Sticker)\]$/;
+  const NOMBRE_MEDIO = { imagen: 'la foto', audio: 'el audio', video: 'el video', documento: 'el archivo', sticker: 'el sticker' };
+
+  // El archivo va sin link: ponerMedios le pone uno firmado después de pintar la charla
+  function htmlMedio(m) {
+    if (!m.media_tipo) return '';
+    if (!m.media_path) return '<span class="medio-falta">No se pudo bajar ' + NOMBRE_MEDIO[m.media_tipo] + '.</span>';
+    const p = escapar(m.media_path).replace(/"/g, '&quot;');
+    if (m.media_tipo === 'imagen' || m.media_tipo === 'sticker') {
+      return '<a class="medio" data-medio="' + p + '" target="_blank" rel="noopener"><img alt="Foto" data-medio="' + p + '"></a>';
+    }
+    if (m.media_tipo === 'audio') {
+      return '<audio controls preload="metadata" data-medio="' + p + '"></audio>' +
+        '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el audio</a>';
+    }
+    if (m.media_tipo === 'video') return '<video controls playsinline preload="metadata" data-medio="' + p + '"></video>';
+    return '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el archivo</a>';
+  }
+
   function htmlBurbuja(m) {
     const clase = m.direccion === 'entra' ? 'de-cliente' : m.autor === 'walter' ? 'de-walter' : 'de-bot';
     const quien = m.direccion === 'entra' ? '' : m.autor === 'walter' ? 'Vos · ' : 'Bot · ';
-    return '<div class="burbuja ' + clase + '">' + escapar(m.texto) +
+    const texto = m.media_tipo && SOLO_ETIQUETA.test(m.texto || '') ? '' : escapar(m.texto);
+    return '<div class="burbuja ' + clase + '">' + htmlMedio(m) + texto +
       '<span class="hora">' + escapar(quien + fechaHora(m.creado)) + '</span></div>';
+  }
+
+  // Links firmados de las fotos y audios: valen una hora, se piden de nuevo antes de que venzan
+  const linksMedios = {};
+  async function ponerMedios(caja, alFinal) {
+    const nodos = Array.from(caja.querySelectorAll('[data-medio]'));
+    const faltan = Array.from(new Set(nodos.map((n) => n.dataset.medio)))
+      .filter((p) => !linksMedios[p] || linksMedios[p].hasta < Date.now());
+    if (faltan.length) {
+      const r = await llamarBot({ accion: 'medios', paths: faltan });
+      const hasta = Date.now() + 50 * 60 * 1000;
+      Object.keys(r.urls || {}).forEach((p) => { linksMedios[p] = { url: r.urls[p], hasta }; });
+    }
+    nodos.forEach((n) => {
+      const l = linksMedios[n.dataset.medio];
+      if (!l) return;
+      if (n.tagName === 'A') n.href = l.url;
+      else {
+        // La foto llega después de pintar: si estaba al final, que siga al final
+        if (alFinal) n.addEventListener('load', () => { caja.scrollTop = caja.scrollHeight; }, { once: true });
+        n.src = l.url;
+      }
+    });
   }
 
   // Las últimas 200 líneas alcanzan para entender qué pasó.
   async function cargarMensajes(c) {
     const { data, error } = await sb
       .from('walter_mensajes')
-      .select('direccion, texto, creado, autor')
+      .select('direccion, texto, creado, autor, media_tipo, media_path')
       .eq('canal', c.canal)
       .eq('usuario', c.usuario)
       .order('id', { ascending: false })
@@ -652,9 +698,11 @@ const panelMonedas = (() => {
     caja.innerHTML = error
       ? '<div class="dato-secundario">No se pudo cargar la conversación.</div>'
       : lista.map(htmlBurbuja).join('') || '<div class="dato-secundario">Sin mensajes.</div>';
-    if (alFinal || !caja.dataset.cargada) caja.scrollTop = caja.scrollHeight;
+    const pegado = alFinal || !caja.dataset.cargada;
+    if (pegado) caja.scrollTop = caja.scrollHeight;
     caja.dataset.cargada = '1';
     pintarFichaEstado();
+    if (!error) ponerMedios(caja, pegado);
   }
 
   async function abrirCharla(canal, usuario) {
@@ -727,6 +775,53 @@ const panelMonedas = (() => {
     const r = await llamarBot({ accion: 'enviar', canal: c.canal, usuario: c.usuario, texto });
 
     $('mEnviar').textContent = 'Enviar';
+    if (charlaAbierta !== c) return;
+    if (r.error) {
+      errorFicha(r.error);
+      return pintarFichaEstado();
+    }
+    $('mRespuesta').value = '';
+    c.bot_pausado = true;
+    c.pide_humano = false;
+    await cargarMensajes(c);
+    pintarTarjetas();
+    pintarCharlas();
+  }
+
+  // La foto se achica a 1600 px y va en JPG: pesa poco y WhatsApp la acepta. Lo que haya
+  // escrito en la respuesta va como texto de la foto.
+  function elegirFotoCharla() {
+    const archivo = $('mFoto').files[0];
+    $('mFoto').value = '';
+    const c = charlaAbierta;
+    if (!archivo || !c) return;
+    ocultar($('mFichaError'));
+    const url = URL.createObjectURL(archivo);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const escala = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const lienzo = document.createElement('canvas');
+      lienzo.width = Math.round(img.naturalWidth * escala);
+      lienzo.height = Math.round(img.naturalHeight * escala);
+      lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
+      enviarFoto(c, lienzo.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      errorFicha('No se pudo abrir esa foto. Probá con otra.');
+    };
+    img.src = url;
+  }
+
+  async function enviarFoto(c, foto) {
+    const texto = $('mRespuesta').value.trim();
+    $('mEnviar').disabled = true;
+    $('mFotoBtn').textContent = 'Enviando foto…';
+
+    const r = await llamarBot({ accion: 'enviar_foto', canal: c.canal, usuario: c.usuario, foto, texto });
+
+    $('mFotoBtn').textContent = 'Foto';
     if (charlaAbierta !== c) return;
     if (r.error) {
       errorFicha(r.error);
@@ -1196,6 +1291,7 @@ const panelMonedas = (() => {
     $('mBtnPausa').addEventListener('click', cambiarPausa);
     $('mBtnBorrar').addEventListener('click', borrarCharla);
     $('mFormResponder').addEventListener('submit', enviarRespuesta);
+    $('mFoto').addEventListener('change', elegirFotoCharla);
     // Ctrl+Enter (o Cmd+Enter) manda; Enter solo hace otro renglón
     $('mRespuesta').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarRespuesta(e);
