@@ -1080,7 +1080,22 @@ function pintarAfiliado(){
   show(hint);
 }
 
-async function cargarAfiliado(slug){
+// El duenio que entra a su propia tienda (desde el panel, o despues de
+// probar el link de un afiliado) no es un cliente recomendado: el codigo
+// quedaba guardado 30 dias y le mostraba "Te recomendo..." en cada visita.
+// getSession lee la sesion del panel del mismo navegador, sin ir a la red.
+async function esDuenioDeLaTienda(store){
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    return !!(session && store && store.user_id && session.user.id === store.user_id);
+  } catch (e) { return false; }
+}
+
+async function cargarAfiliado(slug, store){
+  if (await esDuenioDeLaTienda(store)) {
+    try { localStorage.removeItem(claveAfiliado(slug)); } catch (e) { /* storage bloqueado */ }
+    return;
+  }
   const delLink = (new URLSearchParams(window.location.search).get('ref') || '').trim();
   const codigo = delLink || codigoAfiliadoGuardado(slug);
   if (!codigo) return;
@@ -1140,7 +1155,7 @@ async function init(){
     a.href = a.getAttribute('href').split('?')[0] + '?tienda=' + encodeURIComponent(store.slug);
   });
   // Sin await: la tienda se muestra igual mientras se valida el codigo.
-  cargarAfiliado(slug);
+  cargarAfiliado(slug, store);
 
   // Horario del local: de esto dependen el cartel de abierto/cerrado y el
   // aviso del checkout. Si la tienda no lo configuró, queda en null y no
