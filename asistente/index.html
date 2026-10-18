@@ -265,6 +265,27 @@ tbody tr:hover { background: #F8FBFF; }
   border-bottom-right-radius: 4px;
 }
 .burbuja .hora { display: block; font-size: 11px; opacity: .65; margin-top: 4px; }
+/* Lo que Walter escribió desde el panel, para distinguirlo del bot */
+.burbuja.de-walter {
+  background: var(--celeste); color: #fff; align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+/* Contestar desde el panel: sale por el número del bot */
+.responder { margin-top: 10px; }
+.responder textarea {
+  width: 100%; min-height: 70px; max-height: 200px; resize: vertical;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  font: inherit; font-size: 15px; background: #fff; color: var(--text-dark);
+}
+.responder textarea:focus { outline: none; border-color: var(--celeste); }
+.responder-pie { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.responder-pie .dato-secundario { flex: 1; line-height: 1.4; }
+.responder-pie .btn { padding: 10px 18px; }
+.btn-peligro { background: #fff; color: var(--danger); border: 1px solid #FECACA; padding: 8px 14px; font-size: 14px; }
+.btn-peligro:hover { background: #FEF2F2; }
+.fila-check { display: flex; align-items: flex-start; gap: 9px; font-size: 14px; line-height: 1.45; margin-bottom: 15px; cursor: pointer; }
+.fila-check input { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0; }
 
 .acciones { display: flex; gap: 10px; flex-wrap: wrap; }
 .acciones .btn { flex: 1; min-width: 150px; }
@@ -602,8 +623,10 @@ tbody tr:hover { background: #F8FBFF; }
           <h2>Charlas</h2>
           <div class="filtros" id="mFiltrosCharlas">
             <button type="button" class="filtro activo" data-filtro="humano">Quieren hablar con vos</button>
+            <button type="button" class="filtro" data-filtro="vos">Las atendés vos</button>
             <button type="button" class="filtro" data-filtro="todas">Todas</button>
           </div>
+          <button type="button" class="btn btn-suave" id="mNuevoContacto">+ Contacto nuevo</button>
         </div>
         <div class="tabla-scroll">
           <table>
@@ -741,16 +764,63 @@ tbody tr:hover { background: #F8FBFF; }
         <div class="datos" id="mFichaPedidos"></div>
       </div>
       <div class="bloque">
-        <h4>Conversación</h4>
+        <h4>Conversación <span class="chip hidden" id="mChipBot"></span></h4>
         <div class="charla" id="mFichaCharla"></div>
+        <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
+        <form class="responder" id="mFormResponder">
+          <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente…" maxlength="4000"></textarea>
+          <div class="responder-pie">
+            <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
+            <button type="submit" class="btn btn-ok" id="mEnviar">Enviar</button>
+          </div>
+        </form>
       </div>
       <div class="aviso aviso-error hidden" id="mFichaError"></div>
       <div class="acciones">
+        <button class="btn btn-suave" id="mBtnPausa"></button>
         <button class="btn btn-ok" id="mBtnAtendida">Ya hablé con esta persona</button>
-        <button class="btn btn-suave" id="mBtnAbrir">Escribirle por WhatsApp</button>
+        <button class="btn btn-suave hidden" id="mBtnAbrir">Abrir la bandeja de Facebook</button>
+      </div>
+      <div class="acciones" style="margin-top:16px;">
+        <button class="btn btn-peligro" id="mBtnBorrar">Eliminar charla</button>
       </div>
     </div>
   </div>
+</div>
+
+<!-- ===================== CONTACTO NUEVO (monedas) ===================== -->
+<div class="telon hidden" id="mTelonContacto">
+  <form class="ficha" id="mFormContacto" novalidate>
+    <div class="ficha-cabecera">
+      <div>
+        <h3>Contacto nuevo</h3>
+        <div class="dato-secundario">Queda en Charlas, para escribirle por el número del bot.</div>
+      </div>
+      <button type="button" class="cerrar" id="mCerrarContacto" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="ficha-cuerpo">
+      <div class="campo">
+        <label for="mContactoNombre">Nombre</label>
+        <input type="text" id="mContactoNombre" autocomplete="off" required>
+      </div>
+      <div class="campo">
+        <label for="mContactoNumero">WhatsApp</label>
+        <input type="tel" id="mContactoNumero" autocomplete="off" inputmode="tel" placeholder="341 5551234" required>
+        <div class="dato-secundario" style="margin-top:6px;">Código de área sin el 0 y el número sin el 15.</div>
+      </div>
+      <div class="campo">
+        <label for="mContactoLocalidad">Localidad</label>
+        <input type="text" id="mContactoLocalidad" autocomplete="off" list="mLocalidades">
+        <datalist id="mLocalidades"></datalist>
+      </div>
+      <label class="fila-check">
+        <input type="checkbox" id="mContactoSaludar" checked>
+        <span>Mandarle el saludo de Punto Metales ahora. WhatsApp solo deja escribirle primero con ese mensaje aprobado; cuando conteste, le escribís libre.</span>
+      </label>
+      <div class="aviso aviso-error hidden" id="mContactoError"></div>
+      <button type="submit" class="btn btn-primario" id="mGuardarContacto">Guardar contacto</button>
+    </div>
+  </form>
 </div>
 
 <div class="toast hidden" id="mToast" role="status"></div>

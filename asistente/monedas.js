@@ -3,7 +3,8 @@
 // Walter compra monedas por kilo, cobre y bronce. Su bot (supabase/functions/
 // walter-bot) cotiza y toma los pedidos por WhatsApp y Messenger; desde acá
 // Walter les pone día y turno, revisa y aprueba la hoja de ruta, cambia los
-// precios y ve quién pidió hablar con él.
+// precios y atiende las charlas: contesta por el número del bot, pausa el bot,
+// borra charlas y carga contactos nuevos.
 //
 // Usa sb, $, ver, ocultar, escapar, fecha y fechaHora de index.html, y el
 // marcado de #vistaMonedas. Qué se puede ver y qué se puede cambiar lo deciden
@@ -140,7 +141,7 @@ const panelMonedas = (() => {
         .order('creado', { ascending: false })
         .limit(1000),
       sb.from('walter_conversaciones')
-        .select('canal, usuario, nombre_perfil, estado, pide_humano, actualizado')
+        .select('canal, usuario, nombre_perfil, localidad, estado, pide_humano, bot_pausado, actualizado')
         .order('pide_humano', { ascending: false })
         .order('actualizado', { ascending: false })
         .limit(300),
@@ -565,19 +566,23 @@ const panelMonedas = (() => {
   }
 
   function pintarCharlas() {
-    const visibles = charlas.filter((c) => filtroCharlas === 'todas' || c.pide_humano);
+    const visibles = charlas.filter((c) => filtroCharlas === 'todas' ||
+      (filtroCharlas === 'vos' ? c.bot_pausado : c.pide_humano));
 
     $('mCuerpoCharlas').innerHTML = visibles.map((c) =>
       '<tr data-canal="' + escapar(c.canal) + '" data-usuario="' + escapar(c.usuario) + '">' +
         '<td>' +
           '<div class="nombre-lead">' + escapar(nombreCharla(c)) + '</div>' +
-          '<div class="dato-secundario">' + escapar(PASOS[c.estado && c.estado.step] || '') + '</div>' +
+          '<div class="dato-secundario">' +
+            escapar(PASOS[c.estado && c.estado.step] || (c.estado ? '' : c.localidad || 'Contacto cargado a mano')) + '</div>' +
         '</td>' +
         '<td class="opcional">' + escapar(canalDe(c.canal)) + '</td>' +
         '<td class="opcional dato-secundario">' + escapar(fecha(c.actualizado)) + '</td>' +
         '<td>' +
           (c.pide_humano
-            ? '<span class="chip chip-pendiente">Quiere hablar con vos</span>'
+            ? '<span class="chip chip-pendiente">' + (c.bot_pausado ? 'Te escribió' : 'Quiere hablar con vos') + '</span>'
+            : c.bot_pausado
+            ? '<span class="chip chip-nuevo">La atendés vos</span>'
             : '<span class="chip chip-atendido">La atiende el bot</span>') +
         '</td>' +
       '</tr>').join('');
@@ -586,20 +591,81 @@ const panelMonedas = (() => {
     $('mSinCharlas').innerHTML = filtroCharlas === 'humano'
       ? '<strong>Nadie está esperando que le escribas</strong>' +
           'Cuando alguien le pida al bot hablar con Walter, aparece acá.'
+      : filtroCharlas === 'vos'
+      ? '<strong>No estás atendiendo ninguna charla</strong>' +
+          'Cuando le escribas a alguien desde acá, el bot se calla en esa charla y aparece en esta lista.'
       : '<strong>Todavía no hay charlas</strong>Van a aparecer apenas alguien escriba.';
     ver($('mSinCharlas'));
+  }
+
+  // Meta deja escribir libre hasta 24 horas después del último mensaje del cliente.
+  const VENTANA = 24 * 60 * 60 * 1000;
+  let ultimoDelCliente = null;
+
+  function pintarFichaEstado() {
+    const c = charlaAbierta;
+    if (!c) return;
+    $('mBtnAtendida').classList.toggle('hidden', !c.pide_humano);
+    $('mBtnPausa').textContent = c.bot_pausado ? 'Devolverle la charla al bot' : 'Atenderla yo (pausar el bot)';
+    $('mChipBot').className = 'chip ' + (c.bot_pausado ? 'chip-nuevo' : 'chip-atendido');
+    $('mChipBot').textContent = c.bot_pausado ? 'La atendés vos' : 'La atiende el bot';
+
+    const abierta = ultimoDelCliente && Date.now() - new Date(ultimoDelCliente).getTime() < VENTANA;
+    $('mRespuesta').disabled = !abierta;
+    $('mEnviar').disabled = !abierta;
+    $('mVentana').textContent = abierta
+      ? 'Sale por el número del bot. Mientras atendés vos, el bot no contesta.'
+      : ultimoDelCliente
+      ? 'Pasaron más de 24 horas desde su último mensaje: WhatsApp no deja escribirle hasta que vuelva a escribir.'
+      : 'Todavía no te escribió: WhatsApp solo deja escribirle primero con el saludo aprobado.';
+  }
+
+  function htmlBurbuja(m) {
+    const clase = m.direccion === 'entra' ? 'de-cliente' : m.autor === 'walter' ? 'de-walter' : 'de-bot';
+    const quien = m.direccion === 'entra' ? '' : m.autor === 'walter' ? 'Vos · ' : 'Bot · ';
+    return '<div class="burbuja ' + clase + '">' + escapar(m.texto) +
+      '<span class="hora">' + escapar(quien + fechaHora(m.creado)) + '</span></div>';
+  }
+
+  // Las últimas 200 líneas alcanzan para entender qué pasó.
+  async function cargarMensajes(c) {
+    const { data, error } = await sb
+      .from('walter_mensajes')
+      .select('direccion, texto, creado, autor')
+      .eq('canal', c.canal)
+      .eq('usuario', c.usuario)
+      .order('id', { ascending: false })
+      .limit(200);
+
+    if (charlaAbierta !== c) return;
+    const caja = $('mFichaCharla');
+    // Si estaba leyendo más arriba, un mensaje nuevo no lo lleva al final
+    const alFinal = caja.scrollHeight - caja.scrollTop - caja.clientHeight < 40;
+    const lista = (data || []).reverse();
+    const ult = lista.filter((m) => m.direccion === 'entra').pop();
+    ultimoDelCliente = ult ? ult.creado : null;
+
+    caja.innerHTML = error
+      ? '<div class="dato-secundario">No se pudo cargar la conversación.</div>'
+      : lista.map(htmlBurbuja).join('') || '<div class="dato-secundario">Sin mensajes.</div>';
+    if (alFinal || !caja.dataset.cargada) caja.scrollTop = caja.scrollHeight;
+    caja.dataset.cargada = '1';
+    pintarFichaEstado();
   }
 
   async function abrirCharla(canal, usuario) {
     const c = charlas.find((x) => x.canal === canal && x.usuario === usuario);
     if (!c) return;
     charlaAbierta = c;
+    ultimoDelCliente = null;
 
     ocultar($('mFichaError'));
     $('mFichaNombre').textContent = nombreCharla(c);
-    $('mFichaCanal').textContent = canalDe(canal) + (canal === 'whatsapp' ? ' · +' + usuario : '');
-    $('mBtnAtendida').classList.toggle('hidden', !c.pide_humano);
-    $('mBtnAbrir').textContent = canal === 'whatsapp' ? 'Escribirle por WhatsApp' : 'Abrir la bandeja de Facebook';
+    $('mFichaCanal').textContent = canalDe(canal) + (canal === 'whatsapp' ? ' · +' + usuario : '') +
+      (c.localidad ? ' · ' + c.localidad : '');
+    // Messenger no tiene el número del bot: ahí sigue la bandeja de Facebook
+    $('mBtnAbrir').classList.toggle('hidden', canal !== 'messenger');
+    $('mRespuesta').value = '';
 
     const suyos = pedidos.filter((p) => p.canal === canal && p.usuario === usuario);
     $('mFichaPedidos').innerHTML = suyos.length
@@ -610,32 +676,105 @@ const panelMonedas = (() => {
       : '<div class="dato"><span class="v dato-secundario">Todavía no hizo ningún pedido.</span></div>';
 
     $('mFichaCharla').innerHTML = '<div class="dato-secundario">Cargando…</div>';
+    delete $('mFichaCharla').dataset.cargada;
+    pintarFichaEstado();
     ver($('mTelon'));
-
-    // Las últimas 200 líneas alcanzan para entender qué pasó.
-    const { data, error } = await sb
-      .from('walter_mensajes')
-      .select('direccion, texto, creado')
-      .eq('canal', canal)
-      .eq('usuario', usuario)
-      .order('id', { ascending: false })
-      .limit(200);
-
-    if (charlaAbierta !== c) return;
-
-    $('mFichaCharla').innerHTML = error
-      ? '<div class="dato-secundario">No se pudo cargar la conversación.</div>'
-      : (data || []).reverse().map((m) =>
-          '<div class="burbuja ' + (m.direccion === 'entra' ? 'de-cliente' : 'de-bot') + '">' +
-            escapar(m.texto) +
-            '<span class="hora">' + escapar(fechaHora(m.creado)) + '</span>' +
-          '</div>').join('') || '<div class="dato-secundario">Sin mensajes.</div>';
-    $('mFichaCharla').scrollTop = $('mFichaCharla').scrollHeight;
+    await cargarMensajes(c);
   }
 
   function cerrarCharla() {
     ocultar($('mTelon'));
     charlaAbierta = null;
+  }
+
+  function errorFicha(texto) {
+    $('mFichaError').textContent = texto;
+    ver($('mFichaError'));
+  }
+
+  // Lo que necesita el número del bot (mandar, borrar, contacto nuevo) lo hace
+  // walter-bot, que revisa que el usuario esté habilitado.
+  async function llamarBot(datos) {
+    const { data: s } = await sb.auth.getSession();
+    const token = s && s.session && s.session.access_token;
+    if (!token) return { error: 'Tu sesión venció. Volvé a entrar.' };
+    try {
+      const r = await fetch(SUPABASE_URL + '/functions/v1/walter-bot?tarea=panel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify(datos)
+      });
+      const j = await r.json().catch(() => ({}));
+      return r.ok ? j : { error: j.error || 'No se pudo completar (' + r.status + ').' };
+    } catch (e) {
+      return { error: 'No hay conexión. Probá de nuevo.' };
+    }
+  }
+
+  async function enviarRespuesta(e) {
+    e.preventDefault();
+    const c = charlaAbierta;
+    const texto = $('mRespuesta').value.trim();
+    if (!c || !texto) return;
+    ocultar($('mFichaError'));
+    $('mEnviar').disabled = true;
+    $('mEnviar').textContent = 'Enviando…';
+
+    const r = await llamarBot({ accion: 'enviar', canal: c.canal, usuario: c.usuario, texto });
+
+    $('mEnviar').textContent = 'Enviar';
+    if (charlaAbierta !== c) return;
+    if (r.error) {
+      errorFicha(r.error);
+      return pintarFichaEstado();
+    }
+    $('mRespuesta').value = '';
+    c.bot_pausado = true;
+    c.pide_humano = false;
+    await cargarMensajes(c);
+    pintarTarjetas();
+    pintarCharlas();
+  }
+
+  async function cambiarPausa() {
+    const c = charlaAbierta;
+    if (!c) return;
+    const pausar = !c.bot_pausado;
+    $('mBtnPausa').disabled = true;
+    ocultar($('mFichaError'));
+
+    const { data, error } = await sb
+      .from('walter_conversaciones')
+      .update(pausar ? { bot_pausado: true } : { bot_pausado: false, pide_humano: false })
+      .eq('canal', c.canal)
+      .eq('usuario', c.usuario)
+      .select('bot_pausado, pide_humano')
+      .maybeSingle();
+
+    $('mBtnPausa').disabled = false;
+    if (error || !data) return errorFicha('No se pudo guardar' + (error ? ': ' + error.message : '.'));
+    c.bot_pausado = data.bot_pausado;
+    c.pide_humano = data.pide_humano;
+    pintarFichaEstado();
+    pintarTarjetas();
+    pintarCharlas();
+    toast(pausar ? 'El bot no va a contestar en esta charla' : 'La charla vuelve a atenderla el bot');
+  }
+
+  async function borrarCharla() {
+    const c = charlaAbierta;
+    if (!c) return;
+    if (!confirm('¿Eliminar la charla con ' + nombreCharla(c) + '?\n\nSe borran todos los mensajes. Los pedidos quedan.')) return;
+    $('mBtnBorrar').disabled = true;
+    ocultar($('mFichaError'));
+    const r = await llamarBot({ accion: 'borrar', canal: c.canal, usuario: c.usuario });
+    $('mBtnBorrar').disabled = false;
+    if (r.error) return errorFicha(r.error);
+    charlas = charlas.filter((x) => x !== c);
+    cerrarCharla();
+    pintarTarjetas();
+    pintarCharlas();
+    toast('Charla eliminada');
   }
 
   async function marcarAtendida() {
@@ -653,10 +792,7 @@ const panelMonedas = (() => {
       .maybeSingle();
 
     $('mBtnAtendida').disabled = false;
-    if (error || !data) {
-      $('mFichaError').textContent = 'No se pudo guardar' + (error ? ': ' + error.message : '.');
-      return ver($('mFichaError'));
-    }
+    if (error || !data) return errorFicha('No se pudo guardar' + (error ? ': ' + error.message : '.'));
 
     c.pide_humano = false;
     cerrarCharla();
@@ -666,14 +802,94 @@ const panelMonedas = (() => {
   }
 
   function abrirAfuera() {
+    window.open('https://business.facebook.com/latest/inbox/all', '_blank', 'noopener');
+  }
+
+  // ---------------------------------------------------------- contacto nuevo
+
+  function abrirContacto() {
+    $('mFormContacto').reset();
+    $('mContactoSaludar').checked = true;
+    $('mLocalidades').innerHTML = Object.keys(LOCALIDADES).map((l) => '<option value="' + escapar(l) + '">').join('');
+    ocultar($('mContactoError'));
+    ver($('mTelonContacto'));
+    $('mContactoNombre').focus();
+  }
+
+  function cerrarContacto() {
+    ocultar($('mTelonContacto'));
+  }
+
+  async function guardarContacto(e) {
+    e.preventDefault();
+    const nombre = $('mContactoNombre').value.trim();
+    const numero = $('mContactoNumero').value.trim();
+    const falta = !nombre ? 'Poné el nombre.' : !numero ? 'Poné el número de WhatsApp.' : '';
+    if (falta) {
+      $('mContactoError').textContent = falta;
+      return ver($('mContactoError'));
+    }
+    ocultar($('mContactoError'));
+    const boton = $('mGuardarContacto');
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+
+    const r = await llamarBot({
+      accion: 'contacto', nombre, numero,
+      localidad: $('mContactoLocalidad').value.trim(), saludar: $('mContactoSaludar').checked
+    });
+
+    boton.disabled = false;
+    boton.textContent = 'Guardar contacto';
+    if (r.error) {
+      $('mContactoError').textContent = r.error;
+      return ver($('mContactoError'));
+    }
+
+    cerrarContacto();
+    await cargar();
+    filtroCharlas = 'todas';
+    marcarFiltro('mFiltrosCharlas', 'todas');
+    mostrarPestana('charlas');
+    toast(r.saludo === false
+      ? 'Contacto guardado. El saludo no salió: Meta todavía no aprobó ese mensaje.'
+      : r.saludo ? 'Contacto guardado y saludo enviado' : 'Contacto guardado');
+    abrirCharla('whatsapp', r.usuario);
+  }
+
+  // ---------------------------------------------------------- en vivo
+
+  // Realtime avisa cuando entra un mensaje, un pedido o cambia una charla. Se
+  // junta lo que llega seguido y se trae todo de nuevo una sola vez.
+  let relojVivo = null;
+  function cambioEnVivo(cambio) {
+    const fila = cambio.new && Object.keys(cambio.new).length ? cambio.new : cambio.old || {};
     const c = charlaAbierta;
-    if (!c) return;
-    // El número del bot vive en la API de WhatsApp y no se puede usar desde el
-    // celular: Walter le escribe desde su WhatsApp de siempre.
-    const url = c.canal === 'whatsapp'
-      ? 'https://wa.me/' + String(c.usuario).replace(/\D/g, '')
-      : 'https://business.facebook.com/latest/inbox/all';
-    window.open(url, '_blank', 'noopener');
+    if (c && cambio.table === 'walter_mensajes' && fila.canal === c.canal && fila.usuario === c.usuario) {
+      cargarMensajes(c);
+    }
+    clearTimeout(relojVivo);
+    relojVivo = setTimeout(async () => {
+      // Si está escribiendo un precio o eligiendo un día, no le redibuja nada encima
+      const activo = document.activeElement;
+      if (activo && activo.closest && activo.closest('#vistaMonedas input, #vistaMonedas select, #vistaMonedas textarea')) return;
+      if (!(await cargar())) return;
+      if (charlaAbierta) {
+        const nueva = charlas.find((x) => x.canal === charlaAbierta.canal && x.usuario === charlaAbierta.usuario);
+        if (nueva) { Object.assign(charlaAbierta, nueva); pintarFichaEstado(); }
+      }
+      pintar();
+    }, 800);
+  }
+
+  function escucharEnVivo() {
+    const canal = sb.channel('walter-panel');
+    ['walter_mensajes', 'walter_pedidos', 'walter_conversaciones'].forEach((tabla) => {
+      canal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, (cambio) => {
+        cambioEnVivo(Object.assign({ table: tabla }, cambio));
+      });
+    });
+    canal.subscribe();
   }
 
   // ---------------------------------------------------------- precios
@@ -881,10 +1097,24 @@ const panelMonedas = (() => {
     $('mCerrarFicha').addEventListener('click', cerrarCharla);
     $('mTelon').addEventListener('click', (e) => { if (e.target === $('mTelon')) cerrarCharla(); });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !$('mTelon').classList.contains('hidden')) cerrarCharla();
+      if (e.key !== 'Escape') return;
+      if (!$('mTelonContacto').classList.contains('hidden')) cerrarContacto();
+      else if (!$('mTelon').classList.contains('hidden')) cerrarCharla();
     });
     $('mBtnAtendida').addEventListener('click', marcarAtendida);
     $('mBtnAbrir').addEventListener('click', abrirAfuera);
+    $('mBtnPausa').addEventListener('click', cambiarPausa);
+    $('mBtnBorrar').addEventListener('click', borrarCharla);
+    $('mFormResponder').addEventListener('submit', enviarRespuesta);
+    // Ctrl+Enter (o Cmd+Enter) manda; Enter solo hace otro renglón
+    $('mRespuesta').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarRespuesta(e);
+    });
+
+    $('mNuevoContacto').addEventListener('click', abrirContacto);
+    $('mCerrarContacto').addEventListener('click', cerrarContacto);
+    $('mTelonContacto').addEventListener('click', (e) => { if (e.target === $('mTelonContacto')) cerrarContacto(); });
+    $('mFormContacto').addEventListener('submit', guardarContacto);
 
     $('mFormPrecios').addEventListener('input', marcarPreciosEditados);
     $('mAgregarTipo').addEventListener('click', agregarTipo);
@@ -894,7 +1124,7 @@ const panelMonedas = (() => {
     // Los pedidos entran solos: al volver a la pestaña del navegador, y cada
     // dos minutos si no hay nada a medio editar, se traen de nuevo.
     const enUso = () => $('vistaMonedas').classList.contains('hidden') ||
-      !$('mTelon').classList.contains('hidden') ||
+      !$('mTelon').classList.contains('hidden') || !$('mTelonContacto').classList.contains('hidden') ||
       (document.activeElement && document.activeElement.closest &&
        document.activeElement.closest('#vistaMonedas input, #vistaMonedas select, #vistaMonedas textarea'));
     document.addEventListener('visibilitychange', () => {
@@ -910,6 +1140,7 @@ const panelMonedas = (() => {
   async function abrir() {
     if (!eventosAtados) {
       atarEventos();
+      escucharEnVivo();
       eventosAtados = true;
     }
     if (!(await cargar())) return;
