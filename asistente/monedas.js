@@ -227,7 +227,10 @@ const panelMonedas = (() => {
     if (p.retiro === 'Depósito') return { texto: 'Lo trae al depósito: no lleva aviso.' };
     if (cerrado(p)) return null;
     if (p.respuesta_aviso === 'confirmó') {
-      return { clase: 'chip-atendido', chip: 'Confirmó', texto: 'Le avisamos el ' + fechaHora(p.aviso_enviado) + '.' };
+      return {
+        clase: 'chip-atendido', chip: 'Confirmó',
+        texto: p.aviso_enviado ? 'Le avisamos el ' + fechaHora(p.aviso_enviado) + '.' : 'Le dijimos el día y le quedó bien.'
+      };
     }
     if (p.respuesta_aviso === 'no puede') {
       return { clase: 'chip-alerta', chip: 'No puede', texto: 'Cambiale el día y el bot le vuelve a avisar.' };
@@ -240,18 +243,20 @@ const panelMonedas = (() => {
     }
 
     const { hoy, hhmm } = ahoraAR();
+    // El aviso del día sale apenas se pone el día, si el cliente escribió en las últimas 24 horas
+    const yaSabe = p.aviso_dia === 'enviado' ? 'Ya le dijimos el día. ' : '';
     const deManana = p.turno === 'Mañana';
     const diaAviso = deManana ? sumarDias(p.dia, -1) : p.dia;
     const hora = (deManana ? cfg.horaNoche : cfg.horaManana) || (deManana ? '21:00' : '09:00');
 
     if (diaAviso > hoy) {
       const cuando = diaAviso === sumarDias(hoy, 1) ? 'mañana' : 'el ' + nombreDia(diaAviso);
-      return { clase: 'chip-nuevo', chip: 'Programado', texto: 'El aviso sale ' + cuando + ' a las ' + hora + '.' };
+      return { clase: 'chip-nuevo', chip: 'Programado', texto: yaSabe + 'El recordatorio sale ' + cuando + ' a las ' + hora + '.' };
     }
     if (diaAviso === hoy) {
       return {
         clase: 'chip-nuevo', chip: 'Programado',
-        texto: hhmm < hora ? 'El aviso sale hoy a las ' + hora + '.' : 'El aviso sale en los próximos minutos.'
+        texto: yaSabe + (hhmm < hora ? 'El recordatorio sale hoy a las ' + hora + '.' : 'El recordatorio sale en los próximos minutos.')
       };
     }
     return { clase: 'chip-pendiente', chip: 'Sin aviso', texto: 'Ya pasó la hora de avisar para ese turno.' };

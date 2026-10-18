@@ -21,7 +21,7 @@ export type Datos = {
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
 };
 // Pistas: lo que la IA entendió de un mensaje escrito libremente y todavía no se usó
-export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret">>;
+export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret" | "dir">>;
 export type Estado = { step: string; d: Datos; p?: Pistas };
 export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
@@ -65,12 +65,33 @@ export function parseNum(s: string): number | null {
 }
 
 export function findLoc(s: string): string | null {
-  const n = " " + norm(s) + " ";
+  // Sin puntos ni comas, para que "Funes," o "Rosario." también cuenten
+  const n = " " + norm(s).replace(/[.,]/g, " ") + " ";
   let best: { n: string; len: number } | null = null;
   for (const l of LOCALIDADES) for (const a of l.a) {
     if (n.includes(" " + a + " ") && (!best || a.length > best.len)) best = { n: l.n, len: a.length };
   }
   return best ? best.n : null;
+}
+
+// Lo que Walter no compra nunca, porque suele venir de robos: no se cotiza ni se anota
+const PROHIBIDO = /medidor|cementerio|lapida|nicho|placas? (recordatoria|conmemorativa|funeraria|mortuoria)|cables? (telefonic|de telefono|de telecom)|par telefonico|(block|bloque|taco)s? .*numer|numerad|numeracion|robad|afanad|choread/;
+export const esProhibido = (s: string) => PROHIBIDO.test(norm(s));
+
+/** No compramos eso: lo dice y vuelve a preguntar qué tiene, sin lo que ya había anotado de material. */
+export function rechazar(estado: Estado | null, c: Config, prohibido: boolean): Resultado {
+  const e: Estado = estado ? { step: estado.step, d: { ...estado.d } } : nuevoEstado();
+  const d = e.d;
+  delete d.mat; delete d.modo; delete d.tipo; delete d.cant; delete d.ret; delete d.dir;
+  e.step = d.loc ? "cat" : "loc";
+  const llaves = tiposDe(c).some((x) => esLlave(x.n)) ? "llaves, " : "";
+  return { estado: e, respuestas: [
+    { text: prohibido
+      ? "Eso no lo compramos: medidores, placas de cementerio, cables telefónicos ni piezas con numeración."
+      : "Eso no lo compramos." },
+    d.loc ? { text: `Compramos monedas, ${llaves}cobre y bronce. ¿Tenés algo de eso?`, options: ["Monedas", "Cobre", "Bronce"] }
+      : { text: `Compramos monedas, ${llaves}cobre y bronce. Si tenés algo de eso, ¿de qué localidad nos escribís?` },
+  ] };
 }
 
 export const MEZCLADAS = "Mezcladas";
@@ -186,6 +207,10 @@ function pregunta(e: Estado, c: Config): Respuesta {
   }
 }
 
+const SALUDO = "(hola|holis|buenas|buen dia|buenos dias|buenas tardes|buenas noches|que tal|como estas|como va)";
+/** "Hola", "Hola buen día", "Buenas, qué tal": nada más que un saludo. */
+export const esSaludo = (s: string) => new RegExp(`^${SALUDO}( ${SALUDO})*$`).test(norm(s).replace(/[.,]/g, " ").replace(/\s+/g, " ").trim());
+
 export function nuevoEstado(): Estado { return { step: "loc", d: {} }; }
 
 /**
@@ -206,6 +231,7 @@ export function juntar(rs: Respuesta[]): Respuesta[] {
 
 /** Procesa un mensaje del cliente. `estado` es null en el primer mensaje. */
 export function procesar(estado: Estado | null, texto: string, c: Config): Resultado {
+  if (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr") return rechazar(estado, c, true);
   if (!estado) {
     // Primer mensaje: saludo. Si ya dijo la localidad, la tomamos de una.
     const e = nuevoEstado();
@@ -222,7 +248,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   const out = (...r: Respuesta[]): Resultado => ({ estado: e, respuestas: r });
 
   // Un saludo suelto a mitad de la charla (volvió, o se perdió) arranca de nuevo
-  const saludo = /^(hola|buenas|buen dia|buenos dias|buenas tardes|buenas noches)$/.test(n) && e.step !== "name" && e.step !== "addr";
+  const saludo = esSaludo(t) && e.step !== "name" && e.step !== "addr";
   if (saludo || /(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
   if (n === "otra localidad") { e.step = "loc"; return out(pregunta(e, c)); }
   if (/(hablar|humano|persona|walter)/.test(n) && e.step !== "name" && e.step !== "addr") {
@@ -383,7 +409,7 @@ export function conPerfil(r: Resultado, nombre: string | null, c: Config): Resul
 }
 
 // Lo que la IA entendió de un mensaje. otraLoc: nombró una localidad que no está en la lista.
-export type Lectura = Pistas & { otraLoc?: boolean; intencion?: "precios" | "depositos" | "humano" };
+export type Lectura = Pistas & { otraLoc?: boolean; intencion?: "precios" | "depositos" | "humano" | "otro" | "prohibido" };
 
 // El texto con el que el cliente habría contestado la pregunta actual, si las pistas ya la responden
 function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo: keyof Pistas } | null {
@@ -406,13 +432,18 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
     case "qty": return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
     case "mod":
       // Con pocos kilos solo queda el depósito: eso ya se lo dijimos con la cotización
-      if (!p.ret || (p.ret !== "Depósito" && soloDeposito(d, c))) return null;
-      return { texto: p.ret === "Depósito" ? "Llevo al depósito" : p.ret, campo: "ret" };
+      if (p.ret === "Depósito") return { texto: "Llevo al depósito", campo: "ret" };
+      if (soloDeposito(d, c)) return null;
+      // La dirección que ya escribió vale como "pasen a buscarlo"
+      if (p.dir && p.ret !== "Punto de encuentro" && esDireccion(norm(p.dir))) return { texto: p.dir, campo: "dir" };
+      return p.ret ? { texto: p.ret, campo: "ret" } : null;
+    case "addr": return p.dir ? { texto: p.dir, campo: "dir" } : null;
     default: return null;
   }
 }
 
-const PALABRA_INTENCION = { precios: "precios", depositos: "deposito", humano: "hablar con Walter" } as const;
+const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, string>> =
+  { precios: "precios", depositos: "deposito", humano: "hablar con Walter" };
 
 /**
  * Como procesar, con lo que la IA entendió del mensaje: contesta de una las preguntas que el
@@ -421,6 +452,14 @@ const PALABRA_INTENCION = { precios: "precios", depositos: "deposito", humano: "
  * Con l null (tocó un botón, o la IA no respondió) solo se usan las pistas que ya estaban guardadas.
  */
 export function procesarConLectura(estado: Estado | null, texto: string, c: Config, l: Lectura | null): Resultado {
+  // Lo que no compramos corta ahí, sin cotizar con lo que haya entendido la IA
+  if (l?.intencion === "prohibido" || (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr")) {
+    return rechazar(estado, c, true);
+  }
+  // Ofrece otra cosa (aluminio, hierro): solo antes de que esté cotizando algo, para no perder lo anotado
+  if (l?.intencion === "otro" && !l.mat && !l.tipo && ["loc", "out", "cat", "done"].includes(estado?.step ?? "loc")) {
+    return rechazar(estado, c, false);
+  }
   // Después de un pedido, si cuenta que tiene otra cosa, cotizamos de nuevo en la misma localidad
   if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo)) estado = { step: "cat", d: { loc: estado.d.loc } };
   let r = procesar(estado, texto, c);
@@ -476,6 +515,7 @@ function pistasDe(l: Lectura, c: Config): Pistas {
   if (l.tipo && (l.tipo === MEZCLADAS || tipoPorNombre(c, l.tipo))) p.tipo = l.tipo;
   if (typeof l.cant === "number" && l.cant > 0) p.cant = l.cant;
   if (l.ret === "Retiro a domicilio" || l.ret === "Punto de encuentro" || l.ret === "Depósito") p.ret = l.ret;
+  if (typeof l.dir === "string" && l.dir.trim()) p.dir = l.dir.trim().slice(0, 120);
   return p;
 }
 
