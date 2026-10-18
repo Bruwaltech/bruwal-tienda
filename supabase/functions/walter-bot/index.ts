@@ -6,7 +6,7 @@
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { conPerfil, type Config, type Estado, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
-import { leer } from "./ia.ts";
+import { leer, redactar } from "./ia.ts";
 
 const env = (k: string, def = "") => Deno.env.get(k) ?? def;
 const GRAPH = `https://graph.facebook.com/${env("GRAPH_VERSION", "v21.0")}`;
@@ -139,7 +139,8 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
         retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad,
       });
     }
-    await enviar(canal, usuario, juntar(r.respuestas));
+    // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
+    await enviar(canal, usuario, await redactar(await secreto("ANTHROPIC_API_KEY"), texto, juntar(r.respuestas)));
   } catch (e) {
     console.error("atender", canal, usuario, e);
   }
