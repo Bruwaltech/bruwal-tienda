@@ -92,6 +92,15 @@ h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
 .ver-clave .ojo-tachado { display: none; }
 .ver-clave.viendo .ojo-abierto { display: none; }
 .ver-clave.viendo .ojo-tachado { display: block; }
+/* Aviso de la tienda Bruwaltech abajo del ingreso */
+.aviso-tienda {
+  display: block; margin-top: 22px; padding: 14px 16px; border-radius: var(--radius);
+  background: var(--bg); border: 1px solid var(--line); color: var(--text-dark);
+  text-decoration: none; font-size: 14px; line-height: 1.5;
+}
+.aviso-tienda:hover { border-color: var(--celeste); }
+.aviso-tienda strong { display: block; font-size: 15px; margin-bottom: 2px; }
+.aviso-tienda .ir { display: inline-block; margin-top: 6px; color: var(--celeste); font-weight: 600; }
 
 .btn {
   border: none; border-radius: 8px; padding: 12px 18px; font-size: 15px;
@@ -436,6 +445,12 @@ tbody tr:hover { background: #F8FBFF; }
     <div style="text-align:center;margin-top:14px;">
       <button type="button" class="link-suave" id="btnOlvide">¿Olvidaste tu contraseña?</button>
     </div>
+
+    <a class="aviso-tienda" href="/dashboard">
+      <strong>Tienda Bruwaltech</strong>
+      Tu tienda online con control de stock. ¿Ya la tenés o querés ser parte?
+      <span class="ir">Iniciá sesión o registrate acá →</span>
+    </a>
   </div>
 </div>
 
