@@ -1,8 +1,9 @@
 // Edge Function del bot de Walter: webhook de WhatsApp Cloud API y de Messenger,
 // tarea de avisos (?tarea=avisos) que llama pg_cron y lo que Walter hace desde
 // el panel de Bruwal Chat (?tarea=panel): contestar (texto o foto), ver las fotos y audios
-// de los clientes, borrar charlas, cargar contactos y cambiar la foto y los datos del perfil
-// de WhatsApp del bot. Las fotos y audios quedan en el bucket privado walter-media (schema/68).
+// de los clientes, mandar audios, borrar charlas, cargar contactos y cambiar la foto y los datos del perfil
+// de WhatsApp del bot. Las fotos y audios quedan en el bucket privado walter-media (schema/68)
+// y se borran solos a los 30 días (limpiarMedios, con los avisos).
 //
 // Tablas, claves y cron en schema/62-bot-walter.sql. Desplegar sin verificar JWT
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
@@ -57,6 +58,8 @@ Deno.serve(async (req) => {
     const clave = await secreto("AVISOS_SECRET");
     if (!clave || req.headers.get("x-avisos-secret") !== clave) return new Response("forbidden", { status: 403 });
     const enviados = await enviarAvisos();
+    const borrados = await limpiarMedios().catch((e) => (console.error("limpiar medios", e), 0));
+    if (borrados) console.log("medios borrados", borrados);
     return Response.json({ enviados });
   }
 
@@ -448,7 +451,8 @@ async function panel(req: Request): Promise<Response> {
   }
   try {
     if (b.accion === "enviar") return await panelEnviar(String(b.canal), String(b.usuario), String(b.texto ?? "").trim());
-    if (b.accion === "enviar_foto") return await panelEnviarFoto(String(b.canal), String(b.usuario), b.foto, String(b.texto ?? "").trim());
+    if (b.accion === "enviar_foto") return await panelEnviarMedio(String(b.canal), String(b.usuario), "imagen", b.foto, String(b.texto ?? "").trim());
+    if (b.accion === "enviar_audio") return await panelEnviarMedio(String(b.canal), String(b.usuario), "audio", b.audio, "");
     if (b.accion === "medios") return await panelMedios(b.paths);
     if (b.accion === "borrar") return await panelBorrar(String(b.canal), String(b.usuario));
     if (b.accion === "contacto") {
@@ -497,41 +501,64 @@ async function ventanaAbierta(canal: string, usuario: string) {
   return !!ult && Date.now() - new Date(ult.creado).getTime() <= VENTANA;
 }
 
-// Una foto desde el panel: se sube a Meta, sale por el número del bot y queda guardada para verla en la charla
-async function panelEnviarFoto(canal: string, usuario: string, foto: unknown, texto: string) {
-  if (canal !== "whatsapp") return respuesta({ error: "Las fotos por ahora salen solo por WhatsApp." }, 400);
-  const m = typeof foto === "string" ? foto.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/) : null;
-  if (!m) return respuesta({ error: "La foto tiene que ser JPG o PNG." }, 400);
+// Una foto o un audio desde el panel: se sube a Meta, sale por el número del bot y queda guardado para verlo en la charla
+const SALIDA = {
+  imagen: { tipos: /^data:(image\/(?:jpeg|png));base64,(.+)$/, max: 5, nombre: "La foto", formato: "JPG o PNG" },
+  audio: { tipos: /^data:(audio\/(?:mpeg|ogg|mp4|aac));base64,(.+)$/, max: 16, nombre: "El audio", formato: "MP3" },
+};
+const EXT_SALIDA: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/aac": "aac" };
+
+async function panelEnviarMedio(canal: string, usuario: string, tipo: "imagen" | "audio", archivo: unknown, texto: string) {
+  const s = SALIDA[tipo];
+  if (canal !== "whatsapp") return respuesta({ error: `${s.nombre} por ahora sale solo por WhatsApp.` }, 400);
+  const m = typeof archivo === "string" ? archivo.match(s.tipos) : null;
+  if (!m) return respuesta({ error: `${s.nombre} tiene que ser ${s.formato}.` }, 400);
   if (texto.length > 1024) return respuesta({ error: "El texto de la foto va hasta 1024 letras." }, 400);
   const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
-  if (bytes.length > 5 * 1024 * 1024) return respuesta({ error: "La foto pesa demasiado (hasta 5 MB)." }, 400);
+  if (bytes.length > s.max * 1024 * 1024) return respuesta({ error: `${s.nombre} pesa demasiado (hasta ${s.max} MB).` }, 400);
   const { data: conv } = await db.from("walter_conversaciones").select("usuario").eq("canal", canal).eq("usuario", usuario).maybeSingle();
   if (!conv) return respuesta({ error: "No encontramos esa charla." }, 404);
   if (!(await ventanaAbierta(canal, usuario))) return SIN_VENTANA();
 
+  const ext = EXT_SALIDA[m[1]];
   const phone = await secreto("WA_PHONE_ID"), token = await secreto("WA_TOKEN");
   const form = new FormData();
   form.append("messaging_product", "whatsapp");
   form.append("type", m[1]);
-  form.append("file", new Blob([bytes], { type: m[1] }), m[1] === "image/png" ? "foto.png" : "foto.jpg");
+  form.append("file", new Blob([bytes], { type: m[1] }), `${tipo === "imagen" ? "foto" : "audio"}.${ext}`);
   const sub = await fetch(`${GRAPH}/${phone}/media`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
   const sj = await sub.json().catch(() => ({}));
   if (!sub.ok || !sj.id) {
-    console.error("foto media", sub.status, JSON.stringify(sj));
-    return respuesta({ error: "WhatsApp no aceptó la foto: " + (sj.error?.message ?? "no se pudo subir") }, 502);
+    console.error("media salida", tipo, sub.status, JSON.stringify(sj));
+    return respuesta({ error: `WhatsApp no aceptó ${tipo === "imagen" ? "la foto" : "el audio"}: ` + (sj.error?.message ?? "no se pudo subir") }, 502);
   }
-  const motivo = await graphError(`${phone}/messages`, token, {
-    messaging_product: "whatsapp", to: usuario, type: "image", image: { id: sj.id, ...(texto ? { caption: texto } : {}) },
-  });
+  // El audio no lleva texto: WhatsApp no lo muestra
+  const msg = tipo === "imagen"
+    ? { type: "image", image: { id: sj.id, ...(texto ? { caption: texto } : {}) } }
+    : { type: "audio", audio: { id: sj.id } };
+  const motivo = await graphError(`${phone}/messages`, token, { messaging_product: "whatsapp", to: usuario, ...msg });
   if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
 
-  const path = `${usuario}/${Date.now()}-walter.${m[1] === "image/png" ? "png" : "jpg"}`;
+  const path = `${usuario}/${Date.now()}-walter.${ext}`;
   const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: m[1] });
-  if (error) console.error("foto guardar", error.message);
-  await log(canal, usuario, "sale", texto || ETIQUETA.imagen, "walter", { tipo: "imagen", path: error ? null : path });
+  if (error) console.error("media salida guardar", error.message);
+  await log(canal, usuario, "sale", texto || ETIQUETA[tipo], "walter", { tipo, path: error ? null : path });
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
   return respuesta({ ok: true });
+}
+
+// Las fotos y audios se borran solos a los DIAS_MEDIOS días para no ocupar lugar. El mensaje queda en la
+// charla, sin el archivo. Corre con los avisos (cada 15 minutos), de a 200.
+const DIAS_MEDIOS = 30;
+async function limpiarMedios() {
+  const { data } = await db.from("walter_mensajes").select("id, media_path").not("media_path", "is", null)
+    .lt("creado", new Date(Date.now() - DIAS_MEDIOS * 86400e3).toISOString()).order("id").limit(200);
+  if (!data?.length) return 0;
+  const { error } = await db.storage.from(BUCKET).remove(data.map((x) => x.media_path as string));
+  if (error) { console.error("limpiar medios", error.message); return 0; }
+  await db.from("walter_mensajes").update({ media_path: null }).in("id", data.map((x) => x.id));
+  return data.length;
 }
 
 // Links por una hora para ver en el panel las fotos y audios de las charlas

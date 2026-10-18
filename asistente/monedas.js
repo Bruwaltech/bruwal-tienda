@@ -652,8 +652,9 @@ const panelMonedas = (() => {
     const abierta = ultimoDelCliente && Date.now() - new Date(ultimoDelCliente).getTime() < VENTANA;
     $('mRespuesta').disabled = !abierta;
     $('mEnviar').disabled = !abierta;
-    // Las fotos salen solo por WhatsApp
+    // Las fotos y los audios salen solo por WhatsApp
     $('mFotoBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp');
+    $('mAudioBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp' || !puedeGrabar());
     $('mVentana').textContent = abierta
       ? 'Sale por el número del bot. Mientras atendés vos, el bot no contesta.'
       : ultimoDelCliente
@@ -666,19 +667,28 @@ const panelMonedas = (() => {
   const NOMBRE_MEDIO = { imagen: 'la foto', audio: 'el audio', video: 'el video', documento: 'el archivo', sticker: 'el sticker' };
 
   // El archivo va sin link: ponerMedios le pone uno firmado después de pintar la charla
+  // Los archivos se borran solos a los 30 días (limpiarMedios en walter-bot)
+  const DIAS_MEDIOS = 30;
   function htmlMedio(m) {
     if (!m.media_tipo) return '';
-    if (!m.media_path) return '<span class="medio-falta">No se pudo bajar ' + NOMBRE_MEDIO[m.media_tipo] + '.</span>';
+    if (!m.media_path) {
+      const vencido = Date.now() - new Date(m.creado).getTime() > DIAS_MEDIOS * 24 * 60 * 60 * 1000;
+      return '<span class="medio-falta">' + (vencido
+        ? 'Se borró ' + NOMBRE_MEDIO[m.media_tipo] + ' a los ' + DIAS_MEDIOS + ' días para no ocupar lugar.'
+        : 'No se pudo bajar ' + NOMBRE_MEDIO[m.media_tipo] + '.') + '</span>';
+    }
     const p = escapar(m.media_path).replace(/"/g, '&quot;');
+    // Bajar: el mismo link firmado, pero el navegador lo guarda en vez de abrirlo
+    const bajar = '<a class="medio-link" data-bajar="' + p + '">Bajar</a>';
     if (m.media_tipo === 'imagen' || m.media_tipo === 'sticker') {
-      return '<a class="medio" data-medio="' + p + '" target="_blank" rel="noopener"><img alt="Foto" data-medio="' + p + '"></a>';
+      return '<a class="medio" data-medio="' + p + '" target="_blank" rel="noopener"><img alt="Foto" data-medio="' + p + '"></a>' + bajar;
     }
     if (m.media_tipo === 'audio') {
       return '<audio controls preload="metadata" data-medio="' + p + '"></audio>' +
-        '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el audio</a>';
+        '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el audio</a>' + bajar;
     }
-    if (m.media_tipo === 'video') return '<video controls playsinline preload="metadata" data-medio="' + p + '"></video>';
-    return '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el archivo</a>';
+    if (m.media_tipo === 'video') return '<video controls playsinline preload="metadata" data-medio="' + p + '"></video>' + bajar;
+    return '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el archivo</a>' + bajar;
   }
 
   function htmlBurbuja(m) {
@@ -692,8 +702,8 @@ const panelMonedas = (() => {
   // Links firmados de las fotos y audios: valen una hora, se piden de nuevo antes de que venzan
   const linksMedios = {};
   async function ponerMedios(caja, alFinal) {
-    const nodos = Array.from(caja.querySelectorAll('[data-medio]'));
-    const faltan = Array.from(new Set(nodos.map((n) => n.dataset.medio)))
+    const nodos = Array.from(caja.querySelectorAll('[data-medio], [data-bajar]'));
+    const faltan = Array.from(new Set(nodos.map((n) => n.dataset.medio || n.dataset.bajar)))
       .filter((p) => !linksMedios[p] || linksMedios[p].hasta < Date.now());
     if (faltan.length) {
       const r = await llamarBot({ accion: 'medios', paths: faltan });
@@ -701,9 +711,11 @@ const panelMonedas = (() => {
       Object.keys(r.urls || {}).forEach((p) => { linksMedios[p] = { url: r.urls[p], hasta }; });
     }
     nodos.forEach((n) => {
-      const l = linksMedios[n.dataset.medio];
+      const l = linksMedios[n.dataset.medio || n.dataset.bajar];
       if (!l) return;
-      if (n.tagName === 'A') n.href = l.url;
+      // download= hace que Supabase lo mande como descarga, con ese nombre
+      if (n.dataset.bajar) n.href = l.url + '&download=' + encodeURIComponent(n.dataset.bajar.split('/').pop());
+      else if (n.tagName === 'A') n.href = l.url;
       else {
         // La foto llega después de pintar: si estaba al final, que siga al final
         if (alFinal) n.addEventListener('load', () => { caja.scrollTop = caja.scrollHeight; }, { once: true });
@@ -770,6 +782,7 @@ const panelMonedas = (() => {
   }
 
   function cerrarCharla() {
+    terminarAudio(false); // si estaba grabando, no se manda
     ocultar($('mTelon'));
     charlaAbierta = null;
   }
@@ -823,7 +836,7 @@ const panelMonedas = (() => {
     pintarCharlas();
   }
 
-  // La foto se achica a 1600 px y va en JPG: pesa poco y WhatsApp la acepta. Lo que haya
+  // La foto se achica a 1280 px y va en JPG: pesa poco (unos 150 KB) y WhatsApp la acepta. Lo que haya
   // escrito en la respuesta va como texto de la foto.
   function elegirFotoCharla() {
     const archivo = $('mFoto').files[0];
@@ -835,12 +848,12 @@ const panelMonedas = (() => {
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const escala = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const escala = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
       const lienzo = document.createElement('canvas');
       lienzo.width = Math.round(img.naturalWidth * escala);
       lienzo.height = Math.round(img.naturalHeight * escala);
       lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
-      enviarFoto(c, lienzo.toDataURL('image/jpeg', 0.85));
+      enviarFoto(c, lienzo.toDataURL('image/jpeg', 0.75));
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -868,6 +881,132 @@ const panelMonedas = (() => {
     await cargarMensajes(c);
     pintarTarjetas();
     pintarCharlas();
+  }
+
+  // ---------- Audios desde el panel ----------
+  // Se graba con el micrófono y se pasa a MP3 (mono, 64 kbps): WhatsApp no acepta el formato en el que graba
+  // Chrome, y el MP3 lo aceptan todos. El conversor (lamejs) se baja la primera vez que se graba.
+  const MAX_AUDIO = 5 * 60; // segundos
+  const LAMEJS = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
+  let grabacion = null;
+
+  function puedeGrabar() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  }
+
+  function cargarLame() {
+    if (window.lamejs) return Promise.resolve();
+    return new Promise((ok, mal) => {
+      const s = document.createElement('script');
+      s.src = LAMEJS;
+      s.onload = ok;
+      s.onerror = mal;
+      document.head.appendChild(s);
+    });
+  }
+
+  async function tocarAudio() {
+    if (grabacion) return terminarAudio(true);
+    const c = charlaAbierta;
+    if (!c) return;
+    ocultar($('mFichaError'));
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      return errorFicha('No se pudo usar el micrófono. Fijate que el navegador tenga permiso.');
+    }
+    cargarLame().catch(() => {}); // mientras habla
+    const rec = new MediaRecorder(stream);
+    const partes = [];
+    rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
+    const inicio = Date.now();
+    const g = { c, rec, stream, partes, enviar: false };
+    grabacion = g;
+    g.reloj = setInterval(() => {
+      const s = Math.floor((Date.now() - inicio) / 1000);
+      $('mAudioBtn').textContent = 'Enviar audio (' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ')';
+      if (s >= MAX_AUDIO) terminarAudio(true);
+    }, 250);
+    rec.onstop = () => audioGrabado(g);
+    rec.start();
+    $('mAudioBtn').classList.add('grabando');
+    $('mAudioBtn').textContent = 'Enviar audio (0:00)';
+    mostrar($('mAudioCancelar'));
+  }
+
+  function terminarAudio(enviar) {
+    const g = grabacion;
+    if (!g) return;
+    grabacion = null;
+    g.enviar = enviar;
+    clearInterval(g.reloj);
+    if (g.rec.state !== 'inactive') g.rec.stop();
+    g.stream.getTracks().forEach((t) => t.stop());
+    $('mAudioBtn').classList.remove('grabando');
+    $('mAudioBtn').textContent = 'Grabar audio';
+    ocultar($('mAudioCancelar'));
+  }
+
+  async function audioGrabado(g) {
+    if (!g.enviar || !g.partes.length) return;
+    $('mAudioBtn').disabled = true;
+    $('mAudioBtn').textContent = 'Enviando audio…';
+    try {
+      await cargarLame();
+      const mp3 = await aMp3(new Blob(g.partes, { type: g.rec.mimeType }));
+      const audio = await new Promise((ok) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(fr.result);
+        fr.readAsDataURL(mp3);
+      });
+      const r = await llamarBot({ accion: 'enviar_audio', canal: g.c.canal, usuario: g.c.usuario, audio });
+      if (charlaAbierta !== g.c) return;
+      if (r.error) return errorFicha(r.error);
+      g.c.bot_pausado = true;
+      g.c.pide_humano = false;
+      await cargarMensajes(g.c);
+      pintarTarjetas();
+      pintarCharlas();
+    } catch (e) {
+      errorFicha('No se pudo preparar el audio. Probá de nuevo.');
+    } finally {
+      $('mAudioBtn').disabled = false;
+      $('mAudioBtn').textContent = 'Grabar audio';
+      if (charlaAbierta === g.c) pintarFichaEstado();
+    }
+  }
+
+  // Lo grabado (webm, ogg o mp4 según el navegador) pasa a MP3 mono de 16 kHz: alcanza para la voz y pesa poco
+  async function aMp3(blob) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const datos = await blob.arrayBuffer();
+    // Safari viejo no devuelve promesa: con los callbacks anda en todos
+    const buf = await new Promise((ok, mal) => ctx.decodeAudioData(datos, ok, mal));
+    ctx.close();
+    // Mezcla a mono y baja a 16 kHz promediando
+    const HZ = 16000;
+    const paso = buf.sampleRate / HZ;
+    const largo = Math.floor(buf.length / paso);
+    const canales = Array.from({ length: buf.numberOfChannels }, (_, i) => buf.getChannelData(i));
+    const pcm = new Int16Array(largo);
+    for (let i = 0; i < largo; i++) {
+      const desde = Math.floor(i * paso), hasta = Math.max(desde + 1, Math.floor((i + 1) * paso));
+      let suma = 0, n = 0;
+      for (const ch of canales) for (let j = desde; j < hasta && j < ch.length; j++) { suma += ch[j]; n++; }
+      const v = Math.max(-1, Math.min(1, n ? suma / n : 0));
+      pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    }
+    const enc = new window.lamejs.Mp3Encoder(1, HZ, 64);
+    const partes = [];
+    for (let i = 0; i < pcm.length; i += 1152) {
+      const b = enc.encodeBuffer(pcm.subarray(i, i + 1152));
+      if (b.length) partes.push(new Uint8Array(b));
+    }
+    const fin = enc.flush();
+    if (fin.length) partes.push(new Uint8Array(fin));
+    return new Blob(partes, { type: 'audio/mpeg' });
   }
 
   async function cambiarPausa() {
@@ -1453,6 +1592,8 @@ const panelMonedas = (() => {
     $('mBtnBorrar').addEventListener('click', borrarCharla);
     $('mFormResponder').addEventListener('submit', enviarRespuesta);
     $('mFoto').addEventListener('change', elegirFotoCharla);
+    $('mAudioBtn').addEventListener('click', tocarAudio);
+    $('mAudioCancelar').addEventListener('click', () => terminarAudio(false));
     // Enter manda, como en WhatsApp; Shift+Enter hace otro renglón
     $('mRespuesta').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) enviarRespuesta(e);

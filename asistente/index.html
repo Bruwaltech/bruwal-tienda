@@ -287,6 +287,8 @@ tbody tr:hover { background: #F8FBFF; }
 .burbuja audio { display: block; width: 240px; max-width: 100%; }
 .burbuja .medio-link { display: inline-block; margin: 4px 0; color: inherit; font-size: 13px; text-decoration: underline; }
 .burbuja .medio-falta { display: block; font-style: italic; opacity: .75; }
+.burbuja .medio-link + .medio-link { margin-left: 10px; }
+#mAudioBtn.grabando { background: #FDECEC; border-color: #F2B8B8; color: #A12626; }
 
 /* Contestar desde el panel: sale por el número del bot */
 .responder { margin-top: 10px; }
@@ -847,6 +849,8 @@ tbody tr:hover { background: #F8FBFF; }
             <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
             <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
             <input type="file" id="mFoto" accept="image/*" class="solo-lector">
+            <button type="button" class="btn btn-suave hidden" id="mAudioBtn">Grabar audio</button>
+            <button type="button" class="btn btn-suave hidden" id="mAudioCancelar">Cancelar</button>
             <button type="submit" class="btn btn-ok" id="mEnviar">Enviar</button>
           </div>
         </form>
@@ -905,7 +909,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261018e"></script>
+<script src="/asistente/monedas.js?v=20261018f"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
