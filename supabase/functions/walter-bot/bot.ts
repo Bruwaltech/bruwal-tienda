@@ -79,9 +79,11 @@ const PROHIBIDO = /medidor|cementerio|lapida|nicho|placas? (recordatoria|conmemo
 export const esProhibido = (s: string) => PROHIBIDO.test(norm(s));
 
 /** No compramos eso: lo dice y vuelve a preguntar qué tiene, sin lo que ya había anotado de material. */
-export function rechazar(estado: Estado | null, c: Config, prohibido: boolean): Resultado {
+export function rechazar(estado: Estado | null, c: Config, prohibido: boolean, texto = ""): Resultado {
   const e: Estado = estado ? { step: estado.step, d: { ...estado.d } } : nuevoEstado();
   const d = e.d;
+  // "Soy de Roldán, tengo medidores": la localidad sirve para lo que sí tenga
+  d.loc ??= findLoc(texto) ?? undefined;
   delete d.mat; delete d.modo; delete d.tipo; delete d.cant; delete d.ret; delete d.dir;
   e.step = d.loc ? "cat" : "loc";
   const llaves = tiposDe(c).some((x) => esLlave(x.n)) ? "llaves, " : "";
@@ -231,7 +233,7 @@ export function juntar(rs: Respuesta[]): Respuesta[] {
 
 /** Procesa un mensaje del cliente. `estado` es null en el primer mensaje. */
 export function procesar(estado: Estado | null, texto: string, c: Config): Resultado {
-  if (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr") return rechazar(estado, c, true);
+  if (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr") return rechazar(estado, c, true, texto);
   if (!estado) {
     // Primer mensaje: saludo. Si ya dijo la localidad, la tomamos de una.
     const e = nuevoEstado();
@@ -454,11 +456,11 @@ const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, strin
 export function procesarConLectura(estado: Estado | null, texto: string, c: Config, l: Lectura | null): Resultado {
   // Lo que no compramos corta ahí, sin cotizar con lo que haya entendido la IA
   if (l?.intencion === "prohibido" || (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr")) {
-    return rechazar(estado, c, true);
+    return rechazar(estado, c, true, texto);
   }
   // Ofrece otra cosa (aluminio, hierro): solo antes de que esté cotizando algo, para no perder lo anotado
   if (l?.intencion === "otro" && !l.mat && !l.tipo && ["loc", "out", "cat", "done"].includes(estado?.step ?? "loc")) {
-    return rechazar(estado, c, false);
+    return rechazar(estado, c, false, texto);
   }
   // Después de un pedido, si cuenta que tiene otra cosa, cotizamos de nuevo en la misma localidad
   if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo)) estado = { step: "cat", d: { loc: estado.d.loc } };
