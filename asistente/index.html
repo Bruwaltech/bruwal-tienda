@@ -80,6 +80,18 @@ h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
 .campo input:focus, .campo textarea:focus, .campo select:focus {
   outline: none; border-color: var(--celeste);
 }
+/* Ojito para ver la contraseña mientras se escribe */
+.con-ojo { position: relative; }
+.con-ojo input { padding-right: 46px; }
+.ver-clave {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--text-mute);
+  padding: 8px; display: flex; align-items: center;
+}
+.ver-clave svg { width: 20px; height: 20px; }
+.ver-clave .ojo-tachado { display: none; }
+.ver-clave.viendo .ojo-abierto { display: none; }
+.ver-clave.viendo .ojo-tachado { display: block; }
 
 .btn {
   border: none; border-radius: 8px; padding: 12px 18px; font-size: 15px;
@@ -406,7 +418,13 @@ tbody tr:hover { background: #F8FBFF; }
       </div>
       <div class="campo">
         <label for="clave">Contraseña</label>
-        <input type="password" id="clave" autocomplete="current-password" required>
+        <div class="con-ojo">
+          <input type="password" id="clave" autocomplete="current-password" required>
+          <button type="button" class="ver-clave" id="btnVerClave" aria-label="Mostrar la contraseña" aria-pressed="false">
+            <svg class="ojo-abierto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="ojo-tachado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+          </button>
+        </div>
       </div>
       <label class="fila-recordar">
         <input type="checkbox" id="recordarme" checked>
@@ -805,6 +823,15 @@ let filtro = 'pendientes';
 let busqueda = '';
 
 // ============================== ingreso ==============================
+
+$('btnVerClave').addEventListener('click', () => {
+  const b = $('btnVerClave');
+  const ver = $('clave').type === 'password';
+  $('clave').type = ver ? 'text' : 'password';
+  b.classList.toggle('viendo', ver);
+  b.setAttribute('aria-pressed', String(ver));
+  b.setAttribute('aria-label', ver ? 'Ocultar la contraseña' : 'Mostrar la contraseña');
+});
 
 $('formLogin').addEventListener('submit', async (e) => {
   e.preventDefault();
