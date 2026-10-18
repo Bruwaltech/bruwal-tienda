@@ -25,6 +25,26 @@
       "destination": "/api/tienda?slug=:slug"
     }
   ],
+  "headers": [
+    {
+      "source": "/chat",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/asistente/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ],
   "functions": {
     "api/leer-factura.js": {
       "maxDuration": 30

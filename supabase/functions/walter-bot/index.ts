@@ -1,6 +1,7 @@
 // Edge Function del bot de Walter: webhook de WhatsApp Cloud API y de Messenger,
 // tarea de avisos (?tarea=avisos) que llama pg_cron y lo que Walter hace desde
-// el panel de Bruwal Chat (?tarea=panel): contestar, borrar charlas y cargar contactos.
+// el panel de Bruwal Chat (?tarea=panel): contestar, borrar charlas, cargar contactos
+// y cambiar la foto y los datos del perfil de WhatsApp del bot.
 //
 // Tablas, claves y cron en schema/62-bot-walter.sql. Desplegar sin verificar JWT
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
@@ -353,6 +354,8 @@ async function panel(req: Request): Promise<Response> {
     if (b.accion === "contacto") {
       return await panelContacto(String(b.numero ?? ""), String(b.nombre ?? "").trim(), String(b.localidad ?? "").trim(), !!b.saludar);
     }
+    if (b.accion === "perfil") return await panelPerfil();
+    if (b.accion === "perfil_guardar") return await panelPerfilGuardar(b);
     return respuesta({ error: "Acción desconocida" }, 400);
   } catch (e) {
     console.error("panel", b.accion, e);
@@ -437,4 +440,81 @@ async function panelContacto(numero: string, nombre: string, localidad: string, 
   if (motivo) return respuesta({ ok: true, usuario, existia: !!hay, saludo: false, motivo });
   await log("whatsapp", usuario, "sale", SALUDO_CONTACTO.replace("{{1}}", nombre.split(" ")[0]), "walter");
   return respuesta({ ok: true, usuario, existia: !!hay, saludo: true });
+}
+
+// ---------- Perfil de WhatsApp del bot: lo que ve el cliente al tocar el nombre ----------
+const CAMPOS_PERFIL = "about,address,description,email,profile_picture_url,websites";
+// App de Meta del bot (no es secreta): la subida de la foto se hace a nombre de la app
+const APP_ID = env("META_APP_ID", "1087600733886252");
+
+async function panelPerfil() {
+  const res = await fetch(`${GRAPH}/${await secreto("WA_PHONE_ID")}/whatsapp_business_profile?fields=${CAMPOS_PERFIL}`, {
+    headers: { Authorization: `Bearer ${await secreto("WA_TOKEN")}` },
+  });
+  const txt = await res.text();
+  if (!res.ok) {
+    console.error("perfil", res.status, txt);
+    return respuesta({ error: "WhatsApp no devolvió el perfil. Probá de nuevo." }, 502);
+  }
+  const p = JSON.parse(txt).data?.[0] ?? {};
+  return respuesta({
+    ok: true, foto: p.profile_picture_url ?? null, about: p.about ?? "", description: p.description ?? "",
+    address: p.address ?? "", email: p.email ?? "", website: p.websites?.[0] ?? "",
+  });
+}
+
+async function panelPerfilGuardar(b: Record<string, unknown>) {
+  const texto = (k: string) => String(b[k] ?? "").trim();
+  const about = texto("about"), description = texto("description"), address = texto("address");
+  const email = texto("email"), website = texto("website");
+  if (about.length > 139) return respuesta({ error: "La frase corta va hasta 139 letras." }, 400);
+  if (description.length > 512) return respuesta({ error: "La descripción va hasta 512 letras." }, 400);
+  if (address.length > 256) return respuesta({ error: "La dirección va hasta 256 letras." }, 400);
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return respuesta({ error: "Revisá el email." }, 400);
+  if (website && !/^https?:\/\/\S+\.\S+/.test(website)) return respuesta({ error: "La web tiene que empezar con https://" }, 400);
+
+  // Meta no deja vaciar los campos: se manda solo lo que tiene algo
+  const datos: Record<string, unknown> = { messaging_product: "whatsapp" };
+  if (about) datos.about = about;
+  if (description) datos.description = description;
+  if (address) datos.address = address;
+  if (email) datos.email = email;
+  if (website) datos.websites = [website];
+
+  if (typeof b.foto === "string" && b.foto) {
+    const m = b.foto.match(/^data:image\/(jpeg|png);base64,(.+)$/);
+    if (!m) return respuesta({ error: "La foto tiene que ser JPG o PNG." }, 400);
+    const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    if (bytes.length > 5 * 1024 * 1024) return respuesta({ error: "La foto pesa demasiado (hasta 5 MB)." }, 400);
+    const h = await subirFoto(bytes, "image/" + m[1]);
+    if (!h.handle) return respuesta({ error: "WhatsApp no aceptó la foto: " + h.motivo }, 502);
+    datos.profile_picture_handle = h.handle;
+  }
+  if (Object.keys(datos).length === 1) return respuesta({ error: "No hay nada para guardar." }, 400);
+
+  const motivo = await graphError(`${await secreto("WA_PHONE_ID")}/whatsapp_business_profile`, await secreto("WA_TOKEN"), datos);
+  if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
+  return respuesta({ ok: true });
+}
+
+// Subida en dos pasos de Meta: abre una sesión y manda los bytes; devuelve el handle de la foto
+async function subirFoto(bytes: Uint8Array, tipo: string): Promise<{ handle?: string; motivo?: string }> {
+  const token = await secreto("WA_TOKEN");
+  const s = await fetch(`${GRAPH}/${APP_ID}/uploads?file_length=${bytes.length}&file_type=${encodeURIComponent(tipo)}`, {
+    method: "POST", headers: { Authorization: `Bearer ${token}` },
+  });
+  const sj = await s.json().catch(() => ({}));
+  if (!s.ok || !sj.id) {
+    console.error("foto sesion", s.status, JSON.stringify(sj));
+    return { motivo: sj.error?.message ?? "no se pudo empezar la subida" };
+  }
+  const u = await fetch(`${GRAPH}/${sj.id}`, {
+    method: "POST", headers: { Authorization: `OAuth ${token}`, file_offset: "0", "Content-Type": tipo }, body: bytes as BodyInit,
+  });
+  const uj = await u.json().catch(() => ({}));
+  if (!u.ok || !uj.h) {
+    console.error("foto subida", u.status, JSON.stringify(uj));
+    return { motivo: uj.error?.message ?? "no se pudo subir" };
+  }
+  return { handle: uj.h };
 }

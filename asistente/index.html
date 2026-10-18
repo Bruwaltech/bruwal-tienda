@@ -377,6 +377,15 @@ tbody tr:hover { background: #F8FBFF; }
 }
 .pie-form .btn-primario { width: auto; }
 
+.perfil-foto { display: flex; gap: 16px; align-items: center; padding: 14px 18px 0; }
+.perfil-foto img, .perfil-sin-foto {
+  width: 84px; height: 84px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.perfil-sin-foto { display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--text-mute); }
+.perfil-foto .btn-suave { width: auto; display: inline-block; cursor: pointer; }
+.solo-lector { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+
 .nota-tipos { padding: 8px 18px 0; font-size: 13.5px; color: var(--text-mute); line-height: 1.45; }
 .tipos-moneda { display: grid; gap: 8px; padding: 12px 18px 0; }
 .tipos-cabecera, .tipo-moneda {
@@ -709,6 +718,40 @@ tbody tr:hover { background: #F8FBFF; }
           <span class="dato-secundario" id="mPreciosEstado"></span>
         </div>
       </form>
+
+      <form class="panel hidden" data-seccion="precios" id="mFormPerfil" novalidate onsubmit="return false">
+        <div class="panel-cabecera"><h2>Perfil de WhatsApp</h2></div>
+        <p class="nota-panel">Es lo que ven los clientes al tocar el nombre del bot en WhatsApp.</p>
+        <div class="aviso hidden" id="mPerfilCargando" style="margin:14px 18px 0;">Cargando el perfil…</div>
+        <div class="perfil-foto">
+          <img id="mPerfilImg" alt="Foto de perfil del WhatsApp del bot" class="hidden">
+          <div class="perfil-sin-foto" id="mPerfilSinFoto">Sin foto</div>
+          <div>
+            <label class="btn btn-suave" for="mPerfilArchivo">Cambiar foto</label>
+            <input type="file" id="mPerfilArchivo" accept="image/jpeg,image/png" class="solo-lector">
+            <div class="dato-secundario" style="margin-top:6px;">JPG o PNG. Se recorta cuadrada.</div>
+          </div>
+        </div>
+        <div class="grilla-campos" style="grid-template-columns:1fr;">
+          <div class="campo"><label for="mPerfilAbout">Frase corta (Info)</label>
+            <input id="mPerfilAbout" type="text" maxlength="139" placeholder="Compramos monedas, cobre y bronce"></div>
+          <div class="campo"><label for="mPerfilDescripcion">Descripción</label>
+            <textarea id="mPerfilDescripcion" rows="3" maxlength="512"></textarea></div>
+        </div>
+        <div class="grilla-campos">
+          <div class="campo"><label for="mPerfilDireccion">Dirección</label>
+            <input id="mPerfilDireccion" type="text" maxlength="256"></div>
+          <div class="campo"><label for="mPerfilEmail">Email</label>
+            <input id="mPerfilEmail" type="email" maxlength="128" autocomplete="off"></div>
+          <div class="campo"><label for="mPerfilWeb">Página web</label>
+            <input id="mPerfilWeb" type="url" maxlength="256" placeholder="https://"></div>
+        </div>
+        <div class="aviso aviso-error hidden" id="mPerfilError" style="margin:0 18px 14px;"></div>
+        <div class="pie-form">
+          <button type="button" class="btn btn-primario" id="mGuardarPerfil">Guardar perfil</button>
+          <span class="dato-secundario" id="mPerfilEstado"></span>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -767,7 +810,7 @@ tbody tr:hover { background: #F8FBFF; }
         <h4>Conversación <span class="chip hidden" id="mChipBot"></span></h4>
         <div class="charla" id="mFichaCharla"></div>
         <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
-        <form class="responder" id="mFormResponder">
+        <form class="responder" id="mFormResponder" onsubmit="return false">
           <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente…" maxlength="4000"></textarea>
           <div class="responder-pie">
             <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
@@ -790,7 +833,7 @@ tbody tr:hover { background: #F8FBFF; }
 
 <!-- ===================== CONTACTO NUEVO (monedas) ===================== -->
 <div class="telon hidden" id="mTelonContacto">
-  <form class="ficha" id="mFormContacto" novalidate>
+  <form class="ficha" id="mFormContacto" novalidate onsubmit="return false">
     <div class="ficha-cabecera">
       <div>
         <h3>Contacto nuevo</h3>
@@ -827,8 +870,9 @@ tbody tr:hover { background: #F8FBFF; }
 
 <!-- Antes que el script de la página: cuando entra un cliente de Walter, el
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
-     misma página se sirve también en /chat. -->
-<script src="/asistente/monedas.js"></script>
+     misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
+     monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
+<script src="/asistente/monedas.js?v=20261018c"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
