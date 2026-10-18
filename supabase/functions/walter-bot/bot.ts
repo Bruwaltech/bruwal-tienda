@@ -472,6 +472,10 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
 const esPregunta = (s: string) => /[?¿]/.test(s) &&
   !/(precio|cuanto pagan|cotizacion|a cuanto|horario|deposito|donde estan|hablar|humano|persona)/.test(norm(s));
 
+// La IA saca datos también de la charla reciente: cuentan solo los que el bot todavía no tenía
+const traeDatos = (l: Lectura, e: Estado | null) =>
+  !!l.cant || !!l.dir || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k]);
+
 const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, string>> =
   { precios: "precios", depositos: "deposito", humano: "hablar con Walter" };
 
@@ -494,11 +498,11 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     };
   }
   // La IA no la marcó pero es una pregunta ("¿me conviene por kilo?") sin datos nuevos: también se contesta
-  if (l && !l.intencion && esPregunta(texto) && !l.cant && !l.loc && !l.dir && !l.mat && !l.tipo && estado &&
+  if (l && !l.intencion && esPregunta(texto) && !traeDatos(l, estado) && estado &&
     !["name", "addr"].includes(estado.step)) l = { ...l, intencion: "consulta" };
   // Pregunta algo ("¿me conviene por kilo o por unidad?"): se contesta y se repite la pregunta en la que estábamos,
   // sin avanzar con lo que procesar entendería de las palabras sueltas
-  if (l?.intencion === "consulta" && !l.cant && !l.loc && !l.dir && estado && !["name", "addr"].includes(estado.step)) {
+  if (l?.intencion === "consulta" && !traeDatos(l, estado) && estado && !["name", "addr"].includes(estado.step)) {
     const e: Estado = { step: estado.step, d: { ...estado.d }, ...(estado.p ? { p: estado.p } : {}) };
     return { estado: e, respuestas: [pregunta(e, c)], consulta: true };
   }
