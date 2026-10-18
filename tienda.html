@@ -332,6 +332,99 @@
   }
   .product-card{cursor:pointer;}
 
+  /* ---- Tarjetas con aire (referencia: "Product Card" y "Shop by Category
+     Grid" de 21st.dev) ----
+     Producto: la foto va en un recuadro redondeado adentro de la tarjeta, el
+     stock es un globito chico con un punto de color en vez de un cartel
+     naranja con ⚠️, el nombre corta en dos líneas para que las tarjetas
+     queden parejas y el precio va en el color del texto, que es lo que se
+     lee primero. Categoría: la foto se acerca al pasar el mouse, la cantidad
+     va en un globito arriba y abajo aparece "Ver →".
+     Solo CSS: las tarjetas se arman igual que antes, y los colores siguen
+     saliendo del tema de cada tienda (--navy, --celeste, --bg). */
+  .product-card{
+    padding:8px;border-radius:16px;border-color:rgba(21,41,77,.08);
+    box-shadow:0 1px 3px rgba(21,41,77,.06);
+    transition:box-shadow .25s ease, transform .25s ease;
+  }
+  .product-card:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(21,41,77,.14);}
+  .product-photo-container,
+  .products-grid.compacta .product-photo-container{
+    height:auto;aspect-ratio:4/3;border-radius:11px;
+  }
+  .product-photo{transition:transform .45s cubic-bezier(.2,.7,.2,1);}
+  .product-card:hover .product-photo{transform:scale(1.05);}
+  .product-badge{
+    top:8px;left:8px;right:auto;padding:4px 9px 4px 8px;
+    font-size:11.5px;font-weight:700;letter-spacing:.01em;
+    display:inline-flex;align-items:center;gap:6px;
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    box-shadow:0 1px 4px rgba(0,0,0,.08);
+  }
+  .product-badge.stock,
+  .product-badge.limited{background:rgba(255,255,255,.88);color:#1f2a37;}
+  .product-badge.stock::before,
+  .product-badge.limited::before{content:'';width:7px;height:7px;border-radius:50%;background:#1FA088;flex-shrink:0;}
+  .product-badge.limited::before{background:#D97706;}
+  .product-info{padding:12px 6px 4px;}
+  .product-name{
+    font-size:15px;font-weight:650;line-height:1.3;margin-bottom:6px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .product-price{color:var(--navy);font-size:20px;letter-spacing:-.01em;}
+  .product-stock{font-size:11.5px;}
+  .products-grid.compacta .product-info{padding:9px 4px 2px;}
+  .products-grid.compacta .product-name{font-size:13px;}
+  .products-grid.compacta .product-price{font-size:16px;}
+  /* En el celular, de a dos como en cualquier tienda grande: de a una, cada
+     tarjeta ocupaba la pantalla entera y había que bajar mucho para ver tres
+     productos. Las de categoría siguen de a una, que llevan el nombre grande. */
+  @media(max-width:480px){
+    .products-grid:has(.product-card){grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .products-grid .product-card{padding:6px;border-radius:14px;}
+    .products-grid .product-info{padding:9px 3px 2px;}
+    .products-grid .product-name{font-size:13.5px;}
+    .products-grid .product-price{font-size:16px;}
+    .products-grid .product-description{font-size:11.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+    .products-grid .btn-elegir{font-size:12px;padding:9px 4px;}
+  }
+
+  .cat-card{border-radius:16px;box-shadow:0 1px 3px rgba(21,41,77,.08);}
+  .cat-card:hover{transform:translateY(-3px);box-shadow:0 16px 32px rgba(21,41,77,.18);}
+  .cat-foto{height:auto;aspect-ratio:4/3;overflow:hidden;}
+  .cat-foto img,
+  .cat-foto .product-photo-placeholder{transition:transform .55s cubic-bezier(.2,.7,.2,1);}
+  .cat-card:hover .cat-foto img,
+  .cat-card:hover .cat-foto .product-photo-placeholder{transform:scale(1.07);}
+  .cat-velo{background:linear-gradient(to top,rgba(10,22,45,.82) 0%,rgba(10,22,45,.25) 50%,rgba(10,22,45,0) 75%);}
+  .cat-texto{left:16px;right:16px;bottom:14px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;}
+  .cat-nombre{font-size:19px;letter-spacing:-.01em;}
+  .cat-texto::after{
+    content:'Ver →';flex-shrink:0;font-size:12.5px;font-weight:700;
+    background:rgba(255,255,255,.95);color:#15294D;padding:6px 11px;border-radius:999px;
+    opacity:0;transform:translateX(-6px);transition:opacity .25s ease, transform .25s ease;
+  }
+  .cat-card:hover .cat-texto::after{opacity:1;transform:none;}
+  .cat-cuenta{
+    position:absolute;top:10px;left:10px;margin:0;opacity:1;
+    background:rgba(255,255,255,.9);color:#15294D;font-size:11.5px;font-weight:700;
+    padding:4px 10px;border-radius:999px;box-shadow:0 1px 4px rgba(0,0,0,.1);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  }
+  @media (hover:none){ .cat-texto::after{opacity:1;transform:none;} }
+  @media(max-width:480px){
+    .products-grid:has(.cat-card){grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .cat-foto{aspect-ratio:1/1;}
+    .cat-texto{left:12px;right:12px;bottom:11px;}
+    .cat-nombre{font-size:15.5px;}
+    .cat-texto::after{display:none;}
+    .cat-cuenta{top:8px;left:8px;font-size:11px;padding:3px 8px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .product-photo,.cat-foto img,.cat-foto .product-photo-placeholder,.cat-texto::after{transition:none;}
+    .product-card:hover .product-photo,.cat-card:hover .cat-foto img{transform:none;}
+  }
+
   /* Ficha del producto */
   .ficha-galeria{background:#F4F8FC;border-radius:12px;overflow:hidden;margin-bottom:14px;}
   .ficha-principal{width:100%;height:290px;object-fit:contain;display:block;background:#fff;}
@@ -1287,9 +1380,9 @@ function renderTarjetasDeCategoria(categorias){
           ? '<img src="' + escapeHtml(portada) + '" alt="">'
           : '<div class="product-photo-placeholder">🛒</div>') +
         '<div class="cat-velo"></div>' +
+        '<div class="cat-cuenta">' + dentro.length + (dentro.length === 1 ? ' opción' : ' opciones') + '</div>' +
         '<div class="cat-texto">' +
           '<div class="cat-nombre">' + escapeHtml(cat) + '</div>' +
-          '<div class="cat-cuenta">' + dentro.length + (dentro.length === 1 ? ' opción' : ' opciones') + '</div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -1839,7 +1932,7 @@ function htmlTarjetaProducto(p){
       : (p.stock > 0
           ? (tieneVariantes
               ? '<div class="product-badge stock">Disponible</div>'
-              : '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock > 10 ? 'En stock' : '⚠️ ' + p.stock + ' ud') + '</div>')
+              : '<div class="product-badge ' + (p.stock <= 3 ? 'limited' : 'stock') + '">' + (p.stock <= 3 ? (p.stock === 1 ? 'Queda 1' : 'Quedan ' + p.stock) : 'En stock') + '</div>')
           : '<div class="product-badge" style="background:#DC2626;color:#fff;">Agotado</div>');
     // Fotos del producto: las nuevas vienen en 'imagenes'; los productos
     // viejos solo tienen image_url. Contemplamos los dos casos.
