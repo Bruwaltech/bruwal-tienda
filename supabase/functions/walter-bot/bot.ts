@@ -357,6 +357,8 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       return out(pregunta(e, c));
     }
     case "qty": {
+      // Contaba monedas de un tipo pero dice kilos ("tengo como 3 kilos"): van por kilo
+      if (d.mat === "Monedas" && d.modo === "u" && !esLlave(d.tipo) && /\b(kilo|kilos|kg)\b/.test(n)) { d.modo = "kg"; delete d.tipo; }
       const q = parseNum(t);
       if (!q || q <= 0) {
         // Con las opciones para salir, si no sabe cuánto tiene o quiere preguntar otra cosa
@@ -460,7 +462,10 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
       if (p.tipo) return { texto: p.tipo, campo: "tipo" };
       return p.modo === "kg" ? { texto: OPCION_KILO, campo: "modo" } : null;
     // Una cantidad en kilos no sirve si estamos contando unidades, y al revés
-    case "qty": return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
+    case "qty":
+      // Kilos de monedas que veníamos contando: pasan a ir por kilo
+      if (p.cant && p.modo === "kg" && d.modo === "u" && d.mat === "Monedas" && !esLlave(d.tipo)) return { texto: `${p.cant} kg`, campo: "cant" };
+      return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
     case "mod":
       // Con pocos kilos solo queda el depósito: eso ya se lo dijimos con la cotización
       if (p.ret === "Depósito") return { texto: "Llevo al depósito", campo: "ret" };
