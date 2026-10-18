@@ -166,11 +166,16 @@ function minTxt(d: Datos, c: Config) {
 export function hechos(c: Config): string {
   const tipos = tiposDe(c);
   // Con cuántas entran en un kilo, lo que se cobra por un kilo de cada tipo contado: para comparar con el precio por kilo
-  const kgPorTipo = tipos.filter((t) => t.kg)
-    .map((t) => `${nombreTipo(t.n)}: unas ${t.kg} por kilo, así que un kilo contado sale unos ${fmt(t.u * t.kg!)}`).join("; ");
+  // y cuál le conviene, ya resuelto: la IA no hace cuentas
+  const kgPorTipo = tipos.filter((t) => t.kg && !esLlave(t.n)).map((t) => {
+    const contado = t.u * t.kg!;
+    const conviene = Math.abs(contado - c.monedaKg) < c.monedaKg * 0.02 ? "da casi lo mismo contadas o por kilo"
+      : contado > c.monedaKg ? "conviene venderlas contadas" : "conviene venderlas por kilo";
+    return `${nombreTipo(t.n)}: entran unas ${t.kg} en un kilo, así que un kilo contado sale unos ${fmt(contado)} contra ${fmt(c.monedaKg)} por kilo: ${conviene}`;
+  }).join(";\n");
   return [
     precios(c),
-    kgPorTipo ? `Cuántas entran en un kilo (aproximado): ${kgPorTipo}.` : "",
+    kgPorTipo ? `Contadas o por kilo (aproximado):\n${kgPorTipo}.` : "",
     `Pasamos a buscar (a domicilio o en un punto de encuentro) en: ${LOCALIDADES.map((x) => x.n).join(", ")}.`,
     c.minRetiro ? `Pasamos a buscar desde ${kgf(c.minRetiro)}; con menos, lo traen al depósito.` : "",
     `Desde ${c.umbralMay} kg de cobre o bronce pagamos precio mayorista.`,

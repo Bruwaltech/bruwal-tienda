@@ -167,7 +167,7 @@ export function conservaDatos(original: string, nueva: string): boolean {
 
 const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una a tres frases), cálido, como una persona del negocio.
 
-Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma Walter. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta.`;
+Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma Walter. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.`;
 
 /** Respuesta a una pregunta del cliente, con los números sacados de hechos; null si no se pudo o si inventó un número. */
 export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = ""): Promise<string | null> {
