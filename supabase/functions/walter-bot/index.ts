@@ -7,8 +7,8 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, esSaludo, type Estado, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
-import { leer, redactar } from "./ia.ts";
+import { conPerfil, type Config, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { contestar, leer, redactar } from "./ia.ts";
 
 const env = (k: string, def = "") => Deno.env.get(k) ?? def;
 const GRAPH = `https://graph.facebook.com/${env("GRAPH_VERSION", "v21.0")}`;
@@ -147,9 +147,12 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
       }
     }
 
+    // Lo último de la charla, para que la IA no lea cada mensaje suelto (y vea lo que llegó mientras Walter atendía)
+    const charla = id ? await charlaReciente(canal, usuario, id) : "";
+    const clave = await secreto("ANTHROPIC_API_KEY");
     // Lo escrito libremente lo lee Haiku antes, salvo el nombre y la dirección, que se anotan tal cual
     const lectura = libre && !["name", "addr"].includes(estado?.step ?? "")
-      ? await leer(await secreto("ANTHROPIC_API_KEY"), texto, estado, cfg) : null;
+      ? await leer(clave, texto, estado, cfg, charla) : null;
     // Con pistas guardadas de un mensaje anterior, también cuando toca un botón
     const r0 = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);
     // En WhatsApp el nombre sale del perfil: no hace falta preguntarlo
@@ -166,11 +169,26 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
         retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad,
       });
     }
+    // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no
+    // puede contestarla con lo que sabe el negocio, le avisamos a Walter.
+    if (r.consulta) {
+      const resp = await contestar(clave, texto, hechos(cfg), charla);
+      r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma Walter, ya le aviso." });
+      if (!resp) await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
+    }
     // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
-    await enviar(canal, usuario, await redactar(await secreto("ANTHROPIC_API_KEY"), texto, juntar(r.respuestas)));
+    await enviar(canal, usuario, await redactar(clave, texto, juntar(r.respuestas), charla));
   } catch (e) {
     console.error("atender", canal, usuario, e);
   }
+}
+
+// Los últimos mensajes antes del actual, del más viejo al más nuevo
+async function charlaReciente(canal: Canal, usuario: string, hastaId: number): Promise<string> {
+  const { data } = await db.from("walter_mensajes").select("direccion, autor, texto").eq("canal", canal).eq("usuario", usuario)
+    .lt("id", hastaId).gte("creado", new Date(Date.now() - 2 * 86400e3).toISOString()).order("id", { ascending: false }).limit(8);
+  return (data ?? []).reverse()
+    .map((m) => `${m.direccion === "entra" ? "Cliente" : m.autor === "walter" ? "Walter" : "Bot"}: ${String(m.texto).slice(0, 300)}`).join("\n");
 }
 
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {

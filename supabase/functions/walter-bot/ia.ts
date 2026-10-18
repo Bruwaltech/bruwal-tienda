@@ -26,7 +26,7 @@ function esquema(c: Config) {
       cantidad: nulo({ type: "number" }),
       entrega: nulo({ type: "string", enum: ["Retiro a domicilio", "Punto de encuentro", "Depósito"] }),
       direccion: nulo({ type: "string" }),
-      intencion: nulo({ type: "string", enum: ["precios", "depositos", "humano", "otro", "prohibido"] }),
+      intencion: nulo({ type: "string", enum: ["precios", "depositos", "humano", "otro", "prohibido", "no_vende", "consulta"] }),
     },
     required: ["localidad", "material", "modo", "tipo", "cantidad", "entrega", "direccion", "intencion"],
     additionalProperties: false,
@@ -45,13 +45,15 @@ Campos (null si el mensaje no lo dice claramente; no adivines):
 - cantidad: el número de kilos o de unidades, según el modo ("unos tres kilos" = 3, "dos mil monedas" = 2000, "medio kilo" = 0.5).
 - entrega: si quiere que se lo pasen a buscar ("Retiro a domicilio"), encontrarse en algún lugar ("Punto de encuentro") o llevarlo él ("Depósito").
 - direccion: la calle y el número donde pasar a buscarlo, tal como los escribió, si los escribió.
-- intencion: "precios" si pregunta cuánto pagan sin dar cantidad, "depositos" si pregunta dónde están o el horario, "humano" si pide hablar con una persona. "prohibido" si ofrece medidores (de agua, gas o luz), placas o cosas de cementerio, cables telefónicos, piezas con numeración o de la vía pública, o algo que parezca robado. "otro" si ofrece algo que claramente no es monedas, llaves, cobre ni bronce (aluminio, hierro, plomo, electrodomésticos); los cables o caños de cobre no son "otro". Si no, null.`;
+- intencion: "precios" si pregunta cuánto pagan sin dar cantidad, "depositos" si pregunta dónde están o el horario, "humano" si pide hablar con una persona. "prohibido" si ofrece medidores (de agua, gas o luz), placas o cosas de cementerio, cables telefónicos, piezas con numeración o de la vía pública, o algo que parezca robado. "otro" si ofrece algo que claramente no es monedas, llaves, cobre ni bronce (aluminio, hierro, plomo, electrodomésticos); los cables o caños de cobre no son "otro". "no_vende" si dice que no quiere vender, que solo consultaba o se despide (gracias, chau, por ahora no). "consulta" si hace una pregunta que no es solo de precios ni de depósitos y que hay que contestarle antes de seguir (qué le conviene, cómo funciona el retiro, si tiene que mandar algo, si pagan en efectivo). Si no, null.
+
+Te paso también la charla reciente. Si en mensajes anteriores del cliente hay datos que el bot todavía no anotó (por ejemplo dijo "tengo monedas" y nadie le contestó), extraelos también.`;
 }
 
 let cliente: Anthropic | null = null;
 
 /** Lo que Haiku entendió del mensaje, o null si no se pudo leer (sin clave, error, demora). */
-export async function leer(apiKey: string, texto: string, estado: Estado | null, c: Config): Promise<Lectura | null> {
+export async function leer(apiKey: string, texto: string, estado: Estado | null, c: Config, charla = ""): Promise<Lectura | null> {
   if (!apiKey) return null;
   // El bot espera la lectura antes de contestar: si tarda, sigue sin ella
   cliente ??= new Anthropic({ apiKey, timeout: 6000, maxRetries: 0 });
@@ -64,7 +66,7 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
       max_tokens: 1024,
       system: sistema(c),
       output_config: { effort: "low", format: { type: "json_schema", schema: esquema(c) } },
-      messages: [{ role: "user", content: `${contexto}\n\nMensaje del cliente:\n${texto}` }],
+      messages: [{ role: "user", content: `${contexto}${charla ? `\n\nCharla reciente:\n${charla}` : ""}\n\nMensaje del cliente:\n${texto}` }],
     });
     if (res.stop_reason !== "end_turn") {
       console.error("ia: stop_reason", res.stop_reason);
@@ -102,7 +104,8 @@ Reglas:
 - Los datos van exactos: montos, precios, kilos, cantidades, direcciones, horarios, nombres y localidades, con el mismo formato ($75.000, 7,5 kg). No agregues números.
 - No inventes datos, promesas ni condiciones. Si el sistema hace una pregunta, la tuya también la hace al final.
 - Cuando hay opciones, el cliente las ve como botones abajo del mensaje: no hace falta enumerarlas, pero si nombrás una, con el mismo nombre. Lo que está entre comillas va tal cual, con comillas.
-- Como mucho un emoji por mensaje. Nada de "estimado" ni "le informamos".`;
+- Como mucho un emoji por mensaje. Nada de "estimado" ni "le informamos".
+- Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó.`;
 
 // Los datos que la respuesta reescrita tiene que conservar sí o sí: montos, números y textos entre comillas
 const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[^"]+"/g) ?? []).map((x) => x.replace(/\$\s/, "$"));
@@ -111,7 +114,7 @@ const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[
  * Las respuestas con el tono de una persona. Los números salen del bot: si Haiku cambia o pierde
  * alguno, si tarda o si falla, esa respuesta va con el texto original.
  */
-export async function redactar(apiKey: string, cliente_dijo: string, rs: { text: string; options?: string[] }[]) {
+export async function redactar(apiKey: string, cliente_dijo: string, rs: { text: string; options?: string[] }[], charla = "") {
   if (!apiKey || !rs.length) return rs;
   cliente ??= new Anthropic({ apiKey, timeout: 6000, maxRetries: 0 });
   try {
@@ -128,6 +131,7 @@ export async function redactar(apiKey: string, cliente_dijo: string, rs: { text:
       },
       messages: [{ role: "user", content: JSON.stringify({
         cliente: cliente_dijo,
+        ...(charla ? { charla_reciente: charla } : {}),
         respuestas: rs.map((r) => (r.options?.length ? { texto: r.text, opciones: r.options } : { texto: r.text })),
       }) }],
     });
@@ -157,4 +161,43 @@ export function conservaDatos(original: string, nueva: string): boolean {
     quedan.splice(i, 1);
   }
   return quedan.length === 0;
+}
+
+// ---------- Preguntas: Haiku contesta con lo que sabe el negocio, sin inventar ----------
+
+const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una a tres frases), cálido, como una persona del negocio.
+
+Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma Walter. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta.`;
+
+/** Respuesta a una pregunta del cliente, con los números sacados de hechos; null si no se pudo o si inventó un número. */
+export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = ""): Promise<string | null> {
+  if (!apiKey) return null;
+  cliente ??= new Anthropic({ apiKey, timeout: 6000, maxRetries: 0 });
+  try {
+    const res = await cliente.messages.create({
+      model: MODELO,
+      max_tokens: 1024,
+      system: RESPONDER,
+      output_config: {
+        effort: "low",
+        format: { type: "json_schema", schema: {
+          type: "object", properties: { respuesta: { type: "string" } }, required: ["respuesta"], additionalProperties: false,
+        } },
+      },
+      messages: [{ role: "user", content: JSON.stringify({ datos_del_negocio: hechos, ...(charla ? { charla_reciente: charla } : {}), pregunta }) }],
+    });
+    if (res.stop_reason !== "end_turn") { console.error("ia: contestar stop_reason", res.stop_reason); return null; }
+    const bloque = res.content.find((b) => b.type === "text");
+    if (!bloque || bloque.type !== "text") return null;
+    const t = String(JSON.parse(bloque.text).respuesta ?? "").trim();
+    // Cada número de la respuesta tiene que estar en los datos (o en la pregunta)
+    const num = (x: string) => x.replace("$", "");
+    const validos = new Set([...datosDe(hechos), ...datosDe(pregunta)].map(num));
+    if (!t || t.length > 600 || datosDe(t).some((x) => !x.startsWith('"') && !validos.has(num(x)))) return null;
+    return t;
+  } catch (e) {
+    if (e instanceof Anthropic.APIError) console.error("ia: contestar", e.status, e.message);
+    else console.error("ia: contestar", e);
+    return null;
+  }
 }
