@@ -27,7 +27,8 @@ export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
   tipo: string | null; dir: string | null; monto: number; tarifa: string; prioridad: boolean;
 };
-export type Resultado = { estado: Estado; respuestas: Respuesta[]; pedido?: Pedido; derivar?: boolean };
+// consulta: el cliente hizo una pregunta que hay que contestar antes de seguir (la contesta la IA con hechos())
+export type Resultado = { estado: Estado; respuestas: Respuesta[]; pedido?: Pedido; derivar?: boolean; consulta?: boolean };
 
 export const LOCALIDADES: { n: string; a: string[] }[] = [
   { n: "Rosario", a: ["rosario"] },
@@ -161,6 +162,29 @@ function minTxt(d: Datos, c: Config) {
   return `Pasamos a buscar desde ${kgf(c.minRetiro!)}${eq}. Con menos, lo podés traer a uno de nuestros depósitos.`;
 }
 
+/** Lo que el bot sabe del negocio, para que la IA conteste preguntas sin inventar. */
+export function hechos(c: Config): string {
+  const tipos = tiposDe(c);
+  // Con cuántas entran en un kilo, lo que se cobra por un kilo de cada tipo contado: para comparar con el precio por kilo
+  // y cuál le conviene, ya resuelto: la IA no hace cuentas
+  const kgPorTipo = tipos.filter((t) => t.kg && !esLlave(t.n)).map((t) => {
+    const contado = t.u * t.kg!;
+    const conviene = Math.abs(contado - c.monedaKg) < c.monedaKg * 0.02 ? "da casi lo mismo contadas o por kilo"
+      : contado > c.monedaKg ? "conviene venderlas contadas" : "conviene venderlas por kilo";
+    return `${nombreTipo(t.n)}: entran unas ${t.kg} en un kilo, así que un kilo contado sale unos ${fmt(contado)} contra ${fmt(c.monedaKg)} por kilo: ${conviene}`;
+  }).join(";\n");
+  return [
+    precios(c),
+    kgPorTipo ? `Contadas o por kilo (aproximado):\n${kgPorTipo}.` : "",
+    `Pasamos a buscar (a domicilio o en un punto de encuentro) en: ${LOCALIDADES.map((x) => x.n).join(", ")}.`,
+    c.minRetiro ? `Pasamos a buscar desde ${kgf(c.minRetiro)}; con menos, lo traen al depósito.` : "",
+    `Desde ${c.umbralMay} kg de cobre o bronce pagamos precio mayorista.`,
+    "El monto final se confirma al pesar o contar en el momento del retiro.",
+    "No compramos medidores, placas de cementerio, cables telefónicos ni piezas con numeración.",
+    depositos(c),
+  ].filter(Boolean).join("\n");
+}
+
 function depositos(c: Config) {
   return `📍 Depósito San Lorenzo: ${c.depSL}\n${c.depSLh}\n\n📍 Depósito Pueblo Andino: ${c.depPA}\n${c.depPAh}`;
 }
@@ -253,7 +277,9 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   const saludo = esSaludo(t) && e.step !== "name" && e.step !== "addr";
   if (saludo || /(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
   if (n === "otra localidad") { e.step = "loc"; return out(pregunta(e, c)); }
-  if (/(hablar|humano|persona|walter)/.test(n) && e.step !== "name" && e.step !== "addr") {
+  // "Hola Walter" es un saludo: deriva solo si pide hablar con él
+  const pideWalter = /(hablar|humano|persona)/.test(n) || /\b(con|a|pasame|llamame|llame) walter\b/.test(n);
+  if (pideWalter && e.step !== "name" && e.step !== "addr") {
     return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
   }
   if (/(horario|deposito|donde estan)/.test(n) && e.step !== "addr" && e.step !== "mod") return out({ text: depositos(c) }, pregunta(e, c));
@@ -331,6 +357,8 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       return out(pregunta(e, c));
     }
     case "qty": {
+      // Contaba monedas de un tipo pero dice kilos ("tengo como 3 kilos"): van por kilo
+      if (d.mat === "Monedas" && d.modo === "u" && !esLlave(d.tipo) && /\b(kilo|kilos|kg)\b/.test(n)) { d.modo = "kg"; delete d.tipo; }
       const q = parseNum(t);
       if (!q || q <= 0) {
         // Con las opciones para salir, si no sabe cuánto tiene o quiere preguntar otra cosa
@@ -411,7 +439,10 @@ export function conPerfil(r: Resultado, nombre: string | null, c: Config): Resul
 }
 
 // Lo que la IA entendió de un mensaje. otraLoc: nombró una localidad que no está en la lista.
-export type Lectura = Pistas & { otraLoc?: boolean; intencion?: "precios" | "depositos" | "humano" | "otro" | "prohibido" };
+export type Lectura = Pistas & {
+  otraLoc?: boolean;
+  intencion?: "precios" | "depositos" | "humano" | "otro" | "prohibido" | "no_vende" | "consulta";
+};
 
 // El texto con el que el cliente habría contestado la pregunta actual, si las pistas ya la responden
 function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo: keyof Pistas } | null {
@@ -431,7 +462,10 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
       if (p.tipo) return { texto: p.tipo, campo: "tipo" };
       return p.modo === "kg" ? { texto: OPCION_KILO, campo: "modo" } : null;
     // Una cantidad en kilos no sirve si estamos contando unidades, y al revés
-    case "qty": return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
+    case "qty":
+      // Kilos de monedas que veníamos contando: pasan a ir por kilo
+      if (p.cant && p.modo === "kg" && d.modo === "u" && d.mat === "Monedas" && !esLlave(d.tipo)) return { texto: `${p.cant} kg`, campo: "cant" };
+      return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
     case "mod":
       // Con pocos kilos solo queda el depósito: eso ya se lo dijimos con la cotización
       if (p.ret === "Depósito") return { texto: "Llevo al depósito", campo: "ret" };
@@ -443,6 +477,14 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
     default: return null;
   }
 }
+
+// Una pregunta que no es de precios, depósitos ni para hablar con Walter (eso lo resuelve procesar)
+const esPregunta = (s: string) => /[?¿]/.test(s) &&
+  !/(precio|cuanto pagan|cotizacion|a cuanto|horario|deposito|donde estan|hablar|humano|persona)/.test(norm(s));
+
+// La IA saca datos también de la charla reciente: cuentan solo los que el bot todavía no tenía
+const traeDatos = (l: Lectura, e: Estado | null) =>
+  !!l.cant || !!l.dir || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k]);
 
 const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, string>> =
   { precios: "precios", depositos: "deposito", humano: "hablar con Walter" };
@@ -458,6 +500,24 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   if (l?.intencion === "prohibido" || (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr")) {
     return rechazar(estado, c, true, texto);
   }
+  // No quiere vender ("gracias, no quiero nada"): se despide sin volver a preguntar
+  if (l?.intencion === "no_vende" && !traeDatos(l, estado)) {
+    return {
+      estado: { step: "done", d: estado?.d.loc ? { loc: estado.d.loc } : {} },
+      respuestas: [{ text: "¡Dale, gracias por escribir! Cuando quieras vender algo, escribinos por acá." }],
+    };
+  }
+  // La IA no la marcó pero es una pregunta ("¿me conviene por kilo?") sin datos nuevos: también se contesta
+  if (l && !l.intencion && esPregunta(texto) && !traeDatos(l, estado) && estado &&
+    !["name", "addr"].includes(estado.step)) l = { ...l, intencion: "consulta" };
+  // Pregunta algo ("¿me conviene por kilo o por unidad?"): se contesta y se repite la pregunta en la que estábamos,
+  // sin avanzar con lo que procesar entendería de las palabras sueltas
+  if (l?.intencion === "consulta" && !traeDatos(l, estado) && estado && !["name", "addr"].includes(estado.step)) {
+    const e: Estado = { step: estado.step, d: { ...estado.d }, ...(estado.p ? { p: estado.p } : {}) };
+    return { estado: e, respuestas: [pregunta(e, c)], consulta: true };
+  }
+  // Si arranca con una pregunta, primero el saludo
+  if (l?.intencion === "consulta" && !estado) return { ...procesar(null, "", c), consulta: true };
   // Ofrece otra cosa (aluminio, hierro): solo antes de que esté cotizando algo, para no perder lo anotado
   if (l?.intencion === "otro" && !l.mat && !l.tipo && ["loc", "out", "cat", "done"].includes(estado?.step ?? "loc")) {
     return rechazar(estado, c, false, texto);
