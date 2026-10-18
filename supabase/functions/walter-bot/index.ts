@@ -97,12 +97,14 @@ async function config(): Promise<Config> {
 // libre: el cliente lo escribió (no tocó un botón ni una opción de la lista)
 async function atender(canal: Canal, usuario: string, texto: string, libre: boolean, nombrePerfil?: string) {
   try {
-    await log(canal, usuario, "entra", texto);
-    // "Hola" y "Buenas" seguidos (o un "Hola" justo después de otro mensaje): con una respuesta alcanza
-    if (esSaludo(texto)) {
+    const id = await log(canal, usuario, "entra", texto);
+    // "Hola" y "Buenas" seguidos (o un "Hola" justo después de otro mensaje): contesta solo el primero.
+    // Si llegan juntos, el de id menor.
+    if (esSaludo(texto) && id) {
       const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true })
-        .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gte("creado", new Date(Date.now() - 60e3).toISOString());
-      if ((count ?? 0) > 1) return;
+        .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").lt("id", id)
+        .gte("creado", new Date(Date.now() - 60e3).toISOString());
+      if (count) return;
     }
     const [cfg, conv] = await Promise.all([
       config(),
@@ -184,8 +186,9 @@ async function graph(path: string, token: string, payload: unknown) {
   return res.ok;
 }
 
-async function log(canal: Canal, usuario: string, direccion: "entra" | "sale", texto: string) {
-  await db.from("walter_mensajes").insert({ canal, usuario, direccion, texto });
+async function log(canal: Canal, usuario: string, direccion: "entra" | "sale", texto: string): Promise<number | null> {
+  const { data } = await db.from("walter_mensajes").insert({ canal, usuario, direccion, texto }).select("id").single();
+  return data?.id ?? null;
 }
 
 async function firmaValida(raw: string, header: string | null) {
