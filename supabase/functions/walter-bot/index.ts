@@ -1,5 +1,6 @@
 // Edge Function del bot de Walter: webhook de WhatsApp Cloud API y de Messenger,
-// y tarea de avisos (?tarea=avisos) que llama pg_cron.
+// tarea de avisos (?tarea=avisos) que llama pg_cron y lo que Walter hace desde
+// el panel de Bruwal Chat (?tarea=panel): contestar, borrar charlas y cargar contactos.
 //
 // Tablas, claves y cron en schema/62-bot-walter.sql. Desplegar sin verificar JWT
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
@@ -57,7 +58,13 @@ Deno.serve(async (req) => {
     return Response.json({ enviados });
   }
 
-  // 3) Mensajes entrantes
+  // 3) Walter desde el panel: lleva la sesión del usuario, no la firma de Meta
+  if (url.searchParams.get("tarea") === "panel") {
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+    return panel(req);
+  }
+
+  // 4) Mensajes entrantes
   const raw = await req.text();
   if (!(await firmaValida(raw, req.headers.get("x-hub-signature-256")))) return new Response("bad signature", { status: 401 });
   const body = JSON.parse(raw);
@@ -108,11 +115,21 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
     }
     const [cfg, conv] = await Promise.all([
       config(),
-      db.from("walter_conversaciones").select("estado, actualizado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
+      db.from("walter_conversaciones").select("estado, actualizado, bot_pausado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
     ]);
     let estado = (conv.data?.estado ?? null) as Estado | null;
     // Una charla vieja (más de 2 días sin hablar) arranca de cero, con saludo
-    if (conv.data && Date.now() - new Date(conv.data.actualizado).getTime() > 2 * 86400e3) estado = null;
+    const vieja = !!conv.data && Date.now() - new Date(conv.data.actualizado).getTime() > 2 * 86400e3;
+    if (vieja) estado = null;
+
+    // Walter la está atendiendo desde el panel: el bot guarda el mensaje y no contesta. Si la charla
+    // quedó quieta más de 2 días, vuelve a contestar el bot.
+    if (conv.data?.bot_pausado && !vieja) {
+      await db.from("walter_conversaciones").update({
+        pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
+      }).eq("canal", canal).eq("usuario", usuario);
+      return;
+    }
 
     // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
     const n = norm(texto);
@@ -137,7 +154,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
     // En WhatsApp el nombre sale del perfil: no hace falta preguntarlo
     const r = conPerfil(r0, nombreDePerfil(nombrePerfil), cfg);
     await db.from("walter_conversaciones").upsert({
-      canal, usuario, estado: r.estado, actualizado: new Date().toISOString(),
+      canal, usuario, estado: r.estado, actualizado: new Date().toISOString(), bot_pausado: false,
       ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
       ...(r.derivar ? { pide_humano: true } : {}),
     });
@@ -157,7 +174,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
 
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
   for (const r of respuestas) {
-    await log(canal, usuario, "sale", r.text);
+    await log(canal, usuario, "sale", r.text, "bot");
     const opts = (r.options ?? []).slice(0, canal === "whatsapp" ? 10 : 13);
     if (canal === "whatsapp") {
       // WhatsApp muestra hasta 3 botones; con más opciones (los tipos de moneda) va una lista
@@ -178,16 +195,29 @@ async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
 }
 
 async function graph(path: string, token: string, payload: unknown) {
+  return (await graphError(path, token, payload)) === null;
+}
+
+// null si salió; si no, el motivo que da Meta
+async function graphError(path: string, token: string, payload: unknown): Promise<string | null> {
   const res = await fetch(`${GRAPH}/${path}`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) console.error("graph", path, res.status, await res.text());
-  return res.ok;
+  if (res.ok) return null;
+  const txt = await res.text();
+  console.error("graph", path, res.status, txt);
+  try {
+    const e = JSON.parse(txt).error;
+    return e?.error_data?.details || e?.message || txt;
+  } catch {
+    return txt;
+  }
 }
 
-async function log(canal: Canal, usuario: string, direccion: "entra" | "sale", texto: string): Promise<number | null> {
-  const { data } = await db.from("walter_mensajes").insert({ canal, usuario, direccion, texto }).select("id").single();
+async function log(canal: Canal, usuario: string, direccion: "entra" | "sale", texto: string, autor?: "bot" | "walter"): Promise<number | null> {
+  const { data } = await db.from("walter_mensajes").insert({ canal, usuario, direccion, texto, ...(autor ? { autor } : {}) })
+    .select("id").single();
   return data?.id ?? null;
 }
 
@@ -283,4 +313,128 @@ async function avisarDia(hoy: string, manana: string) {
     await db.from("walter_pedidos").update({ aviso_dia: abierta ? "enviado" : "sin ventana" }).eq("id", p.id);
   }
   return enviados;
+}
+
+// ---------- Panel de Bruwal Chat: Walter contesta, borra charlas y carga contactos ----------
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const respuesta = (cuerpo: Record<string, unknown>, status = 200) => Response.json(cuerpo, { status, headers: CORS });
+
+// El texto de la plantilla primer_contacto tal como se cargó en Meta (para que el panel muestre lo que le llegó)
+const SALUDO_CONTACTO = "¡Hola {{1}}! Te escribimos de Punto Metales: compramos monedas, llaves, cobre y bronce, " +
+  "y pasamos a retirar por tu zona. ¿Tenés algo para vender? Respondé este mensaje y te pasamos el precio.";
+
+// Meta deja escribir libre hasta 24 horas después del último mensaje del cliente
+const VENTANA = 24 * 3600e3;
+
+async function panel(req: Request): Promise<Response> {
+  if (req.method !== "POST") return respuesta({ error: "Método no permitido" }, 405);
+  // La sesión del panel: quién es y si está vinculado al cliente de Walter (lo mismo que walter_usuario_habilitado)
+  const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const { data: u } = jwt ? await db.auth.getUser(jwt) : { data: { user: null } };
+  if (!u.user) return respuesta({ error: "Tu sesión venció. Volvé a entrar." }, 401);
+  const { data: cfgRow } = await db.from("walter_config").select("cliente_id").eq("id", 1).single();
+  const { count } = await db.from("cliente_usuarios").select("user_id", { count: "exact", head: true })
+    .eq("cliente_id", cfgRow?.cliente_id).eq("user_id", u.user.id);
+  if (!count) return respuesta({ error: "Tu usuario no tiene acceso a este panel." }, 403);
+
+  let b: Record<string, unknown>;
+  try {
+    b = await req.json();
+  } catch {
+    return respuesta({ error: "Pedido inválido" }, 400);
+  }
+  try {
+    if (b.accion === "enviar") return await panelEnviar(String(b.canal), String(b.usuario), String(b.texto ?? "").trim());
+    if (b.accion === "borrar") return await panelBorrar(String(b.canal), String(b.usuario));
+    if (b.accion === "contacto") {
+      return await panelContacto(String(b.numero ?? ""), String(b.nombre ?? "").trim(), String(b.localidad ?? "").trim(), !!b.saludar);
+    }
+    return respuesta({ error: "Acción desconocida" }, 400);
+  } catch (e) {
+    console.error("panel", b.accion, e);
+    return respuesta({ error: "No se pudo completar. Probá de nuevo." }, 500);
+  }
+}
+
+async function panelEnviar(canal: string, usuario: string, texto: string) {
+  if (canal !== "whatsapp" && canal !== "messenger") return respuesta({ error: "Canal inválido" }, 400);
+  if (!texto) return respuesta({ error: "Escribí el mensaje." }, 400);
+  if (texto.length > 4000) return respuesta({ error: "El mensaje es muy largo (hasta 4000 letras)." }, 400);
+  const { data: conv } = await db.from("walter_conversaciones").select("usuario").eq("canal", canal).eq("usuario", usuario).maybeSingle();
+  if (!conv) return respuesta({ error: "No encontramos esa charla." }, 404);
+
+  const { data: ult } = await db.from("walter_mensajes").select("creado").eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "entra").order("id", { ascending: false }).limit(1).maybeSingle();
+  if (!ult || Date.now() - new Date(ult.creado).getTime() > VENTANA) {
+    return respuesta({
+      error: "Pasaron más de 24 horas desde el último mensaje del cliente: WhatsApp no deja escribirle libre hasta que vuelva a escribir.",
+      ventana: false,
+    }, 409);
+  }
+
+  const motivo = canal === "whatsapp"
+    ? await graphError(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
+      { messaging_product: "whatsapp", to: usuario, type: "text", text: { body: texto } })
+    : await graphError("me/messages", await secreto("FB_PAGE_TOKEN"),
+      { recipient: { id: usuario }, messaging_type: "RESPONSE", message: { text: texto } });
+  if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
+
+  await log(canal, usuario, "sale", texto, "walter");
+  // Walter la atiende: el bot se queda callado en esta charla hasta que él se la devuelva
+  await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
+    .eq("canal", canal).eq("usuario", usuario);
+  return respuesta({ ok: true });
+}
+
+// Borra la charla y sus mensajes. Los pedidos quedan.
+async function panelBorrar(canal: string, usuario: string) {
+  const m = await db.from("walter_mensajes").delete().eq("canal", canal).eq("usuario", usuario);
+  if (m.error) throw m.error;
+  const c = await db.from("walter_conversaciones").delete().eq("canal", canal).eq("usuario", usuario);
+  if (c.error) throw c.error;
+  return respuesta({ ok: true });
+}
+
+/** Número de WhatsApp de Argentina como lo usa Meta: 549 + código de área + número (13 dígitos). */
+export function numeroAR(entrada: string): string | null {
+  let d = entrada.replace(/\D/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("549")) d = d.slice(3);
+  else if (d.startsWith("54")) d = d.slice(2);
+  if (d.startsWith("0")) d = d.slice(1);
+  return d.length === 10 ? "549" + d : null;
+}
+
+async function panelContacto(numero: string, nombre: string, localidad: string, saludar: boolean) {
+  const usuario = numeroAR(numero);
+  if (!usuario) {
+    return respuesta({ error: "Revisá el número: código de área sin el 0 y el número sin el 15, por ejemplo 341 5551234." }, 400);
+  }
+  if (!nombre) return respuesta({ error: "Poné el nombre." }, 400);
+  const { data: hay } = await db.from("walter_conversaciones").select("usuario").eq("canal", "whatsapp").eq("usuario", usuario).maybeSingle();
+  if (hay) {
+    await db.from("walter_conversaciones").update({ nombre_perfil: nombre, ...(localidad ? { localidad } : {}) })
+      .eq("canal", "whatsapp").eq("usuario", usuario);
+  } else {
+    const { error } = await db.from("walter_conversaciones").insert({
+      canal: "whatsapp", usuario, nombre_perfil: nombre, localidad: localidad || null, actualizado: new Date().toISOString(),
+    });
+    if (error) throw error;
+  }
+  if (!saludar) return respuesta({ ok: true, usuario, existia: !!hay });
+
+  // Para escribirle primero Meta pide una plantilla aprobada: {{1}} es el nombre
+  const plantilla = (await secreto("WA_TEMPLATE_CONTACTO")) || "primer_contacto";
+  const motivo = await graphError(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"), {
+    messaging_product: "whatsapp", to: usuario, type: "template",
+    template: { name: plantilla, language: { code: "es_AR" },
+      components: [{ type: "body", parameters: [{ type: "text", text: nombre.split(" ")[0] }] }] },
+  });
+  if (motivo) return respuesta({ ok: true, usuario, existia: !!hay, saludo: false, motivo });
+  await log("whatsapp", usuario, "sale", SALUDO_CONTACTO.replace("{{1}}", nombre.split(" ")[0]), "walter");
+  return respuesta({ ok: true, usuario, existia: !!hay, saludo: true });
 }
