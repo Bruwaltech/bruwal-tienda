@@ -229,7 +229,15 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
   }
   if (/(horario|deposito|donde estan)/.test(n) && e.step !== "addr" && e.step !== "mod") return out({ text: depositos(c) }, pregunta(e, c));
-  if (/(precio|cuanto pagan|cotizacion|a cuanto)/.test(n) && parseNum(t) === null) return out({ text: precios(c) }, pregunta(e, c));
+  if (/(precio|cuanto pagan|cotizacion|a cuanto)/.test(n)) {
+    // Si pregunta por un tipo ("¿cuánto pagan las de 10?"), le contestamos ese y no la lista entera
+    const tp = /cobre|bronce/.test(n) ? undefined : tipoPorNombre(c, findTipo(c, t) ?? undefined);
+    if (tp) {
+      return out({ text: `${esLlave(tp.n) ? "Las llaves" : "Las de " + tp.n} las pagamos ${fmt(tp.u)} cada una. ` +
+        `Si las tenés pesadas o mezcladas, el kilo está ${fmt(c.monedaKg)}.` }, pregunta(e, c));
+    }
+    if (parseNum(t) === null) return out({ text: precios(c) }, pregunta(e, c));
+  }
 
   switch (e.step) {
     case "out":
@@ -418,7 +426,14 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   let r = procesar(estado, texto, c);
   const sinAvance = !!estado && JSON.stringify(r.estado.d) === JSON.stringify(estado.d);
   // Lo que procesar no reconoce por palabras clave ("¿dónde quedan?")
-  if (sinAvance && l?.intencion && !r.derivar) r = procesar(estado, PALABRA_INTENCION[l.intencion], c);
+  // Con el tipo que nombró, el precio de ese tipo
+  const palabra = l?.intencion === "precios" && tipoPorNombre(c, l.tipo) ? "precio " + l.tipo : l?.intencion && PALABRA_INTENCION[l.intencion];
+  if (sinAvance && palabra && !r.derivar) r = procesar(estado, palabra, c);
+  // Si arranca preguntando ("¿cuánto pagan las de 10?"), después del saludo le contestamos eso
+  if (!estado && palabra && r.estado.step === "loc") {
+    const r2 = procesar(r.estado, palabra, c);
+    r = { ...r2, respuestas: [r.respuestas[0], ...r2.respuestas] };
+  }
 
   // Empezar de nuevo descarta las pistas viejas
   const reinicio = !!estado && r.estado.step === "loc" && !Object.keys(r.estado.d).length;
