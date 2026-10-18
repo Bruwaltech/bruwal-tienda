@@ -127,13 +127,11 @@ const panelMonedas = (() => {
 
   // ---------------------------------------------------------- datos
 
-  async function cargar() {
-    if (cargando) return false;
-    cargando = true;
+  function traerDatos() {
     const { hoy } = ahoraAR();
 
     // Los pedidos abiertos todos; los cerrados, los de los últimos dos meses.
-    const [rc, rp, rch, rr] = await Promise.all([
+    return Promise.all([
       sb.from('walter_config').select('data, actualizado').eq('id', 1).maybeSingle(),
       sb.from('walter_pedidos').select('*')
         .or('estado.in.(nuevo,agendado),creado.gte.' + sumarDias(hoy, -60))
@@ -146,7 +144,21 @@ const panelMonedas = (() => {
         .limit(300),
       sb.from('walter_rutas').select('dia, turno, paradas, aprobada').gte('dia', sumarDias(hoy, -30))
     ]);
+  }
+
+  async function cargar() {
+    if (cargando) return false;
+    cargando = true;
+    let respuestas = await traerDatos();
+    // Al volver de una compu dormida la pestaña consulta antes de que se
+    // renueve la sesión, y todo vuelve 401 "JWT expired". Se renueva y se
+    // reintenta una vez, en vez de mostrar el error hasta la próxima vuelta.
+    if (respuestas.some((x) => x.status === 401)) {
+      const { error: errSesion } = await sb.auth.refreshSession();
+      if (!errSesion) respuestas = await traerDatos();
+    }
     cargando = false;
+    const [rc, rp, rch, rr] = respuestas;
 
     const error = rc.error || rp.error || rch.error || rr.error;
     if (error || !rc.data) {
