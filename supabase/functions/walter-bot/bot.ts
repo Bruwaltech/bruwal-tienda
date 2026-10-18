@@ -491,7 +491,7 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     return rechazar(estado, c, true, texto);
   }
   // No quiere vender ("gracias, no quiero nada"): se despide sin volver a preguntar
-  if (l?.intencion === "no_vende" && !l.mat && !l.tipo && !l.cant) {
+  if (l?.intencion === "no_vende" && !traeDatos(l, estado)) {
     return {
       estado: { step: "done", d: estado?.d.loc ? { loc: estado.d.loc } : {} },
       respuestas: [{ text: "¡Dale, gracias por escribir! Cuando quieras vender algo, escribinos por acá." }],
