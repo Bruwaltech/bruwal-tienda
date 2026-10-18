@@ -25,9 +25,10 @@ function esquema(c: Config) {
       tipo: nulo({ type: "string", enum: tipos }),
       cantidad: nulo({ type: "number" }),
       entrega: nulo({ type: "string", enum: ["Retiro a domicilio", "Punto de encuentro", "Depósito"] }),
-      intencion: nulo({ type: "string", enum: ["precios", "depositos", "humano"] }),
+      direccion: nulo({ type: "string" }),
+      intencion: nulo({ type: "string", enum: ["precios", "depositos", "humano", "otro", "prohibido"] }),
     },
-    required: ["localidad", "material", "modo", "tipo", "cantidad", "entrega", "intencion"],
+    required: ["localidad", "material", "modo", "tipo", "cantidad", "entrega", "direccion", "intencion"],
     additionalProperties: false,
   };
 }
@@ -43,7 +44,8 @@ Campos (null si el mensaje no lo dice claramente; no adivines):
 - tipo: el tipo de moneda si lo dice. Tipos: ${tipos}. "${MEZCLADAS}" si son de varias clases.
 - cantidad: el número de kilos o de unidades, según el modo ("unos tres kilos" = 3, "dos mil monedas" = 2000, "medio kilo" = 0.5).
 - entrega: si quiere que se lo pasen a buscar ("Retiro a domicilio"), encontrarse en algún lugar ("Punto de encuentro") o llevarlo él ("Depósito").
-- intencion: "precios" si pregunta cuánto pagan sin dar cantidad, "depositos" si pregunta dónde están o el horario, "humano" si pide hablar con una persona. Si no, null.`;
+- direccion: la calle y el número donde pasar a buscarlo, tal como los escribió, si los escribió.
+- intencion: "precios" si pregunta cuánto pagan sin dar cantidad, "depositos" si pregunta dónde están o el horario, "humano" si pide hablar con una persona. "prohibido" si ofrece medidores (de agua, gas o luz), placas o cosas de cementerio, cables telefónicos, piezas con numeración o de la vía pública, o algo que parezca robado. "otro" si ofrece algo que claramente no es monedas, llaves, cobre ni bronce (aluminio, hierro, plomo, electrodomésticos); los cables o caños de cobre no son "otro". Si no, null.`;
 }
 
 let cliente: Anthropic | null = null;
@@ -79,6 +81,7 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
     if (j.tipo) l.tipo = j.tipo;
     if (typeof j.cantidad === "number") l.cant = j.cantidad;
     if (j.entrega) l.ret = j.entrega;
+    if (j.direccion) l.dir = j.direccion;
     if (j.intencion) l.intencion = j.intencion;
     return l;
   } catch (e) {

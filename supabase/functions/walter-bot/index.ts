@@ -5,7 +5,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, type Estado, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { conPerfil, type Config, esSaludo, type Estado, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
 import { leer, redactar } from "./ia.ts";
 
 const env = (k: string, def = "") => Deno.env.get(k) ?? def;
@@ -98,6 +98,12 @@ async function config(): Promise<Config> {
 async function atender(canal: Canal, usuario: string, texto: string, libre: boolean, nombrePerfil?: string) {
   try {
     await log(canal, usuario, "entra", texto);
+    // "Hola" y "Buenas" seguidos (o un "Hola" justo después de otro mensaje): con una respuesta alcanza
+    if (esSaludo(texto)) {
+      const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true })
+        .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gte("creado", new Date(Date.now() - 60e3).toISOString());
+      if ((count ?? 0) > 1) return;
+    }
     const [cfg, conv] = await Promise.all([
       config(),
       db.from("walter_conversaciones").select("estado, actualizado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
@@ -106,13 +112,14 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
     // Una charla vieja (más de 2 días sin hablar) arranca de cero, con saludo
     if (conv.data && Date.now() - new Date(conv.data.actualizado).getTime() > 2 * 86400e3) estado = null;
 
-    // Respuesta a un aviso de retiro (SÍ / NO)
+    // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
     const n = norm(texto);
-    if (/^(si|no)\b/.test(n)) {
+    if (/^(si|no|dale|ok|okey|perfecto|listo|joya|de una|confirmo)\b/.test(n)) {
       const { data: p } = await db.from("walter_pedidos").select("id").eq("canal", canal).eq("usuario", usuario)
-        .not("aviso_enviado", "is", null).is("respuesta_aviso", null).order("dia", { ascending: false }).limit(1).maybeSingle();
+        .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
+        .order("dia", { ascending: false }).limit(1).maybeSingle();
       if (p) {
-        const si = n.startsWith("si");
+        const si = !n.startsWith("no");
         await db.from("walter_pedidos").update({ respuesta_aviso: si ? "confirmó" : "no puede" }).eq("id", p.id);
         return enviar(canal, usuario, [{
           text: si ? "¡Gracias! Te esperamos. 👍" : "Gracias por avisar. Le paso a Walter para coordinar otro día.",
@@ -237,9 +244,40 @@ async function enviarAvisos() {
       }
       if (ok) {
         enviados++;
-        await db.from("walter_pedidos").update({ aviso_enviado: new Date().toISOString(), estado: "agendado" }).eq("id", p.id);
+        // El SÍ / NO de este recordatorio vale aunque ya haya contestado el aviso del día
+        await db.from("walter_pedidos").update({ aviso_enviado: new Date().toISOString(), respuesta_aviso: null, estado: "agendado" })
+          .eq("id", p.id);
       }
     }
+  }
+  return enviados + await avisarDia(hoy, manana);
+}
+
+// Apenas Walter le pone día y turno a un pedido, se lo decimos al cliente. Solo si la charla sigue
+// abierta: Meta deja escribir libre hasta 24 horas después del último mensaje del cliente. Si no,
+// le llega solo el recordatorio. Corre después de los recordatorios, que tienen prioridad.
+async function avisarDia(hoy: string, manana: string) {
+  const { data: pedidos } = await db.from("walter_pedidos").select("*")
+    .not("dia", "is", null).not("turno", "is", null).is("aviso_dia", null).is("aviso_enviado", null)
+    .gte("dia", hoy).neq("estado", "cancelado").neq("retiro", "Depósito");
+  let enviados = 0;
+  for (const p of pedidos ?? []) {
+    const { data: ult } = await db.from("walter_mensajes").select("creado").eq("canal", p.canal).eq("usuario", p.usuario)
+      .eq("direccion", "entra").order("id", { ascending: false }).limit(1).maybeSingle();
+    const abierta = !!ult && Date.now() - new Date(ult.creado).getTime() < 23.5 * 3600e3;
+    if (abierta) {
+      const nombre = String(p.nombre).split(" ")[0];
+      const que = /llave/i.test(p.tipo ?? "") ? "las llaves"
+        : p.material === "Monedas" ? "las monedas" : "el " + String(p.material).toLowerCase();
+      const dia = p.dia === hoy ? "hoy" : p.dia === manana ? "mañana"
+        : "el " + new Intl.DateTimeFormat("es-AR", { weekday: "long", day: "numeric", timeZone: "UTC" }).format(new Date(p.dia + "T12:00:00Z"));
+      await enviar(p.canal, p.usuario, [{
+        text: `¡Hola ${nombre}! Ya tenemos día para pasar a buscar ${que}: ${dia} a la ${String(p.turno).toLowerCase()}. ¿Te queda bien?`,
+        options: ["Sí, me queda bien", "No puedo ese día"],
+      }]);
+      enviados++;
+    }
+    await db.from("walter_pedidos").update({ aviso_dia: abierta ? "enviado" : "sin ventana" }).eq("id", p.id);
   }
   return enviados;
 }
