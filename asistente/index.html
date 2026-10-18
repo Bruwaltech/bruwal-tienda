@@ -271,6 +271,16 @@ tbody tr:hover { background: #F8FBFF; }
   border-bottom-right-radius: 4px;
 }
 
+/* Modo automático o manual para todas las charlas */
+.barra-modo {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius);
+  background: #EEF6EE; border: 1px solid #CFE6CF;
+}
+.barra-modo.manual { background: #FFF6E5; border-color: #F3DDB0; }
+.barra-modo .modo-texto { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.copia { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+
 /* Fotos, audios y archivos dentro de la charla */
 .burbuja .medio { display: block; margin-bottom: 4px; }
 .burbuja img, .burbuja video { display: block; max-width: 100%; max-height: 260px; border-radius: 8px; background: rgba(0,0,0,.06); }
@@ -644,6 +654,15 @@ tbody tr:hover { background: #F8FBFF; }
           </div>
           <button type="button" class="btn btn-suave" id="mNuevoContacto">+ Contacto nuevo</button>
         </div>
+        <!-- Para todas las charlas a la vez: contesta el bot o contesta Walter -->
+        <div class="barra-modo" id="mModo">
+          <div class="modo-texto">
+            <strong id="mModoTitulo">Modo automático: contesta el bot</strong>
+            <span class="dato-secundario" id="mModoTexto"></span>
+          </div>
+          <button type="button" class="btn btn-suave" id="mBtnModo">Pasar a manual</button>
+          <button type="button" class="btn btn-suave" id="mBtnAvisos">Activar avisos</button>
+        </div>
         <div class="tabla-scroll">
           <table>
             <thead>
@@ -658,6 +677,11 @@ tbody tr:hover { background: #F8FBFF; }
           </table>
         </div>
         <div class="vacio hidden" id="mSinCharlas"></div>
+        <div class="copia">
+          <span class="dato-secundario">Copia de seguridad (se abre con Excel):</span>
+          <button type="button" class="btn btn-suave" id="mCopiaCharlas">Descargar charlas</button>
+          <button type="button" class="btn btn-suave" id="mCopiaPedidos">Descargar pedidos</button>
+        </div>
       </div>
 
       <form class="panel hidden" data-seccion="precios" id="mFormPrecios" novalidate>
@@ -818,7 +842,7 @@ tbody tr:hover { background: #F8FBFF; }
         <div class="charla" id="mFichaCharla"></div>
         <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
         <form class="responder" id="mFormResponder" onsubmit="return false">
-          <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente…" maxlength="4000"></textarea>
+          <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente… (Enter envía, Shift+Enter baja de renglón)" maxlength="4000"></textarea>
           <div class="responder-pie">
             <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
             <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
@@ -881,7 +905,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261018d"></script>
+<script src="/asistente/monedas.js?v=20261018e"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';

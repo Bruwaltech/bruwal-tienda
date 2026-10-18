@@ -128,12 +128,12 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
     const vieja = !!conv.data && Date.now() - new Date(conv.data.actualizado).getTime() > 2 * 86400e3;
     if (vieja) estado = null;
 
-    // Walter la está atendiendo desde el panel: el bot guarda el mensaje y no contesta. Si la charla
-    // quedó quieta más de 2 días, vuelve a contestar el bot.
-    if (conv.data?.bot_pausado && !vieja) {
-      await db.from("walter_conversaciones").update({
-        pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
-      }).eq("canal", canal).eq("usuario", usuario);
+    // Walter la está atendiendo desde el panel (o puso el modo manual para todas): el bot guarda el
+    // mensaje y no contesta. Si la charla quedó quieta más de 2 días, vuelve a contestar el bot.
+    if ((conv.data?.bot_pausado && !vieja) || cfg.modo === "manual") {
+      await db.from("walter_conversaciones").upsert({
+        canal, usuario, pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
+      });
       return;
     }
 
@@ -297,14 +297,16 @@ async function recibirMedia(canal: Canal, usuario: string,
     if (caption) return atender(canal, usuario, caption, true, nombrePerfil, media);
 
     const id = await log(canal, usuario, "entra", ETIQUETA[m.tipo], undefined, media);
-    const { data: conv } = await db.from("walter_conversaciones").select("bot_pausado, actualizado")
-      .eq("canal", canal).eq("usuario", usuario).maybeSingle();
+    const [cfg, { data: conv }] = await Promise.all([
+      config(),
+      db.from("walter_conversaciones").select("bot_pausado, actualizado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
+    ]);
     // Walter ve en el panel que le mandaron algo
     await db.from("walter_conversaciones").upsert({
       canal, usuario, pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
     });
     const vieja = !!conv && Date.now() - new Date(conv.actualizado).getTime() > 2 * 86400e3;
-    if ((conv?.bot_pausado && !vieja) || !RECIBIDO[m.tipo]) return;
+    if ((conv?.bot_pausado && !vieja) || cfg.modo === "manual" || !RECIBIDO[m.tipo]) return;
     // Varias fotos seguidas: se contesta una sola vez
     if (id) {
       const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true })

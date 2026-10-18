@@ -73,9 +73,13 @@ const panelMonedas = (() => {
   // Monedas con tipo "Llaves".
   const esLlave = (p) => /llave/i.test(p.tipo || '');
   const materialDe = (p) => (esLlave(p) ? 'Llaves' : p.material);
-  const cantidadDe = (p) => p.modo === 'u'
-    ? Number(p.cantidad).toLocaleString('es-AR') + (p.tipo && !esLlave(p) ? ' de ' + p.tipo : ' unidades')
-    : kilos(p.cantidad);
+  // Las contadas llevan los kilos estimados, con cuántas de ese tipo hacen un kilo (pestaña Precios)
+  const cantidadDe = (p) => {
+    if (p.modo !== 'u') return kilos(p.cantidad);
+    const t = (cfg.monedas || []).find((x) => x.n === p.tipo);
+    return Number(p.cantidad).toLocaleString('es-AR') + (p.tipo && !esLlave(p) ? ' de ' + p.tipo : ' unidades') +
+      (t && t.kg > 0 ? ' (≈ ' + kilos(p.cantidad / t.kg) + ')' : '');
+  };
   const canalDe = (c) => (c === 'messenger' ? 'Messenger' : 'WhatsApp');
 
   // Fecha y hora de Argentina, esté donde esté la compu: walter-bot decide los
@@ -569,7 +573,38 @@ const panelMonedas = (() => {
     return c.canal === 'whatsapp' ? '+' + c.usuario : 'Cliente de Messenger';
   }
 
+  // Modo para todas las charlas: automático (contesta el bot) o manual (contesta Walter)
+  function pintarModo() {
+    const manual = cfg.modo === 'manual';
+    $('mModo').classList.toggle('manual', manual);
+    $('mModoTitulo').textContent = manual ? 'Modo manual: contestás vos' : 'Modo automático: contesta el bot';
+    $('mModoTexto').textContent = manual
+      ? 'El bot no contesta ninguna charla. Los mensajes te llegan acá.'
+      : 'El bot atiende todas las charlas, salvo las que tomás vos.';
+    $('mBtnModo').textContent = manual ? 'Volver a automático' : 'Pasar a manual';
+    pintarAvisos();
+  }
+
+  async function cambiarModo() {
+    const manual = cfg.modo !== 'manual';
+    if (manual && !confirm('¿Pasar a modo manual?\n\nEl bot deja de contestar en todas las charlas hasta que vuelvas a automático.')) return;
+    $('mBtnModo').disabled = true;
+    const { data, error } = await sb
+      .from('walter_config')
+      .update({ data: Object.assign({}, cfg, { modo: manual ? 'manual' : 'auto' }), actualizado: new Date().toISOString() })
+      .eq('id', 1)
+      .select('data, actualizado')
+      .maybeSingle();
+    $('mBtnModo').disabled = false;
+    if (error || !data) return toast('No se pudo cambiar el modo' + (error ? ': ' + error.message : '.'));
+    cfg = data.data;
+    cfgActualizado = data.actualizado;
+    pintarModo();
+    toast(manual ? 'Modo manual: el bot no contesta' : 'Modo automático: contesta el bot');
+  }
+
   function pintarCharlas() {
+    pintarModo();
     const visibles = charlas.filter((c) => filtroCharlas === 'todas' ||
       (filtroCharlas === 'vos' ? c.bot_pausado : c.pide_humano));
 
@@ -1049,6 +1084,7 @@ const panelMonedas = (() => {
   let relojVivo = null;
   function cambioEnVivo(cambio) {
     const fila = cambio.new && Object.keys(cambio.new).length ? cambio.new : cambio.old || {};
+    if (cambio.table === 'walter_mensajes' && cambio.eventType === 'INSERT' && fila.direccion === 'entra') avisar(fila);
     const c = charlaAbierta;
     if (c && cambio.table === 'walter_mensajes' && fila.canal === c.canal && fila.usuario === c.usuario) {
       cargarMensajes(c);
@@ -1075,6 +1111,131 @@ const panelMonedas = (() => {
       });
     });
     canal.subscribe();
+  }
+
+  // ---------------------------------------------------------- avisos
+
+  // Avisa cuando escribe un cliente, aunque el panel esté en otra pestaña o minimizado.
+  // Necesita el panel abierto: con el navegador cerrado no llega nada.
+  const AVISOS_KEY = 'walter-avisos';
+  function avisosActivos() {
+    try { return 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(AVISOS_KEY) !== 'no'; }
+    catch (e) { return false; }
+  }
+
+  function pintarAvisos() {
+    const b = $('mBtnAvisos');
+    if (!('Notification' in window)) return ocultar(b);
+    b.textContent = avisosActivos() ? '🔔 Avisos activados' : '🔕 Activar avisos';
+  }
+
+  async function activarAvisos() {
+    if (avisosActivos()) {
+      try { localStorage.setItem(AVISOS_KEY, 'no'); } catch (e) { /* sin guardado, igual se apaga hasta recargar */ }
+      pintarAvisos();
+      return toast('Avisos apagados');
+    }
+    const permiso = await Notification.requestPermission();
+    try { localStorage.removeItem(AVISOS_KEY); } catch (e) { /* nada */ }
+    pintarAvisos();
+    if (permiso !== 'granted') return toast('El navegador no dio permiso. Activalo en la configuración del sitio.');
+    sonar();
+    toast('Listo: te avisa cuando escriba un cliente');
+  }
+
+  function sonar() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.15, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      o.connect(g).connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + 0.4);
+    } catch (e) { /* sin sonido */ }
+  }
+
+  async function avisar(m) {
+    if (!avisosActivos()) return;
+    const abierta = charlaAbierta && charlaAbierta.canal === m.canal && charlaAbierta.usuario === m.usuario;
+    if (abierta && !document.hidden) return;
+    const c = charlas.find((x) => x.canal === m.canal && x.usuario === m.usuario);
+    const titulo = c ? nombreCharla(c) : m.canal === 'whatsapp' ? '+' + m.usuario : 'Cliente nuevo';
+    const cuerpo = SOLO_ETIQUETA.test(m.texto || '') ? 'Mandó ' + NOMBRE_MEDIO[m.media_tipo] : m.texto;
+    sonar();
+    const opciones = { body: cuerpo, tag: m.canal + ':' + m.usuario, icon: '/icon-192.png' };
+    try {
+      const n = new Notification(titulo, opciones);
+      n.onclick = () => { window.focus(); mostrarPestana('charlas'); abrirCharla(m.canal, m.usuario); n.close(); };
+    } catch (e) {
+      // En el celu (Android) solo se puede avisar a través del service worker
+      try {
+        const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+        if (reg) reg.showNotification(titulo, opciones);
+      } catch (e2) { /* sin aviso */ }
+    }
+  }
+
+  // ---------------------------------------------------------- copia de seguridad
+
+  // Un CSV que abre bien en Excel: separado por punto y coma y con BOM para los acentos
+  function bajarCsv(nombre, filas) {
+    const celda = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const texto = '\ufeff' + filas.map((f) => f.map(celda).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([texto], { type: 'text/csv;charset=utf-8' }));
+    a.download = nombre + '-' + ahoraAR().hoy + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // Todas las filas de una tabla, de a mil
+  async function todo(tabla, columnas) {
+    const filas = [];
+    for (let desde = 0; desde < 50000; desde += 1000) {
+      const { data, error } = await sb.from(tabla).select(columnas).order('id').range(desde, desde + 999);
+      if (error) throw error;
+      filas.push(...data);
+      if (data.length < 1000) break;
+    }
+    return filas;
+  }
+
+  async function copiaCharlas() {
+    const b = $('mCopiaCharlas');
+    b.disabled = true;
+    try {
+      const mensajes = await todo('walter_mensajes', 'id, creado, canal, usuario, direccion, autor, texto, media_tipo');
+      const nombres = {};
+      charlas.forEach((c) => { nombres[c.canal + ':' + c.usuario] = nombreCharla(c); });
+      bajarCsv('charlas', [['Fecha', 'Cliente', 'Número', 'Canal', 'Quién', 'Mensaje', 'Archivo']].concat(mensajes.map((m) => [
+        fechaHora(m.creado), nombres[m.canal + ':' + m.usuario] || '', m.canal === 'whatsapp' ? '+' + m.usuario : m.usuario,
+        canalDe(m.canal), m.direccion === 'entra' ? 'Cliente' : m.autor === 'walter' ? 'Walter' : 'Bot', m.texto, m.media_tipo || ''
+      ])));
+    } catch (e) {
+      toast('No se pudo armar la copia: ' + (e.message || e));
+    }
+    b.disabled = false;
+  }
+
+  async function copiaPedidos() {
+    const b = $('mCopiaPedidos');
+    b.disabled = true;
+    try {
+      const lista = await todo('walter_pedidos', '*');
+      bajarCsv('pedidos', [['Fecha', 'Nombre', 'Número', 'Localidad', 'Material', 'Cantidad', 'Monto', 'Entrega', 'Dirección', 'Día', 'Turno', 'Estado']]
+        .concat(lista.map((p) => [
+          fechaHora(p.creado), p.nombre, p.canal === 'whatsapp' ? '+' + p.usuario : p.usuario, p.localidad, materialDe(p), cantidadDe(p),
+          Math.round(p.monto || 0), p.retiro, p.direccion || '', p.dia || '', p.turno || '', ESTADOS[p.estado] || p.estado
+        ])));
+    } catch (e) {
+      toast('No se pudo armar la copia: ' + (e.message || e));
+    }
+    b.disabled = false;
   }
 
   // ---------------------------------------------------------- precios
@@ -1292,10 +1453,14 @@ const panelMonedas = (() => {
     $('mBtnBorrar').addEventListener('click', borrarCharla);
     $('mFormResponder').addEventListener('submit', enviarRespuesta);
     $('mFoto').addEventListener('change', elegirFotoCharla);
-    // Ctrl+Enter (o Cmd+Enter) manda; Enter solo hace otro renglón
+    // Enter manda, como en WhatsApp; Shift+Enter hace otro renglón
     $('mRespuesta').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarRespuesta(e);
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) enviarRespuesta(e);
     });
+    $('mBtnModo').addEventListener('click', cambiarModo);
+    $('mBtnAvisos').addEventListener('click', activarAvisos);
+    $('mCopiaCharlas').addEventListener('click', copiaCharlas);
+    $('mCopiaPedidos').addEventListener('click', copiaPedidos);
 
     $('mNuevoContacto').addEventListener('click', abrirContacto);
     $('mCerrarContacto').addEventListener('click', cerrarContacto);
