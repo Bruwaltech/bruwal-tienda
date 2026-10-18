@@ -58,6 +58,9 @@ const panelMonedas = (() => {
   let turnoRuta = 'Mañana';
   let turnoElegido = false;
   let charlaAbierta = null;
+  // Perfil de WhatsApp del bot: se pide al entrar a Precios y ajustes; fotoNueva es la elegida sin guardar
+  let perfilCargado = false;
+  let fotoNueva = null;
   let preciosEditados = false;
   let eventosAtados = false;
   let cargando = false;
@@ -191,6 +194,7 @@ const panelMonedas = (() => {
     document.querySelectorAll('#vistaMonedas [data-seccion]').forEach((s) => {
       s.classList.toggle('hidden', s.dataset.seccion !== nombre);
     });
+    if (nombre === 'precios' && !perfilCargado) cargarPerfil();
     pintar();
   }
 
@@ -857,6 +861,92 @@ const panelMonedas = (() => {
     abrirCharla('whatsapp', r.usuario);
   }
 
+  // ---------------------------------------------------------- perfil de WhatsApp
+
+  function pintarFotoPerfil(src) {
+    $('mPerfilImg').classList.toggle('hidden', !src);
+    $('mPerfilSinFoto').classList.toggle('hidden', !!src);
+    if (src) $('mPerfilImg').src = src;
+  }
+
+  async function cargarPerfil() {
+    perfilCargado = true;
+    ver($('mPerfilCargando'));
+    ocultar($('mPerfilError'));
+    const r = await llamarBot({ accion: 'perfil' });
+    ocultar($('mPerfilCargando'));
+    if (r.error) {
+      perfilCargado = false;
+      $('mPerfilError').textContent = r.error;
+      return ver($('mPerfilError'));
+    }
+    fotoNueva = null;
+    pintarFotoPerfil(r.foto);
+    $('mPerfilAbout').value = r.about || '';
+    $('mPerfilDescripcion').value = r.description || '';
+    $('mPerfilDireccion').value = r.address || '';
+    $('mPerfilEmail').value = r.email || '';
+    $('mPerfilWeb').value = r.website || '';
+    $('mPerfilEstado').textContent = '';
+  }
+
+  // La foto se recorta cuadrada y se achica a 640 px antes de mandarla: así pesa poco
+  // y WhatsApp la acepta (pide al menos 192 px).
+  function elegirFoto() {
+    const archivo = $('mPerfilArchivo').files[0];
+    $('mPerfilArchivo').value = '';
+    if (!archivo) return;
+    ocultar($('mPerfilError'));
+    if (!/^image\/(jpeg|png)$/.test(archivo.type)) {
+      $('mPerfilError').textContent = 'La foto tiene que ser JPG o PNG.';
+      return ver($('mPerfilError'));
+    }
+    const url = URL.createObjectURL(archivo);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const lado = Math.min(img.naturalWidth, img.naturalHeight);
+      if (lado < 192) {
+        $('mPerfilError').textContent = 'La foto es muy chica: tiene que tener al menos 192 píxeles de lado.';
+        return ver($('mPerfilError'));
+      }
+      const final = Math.min(640, lado);
+      const lienzo = document.createElement('canvas');
+      lienzo.width = lienzo.height = final;
+      lienzo.getContext('2d').drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, final, final);
+      fotoNueva = lienzo.toDataURL('image/jpeg', 0.88);
+      pintarFotoPerfil(fotoNueva);
+      $('mPerfilEstado').textContent = 'Foto nueva sin guardar';
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      $('mPerfilError').textContent = 'No se pudo abrir esa foto. Probá con otra.';
+      ver($('mPerfilError'));
+    };
+    img.src = url;
+  }
+
+  async function guardarPerfil() {
+    ocultar($('mPerfilError'));
+    const boton = $('mGuardarPerfil');
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+    const r = await llamarBot({
+      accion: 'perfil_guardar', foto: fotoNueva,
+      about: $('mPerfilAbout').value, description: $('mPerfilDescripcion').value,
+      address: $('mPerfilDireccion').value, email: $('mPerfilEmail').value, website: $('mPerfilWeb').value
+    });
+    boton.disabled = false;
+    boton.textContent = 'Guardar perfil';
+    if (r.error) {
+      $('mPerfilError').textContent = r.error;
+      return ver($('mPerfilError'));
+    }
+    toast('Perfil de WhatsApp guardado');
+    await cargarPerfil();
+    $('mPerfilEstado').textContent = 'Guardado. WhatsApp puede tardar unos minutos en mostrarlo.';
+  }
+
   // ---------------------------------------------------------- en vivo
 
   // Realtime avisa cuando entra un mensaje, un pedido o cambia una charla. Se
@@ -1120,6 +1210,9 @@ const panelMonedas = (() => {
     $('mAgregarTipo').addEventListener('click', agregarTipo);
     $('mTiposMoneda').addEventListener('click', quitarTipo);
     $('mFormPrecios').addEventListener('submit', guardarPrecios);
+
+    $('mPerfilArchivo').addEventListener('change', elegirFoto);
+    $('mGuardarPerfil').addEventListener('click', guardarPerfil);
 
     // Los pedidos entran solos: al volver a la pestaña del navegador, y cada
     // dos minutos si no hay nada a medio editar, se traen de nuevo.
