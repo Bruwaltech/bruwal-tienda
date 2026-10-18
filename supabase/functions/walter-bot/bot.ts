@@ -14,6 +14,8 @@ export type Config = {
   depPA: string; depPAh: string; depSL: string; depSLh: string;
   horaNoche?: string; horaManana?: string;
   saludo: string;
+  // manual: Walter atiende todas las charlas desde el panel y el bot no contesta ninguna
+  modo?: "auto" | "manual";
 };
 
 export type Datos = {
@@ -98,7 +100,8 @@ export function rechazar(estado: Estado | null, c: Config, prohibido: boolean, t
 }
 
 export const MEZCLADAS = "Mezcladas";
-// La opción de la lista de tipos para las que van por kilo, sean de una clase o mezcladas
+// Lo que se usa por dentro cuando las pistas dicen que van por kilo (findTipo lo lee como MEZCLADAS).
+// Ya no es una opción de la lista: Walter ofrece primero pagar por unidad.
 const OPCION_KILO = "Por kilo o mezcladas";
 export const tiposDe = (c: Config) => (c.monedas ?? []).filter((t) => t && t.n && t.u > 0);
 const esLlave = (n?: string) => /llave/i.test(n ?? "");
@@ -164,18 +167,10 @@ function minTxt(d: Datos, c: Config) {
 
 /** Lo que el bot sabe del negocio, para que la IA conteste preguntas sin inventar. */
 export function hechos(c: Config): string {
-  const tipos = tiposDe(c);
-  // Con cuántas entran en un kilo, lo que se cobra por un kilo de cada tipo contado: para comparar con el precio por kilo
-  // y cuál le conviene, ya resuelto: la IA no hace cuentas
-  const kgPorTipo = tipos.filter((t) => t.kg && !esLlave(t.n)).map((t) => {
-    const contado = t.u * t.kg!;
-    const conviene = Math.abs(contado - c.monedaKg) < c.monedaKg * 0.02 ? "da casi lo mismo contadas o por kilo"
-      : contado > c.monedaKg ? "conviene venderlas contadas" : "conviene venderlas por kilo";
-    return `${nombreTipo(t.n)}: entran unas ${t.kg} en un kilo, así que un kilo contado sale unos ${fmt(contado)} contra ${fmt(c.monedaKg)} por kilo: ${conviene}`;
-  }).join(";\n");
   return [
     precios(c),
-    kgPorTipo ? `Contadas o por kilo (aproximado):\n${kgPorTipo}.` : "",
+    // Walter compra las monedas por unidad; el kilo es solo para las mezcladas o las que no quieren contar
+    tiposDe(c).length ? `Las monedas las compramos por unidad. Solo si están mezcladas o no las quieren contar, por kilo a ${fmt(c.monedaKg)}.` : "",
     `Pasamos a buscar (a domicilio o en un punto de encuentro) en: ${LOCALIDADES.map((x) => x.n).join(", ")}.`,
     c.minRetiro ? `Pasamos a buscar desde ${kgf(c.minRetiro)}; con menos, lo traen al depósito.` : "",
     `Desde ${c.umbralMay} kg de cobre o bronce pagamos precio mayorista.`,
@@ -188,10 +183,11 @@ export function hechos(c: Config): string {
 function depositos(c: Config) {
   return `📍 Depósito San Lorenzo: ${c.depSL}\n${c.depSLh}\n\n📍 Depósito Pueblo Andino: ${c.depPA}\n${c.depPAh}`;
 }
+// Las monedas, por unidad: el precio por kilo se dice solo si el cliente las tiene pesadas o mezcladas
 function precios(c: Config) {
   const tipos = tiposDe(c);
   const monedas = tipos.length
-    ? `• Monedas: ${fmt(c.monedaKg)} el kilo. Contadas, cada una:\n` +
+    ? `• Monedas, cada una:\n` +
       tipos.map((t) => `   – ${esLlave(t.n) ? "Llaves" : "De " + t.n}: ${fmt(t.u)}`).join("\n") + "\n"
     : `• Monedas: ${fmt(c.monedaKg)} el kilo o ${fmt(c.monedaU ?? 0)} por unidad\n`;
   return `Precios de hoy:\n${monedas}` +
@@ -205,10 +201,7 @@ function pregunta(e: Estado, c: Config): Respuesta {
     case "loc": return { text: "¿De qué localidad nos escribís?" };
     case "cat": return { text: "¿Qué querés vender?", options: ["Monedas", "Cobre", "Bronce"] };
     case "unit": return { text: "¿Las tenés contadas o pesadas?", options: ["Por kilo", "Por unidad"] };
-    case "tipo": return {
-      text: `¿De qué monedas son? Si las tenés pesadas o son de varias clases, elegí "${OPCION_KILO}".`,
-      options: [...tiposDe(c).map((t) => t.n), OPCION_KILO],
-    };
+    case "tipo": return { text: "¿De qué monedas son? Las pagamos por unidad, cada tipo a su precio.", options: tiposDe(c).map((t) => t.n) };
     case "qty":
       if (d.mat === "Monedas") {
         if (d.modo !== "u") return { text: "¿Cuántos kilos tenés, aproximadamente?" };
@@ -287,8 +280,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     // Si pregunta por un tipo ("¿cuánto pagan las de 10?"), le contestamos ese y no la lista entera
     const tp = /cobre|bronce/.test(n) ? undefined : tipoPorNombre(c, findTipo(c, t) ?? undefined);
     if (tp) {
-      return out({ text: `${esLlave(tp.n) ? "Las llaves" : "Las de " + tp.n} las pagamos ${fmt(tp.u)} cada una. ` +
-        `Si las tenés pesadas o mezcladas, el kilo está ${fmt(c.monedaKg)}.` }, pregunta(e, c));
+      return out({ text: `${esLlave(tp.n) ? "Las llaves" : "Las de " + tp.n} las pagamos ${fmt(tp.u)} cada una.` }, pregunta(e, c));
     }
     if (parseNum(t) === null) return out({ text: precios(c) }, pregunta(e, c));
   }
