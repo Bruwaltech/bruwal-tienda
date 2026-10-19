@@ -3,7 +3,8 @@
 // Walter compra monedas por kilo, cobre y bronce. Su bot (supabase/functions/
 // walter-bot) cotiza y toma los pedidos por WhatsApp y Messenger; desde acá
 // Walter les pone día y turno, revisa y aprueba la hoja de ruta, cambia los
-// precios y ve quién pidió hablar con él.
+// precios y atiende las charlas: contesta por el número del bot, pausa el bot,
+// borra charlas y carga contactos nuevos.
 //
 // Usa sb, $, ver, ocultar, escapar, fecha y fechaHora de index.html, y el
 // marcado de #vistaMonedas. Qué se puede ver y qué se puede cambiar lo deciden
@@ -57,6 +58,9 @@ const panelMonedas = (() => {
   let turnoRuta = 'Mañana';
   let turnoElegido = false;
   let charlaAbierta = null;
+  // Perfil de WhatsApp del bot: se pide al entrar a Precios y ajustes; fotoNueva es la elegida sin guardar
+  let perfilCargado = false;
+  let fotoNueva = null;
   let preciosEditados = false;
   let eventosAtados = false;
   let cargando = false;
@@ -69,9 +73,13 @@ const panelMonedas = (() => {
   // Monedas con tipo "Llaves".
   const esLlave = (p) => /llave/i.test(p.tipo || '');
   const materialDe = (p) => (esLlave(p) ? 'Llaves' : p.material);
-  const cantidadDe = (p) => p.modo === 'u'
-    ? Number(p.cantidad).toLocaleString('es-AR') + (p.tipo && !esLlave(p) ? ' de ' + p.tipo : ' unidades')
-    : kilos(p.cantidad);
+  // Las contadas llevan los kilos estimados, con cuántas de ese tipo hacen un kilo (pestaña Precios)
+  const cantidadDe = (p) => {
+    if (p.modo !== 'u') return kilos(p.cantidad);
+    const t = (cfg.monedas || []).find((x) => x.n === p.tipo);
+    return Number(p.cantidad).toLocaleString('es-AR') + (p.tipo && !esLlave(p) ? ' de ' + p.tipo : ' unidades') +
+      (t && t.kg > 0 ? ' (≈ ' + kilos(p.cantidad / t.kg) + ')' : '');
+  };
   const canalDe = (c) => (c === 'messenger' ? 'Messenger' : 'WhatsApp');
 
   // Fecha y hora de Argentina, esté donde esté la compu: walter-bot decide los
@@ -138,7 +146,7 @@ const panelMonedas = (() => {
         .order('creado', { ascending: false })
         .limit(1000),
       sb.from('walter_conversaciones')
-        .select('canal, usuario, nombre_perfil, estado, pide_humano, actualizado')
+        .select('canal, usuario, nombre_perfil, localidad, estado, pide_humano, bot_pausado, actualizado')
         .order('pide_humano', { ascending: false })
         .order('actualizado', { ascending: false })
         .limit(300),
@@ -202,6 +210,7 @@ const panelMonedas = (() => {
     document.querySelectorAll('#vistaMonedas [data-seccion]').forEach((s) => {
       s.classList.toggle('hidden', s.dataset.seccion !== nombre);
     });
+    if (nombre === 'precios' && !perfilCargado) cargarPerfil();
     pintar();
   }
 
@@ -239,7 +248,10 @@ const panelMonedas = (() => {
     if (p.retiro === 'Depósito') return { texto: 'Lo trae al depósito: no lleva aviso.' };
     if (cerrado(p)) return null;
     if (p.respuesta_aviso === 'confirmó') {
-      return { clase: 'chip-atendido', chip: 'Confirmó', texto: 'Le avisamos el ' + fechaHora(p.aviso_enviado) + '.' };
+      return {
+        clase: 'chip-atendido', chip: 'Confirmó',
+        texto: p.aviso_enviado ? 'Le avisamos el ' + fechaHora(p.aviso_enviado) + '.' : 'Le dijimos el día y le quedó bien.'
+      };
     }
     if (p.respuesta_aviso === 'no puede') {
       return { clase: 'chip-alerta', chip: 'No puede', texto: 'Cambiale el día y el bot le vuelve a avisar.' };
@@ -252,18 +264,20 @@ const panelMonedas = (() => {
     }
 
     const { hoy, hhmm } = ahoraAR();
+    // El aviso del día sale apenas se pone el día, si el cliente escribió en las últimas 24 horas
+    const yaSabe = p.aviso_dia === 'enviado' ? 'Ya le dijimos el día. ' : '';
     const deManana = p.turno === 'Mañana';
     const diaAviso = deManana ? sumarDias(p.dia, -1) : p.dia;
     const hora = (deManana ? cfg.horaNoche : cfg.horaManana) || (deManana ? '21:00' : '09:00');
 
     if (diaAviso > hoy) {
       const cuando = diaAviso === sumarDias(hoy, 1) ? 'mañana' : 'el ' + nombreDia(diaAviso);
-      return { clase: 'chip-nuevo', chip: 'Programado', texto: 'El aviso sale ' + cuando + ' a las ' + hora + '.' };
+      return { clase: 'chip-nuevo', chip: 'Programado', texto: yaSabe + 'El recordatorio sale ' + cuando + ' a las ' + hora + '.' };
     }
     if (diaAviso === hoy) {
       return {
         clase: 'chip-nuevo', chip: 'Programado',
-        texto: hhmm < hora ? 'El aviso sale hoy a las ' + hora + '.' : 'El aviso sale en los próximos minutos.'
+        texto: yaSabe + (hhmm < hora ? 'El recordatorio sale hoy a las ' + hora + '.' : 'El recordatorio sale en los próximos minutos.')
       };
     }
     return { clase: 'chip-pendiente', chip: 'Sin aviso', texto: 'Ya pasó la hora de avisar para ese turno.' };
@@ -571,20 +585,55 @@ const panelMonedas = (() => {
     return c.canal === 'whatsapp' ? '+' + c.usuario : 'Cliente de Messenger';
   }
 
+  // Modo para todas las charlas: automático (contesta el bot) o manual (contesta Walter)
+  function pintarModo() {
+    const manual = cfg.modo === 'manual';
+    $('mModo').classList.toggle('manual', manual);
+    $('mModoTitulo').textContent = manual ? 'Modo manual: contestás vos' : 'Modo automático: contesta el bot';
+    $('mModoTexto').textContent = manual
+      ? 'El bot no contesta ninguna charla. Los mensajes te llegan acá.'
+      : 'El bot atiende todas las charlas, salvo las que tomás vos.';
+    $('mBtnModo').textContent = manual ? 'Volver a automático' : 'Pasar a manual';
+    pintarAvisos();
+  }
+
+  async function cambiarModo() {
+    const manual = cfg.modo !== 'manual';
+    if (manual && !confirm('¿Pasar a modo manual?\n\nEl bot deja de contestar en todas las charlas hasta que vuelvas a automático.')) return;
+    $('mBtnModo').disabled = true;
+    const { data, error } = await sb
+      .from('walter_config')
+      .update({ data: Object.assign({}, cfg, { modo: manual ? 'manual' : 'auto' }), actualizado: new Date().toISOString() })
+      .eq('id', 1)
+      .select('data, actualizado')
+      .maybeSingle();
+    $('mBtnModo').disabled = false;
+    if (error || !data) return toast('No se pudo cambiar el modo' + (error ? ': ' + error.message : '.'));
+    cfg = data.data;
+    cfgActualizado = data.actualizado;
+    pintarModo();
+    toast(manual ? 'Modo manual: el bot no contesta' : 'Modo automático: contesta el bot');
+  }
+
   function pintarCharlas() {
-    const visibles = charlas.filter((c) => filtroCharlas === 'todas' || c.pide_humano);
+    pintarModo();
+    const visibles = charlas.filter((c) => filtroCharlas === 'todas' ||
+      (filtroCharlas === 'vos' ? c.bot_pausado : c.pide_humano));
 
     $('mCuerpoCharlas').innerHTML = visibles.map((c) =>
       '<tr data-canal="' + escapar(c.canal) + '" data-usuario="' + escapar(c.usuario) + '">' +
         '<td>' +
           '<div class="nombre-lead">' + escapar(nombreCharla(c)) + '</div>' +
-          '<div class="dato-secundario">' + escapar(PASOS[c.estado && c.estado.step] || '') + '</div>' +
+          '<div class="dato-secundario">' +
+            escapar(PASOS[c.estado && c.estado.step] || (c.estado ? '' : c.localidad || 'Contacto cargado a mano')) + '</div>' +
         '</td>' +
         '<td class="opcional">' + escapar(canalDe(c.canal)) + '</td>' +
         '<td class="opcional dato-secundario">' + escapar(fecha(c.actualizado)) + '</td>' +
         '<td>' +
           (c.pide_humano
-            ? '<span class="chip chip-pendiente">Quiere hablar con vos</span>'
+            ? '<span class="chip chip-pendiente">' + (c.bot_pausado ? 'Te escribió' : 'Quiere hablar con vos') + '</span>'
+            : c.bot_pausado
+            ? '<span class="chip chip-nuevo">La atendés vos</span>'
             : '<span class="chip chip-atendido">La atiende el bot</span>') +
         '</td>' +
       '</tr>').join('');
@@ -593,20 +642,141 @@ const panelMonedas = (() => {
     $('mSinCharlas').innerHTML = filtroCharlas === 'humano'
       ? '<strong>Nadie está esperando que le escribas</strong>' +
           'Cuando alguien le pida al bot hablar con Walter, aparece acá.'
+      : filtroCharlas === 'vos'
+      ? '<strong>No estás atendiendo ninguna charla</strong>' +
+          'Cuando le escribas a alguien desde acá, el bot se calla en esa charla y aparece en esta lista.'
       : '<strong>Todavía no hay charlas</strong>Van a aparecer apenas alguien escriba.';
     ver($('mSinCharlas'));
+  }
+
+  // Meta deja escribir libre hasta 24 horas después del último mensaje del cliente.
+  const VENTANA = 24 * 60 * 60 * 1000;
+  let ultimoDelCliente = null;
+
+  function pintarFichaEstado() {
+    const c = charlaAbierta;
+    if (!c) return;
+    $('mBtnAtendida').classList.toggle('hidden', !c.pide_humano);
+    $('mBtnPausa').textContent = c.bot_pausado ? 'Devolverle la charla al bot' : 'Atenderla yo (pausar el bot)';
+    $('mChipBot').className = 'chip ' + (c.bot_pausado ? 'chip-nuevo' : 'chip-atendido');
+    $('mChipBot').textContent = c.bot_pausado ? 'La atendés vos' : 'La atiende el bot';
+
+    const abierta = ultimoDelCliente && Date.now() - new Date(ultimoDelCliente).getTime() < VENTANA;
+    $('mRespuesta').disabled = !abierta;
+    $('mEnviar').disabled = !abierta;
+    // Las fotos y los audios salen solo por WhatsApp
+    $('mFotoBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp');
+    $('mAudioBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp' || !puedeGrabar());
+    $('mVentana').textContent = abierta
+      ? 'Sale por el número del bot. Mientras atendés vos, el bot no contesta.'
+      : ultimoDelCliente
+      ? 'Pasaron más de 24 horas desde su último mensaje: WhatsApp no deja escribirle hasta que vuelva a escribir.'
+      : 'Todavía no te escribió: WhatsApp solo deja escribirle primero con el saludo aprobado.';
+  }
+
+  // Lo que queda como texto de una foto o un audio sin epígrafe: en la burbuja se ve el archivo
+  const SOLO_ETIQUETA = /^\[(Foto|Audio|Video|Archivo|Sticker)\]$/;
+  const NOMBRE_MEDIO = { imagen: 'la foto', audio: 'el audio', video: 'el video', documento: 'el archivo', sticker: 'el sticker' };
+
+  // El archivo va sin link: ponerMedios le pone uno firmado después de pintar la charla
+  // Los archivos se borran solos a los 30 días (limpiarMedios en walter-bot)
+  const DIAS_MEDIOS = 30;
+  function htmlMedio(m) {
+    if (!m.media_tipo) return '';
+    if (!m.media_path) {
+      const vencido = Date.now() - new Date(m.creado).getTime() > DIAS_MEDIOS * 24 * 60 * 60 * 1000;
+      return '<span class="medio-falta">' + (vencido
+        ? 'Se borró ' + NOMBRE_MEDIO[m.media_tipo] + ' a los ' + DIAS_MEDIOS + ' días para no ocupar lugar.'
+        : 'No se pudo bajar ' + NOMBRE_MEDIO[m.media_tipo] + '.') + '</span>';
+    }
+    const p = escapar(m.media_path).replace(/"/g, '&quot;');
+    // Bajar: el mismo link firmado, pero el navegador lo guarda en vez de abrirlo
+    const bajar = '<a class="medio-link" data-bajar="' + p + '">Bajar</a>';
+    if (m.media_tipo === 'imagen' || m.media_tipo === 'sticker') {
+      return '<a class="medio" data-medio="' + p + '" target="_blank" rel="noopener"><img alt="Foto" data-medio="' + p + '"></a>' + bajar;
+    }
+    if (m.media_tipo === 'audio') {
+      return '<audio controls preload="metadata" data-medio="' + p + '"></audio>' +
+        '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el audio</a>' + bajar;
+    }
+    if (m.media_tipo === 'video') return '<video controls playsinline preload="metadata" data-medio="' + p + '"></video>' + bajar;
+    return '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el archivo</a>' + bajar;
+  }
+
+  function htmlBurbuja(m) {
+    const clase = m.direccion === 'entra' ? 'de-cliente' : m.autor === 'walter' ? 'de-walter' : 'de-bot';
+    const quien = m.direccion === 'entra' ? '' : m.autor === 'walter' ? 'Vos · ' : 'Bot · ';
+    const texto = m.media_tipo && SOLO_ETIQUETA.test(m.texto || '') ? '' : escapar(m.texto);
+    return '<div class="burbuja ' + clase + '">' + htmlMedio(m) + texto +
+      '<span class="hora">' + escapar(quien + fechaHora(m.creado)) + '</span></div>';
+  }
+
+  // Links firmados de las fotos y audios: valen una hora, se piden de nuevo antes de que venzan
+  const linksMedios = {};
+  async function ponerMedios(caja, alFinal) {
+    const nodos = Array.from(caja.querySelectorAll('[data-medio], [data-bajar]'));
+    const faltan = Array.from(new Set(nodos.map((n) => n.dataset.medio || n.dataset.bajar)))
+      .filter((p) => !linksMedios[p] || linksMedios[p].hasta < Date.now());
+    if (faltan.length) {
+      const r = await llamarBot({ accion: 'medios', paths: faltan });
+      const hasta = Date.now() + 50 * 60 * 1000;
+      Object.keys(r.urls || {}).forEach((p) => { linksMedios[p] = { url: r.urls[p], hasta }; });
+    }
+    nodos.forEach((n) => {
+      const l = linksMedios[n.dataset.medio || n.dataset.bajar];
+      if (!l) return;
+      // download= hace que Supabase lo mande como descarga, con ese nombre
+      if (n.dataset.bajar) n.href = l.url + '&download=' + encodeURIComponent(n.dataset.bajar.split('/').pop());
+      else if (n.tagName === 'A') n.href = l.url;
+      else {
+        // La foto llega después de pintar: si estaba al final, que siga al final
+        if (alFinal) n.addEventListener('load', () => { caja.scrollTop = caja.scrollHeight; }, { once: true });
+        n.src = l.url;
+      }
+    });
+  }
+
+  // Las últimas 200 líneas alcanzan para entender qué pasó.
+  async function cargarMensajes(c) {
+    const { data, error } = await sb
+      .from('walter_mensajes')
+      .select('direccion, texto, creado, autor, media_tipo, media_path')
+      .eq('canal', c.canal)
+      .eq('usuario', c.usuario)
+      .order('id', { ascending: false })
+      .limit(200);
+
+    if (charlaAbierta !== c) return;
+    const caja = $('mFichaCharla');
+    // Si estaba leyendo más arriba, un mensaje nuevo no lo lleva al final
+    const alFinal = caja.scrollHeight - caja.scrollTop - caja.clientHeight < 40;
+    const lista = (data || []).reverse();
+    const ult = lista.filter((m) => m.direccion === 'entra').pop();
+    ultimoDelCliente = ult ? ult.creado : null;
+
+    caja.innerHTML = error
+      ? '<div class="dato-secundario">No se pudo cargar la conversación.</div>'
+      : lista.map(htmlBurbuja).join('') || '<div class="dato-secundario">Sin mensajes.</div>';
+    const pegado = alFinal || !caja.dataset.cargada;
+    if (pegado) caja.scrollTop = caja.scrollHeight;
+    caja.dataset.cargada = '1';
+    pintarFichaEstado();
+    if (!error) ponerMedios(caja, pegado);
   }
 
   async function abrirCharla(canal, usuario) {
     const c = charlas.find((x) => x.canal === canal && x.usuario === usuario);
     if (!c) return;
     charlaAbierta = c;
+    ultimoDelCliente = null;
 
     ocultar($('mFichaError'));
     $('mFichaNombre').textContent = nombreCharla(c);
-    $('mFichaCanal').textContent = canalDe(canal) + (canal === 'whatsapp' ? ' · +' + usuario : '');
-    $('mBtnAtendida').classList.toggle('hidden', !c.pide_humano);
-    $('mBtnAbrir').textContent = canal === 'whatsapp' ? 'Escribirle por WhatsApp' : 'Abrir la bandeja de Facebook';
+    $('mFichaCanal').textContent = canalDe(canal) + (canal === 'whatsapp' ? ' · +' + usuario : '') +
+      (c.localidad ? ' · ' + c.localidad : '');
+    // Messenger no tiene el número del bot: ahí sigue la bandeja de Facebook
+    $('mBtnAbrir').classList.toggle('hidden', canal !== 'messenger');
+    $('mRespuesta').value = '';
 
     const suyos = pedidos.filter((p) => p.canal === canal && p.usuario === usuario);
     $('mFichaPedidos').innerHTML = suyos.length
@@ -617,32 +787,279 @@ const panelMonedas = (() => {
       : '<div class="dato"><span class="v dato-secundario">Todavía no hizo ningún pedido.</span></div>';
 
     $('mFichaCharla').innerHTML = '<div class="dato-secundario">Cargando…</div>';
+    delete $('mFichaCharla').dataset.cargada;
+    pintarFichaEstado();
     ver($('mTelon'));
-
-    // Las últimas 200 líneas alcanzan para entender qué pasó.
-    const { data, error } = await sb
-      .from('walter_mensajes')
-      .select('direccion, texto, creado')
-      .eq('canal', canal)
-      .eq('usuario', usuario)
-      .order('id', { ascending: false })
-      .limit(200);
-
-    if (charlaAbierta !== c) return;
-
-    $('mFichaCharla').innerHTML = error
-      ? '<div class="dato-secundario">No se pudo cargar la conversación.</div>'
-      : (data || []).reverse().map((m) =>
-          '<div class="burbuja ' + (m.direccion === 'entra' ? 'de-cliente' : 'de-bot') + '">' +
-            escapar(m.texto) +
-            '<span class="hora">' + escapar(fechaHora(m.creado)) + '</span>' +
-          '</div>').join('') || '<div class="dato-secundario">Sin mensajes.</div>';
-    $('mFichaCharla').scrollTop = $('mFichaCharla').scrollHeight;
+    await cargarMensajes(c);
   }
 
   function cerrarCharla() {
+    terminarAudio(false); // si estaba grabando, no se manda
     ocultar($('mTelon'));
     charlaAbierta = null;
+  }
+
+  function errorFicha(texto) {
+    $('mFichaError').textContent = texto;
+    ver($('mFichaError'));
+  }
+
+  // Lo que necesita el número del bot (mandar, borrar, contacto nuevo) lo hace
+  // walter-bot, que revisa que el usuario esté habilitado.
+  async function llamarBot(datos) {
+    const { data: s } = await sb.auth.getSession();
+    const token = s && s.session && s.session.access_token;
+    if (!token) return { error: 'Tu sesión venció. Volvé a entrar.' };
+    try {
+      const r = await fetch(SUPABASE_URL + '/functions/v1/walter-bot?tarea=panel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify(datos)
+      });
+      const j = await r.json().catch(() => ({}));
+      return r.ok ? j : { error: j.error || 'No se pudo completar (' + r.status + ').' };
+    } catch (e) {
+      return { error: 'No hay conexión. Probá de nuevo.' };
+    }
+  }
+
+  async function enviarRespuesta(e) {
+    e.preventDefault();
+    const c = charlaAbierta;
+    const texto = $('mRespuesta').value.trim();
+    if (!c || !texto) return;
+    ocultar($('mFichaError'));
+    $('mEnviar').disabled = true;
+    $('mEnviar').textContent = 'Enviando…';
+
+    const r = await llamarBot({ accion: 'enviar', canal: c.canal, usuario: c.usuario, texto });
+
+    $('mEnviar').textContent = 'Enviar';
+    if (charlaAbierta !== c) return;
+    if (r.error) {
+      errorFicha(r.error);
+      return pintarFichaEstado();
+    }
+    $('mRespuesta').value = '';
+    c.bot_pausado = true;
+    c.pide_humano = false;
+    await cargarMensajes(c);
+    pintarTarjetas();
+    pintarCharlas();
+  }
+
+  // La foto se achica a 1280 px y va en JPG: pesa poco (unos 150 KB) y WhatsApp la acepta. Lo que haya
+  // escrito en la respuesta va como texto de la foto.
+  function elegirFotoCharla() {
+    const archivo = $('mFoto').files[0];
+    $('mFoto').value = '';
+    const c = charlaAbierta;
+    if (!archivo || !c) return;
+    ocultar($('mFichaError'));
+    const url = URL.createObjectURL(archivo);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const escala = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+      const lienzo = document.createElement('canvas');
+      lienzo.width = Math.round(img.naturalWidth * escala);
+      lienzo.height = Math.round(img.naturalHeight * escala);
+      lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
+      enviarFoto(c, lienzo.toDataURL('image/jpeg', 0.75));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      errorFicha('No se pudo abrir esa foto. Probá con otra.');
+    };
+    img.src = url;
+  }
+
+  async function enviarFoto(c, foto) {
+    const texto = $('mRespuesta').value.trim();
+    $('mEnviar').disabled = true;
+    $('mFotoBtn').textContent = 'Enviando foto…';
+
+    const r = await llamarBot({ accion: 'enviar_foto', canal: c.canal, usuario: c.usuario, foto, texto });
+
+    $('mFotoBtn').textContent = 'Foto';
+    if (charlaAbierta !== c) return;
+    if (r.error) {
+      errorFicha(r.error);
+      return pintarFichaEstado();
+    }
+    $('mRespuesta').value = '';
+    c.bot_pausado = true;
+    c.pide_humano = false;
+    await cargarMensajes(c);
+    pintarTarjetas();
+    pintarCharlas();
+  }
+
+  // ---------- Audios desde el panel ----------
+  // Se graba con el micrófono y se pasa a MP3 (mono, 64 kbps): WhatsApp no acepta el formato en el que graba
+  // Chrome, y el MP3 lo aceptan todos. El conversor (lamejs) se baja la primera vez que se graba.
+  const MAX_AUDIO = 5 * 60; // segundos
+  const LAMEJS = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
+  let grabacion = null;
+
+  function puedeGrabar() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  }
+
+  function cargarLame() {
+    if (window.lamejs) return Promise.resolve();
+    return new Promise((ok, mal) => {
+      const s = document.createElement('script');
+      s.src = LAMEJS;
+      s.onload = ok;
+      s.onerror = mal;
+      document.head.appendChild(s);
+    });
+  }
+
+  async function tocarAudio() {
+    if (grabacion) return terminarAudio(true);
+    const c = charlaAbierta;
+    if (!c) return;
+    ocultar($('mFichaError'));
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      return errorFicha('No se pudo usar el micrófono. Fijate que el navegador tenga permiso.');
+    }
+    cargarLame().catch(() => {}); // mientras habla
+    const rec = new MediaRecorder(stream);
+    const partes = [];
+    rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
+    const inicio = Date.now();
+    const g = { c, rec, stream, partes, enviar: false };
+    grabacion = g;
+    g.reloj = setInterval(() => {
+      const s = Math.floor((Date.now() - inicio) / 1000);
+      $('mAudioBtn').textContent = 'Enviar audio (' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ')';
+      if (s >= MAX_AUDIO) terminarAudio(true);
+    }, 250);
+    rec.onstop = () => audioGrabado(g);
+    rec.start();
+    $('mAudioBtn').classList.add('grabando');
+    $('mAudioBtn').textContent = 'Enviar audio (0:00)';
+    mostrar($('mAudioCancelar'));
+  }
+
+  function terminarAudio(enviar) {
+    const g = grabacion;
+    if (!g) return;
+    grabacion = null;
+    g.enviar = enviar;
+    clearInterval(g.reloj);
+    if (g.rec.state !== 'inactive') g.rec.stop();
+    g.stream.getTracks().forEach((t) => t.stop());
+    $('mAudioBtn').classList.remove('grabando');
+    $('mAudioBtn').textContent = 'Grabar audio';
+    ocultar($('mAudioCancelar'));
+  }
+
+  async function audioGrabado(g) {
+    if (!g.enviar || !g.partes.length) return;
+    $('mAudioBtn').disabled = true;
+    $('mAudioBtn').textContent = 'Enviando audio…';
+    try {
+      await cargarLame();
+      const mp3 = await aMp3(new Blob(g.partes, { type: g.rec.mimeType }));
+      const audio = await new Promise((ok) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(fr.result);
+        fr.readAsDataURL(mp3);
+      });
+      const r = await llamarBot({ accion: 'enviar_audio', canal: g.c.canal, usuario: g.c.usuario, audio });
+      if (charlaAbierta !== g.c) return;
+      if (r.error) return errorFicha(r.error);
+      g.c.bot_pausado = true;
+      g.c.pide_humano = false;
+      await cargarMensajes(g.c);
+      pintarTarjetas();
+      pintarCharlas();
+    } catch (e) {
+      errorFicha('No se pudo preparar el audio. Probá de nuevo.');
+    } finally {
+      $('mAudioBtn').disabled = false;
+      $('mAudioBtn').textContent = 'Grabar audio';
+      if (charlaAbierta === g.c) pintarFichaEstado();
+    }
+  }
+
+  // Lo grabado (webm, ogg o mp4 según el navegador) pasa a MP3 mono de 16 kHz: alcanza para la voz y pesa poco
+  async function aMp3(blob) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const datos = await blob.arrayBuffer();
+    // Safari viejo no devuelve promesa: con los callbacks anda en todos
+    const buf = await new Promise((ok, mal) => ctx.decodeAudioData(datos, ok, mal));
+    ctx.close();
+    // Mezcla a mono y baja a 16 kHz promediando
+    const HZ = 16000;
+    const paso = buf.sampleRate / HZ;
+    const largo = Math.floor(buf.length / paso);
+    const canales = Array.from({ length: buf.numberOfChannels }, (_, i) => buf.getChannelData(i));
+    const pcm = new Int16Array(largo);
+    for (let i = 0; i < largo; i++) {
+      const desde = Math.floor(i * paso), hasta = Math.max(desde + 1, Math.floor((i + 1) * paso));
+      let suma = 0, n = 0;
+      for (const ch of canales) for (let j = desde; j < hasta && j < ch.length; j++) { suma += ch[j]; n++; }
+      const v = Math.max(-1, Math.min(1, n ? suma / n : 0));
+      pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    }
+    const enc = new window.lamejs.Mp3Encoder(1, HZ, 64);
+    const partes = [];
+    for (let i = 0; i < pcm.length; i += 1152) {
+      const b = enc.encodeBuffer(pcm.subarray(i, i + 1152));
+      if (b.length) partes.push(new Uint8Array(b));
+    }
+    const fin = enc.flush();
+    if (fin.length) partes.push(new Uint8Array(fin));
+    return new Blob(partes, { type: 'audio/mpeg' });
+  }
+
+  async function cambiarPausa() {
+    const c = charlaAbierta;
+    if (!c) return;
+    const pausar = !c.bot_pausado;
+    $('mBtnPausa').disabled = true;
+    ocultar($('mFichaError'));
+
+    const { data, error } = await sb
+      .from('walter_conversaciones')
+      .update(pausar ? { bot_pausado: true } : { bot_pausado: false, pide_humano: false })
+      .eq('canal', c.canal)
+      .eq('usuario', c.usuario)
+      .select('bot_pausado, pide_humano')
+      .maybeSingle();
+
+    $('mBtnPausa').disabled = false;
+    if (error || !data) return errorFicha('No se pudo guardar' + (error ? ': ' + error.message : '.'));
+    c.bot_pausado = data.bot_pausado;
+    c.pide_humano = data.pide_humano;
+    pintarFichaEstado();
+    pintarTarjetas();
+    pintarCharlas();
+    toast(pausar ? 'El bot no va a contestar en esta charla' : 'La charla vuelve a atenderla el bot');
+  }
+
+  async function borrarCharla() {
+    const c = charlaAbierta;
+    if (!c) return;
+    if (!confirm('¿Eliminar la charla con ' + nombreCharla(c) + '?\n\nSe borran todos los mensajes. Los pedidos quedan.')) return;
+    $('mBtnBorrar').disabled = true;
+    ocultar($('mFichaError'));
+    const r = await llamarBot({ accion: 'borrar', canal: c.canal, usuario: c.usuario });
+    $('mBtnBorrar').disabled = false;
+    if (r.error) return errorFicha(r.error);
+    charlas = charlas.filter((x) => x !== c);
+    cerrarCharla();
+    pintarTarjetas();
+    pintarCharlas();
+    toast('Charla eliminada');
   }
 
   async function marcarAtendida() {
@@ -660,10 +1077,7 @@ const panelMonedas = (() => {
       .maybeSingle();
 
     $('mBtnAtendida').disabled = false;
-    if (error || !data) {
-      $('mFichaError').textContent = 'No se pudo guardar' + (error ? ': ' + error.message : '.');
-      return ver($('mFichaError'));
-    }
+    if (error || !data) return errorFicha('No se pudo guardar' + (error ? ': ' + error.message : '.'));
 
     c.pide_humano = false;
     cerrarCharla();
@@ -673,14 +1087,306 @@ const panelMonedas = (() => {
   }
 
   function abrirAfuera() {
+    window.open('https://business.facebook.com/latest/inbox/all', '_blank', 'noopener');
+  }
+
+  // ---------------------------------------------------------- contacto nuevo
+
+  function abrirContacto() {
+    $('mFormContacto').reset();
+    $('mContactoSaludar').checked = true;
+    $('mLocalidades').innerHTML = Object.keys(LOCALIDADES).map((l) => '<option value="' + escapar(l) + '">').join('');
+    ocultar($('mContactoError'));
+    ver($('mTelonContacto'));
+    $('mContactoNombre').focus();
+  }
+
+  function cerrarContacto() {
+    ocultar($('mTelonContacto'));
+  }
+
+  async function guardarContacto(e) {
+    e.preventDefault();
+    const nombre = $('mContactoNombre').value.trim();
+    const numero = $('mContactoNumero').value.trim();
+    const falta = !nombre ? 'Poné el nombre.' : !numero ? 'Poné el número de WhatsApp.' : '';
+    if (falta) {
+      $('mContactoError').textContent = falta;
+      return ver($('mContactoError'));
+    }
+    ocultar($('mContactoError'));
+    const boton = $('mGuardarContacto');
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+
+    const r = await llamarBot({
+      accion: 'contacto', nombre, numero,
+      localidad: $('mContactoLocalidad').value.trim(), saludar: $('mContactoSaludar').checked
+    });
+
+    boton.disabled = false;
+    boton.textContent = 'Guardar contacto';
+    if (r.error) {
+      $('mContactoError').textContent = r.error;
+      return ver($('mContactoError'));
+    }
+
+    cerrarContacto();
+    await cargar();
+    filtroCharlas = 'todas';
+    marcarFiltro('mFiltrosCharlas', 'todas');
+    mostrarPestana('charlas');
+    toast(r.saludo === false
+      ? 'Contacto guardado. El saludo no salió: Meta todavía no aprobó ese mensaje.'
+      : r.saludo ? 'Contacto guardado y saludo enviado' : 'Contacto guardado');
+    abrirCharla('whatsapp', r.usuario);
+  }
+
+  // ---------------------------------------------------------- perfil de WhatsApp
+
+  function pintarFotoPerfil(src) {
+    $('mPerfilImg').classList.toggle('hidden', !src);
+    $('mPerfilSinFoto').classList.toggle('hidden', !!src);
+    if (src) $('mPerfilImg').src = src;
+  }
+
+  async function cargarPerfil() {
+    perfilCargado = true;
+    ver($('mPerfilCargando'));
+    ocultar($('mPerfilError'));
+    const r = await llamarBot({ accion: 'perfil' });
+    ocultar($('mPerfilCargando'));
+    if (r.error) {
+      perfilCargado = false;
+      $('mPerfilError').textContent = r.error;
+      return ver($('mPerfilError'));
+    }
+    fotoNueva = null;
+    pintarFotoPerfil(r.foto);
+    $('mPerfilAbout').value = r.about || '';
+    $('mPerfilDescripcion').value = r.description || '';
+    $('mPerfilDireccion').value = r.address || '';
+    $('mPerfilEmail').value = r.email || '';
+    $('mPerfilWeb').value = r.website || '';
+    $('mPerfilEstado').textContent = '';
+  }
+
+  // La foto se recorta cuadrada y se achica a 640 px antes de mandarla: así pesa poco
+  // y WhatsApp la acepta (pide al menos 192 px).
+  function elegirFoto() {
+    const archivo = $('mPerfilArchivo').files[0];
+    $('mPerfilArchivo').value = '';
+    if (!archivo) return;
+    ocultar($('mPerfilError'));
+    if (!/^image\/(jpeg|png)$/.test(archivo.type)) {
+      $('mPerfilError').textContent = 'La foto tiene que ser JPG o PNG.';
+      return ver($('mPerfilError'));
+    }
+    const url = URL.createObjectURL(archivo);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const lado = Math.min(img.naturalWidth, img.naturalHeight);
+      if (lado < 192) {
+        $('mPerfilError').textContent = 'La foto es muy chica: tiene que tener al menos 192 píxeles de lado.';
+        return ver($('mPerfilError'));
+      }
+      const final = Math.min(640, lado);
+      const lienzo = document.createElement('canvas');
+      lienzo.width = lienzo.height = final;
+      lienzo.getContext('2d').drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, final, final);
+      fotoNueva = lienzo.toDataURL('image/jpeg', 0.88);
+      pintarFotoPerfil(fotoNueva);
+      $('mPerfilEstado').textContent = 'Foto nueva sin guardar';
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      $('mPerfilError').textContent = 'No se pudo abrir esa foto. Probá con otra.';
+      ver($('mPerfilError'));
+    };
+    img.src = url;
+  }
+
+  async function guardarPerfil() {
+    ocultar($('mPerfilError'));
+    const boton = $('mGuardarPerfil');
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+    const r = await llamarBot({
+      accion: 'perfil_guardar', foto: fotoNueva,
+      about: $('mPerfilAbout').value, description: $('mPerfilDescripcion').value,
+      address: $('mPerfilDireccion').value, email: $('mPerfilEmail').value, website: $('mPerfilWeb').value
+    });
+    boton.disabled = false;
+    boton.textContent = 'Guardar perfil';
+    if (r.error) {
+      $('mPerfilError').textContent = r.error;
+      return ver($('mPerfilError'));
+    }
+    toast('Perfil de WhatsApp guardado');
+    await cargarPerfil();
+    $('mPerfilEstado').textContent = 'Guardado. WhatsApp puede tardar unos minutos en mostrarlo.';
+  }
+
+  // ---------------------------------------------------------- en vivo
+
+  // Realtime avisa cuando entra un mensaje, un pedido o cambia una charla. Se
+  // junta lo que llega seguido y se trae todo de nuevo una sola vez.
+  let relojVivo = null;
+  function cambioEnVivo(cambio) {
+    const fila = cambio.new && Object.keys(cambio.new).length ? cambio.new : cambio.old || {};
+    if (cambio.table === 'walter_mensajes' && cambio.eventType === 'INSERT' && fila.direccion === 'entra') avisar(fila);
     const c = charlaAbierta;
-    if (!c) return;
-    // El número del bot vive en la API de WhatsApp y no se puede usar desde el
-    // celular: Walter le escribe desde su WhatsApp de siempre.
-    const url = c.canal === 'whatsapp'
-      ? 'https://wa.me/' + String(c.usuario).replace(/\D/g, '')
-      : 'https://business.facebook.com/latest/inbox/all';
-    window.open(url, '_blank', 'noopener');
+    if (c && cambio.table === 'walter_mensajes' && fila.canal === c.canal && fila.usuario === c.usuario) {
+      cargarMensajes(c);
+    }
+    clearTimeout(relojVivo);
+    relojVivo = setTimeout(async () => {
+      // Si está escribiendo un precio o eligiendo un día, no le redibuja nada encima
+      const activo = document.activeElement;
+      if (activo && activo.closest && activo.closest('#vistaMonedas input, #vistaMonedas select, #vistaMonedas textarea')) return;
+      if (!(await cargar())) return;
+      if (charlaAbierta) {
+        const nueva = charlas.find((x) => x.canal === charlaAbierta.canal && x.usuario === charlaAbierta.usuario);
+        if (nueva) { Object.assign(charlaAbierta, nueva); pintarFichaEstado(); }
+      }
+      pintar();
+    }, 800);
+  }
+
+  function escucharEnVivo() {
+    const canal = sb.channel('walter-panel');
+    ['walter_mensajes', 'walter_pedidos', 'walter_conversaciones'].forEach((tabla) => {
+      canal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, (cambio) => {
+        cambioEnVivo(Object.assign({ table: tabla }, cambio));
+      });
+    });
+    canal.subscribe();
+  }
+
+  // ---------------------------------------------------------- avisos
+
+  // Avisa cuando escribe un cliente, aunque el panel esté en otra pestaña o minimizado.
+  // Necesita el panel abierto: con el navegador cerrado no llega nada.
+  const AVISOS_KEY = 'walter-avisos';
+  function avisosActivos() {
+    try { return 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(AVISOS_KEY) !== 'no'; }
+    catch (e) { return false; }
+  }
+
+  function pintarAvisos() {
+    const b = $('mBtnAvisos');
+    if (!('Notification' in window)) return ocultar(b);
+    b.textContent = avisosActivos() ? '🔔 Avisos activados' : '🔕 Activar avisos';
+  }
+
+  async function activarAvisos() {
+    if (avisosActivos()) {
+      try { localStorage.setItem(AVISOS_KEY, 'no'); } catch (e) { /* sin guardado, igual se apaga hasta recargar */ }
+      pintarAvisos();
+      return toast('Avisos apagados');
+    }
+    const permiso = await Notification.requestPermission();
+    try { localStorage.removeItem(AVISOS_KEY); } catch (e) { /* nada */ }
+    pintarAvisos();
+    if (permiso !== 'granted') return toast('El navegador no dio permiso. Activalo en la configuración del sitio.');
+    sonar();
+    toast('Listo: te avisa cuando escriba un cliente');
+  }
+
+  function sonar() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.15, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      o.connect(g).connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + 0.4);
+    } catch (e) { /* sin sonido */ }
+  }
+
+  async function avisar(m) {
+    if (!avisosActivos()) return;
+    const abierta = charlaAbierta && charlaAbierta.canal === m.canal && charlaAbierta.usuario === m.usuario;
+    if (abierta && !document.hidden) return;
+    const c = charlas.find((x) => x.canal === m.canal && x.usuario === m.usuario);
+    const titulo = c ? nombreCharla(c) : m.canal === 'whatsapp' ? '+' + m.usuario : 'Cliente nuevo';
+    const cuerpo = SOLO_ETIQUETA.test(m.texto || '') ? 'Mandó ' + NOMBRE_MEDIO[m.media_tipo] : m.texto;
+    sonar();
+    const opciones = { body: cuerpo, tag: m.canal + ':' + m.usuario, icon: '/icon-192.png' };
+    try {
+      const n = new Notification(titulo, opciones);
+      n.onclick = () => { window.focus(); mostrarPestana('charlas'); abrirCharla(m.canal, m.usuario); n.close(); };
+    } catch (e) {
+      // En el celu (Android) solo se puede avisar a través del service worker
+      try {
+        const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+        if (reg) reg.showNotification(titulo, opciones);
+      } catch (e2) { /* sin aviso */ }
+    }
+  }
+
+  // ---------------------------------------------------------- copia de seguridad
+
+  // Un CSV que abre bien en Excel: separado por punto y coma y con BOM para los acentos
+  function bajarCsv(nombre, filas) {
+    const celda = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const texto = '\ufeff' + filas.map((f) => f.map(celda).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([texto], { type: 'text/csv;charset=utf-8' }));
+    a.download = nombre + '-' + ahoraAR().hoy + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // Todas las filas de una tabla, de a mil
+  async function todo(tabla, columnas) {
+    const filas = [];
+    for (let desde = 0; desde < 50000; desde += 1000) {
+      const { data, error } = await sb.from(tabla).select(columnas).order('id').range(desde, desde + 999);
+      if (error) throw error;
+      filas.push(...data);
+      if (data.length < 1000) break;
+    }
+    return filas;
+  }
+
+  async function copiaCharlas() {
+    const b = $('mCopiaCharlas');
+    b.disabled = true;
+    try {
+      const mensajes = await todo('walter_mensajes', 'id, creado, canal, usuario, direccion, autor, texto, media_tipo');
+      const nombres = {};
+      charlas.forEach((c) => { nombres[c.canal + ':' + c.usuario] = nombreCharla(c); });
+      bajarCsv('charlas', [['Fecha', 'Cliente', 'Número', 'Canal', 'Quién', 'Mensaje', 'Archivo']].concat(mensajes.map((m) => [
+        fechaHora(m.creado), nombres[m.canal + ':' + m.usuario] || '', m.canal === 'whatsapp' ? '+' + m.usuario : m.usuario,
+        canalDe(m.canal), m.direccion === 'entra' ? 'Cliente' : m.autor === 'walter' ? 'Walter' : 'Bot', m.texto, m.media_tipo || ''
+      ])));
+    } catch (e) {
+      toast('No se pudo armar la copia: ' + (e.message || e));
+    }
+    b.disabled = false;
+  }
+
+  async function copiaPedidos() {
+    const b = $('mCopiaPedidos');
+    b.disabled = true;
+    try {
+      const lista = await todo('walter_pedidos', '*');
+      bajarCsv('pedidos', [['Fecha', 'Nombre', 'Número', 'Localidad', 'Material', 'Cantidad', 'Monto', 'Entrega', 'Dirección', 'Día', 'Turno', 'Estado']]
+        .concat(lista.map((p) => [
+          fechaHora(p.creado), p.nombre, p.canal === 'whatsapp' ? '+' + p.usuario : p.usuario, p.localidad, materialDe(p), cantidadDe(p),
+          Math.round(p.monto || 0), p.retiro, p.direccion || '', p.dia || '', p.turno || '', ESTADOS[p.estado] || p.estado
+        ])));
+    } catch (e) {
+      toast('No se pudo armar la copia: ' + (e.message || e));
+    }
+    b.disabled = false;
   }
 
   // ---------------------------------------------------------- precios
@@ -888,20 +1594,44 @@ const panelMonedas = (() => {
     $('mCerrarFicha').addEventListener('click', cerrarCharla);
     $('mTelon').addEventListener('click', (e) => { if (e.target === $('mTelon')) cerrarCharla(); });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !$('mTelon').classList.contains('hidden')) cerrarCharla();
+      if (e.key !== 'Escape') return;
+      if (!$('mTelonContacto').classList.contains('hidden')) cerrarContacto();
+      else if (!$('mTelon').classList.contains('hidden')) cerrarCharla();
     });
     $('mBtnAtendida').addEventListener('click', marcarAtendida);
     $('mBtnAbrir').addEventListener('click', abrirAfuera);
+    $('mBtnPausa').addEventListener('click', cambiarPausa);
+    $('mBtnBorrar').addEventListener('click', borrarCharla);
+    $('mFormResponder').addEventListener('submit', enviarRespuesta);
+    $('mFoto').addEventListener('change', elegirFotoCharla);
+    $('mAudioBtn').addEventListener('click', tocarAudio);
+    $('mAudioCancelar').addEventListener('click', () => terminarAudio(false));
+    // Enter manda, como en WhatsApp; Shift+Enter hace otro renglón
+    $('mRespuesta').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) enviarRespuesta(e);
+    });
+    $('mBtnModo').addEventListener('click', cambiarModo);
+    $('mBtnAvisos').addEventListener('click', activarAvisos);
+    $('mCopiaCharlas').addEventListener('click', copiaCharlas);
+    $('mCopiaPedidos').addEventListener('click', copiaPedidos);
+
+    $('mNuevoContacto').addEventListener('click', abrirContacto);
+    $('mCerrarContacto').addEventListener('click', cerrarContacto);
+    $('mTelonContacto').addEventListener('click', (e) => { if (e.target === $('mTelonContacto')) cerrarContacto(); });
+    $('mFormContacto').addEventListener('submit', guardarContacto);
 
     $('mFormPrecios').addEventListener('input', marcarPreciosEditados);
     $('mAgregarTipo').addEventListener('click', agregarTipo);
     $('mTiposMoneda').addEventListener('click', quitarTipo);
     $('mFormPrecios').addEventListener('submit', guardarPrecios);
 
+    $('mPerfilArchivo').addEventListener('change', elegirFoto);
+    $('mGuardarPerfil').addEventListener('click', guardarPerfil);
+
     // Los pedidos entran solos: al volver a la pestaña del navegador, y cada
     // dos minutos si no hay nada a medio editar, se traen de nuevo.
     const enUso = () => $('vistaMonedas').classList.contains('hidden') ||
-      !$('mTelon').classList.contains('hidden') ||
+      !$('mTelon').classList.contains('hidden') || !$('mTelonContacto').classList.contains('hidden') ||
       (document.activeElement && document.activeElement.closest &&
        document.activeElement.closest('#vistaMonedas input, #vistaMonedas select, #vistaMonedas textarea'));
     document.addEventListener('visibilitychange', () => {
@@ -917,6 +1647,7 @@ const panelMonedas = (() => {
   async function abrir() {
     if (!eventosAtados) {
       atarEventos();
+      escucharEnVivo();
       eventosAtados = true;
     }
     if (!(await cargar())) return;

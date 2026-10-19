@@ -80,6 +80,27 @@ h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
 .campo input:focus, .campo textarea:focus, .campo select:focus {
   outline: none; border-color: var(--celeste);
 }
+/* Ojito para ver la contraseña mientras se escribe */
+.con-ojo { position: relative; }
+.con-ojo input { padding-right: 46px; }
+.ver-clave {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--text-mute);
+  padding: 8px; display: flex; align-items: center;
+}
+.ver-clave svg { width: 20px; height: 20px; }
+.ver-clave .ojo-tachado { display: none; }
+.ver-clave.viendo .ojo-abierto { display: none; }
+.ver-clave.viendo .ojo-tachado { display: block; }
+/* Aviso de la tienda Bruwaltech abajo del ingreso */
+.aviso-tienda {
+  display: block; margin-top: 22px; padding: 14px 16px; border-radius: var(--radius);
+  background: var(--bg); border: 1px solid var(--line); color: var(--text-dark);
+  text-decoration: none; font-size: 14px; line-height: 1.5;
+}
+.aviso-tienda:hover { border-color: var(--celeste); }
+.aviso-tienda strong { display: block; font-size: 15px; margin-bottom: 2px; }
+.aviso-tienda .ir { display: inline-block; margin-top: 6px; color: var(--celeste); font-weight: 600; }
 
 .btn {
   border: none; border-radius: 8px; padding: 12px 18px; font-size: 15px;
@@ -244,6 +265,46 @@ tbody tr:hover { background: #F8FBFF; }
   border-bottom-right-radius: 4px;
 }
 .burbuja .hora { display: block; font-size: 11px; opacity: .65; margin-top: 4px; }
+/* Lo que Walter escribió desde el panel, para distinguirlo del bot */
+.burbuja.de-walter {
+  background: var(--celeste); color: #fff; align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+/* Modo automático o manual para todas las charlas */
+.barra-modo {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius);
+  background: #EEF6EE; border: 1px solid #CFE6CF;
+}
+.barra-modo.manual { background: #FFF6E5; border-color: #F3DDB0; }
+.barra-modo .modo-texto { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.copia { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+
+/* Fotos, audios y archivos dentro de la charla */
+.burbuja .medio { display: block; margin-bottom: 4px; }
+.burbuja img, .burbuja video { display: block; max-width: 100%; max-height: 260px; border-radius: 8px; background: rgba(0,0,0,.06); }
+.burbuja audio { display: block; width: 240px; max-width: 100%; }
+.burbuja .medio-link { display: inline-block; margin: 4px 0; color: inherit; font-size: 13px; text-decoration: underline; }
+.burbuja .medio-falta { display: block; font-style: italic; opacity: .75; }
+.burbuja .medio-link + .medio-link { margin-left: 10px; }
+#mAudioBtn.grabando { background: #FDECEC; border-color: #F2B8B8; color: #A12626; }
+
+/* Contestar desde el panel: sale por el número del bot */
+.responder { margin-top: 10px; }
+.responder textarea {
+  width: 100%; min-height: 70px; max-height: 200px; resize: vertical;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  font: inherit; font-size: 15px; background: #fff; color: var(--text-dark);
+}
+.responder textarea:focus { outline: none; border-color: var(--celeste); }
+.responder-pie { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.responder-pie .dato-secundario { flex: 1; line-height: 1.4; }
+.responder-pie .btn { padding: 10px 18px; }
+.btn-peligro { background: #fff; color: var(--danger); border: 1px solid #FECACA; padding: 8px 14px; font-size: 14px; }
+.btn-peligro:hover { background: #FEF2F2; }
+.fila-check { display: flex; align-items: flex-start; gap: 9px; font-size: 14px; line-height: 1.45; margin-bottom: 15px; cursor: pointer; }
+.fila-check input { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0; }
 
 .acciones { display: flex; gap: 10px; flex-wrap: wrap; }
 .acciones .btn { flex: 1; min-width: 150px; }
@@ -335,6 +396,15 @@ tbody tr:hover { background: #F8FBFF; }
 }
 .pie-form .btn-primario { width: auto; }
 
+.perfil-foto { display: flex; gap: 16px; align-items: center; padding: 14px 18px 0; }
+.perfil-foto img, .perfil-sin-foto {
+  width: 84px; height: 84px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.perfil-sin-foto { display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--text-mute); }
+.perfil-foto .btn-suave { width: auto; display: inline-block; cursor: pointer; }
+.solo-lector { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+
 .nota-tipos { padding: 8px 18px 0; font-size: 13.5px; color: var(--text-mute); line-height: 1.45; }
 .tipos-moneda { display: grid; gap: 8px; padding: 12px 18px 0; }
 .tipos-cabecera, .tipo-moneda {
@@ -406,7 +476,13 @@ tbody tr:hover { background: #F8FBFF; }
       </div>
       <div class="campo">
         <label for="clave">Contraseña</label>
-        <input type="password" id="clave" autocomplete="current-password" required>
+        <div class="con-ojo">
+          <input type="password" id="clave" autocomplete="current-password" required>
+          <button type="button" class="ver-clave" id="btnVerClave" aria-label="Mostrar la contraseña" aria-pressed="false">
+            <svg class="ojo-abierto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="ojo-tachado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+          </button>
+        </div>
       </div>
       <label class="fila-recordar">
         <input type="checkbox" id="recordarme" checked>
@@ -418,6 +494,12 @@ tbody tr:hover { background: #F8FBFF; }
     <div style="text-align:center;margin-top:14px;">
       <button type="button" class="link-suave" id="btnOlvide">¿Olvidaste tu contraseña?</button>
     </div>
+
+    <a class="aviso-tienda" href="/dashboard">
+      <strong>Tienda Bruwaltech</strong>
+      Tu tienda online con control de stock. ¿Ya la tenés o querés ser parte?
+      <span class="ir">Iniciá sesión o registrate acá →</span>
+    </a>
   </div>
 </div>
 
@@ -569,8 +651,19 @@ tbody tr:hover { background: #F8FBFF; }
           <h2>Charlas</h2>
           <div class="filtros" id="mFiltrosCharlas">
             <button type="button" class="filtro activo" data-filtro="humano">Quieren hablar con vos</button>
+            <button type="button" class="filtro" data-filtro="vos">Las atendés vos</button>
             <button type="button" class="filtro" data-filtro="todas">Todas</button>
           </div>
+          <button type="button" class="btn btn-suave" id="mNuevoContacto">+ Contacto nuevo</button>
+        </div>
+        <!-- Para todas las charlas a la vez: contesta el bot o contesta Walter -->
+        <div class="barra-modo" id="mModo">
+          <div class="modo-texto">
+            <strong id="mModoTitulo">Modo automático: contesta el bot</strong>
+            <span class="dato-secundario" id="mModoTexto"></span>
+          </div>
+          <button type="button" class="btn btn-suave" id="mBtnModo">Pasar a manual</button>
+          <button type="button" class="btn btn-suave" id="mBtnAvisos">Activar avisos</button>
         </div>
         <div class="tabla-scroll">
           <table>
@@ -586,6 +679,11 @@ tbody tr:hover { background: #F8FBFF; }
           </table>
         </div>
         <div class="vacio hidden" id="mSinCharlas"></div>
+        <div class="copia">
+          <span class="dato-secundario">Copia de seguridad (se abre con Excel):</span>
+          <button type="button" class="btn btn-suave" id="mCopiaCharlas">Descargar charlas</button>
+          <button type="button" class="btn btn-suave" id="mCopiaPedidos">Descargar pedidos</button>
+        </div>
       </div>
 
       <form class="panel hidden" data-seccion="precios" id="mFormPrecios" novalidate>
@@ -653,6 +751,40 @@ tbody tr:hover { background: #F8FBFF; }
           <span class="dato-secundario" id="mPreciosEstado"></span>
         </div>
       </form>
+
+      <form class="panel hidden" data-seccion="precios" id="mFormPerfil" novalidate onsubmit="return false">
+        <div class="panel-cabecera"><h2>Perfil de WhatsApp</h2></div>
+        <p class="nota-panel">Es lo que ven los clientes al tocar el nombre del bot en WhatsApp.</p>
+        <div class="aviso hidden" id="mPerfilCargando" style="margin:14px 18px 0;">Cargando el perfil…</div>
+        <div class="perfil-foto">
+          <img id="mPerfilImg" alt="Foto de perfil del WhatsApp del bot" class="hidden">
+          <div class="perfil-sin-foto" id="mPerfilSinFoto">Sin foto</div>
+          <div>
+            <label class="btn btn-suave" for="mPerfilArchivo">Cambiar foto</label>
+            <input type="file" id="mPerfilArchivo" accept="image/jpeg,image/png" class="solo-lector">
+            <div class="dato-secundario" style="margin-top:6px;">JPG o PNG. Se recorta cuadrada.</div>
+          </div>
+        </div>
+        <div class="grilla-campos" style="grid-template-columns:1fr;">
+          <div class="campo"><label for="mPerfilAbout">Frase corta (Info)</label>
+            <input id="mPerfilAbout" type="text" maxlength="139" placeholder="Compramos monedas, cobre y bronce"></div>
+          <div class="campo"><label for="mPerfilDescripcion">Descripción</label>
+            <textarea id="mPerfilDescripcion" rows="3" maxlength="512"></textarea></div>
+        </div>
+        <div class="grilla-campos">
+          <div class="campo"><label for="mPerfilDireccion">Dirección</label>
+            <input id="mPerfilDireccion" type="text" maxlength="256"></div>
+          <div class="campo"><label for="mPerfilEmail">Email</label>
+            <input id="mPerfilEmail" type="email" maxlength="128" autocomplete="off"></div>
+          <div class="campo"><label for="mPerfilWeb">Página web</label>
+            <input id="mPerfilWeb" type="url" maxlength="256" placeholder="https://"></div>
+        </div>
+        <div class="aviso aviso-error hidden" id="mPerfilError" style="margin:0 18px 14px;"></div>
+        <div class="pie-form">
+          <button type="button" class="btn btn-primario" id="mGuardarPerfil">Guardar perfil</button>
+          <span class="dato-secundario" id="mPerfilEstado"></span>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -708,24 +840,76 @@ tbody tr:hover { background: #F8FBFF; }
         <div class="datos" id="mFichaPedidos"></div>
       </div>
       <div class="bloque">
-        <h4>Conversación</h4>
+        <h4>Conversación <span class="chip hidden" id="mChipBot"></span></h4>
         <div class="charla" id="mFichaCharla"></div>
+        <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
+        <form class="responder" id="mFormResponder" onsubmit="return false">
+          <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente… (Enter envía, Shift+Enter baja de renglón)" maxlength="4000"></textarea>
+          <div class="responder-pie">
+            <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
+            <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
+            <input type="file" id="mFoto" accept="image/*" class="solo-lector">
+            <button type="button" class="btn btn-suave hidden" id="mAudioBtn">Grabar audio</button>
+            <button type="button" class="btn btn-suave hidden" id="mAudioCancelar">Cancelar</button>
+            <button type="submit" class="btn btn-ok" id="mEnviar">Enviar</button>
+          </div>
+        </form>
       </div>
       <div class="aviso aviso-error hidden" id="mFichaError"></div>
       <div class="acciones">
+        <button class="btn btn-suave" id="mBtnPausa"></button>
         <button class="btn btn-ok" id="mBtnAtendida">Ya hablé con esta persona</button>
-        <button class="btn btn-suave" id="mBtnAbrir">Escribirle por WhatsApp</button>
+        <button class="btn btn-suave hidden" id="mBtnAbrir">Abrir la bandeja de Facebook</button>
+      </div>
+      <div class="acciones" style="margin-top:16px;">
+        <button class="btn btn-peligro" id="mBtnBorrar">Eliminar charla</button>
       </div>
     </div>
   </div>
+</div>
+
+<!-- ===================== CONTACTO NUEVO (monedas) ===================== -->
+<div class="telon hidden" id="mTelonContacto">
+  <form class="ficha" id="mFormContacto" novalidate onsubmit="return false">
+    <div class="ficha-cabecera">
+      <div>
+        <h3>Contacto nuevo</h3>
+        <div class="dato-secundario">Queda en Charlas, para escribirle por el número del bot.</div>
+      </div>
+      <button type="button" class="cerrar" id="mCerrarContacto" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="ficha-cuerpo">
+      <div class="campo">
+        <label for="mContactoNombre">Nombre</label>
+        <input type="text" id="mContactoNombre" autocomplete="off" required>
+      </div>
+      <div class="campo">
+        <label for="mContactoNumero">WhatsApp</label>
+        <input type="tel" id="mContactoNumero" autocomplete="off" inputmode="tel" placeholder="341 5551234" required>
+        <div class="dato-secundario" style="margin-top:6px;">Código de área sin el 0 y el número sin el 15.</div>
+      </div>
+      <div class="campo">
+        <label for="mContactoLocalidad">Localidad</label>
+        <input type="text" id="mContactoLocalidad" autocomplete="off" list="mLocalidades">
+        <datalist id="mLocalidades"></datalist>
+      </div>
+      <label class="fila-check">
+        <input type="checkbox" id="mContactoSaludar" checked>
+        <span>Mandarle el saludo de Punto Metales ahora. WhatsApp solo deja escribirle primero con ese mensaje aprobado; cuando conteste, le escribís libre.</span>
+      </label>
+      <div class="aviso aviso-error hidden" id="mContactoError"></div>
+      <button type="submit" class="btn btn-primario" id="mGuardarContacto">Guardar contacto</button>
+    </div>
+  </form>
 </div>
 
 <div class="toast hidden" id="mToast" role="status"></div>
 
 <!-- Antes que el script de la página: cuando entra un cliente de Walter, el
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
-     misma página se sirve también en /chat. -->
-<script src="/asistente/monedas.js"></script>
+     misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
+     monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
+<script src="/asistente/monedas.js?v=20261018f"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
@@ -805,6 +989,15 @@ let filtro = 'pendientes';
 let busqueda = '';
 
 // ============================== ingreso ==============================
+
+$('btnVerClave').addEventListener('click', () => {
+  const b = $('btnVerClave');
+  const ver = $('clave').type === 'password';
+  $('clave').type = ver ? 'text' : 'password';
+  b.classList.toggle('viendo', ver);
+  b.setAttribute('aria-pressed', String(ver));
+  b.setAttribute('aria-label', ver ? 'Ocultar la contraseña' : 'Mostrar la contraseña');
+});
 
 $('formLogin').addEventListener('submit', async (e) => {
   e.preventDefault();
