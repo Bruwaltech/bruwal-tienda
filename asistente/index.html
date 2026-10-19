@@ -410,6 +410,8 @@ tbody tr:hover { background: #F8FBFF; }
   border-top: 1px solid var(--line); background: #F8FBFF;
 }
 .resumen-ruta:empty { display: none; }
+.tarjetas.uso { padding: 16px 18px 0; margin-bottom: 4px; }
+.tarjetas.uso .tarjeta .dato-secundario { margin-top: 4px; }
 .resumen-ruta .rotulo {
   display: block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px;
   color: var(--text-mute); font-weight: 600;
@@ -641,6 +643,7 @@ tbody tr:hover { background: #F8FBFF; }
         <button type="button" class="pestana" data-pestana="ruta" role="tab">Hoja de ruta</button>
         <button type="button" class="pestana" data-pestana="charlas" role="tab">Charlas</button>
         <button type="button" class="pestana" data-pestana="precios" role="tab">Precios y ajustes</button>
+        <button type="button" class="pestana" data-pestana="uso" role="tab">Uso del mes</button>
         <button type="button" class="btn btn-suave" id="mActualizar">Actualizar</button>
       </div>
 
@@ -681,6 +684,7 @@ tbody tr:hover { background: #F8FBFF; }
           <button type="button" class="btn btn-ok" id="mAprobar">Aprobar hoja de ruta</button>
           <button type="button" class="btn btn-suave" id="mImprimir">Imprimir</button>
           <a class="btn btn-suave" id="mMapa" target="_blank" rel="noopener">Abrir en Google Maps</a>
+          <button type="button" class="btn btn-suave" id="mEnviarRuta">Mandármela por WhatsApp</button>
           <span class="dato-secundario" id="mEstadoRuta"></span>
         </div>
       </div>
@@ -734,6 +738,19 @@ tbody tr:hover { background: #F8FBFF; }
         </div>
       </div>
 
+      <!-- Cuánto se usó en el mes: lo arma walter-bot (accion uso) -->
+      <div class="panel hidden" data-seccion="uso">
+        <div class="panel-cabecera">
+          <h2>Uso del mes</h2>
+          <span class="dato-secundario" id="mUsoPeriodo"></span>
+          <button type="button" class="btn btn-suave" id="mUsoActualizar">Actualizar</button>
+        </div>
+        <div class="aviso aviso-error hidden" id="mUsoError" style="margin:14px 18px 0;"></div>
+        <div class="tarjetas uso" id="mUso"><div class="dato-secundario">Cargando…</div></div>
+        <p class="nota-panel" id="mUsoNota">Lo que cobra Meta lo informa Meta y puede tardar unas horas en aparecer.
+          La IA se calcula con el precio de lista, en dólares.</p>
+      </div>
+
       <form class="panel hidden" data-seccion="precios" id="mFormPrecios" novalidate>
         <div class="panel-cabecera"><h2>Precios y ajustes</h2></div>
         <p class="nota-panel">Lo que guardes acá lo usa el bot desde el mensaje siguiente.</p>
@@ -774,6 +791,9 @@ tbody tr:hover { background: #F8FBFF; }
             <input id="mHoraNoche" data-cfg="horaNoche" type="time"></div>
           <div class="campo"><label for="mHoraManana">Turno tarde: ese mismo día a las</label>
             <input id="mHoraManana" data-cfg="horaManana" type="time"></div>
+          <div class="campo"><label for="mWaWalter">Tu WhatsApp (ahí te llega la hoja de ruta)</label>
+            <input id="mWaWalter" data-cfg="waWalter" data-opcional type="tel" inputmode="tel" placeholder="341 5551234">
+            <div class="dato-secundario">Código de área sin el 0 y el número sin el 15. Al cliente nunca le llega.</div></div>
         </div>
 
         <h3 class="titulo-grupo">Depósitos y saludo</h3>
@@ -971,7 +991,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261019b"></script>
+<script src="/asistente/monedas.js?v=20261019c"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';

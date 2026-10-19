@@ -10,7 +10,7 @@
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { conPerfil, type Config, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
-import { contestar, leer, redactar } from "./ia.ts";
+import { contarUso, contestar, leer, redactar } from "./ia.ts";
 
 const env = (k: string, def = "") => Deno.env.get(k) ?? def;
 const GRAPH = `https://graph.facebook.com/${env("GRAPH_VERSION", "v21.0")}`;
@@ -26,6 +26,13 @@ async function fetchConReintento(input: RequestInfo | URL, init?: RequestInit): 
 }
 const db = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { global: { fetch: fetchConReintento } });
 type Canal = "whatsapp" | "messenger";
+
+// Lo que usa la IA, por día (pestaña Uso del panel). Si falla, no frena al bot.
+const sumarUso = (servicio: string, entrada: number, salida = 0) =>
+  db.rpc("walter_sumar_uso", { p_servicio: servicio, p_entrada: Math.round(entrada), p_salida: Math.round(salida) })
+    .then(({ error }) => { if (error) console.error("uso", error.message); });
+const usos: PromiseLike<unknown>[] = [];
+contarUso((e, s) => { usos.push(sumarUso("ia", e, s)); });
 
 // Claves: primero los secretos de la Edge Function; si no están, Vault (walter_secreto, solo prefijo walter_).
 const cache: Record<string, string> = {};
@@ -103,7 +110,7 @@ Deno.serve(async (req) => {
   }
   // Meta reintenta si no recibe 200 enseguida: contestamos ya y atendemos en segundo plano
   // (atender espera unos segundos por si el cliente sigue escribiendo)
-  const todo = Promise.allSettled(tareas);
+  const todo = Promise.allSettled(tareas).then(() => Promise.allSettled(usos.splice(0)));
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
   if (runtime) runtime.waitUntil(todo);
   else await todo;
@@ -120,6 +127,8 @@ async function config(): Promise<Config> {
 // media: la foto (u otro archivo) que trajo ese texto como epígrafe.
 async function atender(canal: Canal, usuario: string, texto: string, libre: boolean, nombrePerfil?: string, media?: Media, wa?: Wa) {
   try {
+    // Walter tocó "Ver las paradas" en la plantilla de la hoja de ruta: le llega el detalle, sin pasar por el bot
+    if (canal === "whatsapp" && !libre && norm(texto) === norm(VER_PARADAS) && await mandarRutaPendiente(usuario)) return;
     const id = await log(canal, usuario, "entra", texto, undefined, media, wa);
     // "Hola" y "Buenas" seguidos (o un "Hola" justo después de otro mensaje): contesta solo el primero.
     // Si llegan juntos, el de id menor.
@@ -405,6 +414,8 @@ async function transcribir(bytes: Uint8Array<ArrayBuffer>, tipo: string, ext: st
     if (!res.ok) { console.error("transcribir", res.status, JSON.stringify(j).slice(0, 300)); return null; }
     const texto = String(j.text ?? "").trim();
     console.log("transcripcion", JSON.stringify({ largo: texto.length }));
+    // Segundos aproximados: los audios de WhatsApp (opus) son unos 2 KB por segundo
+    await sumarUso("transcripcion", bytes.length / 2000);
     return texto.length >= 2 ? texto.slice(0, 2000) : null;
   } catch (e) {
     console.error("transcribir", e);
@@ -550,6 +561,8 @@ async function panel(req: Request): Promise<Response> {
       return await panelContacto(String(b.numero ?? ""), String(b.nombre ?? "").trim(), String(b.localidad ?? "").trim(), !!b.saludar);
     }
     if (b.accion === "perfil") return await panelPerfil();
+    if (b.accion === "enviar_ruta") return await panelEnviarRuta(b);
+    if (b.accion === "uso") return await panelUso();
     if (b.accion === "perfil_guardar") return await panelPerfilGuardar(b);
     return respuesta({ error: "Acción desconocida" }, 400);
   } catch (e) {
@@ -797,4 +810,141 @@ async function subirFoto(bytes: Uint8Array, tipo: string): Promise<{ handle?: st
     return { motivo: uj.error?.message ?? "no se pudo subir" };
   }
   return { handle: uj.h };
+}
+
+// ---------- La hoja de ruta, al WhatsApp de Walter ----------
+// La arma el panel (paradas en orden, montos, link de Maps) y se la manda a su número personal
+// (Precios y ajustes › Tu WhatsApp). Si él escribió al bot en las últimas 24 horas va el detalle
+// directo; si no, la plantilla hoja_ruta con el botón VER_PARADAS, y al tocarlo le llega el detalle.
+const VER_PARADAS = "Ver las paradas";
+
+async function panelEnviarRuta(b: Record<string, unknown>) {
+  const dia = String(b.dia ?? ""), turno = String(b.turno ?? "");
+  const texto = String(b.texto ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !["Mañana", "Tarde"].includes(turno)) return respuesta({ error: "Elegí el día y el turno." }, 400);
+  if (!texto || texto.length > 4000) return respuesta({ error: "La hoja de ruta es demasiado larga para un mensaje." }, 400);
+  const cfg = await config() as Config & { waWalter?: string };
+  const numero = numeroAR(cfg.waWalter ?? "");
+  if (!numero) return respuesta({ error: "Cargá tu WhatsApp en Precios y ajustes para que te llegue la hoja de ruta.", falta_numero: true }, 400);
+  const { data: fila, error } = await db.from("walter_rutas").update({ texto, enviada: null })
+    .eq("dia", dia).eq("turno", turno).select("dia").maybeSingle();
+  if (error) throw error;
+  if (!fila) return respuesta({ error: "Primero aprobá la hoja de ruta." }, 404);
+
+  const phone = await secreto("WA_PHONE_ID"), token = await secreto("WA_TOKEN");
+  if (await ventanaAbierta("whatsapp", numero)) {
+    const motivo = await graphError(`${phone}/messages`, token, { messaging_product: "whatsapp", to: numero, type: "text", text: { body: texto } });
+    if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
+    await db.from("walter_rutas").update({ enviada: new Date().toISOString() }).eq("dia", dia).eq("turno", turno);
+    return respuesta({ ok: true, como: "detalle" });
+  }
+  // Plantilla aprobada en Meta con 3 variables: {{1}} cuándo, {{2}} paradas, {{3}} efectivo; botón "Ver las paradas"
+  const r = (b.resumen ?? {}) as Record<string, unknown>;
+  const params = [String(r.cuando ?? dia), String(r.paradas ?? ""), String(r.efectivo ?? "")]
+    .map((x) => x.replace(/\s+/g, " ").trim().slice(0, 60) || "-");
+  const motivo = await graphError(`${phone}/messages`, token, {
+    messaging_product: "whatsapp", to: numero, type: "template",
+    template: { name: (await secreto("WA_TEMPLATE_RUTA")) || "hoja_ruta", language: { code: "es_AR" },
+      components: [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }] },
+  });
+  if (motivo) {
+    return respuesta({ error: "No te la pude mandar: Meta todavía no aprobó el mensaje de la hoja de ruta. " +
+      "Mientras tanto, mandale cualquier mensaje al bot desde tu WhatsApp y volvé a tocar \"Mandármela por WhatsApp\". (" + motivo + ")" }, 502);
+  }
+  return respuesta({ ok: true, como: "plantilla" });
+}
+
+// La última hoja aprobada que todavía no le llegó: true si se la mandó (y entonces el bot no contesta ese botón)
+async function mandarRutaPendiente(usuario: string): Promise<boolean> {
+  const cfg = await config() as Config & { waWalter?: string };
+  if (numeroAR(cfg.waWalter ?? "") !== usuario) return false;
+  const { data: r } = await db.from("walter_rutas").select("dia, turno, texto, enviada").not("texto", "is", null)
+    .order("aprobada", { ascending: false }).limit(1).maybeSingle();
+  if (!r?.texto) return false;
+  const motivo = await graphError(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
+    { messaging_product: "whatsapp", to: usuario, type: "text", text: { body: r.texto } });
+  if (motivo) return false;
+  await db.from("walter_rutas").update({ enviada: new Date().toISOString() }).eq("dia", r.dia).eq("turno", r.turno);
+  return true;
+}
+
+// ---------- Uso del mes (pestaña Uso del panel) ----------
+// Lo que pasó en las charlas sale de la base; lo que cobró Meta, de pricing_analytics de la cuenta de WhatsApp;
+// la IA, de walter_uso, con el precio de Haiku por millón de tokens.
+const PRECIO_IA = { entrada: 0.10, salida: 0.50 }; // USD por millón de tokens (claude-haiku-5-5, prompts cortos)
+const PRECIO_TRANSCRIPCION = 0.04 / 3600;           // USD por segundo (Groq whisper-large-v3-turbo)
+
+async function panelUso() {
+  const { hoy } = ahoraAR();
+  const desde = hoy.slice(0, 8) + "01";
+  // Medianoche de Argentina (UTC-3) del primer día del mes
+  const inicio = new Date(desde + "T03:00:00Z");
+  const cuenta = (q: PromiseLike<{ count: number | null }>) => Promise.resolve(q).then((x) => x.count ?? 0);
+
+  const [entran, bot, walter, pedidos, charlasMes, uso, meta] = await Promise.all([
+    cuenta(db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("direccion", "entra").gte("creado", inicio.toISOString())),
+    cuenta(db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("direccion", "sale").neq("autor", "walter").gte("creado", inicio.toISOString())),
+    cuenta(db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("direccion", "sale").eq("autor", "walter").gte("creado", inicio.toISOString())),
+    cuenta(db.from("walter_pedidos").select("id", { count: "exact", head: true }).gte("creado", inicio.toISOString())),
+    charlasDelMes(inicio),
+    db.from("walter_uso").select("servicio, llamadas, entrada, salida").gte("dia", desde),
+    usoMeta(inicio),
+  ]);
+
+  let ia = { llamadas: 0, entrada: 0, salida: 0 }, audios = { llamadas: 0, segundos: 0 };
+  for (const u of uso.data ?? []) {
+    if (u.servicio === "ia") ia = { llamadas: ia.llamadas + u.llamadas, entrada: ia.entrada + Number(u.entrada), salida: ia.salida + Number(u.salida) };
+    if (u.servicio === "transcripcion") audios = { llamadas: audios.llamadas + u.llamadas, segundos: audios.segundos + Number(u.entrada) };
+  }
+  const usdIa = (ia.entrada * PRECIO_IA.entrada + ia.salida * PRECIO_IA.salida) / 1e6;
+  return respuesta({
+    ok: true, desde, hasta: hoy,
+    charlas: charlasMes, mensajes: { entran, bot, walter }, pedidos,
+    ia: { ...ia, usd: usdIa },
+    audios: { ...audios, usd: audios.segundos * PRECIO_TRANSCRIPCION },
+    meta,
+  });
+}
+
+// Clientes distintos que escribieron este mes (de a 1000 filas: alcanza para meses de varios miles de mensajes)
+async function charlasDelMes(inicio: Date): Promise<number> {
+  const vistos = new Set<string>();
+  for (let desde = 0; desde < 20000; desde += 1000) {
+    const { data } = await db.from("walter_mensajes").select("canal, usuario").eq("direccion", "entra")
+      .gte("creado", inicio.toISOString()).order("id").range(desde, desde + 999);
+    for (const m of data ?? []) vistos.add(m.canal + "|" + m.usuario);
+    if (!data || data.length < 1000) break;
+  }
+  return vistos.size;
+}
+
+// Lo que Meta cobró en el mes: mensajes y costo por categoría. null si Meta no lo devuelve.
+async function usoMeta(inicio: Date) {
+  try {
+    const waba = (await secreto("WA_WABA_ID")) || "2197920554457216";
+    const s = Math.floor(inicio.getTime() / 1000), e = Math.floor(Date.now() / 1000);
+    const campos = `pricing_analytics.start(${s}).end(${e}).granularity(DAILY).dimensions(["PRICING_CATEGORY","PRICING_TYPE"])`;
+    const res = await fetch(`${GRAPH}/${waba}?fields=${encodeURIComponent(campos)}`, {
+      headers: { Authorization: `Bearer ${await secreto("WA_TOKEN")}` }, signal: AbortSignal.timeout(8000),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { console.error("uso meta", res.status, JSON.stringify(j).slice(0, 300)); return null; }
+    const puntos = (j.pricing_analytics?.data ?? []).flatMap((d: { data_points?: unknown[] }) => d.data_points ?? []) as
+      { volume?: number; cost?: number; pricing_category?: string; pricing_type?: string }[];
+    const cat: Record<string, { mensajes: number; costo: number }> = {};
+    let mensajes = 0, cobrados = 0, costo = 0;
+    for (const p of puntos) {
+      const k = String(p.pricing_category ?? "OTRO");
+      cat[k] ??= { mensajes: 0, costo: 0 };
+      cat[k].mensajes += p.volume ?? 0;
+      cat[k].costo += p.cost ?? 0;
+      mensajes += p.volume ?? 0;
+      costo += p.cost ?? 0;
+      if (p.pricing_type === "REGULAR") cobrados += p.volume ?? 0;
+    }
+    return { mensajes, cobrados, costo, categorias: cat, moneda: "ARS" };
+  } catch (e) {
+    console.error("uso meta", e);
+    return null;
+  }
 }

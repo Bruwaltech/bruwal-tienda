@@ -218,6 +218,7 @@ const panelMonedas = (() => {
       s.classList.toggle('hidden', s.dataset.seccion !== nombre);
     });
     if (nombre === 'precios' && !perfilCargado) cargarPerfil();
+    if (nombre === 'uso') cargarUso();
     pintar();
   }
 
@@ -547,6 +548,7 @@ const panelMonedas = (() => {
     $('mAprobar').disabled = !ruta.length;
     $('mAprobar').textContent = aprobada ? 'Volver a aprobar' : 'Aprobar hoja de ruta';
     $('mImprimir').disabled = !ruta.length;
+    $('mEnviarRuta').classList.toggle('hidden', !ruta.length || !aprobada);
     $('mMapa').classList.toggle('hidden', !ruta.length);
     if (ruta.length) $('mMapa').href = linkMapa(ruta);
 
@@ -580,7 +582,84 @@ const panelMonedas = (() => {
     ocultar($('mError'));
     rutas = rutas.filter((r) => !(r.dia === fila.dia && r.turno === fila.turno)).concat(fila);
     pintarRuta();
+    // Aprobada, le llega a Walter a su WhatsApp (si cargó el número)
+    if (cfg.waWalter) return enviarRuta(ruta, 'Hoja de ruta aprobada');
     toast('Hoja de ruta aprobada');
+  }
+
+  // La hoja de ruta como mensaje de WhatsApp: paradas en orden, qué retirar, cuánto pagar y el recorrido en Maps
+  function textoRuta(ruta) {
+    const efectivo = ruta.reduce((a, { p }) => a + Number(p.monto), 0);
+    const lineas = ruta.map(({ p }, i) =>
+      (i + 1) + '. ' + p.nombre + (esPrioridad(p) ? ' ⭐' : '') + '\n' +
+      '   ' + [p.direccion, p.localidad].filter(Boolean).join(', ') + (p.retiro === 'Punto de encuentro' ? ' (punto de encuentro)' : '') + '\n' +
+      '   ' + materialDe(p) + ': ' + cantidadDe(p) + ' · ' + plata(p.monto) +
+      (p.canal === 'whatsapp' ? '\n   Tel. +' + p.usuario : '') +
+      (p.respuesta_aviso === 'confirmó' ? '\n   ✔ Confirmó' : p.respuesta_aviso === 'no puede' ? '\n   ✖ Avisó que no puede' : ''));
+    return '🚚 Hoja de ruta · ' + nombreDia(diaRuta) + ' · turno ' + turnoRuta.toLowerCase() + '\n\n' +
+      lineas.join('\n\n') + '\n\n' +
+      'Paradas: ' + ruta.length + ' · Efectivo a llevar: ' + plata(efectivo) + '\n' +
+      'Recorrido: ' + linkMapa(ruta);
+  }
+
+  async function enviarRuta(ruta, hecho) {
+    ruta = ruta || (diaRuta ? armarRuta(diaRuta, turnoRuta) : []);
+    if (!ruta.length) return;
+    if (!cfg.waWalter) {
+      mostrarError('Cargá tu WhatsApp en Precios y ajustes (abajo de los avisos) para que te llegue la hoja de ruta.');
+      return;
+    }
+    if (!rutas.some((r) => r.dia === diaRuta && r.turno === turnoRuta)) return toast('Primero aprobá la hoja de ruta');
+    $('mEnviarRuta').disabled = true;
+    $('mEnviarRuta').textContent = 'Mandando…';
+    const r = await llamarBot({
+      accion: 'enviar_ruta', dia: diaRuta, turno: turnoRuta, texto: textoRuta(ruta),
+      resumen: {
+        cuando: nombreDia(diaRuta) + ' a la ' + turnoRuta.toLowerCase(),
+        paradas: String(ruta.length),
+        efectivo: plata(ruta.reduce((a, { p }) => a + Number(p.monto), 0))
+      }
+    });
+    $('mEnviarRuta').disabled = false;
+    $('mEnviarRuta').textContent = 'Mandármela por WhatsApp';
+    if (r.error) return mostrarError(r.error);
+    ocultar($('mError'));
+    toast((hecho ? hecho + '. ' : '') + (r.como === 'plantilla'
+      ? 'Te llegó un aviso: tocá "Ver las paradas" en tu WhatsApp'
+      : 'Te la mandé a tu WhatsApp'));
+  }
+
+  // ---------------------------------------------------------- uso del mes
+
+  const usd = (n) => 'US$ ' + (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const numero = (n) => (Number(n) || 0).toLocaleString('es-AR');
+
+  async function cargarUso() {
+    ocultar($('mUsoError'));
+    $('mUsoActualizar').disabled = true;
+    const u = await llamarBot({ accion: 'uso' });
+    $('mUsoActualizar').disabled = false;
+    if (u.error) {
+      $('mUsoError').textContent = 'No se pudo cargar el uso: ' + u.error;
+      return ver($('mUsoError'));
+    }
+    const d = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+    $('mUsoPeriodo').textContent = 'Del ' + d(u.desde) + ' al ' + d(u.hasta);
+    const m = u.meta;
+    const tarjetas = [
+      ['Charlas', numero(u.charlas), 'clientes que escribieron este mes'],
+      ['Mensajes', numero(u.mensajes.entran + u.mensajes.bot + u.mensajes.walter),
+        numero(u.mensajes.entran) + ' de clientes · ' + numero(u.mensajes.bot) + ' del bot · ' + numero(u.mensajes.walter) + ' tuyos'],
+      ['Pedidos', numero(u.pedidos), 'tomados este mes'],
+      m
+        ? ['Cobrado por Meta', plata(m.costo), numero(m.cobrados) + ' mensajes cobrados de ' + numero(m.mensajes) + ' enviados']
+        : ['Cobrado por Meta', '—', 'Meta no lo informó todavía'],
+      ['IA (lectura y respuestas)', usd(u.ia.usd), numero(u.ia.llamadas) + ' consultas'],
+      ['Audios a texto', usd(u.audios.usd), numero(u.audios.llamadas) + ' audios · ' + numero(Math.round(u.audios.segundos / 60)) + ' min aprox.']
+    ];
+    $('mUso').innerHTML = tarjetas.map(([k, v, sub]) =>
+      '<div class="tarjeta"><div class="rotulo">' + escapar(k) + '</div><div class="numero">' + escapar(v) + '</div>' +
+      '<div class="dato-secundario">' + escapar(sub) + '</div></div>').join('');
   }
 
   // ---------------------------------------------------------- charlas
@@ -1818,6 +1897,17 @@ const panelMonedas = (() => {
           return ver($('mPreciosError'));
         }
         nuevo[el.dataset.cfg] = n;
+      } else if ('opcional' in el.dataset && !el.value.trim()) {
+        delete nuevo[el.dataset.cfg];
+      } else if (el.type === 'tel') {
+        // Un número de WhatsApp de Argentina: 10 dígitos con el código de área (como lo arma walter-bot)
+        let d = el.value.replace(/\D/g, '').replace(/^00/, '').replace(/^549?/, '').replace(/^0/, '');
+        if (d.length !== 10) {
+          $('mPreciosError').textContent = 'Revisá "' + nombre + '": código de área sin el 0 y el número sin el 15, por ejemplo 341 5551234.';
+          el.focus();
+          return ver($('mPreciosError'));
+        }
+        nuevo[el.dataset.cfg] = d;
       } else {
         const v = el.value.trim();
         if (!v) {
@@ -1907,6 +1997,8 @@ const panelMonedas = (() => {
     });
     $('mAprobar').addEventListener('click', aprobarRuta);
     $('mImprimir').addEventListener('click', () => window.print());
+    $('mEnviarRuta').addEventListener('click', () => enviarRuta());
+    $('mUsoActualizar').addEventListener('click', cargarUso);
 
     document.querySelectorAll('#mFiltrosCharlas .filtro').forEach((b) => {
       b.addEventListener('click', () => {
