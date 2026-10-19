@@ -85,9 +85,11 @@ Deno.serve(async (req) => {
           : m.type === "interactive" ? (m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title)
           : m.type === "button" ? m.button?.text : null;
         const md = MEDIA[m.type] ? m[m.type] : null;
-        if (texto) tareas.push(atender("whatsapp", m.from, texto, m.type === "text", nombres[m.from]));
+        // El id de WhatsApp del mensaje y, si el cliente contestó citando uno, el id del citado
+        const wa: Wa = { id: m.id, ctx: m.context?.id };
+        if (texto) tareas.push(atender("whatsapp", m.from, texto, m.type === "text", nombres[m.from], undefined, wa));
         else if (md?.id) {
-          tareas.push(recibirMedia("whatsapp", m.from, { tipo: MEDIA[m.type], id: md.id, mime: md.mime_type, caption: md.caption, archivo: md.filename }, nombres[m.from]));
+          tareas.push(recibirMedia("whatsapp", m.from, { tipo: MEDIA[m.type], id: md.id, mime: md.mime_type, caption: md.caption, archivo: md.filename }, nombres[m.from], wa));
         } else tareas.push(enviar("whatsapp", m.from, [{ text: "Eso no lo puedo abrir. ¿Me lo escribís?" }]));
       }
     }
@@ -116,9 +118,9 @@ async function config(): Promise<Config> {
 
 // libre: el cliente lo escribió (no tocó un botón ni una opción de la lista).
 // media: la foto (u otro archivo) que trajo ese texto como epígrafe.
-async function atender(canal: Canal, usuario: string, texto: string, libre: boolean, nombrePerfil?: string, media?: Media) {
+async function atender(canal: Canal, usuario: string, texto: string, libre: boolean, nombrePerfil?: string, media?: Media, wa?: Wa) {
   try {
-    const id = await log(canal, usuario, "entra", texto, undefined, media);
+    const id = await log(canal, usuario, "entra", texto, undefined, media, wa);
     // "Hola" y "Buenas" seguidos (o un "Hola" justo después de otro mensaje): contesta solo el primero.
     // Si llegan juntos, el de id menor.
     if (esSaludo(texto) && id) {
@@ -233,7 +235,7 @@ async function charlaReciente(canal: Canal, usuario: string, hastaId: number): P
 
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
   for (const r of respuestas) {
-    await log(canal, usuario, "sale", r.text, "bot");
+    const id = await log(canal, usuario, "sale", r.text, "bot");
     const opts = (r.options ?? []).slice(0, canal === "whatsapp" ? 10 : 13);
     if (canal === "whatsapp") {
       // WhatsApp muestra hasta 3 botones; con más opciones (los tipos de moneda) va una lista
@@ -243,7 +245,9 @@ async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
             action: { buttons: opts.map((t, i) => ({ type: "reply", reply: { id: "op" + i, title: t.slice(0, 20) } })) } } }
         : { type: "interactive", interactive: { type: "list", body: { text: r.text.slice(0, 1024) },
             action: { button: "Elegir", sections: [{ title: "Opciones", rows: opts.map((t, i) => ({ id: "op" + i, title: t.slice(0, 24) })) }] } } };
-      await graph(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"), { messaging_product: "whatsapp", to: usuario, ...msg });
+      const { id: waId } = await graphEnviar(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"), { messaging_product: "whatsapp", to: usuario, ...msg });
+      // Para que Walter pueda contestar citando lo que dijo el bot, y para mostrar las citas del cliente
+      if (id && waId) await db.from("walter_mensajes").update({ wa_id: waId }).eq("id", id);
     } else {
       await graph("me/messages", await secreto("FB_PAGE_TOKEN"), {
         recipient: { id: usuario }, messaging_type: "RESPONSE",
@@ -259,27 +263,41 @@ async function graph(path: string, token: string, payload: unknown) {
 
 // null si salió; si no, el motivo que da Meta
 async function graphError(path: string, token: string, payload: unknown): Promise<string | null> {
+  return (await graphEnviar(path, token, payload)).error;
+}
+
+// Lo mismo, con el id del mensaje que devuelve WhatsApp (wamid…) cuando salió
+async function graphEnviar(path: string, token: string, payload: unknown): Promise<{ error: string | null; id: string | null }> {
   const res = await fetch(`${GRAPH}/${path}`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
   });
-  if (res.ok) return null;
   const txt = await res.text();
+  if (res.ok) {
+    try {
+      return { error: null, id: JSON.parse(txt).messages?.[0]?.id ?? null };
+    } catch {
+      return { error: null, id: null };
+    }
+  }
   console.error("graph", path, res.status, txt);
   try {
     const e = JSON.parse(txt).error;
-    return e?.error_data?.details || e?.message || txt;
+    return { error: e?.error_data?.details || e?.message || txt, id: null };
   } catch {
-    return txt;
+    return { error: txt, id: null };
   }
 }
 
 type MediaTipo = "imagen" | "audio" | "video" | "documento" | "sticker";
 type Media = { tipo: MediaTipo; path: string | null };
+// id de WhatsApp del mensaje y el del mensaje que cita (schema/69)
+type Wa = { id?: string | null; ctx?: string | null };
 
-async function log(canal: Canal, usuario: string, direccion: "entra" | "sale", texto: string, autor?: "bot" | "walter", media?: Media): Promise<number | null> {
+async function log(canal: Canal, usuario: string, direccion: "entra" | "sale", texto: string, autor?: "bot" | "walter", media?: Media, wa?: Wa): Promise<number | null> {
   const { data } = await db.from("walter_mensajes").insert({
     canal, usuario, direccion, texto, ...(autor ? { autor } : {}), ...(media ? { media_tipo: media.tipo, media_path: media.path } : {}),
+    ...(wa?.id ? { wa_id: wa.id } : {}), ...(wa?.ctx ? { responde_a: wa.ctx } : {}),
   }).select("id").single();
   return data?.id ?? null;
 }
@@ -325,20 +343,20 @@ async function guardarMedia(usuario: string, mediaId: string, mime?: string, arc
 }
 
 async function recibirMedia(canal: Canal, usuario: string,
-  m: { tipo: MediaTipo; id: string; mime?: string; caption?: string; archivo?: string }, nombrePerfil?: string) {
+  m: { tipo: MediaTipo; id: string; mime?: string; caption?: string; archivo?: string }, nombrePerfil?: string, wa?: Wa) {
   try {
     const bajado = await guardarMedia(usuario, m.id, m.mime, m.archivo);
     const media: Media = { tipo: m.tipo, path: bajado?.path ?? null };
     // Con epígrafe ("tengo estas, ¿cuánto me dan?"): el bot lee el texto como cualquier mensaje
     const caption = m.caption?.trim();
-    if (caption) return atender(canal, usuario, caption, true, nombrePerfil, media);
+    if (caption) return atender(canal, usuario, caption, true, nombrePerfil, media, wa);
     // Un audio se pasa a texto y se contesta como si lo hubiera escrito. Si no se puede, sigue como antes.
     if (m.tipo === "audio" && bajado) {
       const dicho = await transcribir(bajado.bytes, bajado.tipo, bajado.ext);
-      if (dicho) return atender(canal, usuario, dicho, true, nombrePerfil, media);
+      if (dicho) return atender(canal, usuario, dicho, true, nombrePerfil, media, wa);
     }
 
-    const id = await log(canal, usuario, "entra", ETIQUETA[m.tipo], undefined, media);
+    const id = await log(canal, usuario, "entra", ETIQUETA[m.tipo], undefined, media, wa);
     const [cfg, { data: conv }] = await Promise.all([
       config(),
       db.from("walter_conversaciones").select("bot_pausado, actualizado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
@@ -520,9 +538,11 @@ async function panel(req: Request): Promise<Response> {
     return respuesta({ error: "Pedido inválido" }, 400);
   }
   try {
-    if (b.accion === "enviar") return await panelEnviar(String(b.canal), String(b.usuario), String(b.texto ?? "").trim());
-    if (b.accion === "enviar_foto") return await panelEnviarMedio(String(b.canal), String(b.usuario), "imagen", b.foto, String(b.texto ?? "").trim());
-    if (b.accion === "enviar_audio") return await panelEnviarMedio(String(b.canal), String(b.usuario), "audio", b.audio, "");
+    // responder_a: el mensaje que Walter cita al contestar (como "Responder" en WhatsApp)
+    const cita = typeof b.responder_a === "string" && /^wamid\.[\w=+\/-]{10,200}$/.test(b.responder_a) ? b.responder_a : null;
+    if (b.accion === "enviar") return await panelEnviar(String(b.canal), String(b.usuario), String(b.texto ?? "").trim(), cita);
+    if (b.accion === "enviar_foto") return await panelEnviarMedio(String(b.canal), String(b.usuario), "imagen", b.foto, String(b.texto ?? "").trim(), cita);
+    if (b.accion === "enviar_audio") return await panelEnviarMedio(String(b.canal), String(b.usuario), "audio", b.audio, "", cita);
     if (b.accion === "medios") return await panelMedios(b.paths);
     if (b.accion === "borrar") return await panelBorrar(String(b.canal), String(b.usuario));
     if (b.accion === "contacto") {
@@ -537,7 +557,7 @@ async function panel(req: Request): Promise<Response> {
   }
 }
 
-async function panelEnviar(canal: string, usuario: string, texto: string) {
+async function panelEnviar(canal: string, usuario: string, texto: string, cita: string | null = null) {
   if (canal !== "whatsapp" && canal !== "messenger") return respuesta({ error: "Canal inválido" }, 400);
   if (!texto) return respuesta({ error: "Escribí el mensaje." }, 400);
   if (texto.length > 4000) return respuesta({ error: "El mensaje es muy largo (hasta 4000 letras)." }, 400);
@@ -546,14 +566,14 @@ async function panelEnviar(canal: string, usuario: string, texto: string) {
 
   if (!(await ventanaAbierta(canal, usuario))) return SIN_VENTANA();
 
-  const motivo = canal === "whatsapp"
-    ? await graphError(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
-      { messaging_product: "whatsapp", to: usuario, type: "text", text: { body: texto } })
-    : await graphError("me/messages", await secreto("FB_PAGE_TOKEN"),
+  const { error: motivo, id: waId } = canal === "whatsapp"
+    ? await graphEnviar(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
+      { messaging_product: "whatsapp", to: usuario, type: "text", text: { body: texto }, ...(cita ? { context: { message_id: cita } } : {}) })
+    : await graphEnviar("me/messages", await secreto("FB_PAGE_TOKEN"),
       { recipient: { id: usuario }, messaging_type: "RESPONSE", message: { text: texto } });
   if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
 
-  await log(canal, usuario, "sale", texto, "walter");
+  await log(canal, usuario, "sale", texto, "walter", undefined, canal === "whatsapp" ? { id: waId, ctx: cita } : undefined);
   // Walter la atiende: el bot se queda callado en esta charla hasta que él se la devuelva
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
@@ -574,11 +594,11 @@ async function ventanaAbierta(canal: string, usuario: string) {
 // Una foto o un audio desde el panel: se sube a Meta, sale por el número del bot y queda guardado para verlo en la charla
 const SALIDA = {
   imagen: { tipos: /^data:(image\/(?:jpeg|png));base64,(.+)$/, max: 5, nombre: "La foto", formato: "JPG o PNG" },
-  audio: { tipos: /^data:(audio\/(?:mpeg|ogg|mp4|aac));base64,(.+)$/, max: 16, nombre: "El audio", formato: "MP3" },
+  audio: { tipos: /^data:(audio\/(?:mpeg|ogg|mp4|aac));base64,(.+)$/, max: 16, nombre: "El audio", formato: "OGG o MP3" },
 };
 const EXT_SALIDA: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/aac": "aac" };
 
-async function panelEnviarMedio(canal: string, usuario: string, tipo: "imagen" | "audio", archivo: unknown, texto: string) {
+async function panelEnviarMedio(canal: string, usuario: string, tipo: "imagen" | "audio", archivo: unknown, texto: string, cita: string | null = null) {
   const s = SALIDA[tipo];
   if (canal !== "whatsapp") return respuesta({ error: `${s.nombre} por ahora sale solo por WhatsApp.` }, 400);
   const m = typeof archivo === "string" ? archivo.match(s.tipos) : null;
@@ -602,17 +622,19 @@ async function panelEnviarMedio(canal: string, usuario: string, tipo: "imagen" |
     console.error("media salida", tipo, sub.status, JSON.stringify(sj));
     return respuesta({ error: `WhatsApp no aceptó ${tipo === "imagen" ? "la foto" : "el audio"}: ` + (sj.error?.message ?? "no se pudo subir") }, 502);
   }
-  // El audio no lleva texto: WhatsApp no lo muestra
+  // El audio no lleva texto: WhatsApp no lo muestra. El ogg (opus) va como nota de voz: el cliente lo ve
+  // con la foto de perfil del negocio y el micrófono, como un audio grabado en WhatsApp.
   const msg = tipo === "imagen"
     ? { type: "image", image: { id: sj.id, ...(texto ? { caption: texto } : {}) } }
-    : { type: "audio", audio: { id: sj.id } };
-  const motivo = await graphError(`${phone}/messages`, token, { messaging_product: "whatsapp", to: usuario, ...msg });
+    : { type: "audio", audio: { id: sj.id, ...(m[1] === "audio/ogg" ? { voice: true } : {}) } };
+  const { error: motivo, id: waId } = await graphEnviar(`${phone}/messages`, token,
+    { messaging_product: "whatsapp", to: usuario, ...msg, ...(cita ? { context: { message_id: cita } } : {}) });
   if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
 
   const path = `${usuario}/${Date.now()}-walter.${ext}`;
   const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: m[1] });
   if (error) console.error("media salida guardar", error.message);
-  await log(canal, usuario, "sale", texto || ETIQUETA[tipo], "walter", { tipo, path: error ? null : path });
+  await log(canal, usuario, "sale", texto || ETIQUETA[tipo], "walter", { tipo, path: error ? null : path }, { id: waId, ctx: cita });
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
   return respuesta({ ok: true });

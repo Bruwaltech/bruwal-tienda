@@ -54,6 +54,8 @@ const panelMonedas = (() => {
   let filtroPedidos = 'pendientes';
   let busqueda = '';
   let filtroCharlas = 'humano';
+  let busquedaCharlas = '';
+  const elegidas = new Set(); // charlas tildadas para borrar de a varias ("canal|usuario")
   let diaRuta = null;
   let turnoRuta = 'Mañana';
   let turnoElegido = false;
@@ -603,13 +605,39 @@ const panelMonedas = (() => {
     toast(manual ? 'Modo manual: el bot no contesta' : 'Modo automático: contesta el bot');
   }
 
+  const claveCharla = (c) => c.canal + '|' + c.usuario;
+  const sinTildes = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // Con algo escrito en la lupa se busca en todas, no solo en el filtro elegido.
+  // El número se compara solo por los dígitos: "341 555" encuentra +5493415551234.
+  function charlasVisibles() {
+    const texto = sinTildes(busquedaCharlas.trim());
+    const digitos = busquedaCharlas.replace(/\D/g, '');
+    let lista = charlas.filter((c) => {
+      if (texto) {
+        return sinTildes([nombreCharla(c), c.localidad].filter(Boolean).join(' ')).includes(texto) ||
+          (digitos.length >= 3 && c.usuario.includes(digitos));
+      }
+      return filtroCharlas === 'todas' || filtroCharlas === 'contactos' ||
+        (filtroCharlas === 'vos' ? c.bot_pausado : c.pide_humano);
+    });
+    if (filtroCharlas === 'contactos') {
+      lista = lista.slice().sort((a, b) => nombreCharla(a).localeCompare(nombreCharla(b), 'es', { sensitivity: 'base' }));
+    }
+    return lista;
+  }
+
   function pintarCharlas() {
     pintarModo();
-    const visibles = charlas.filter((c) => filtroCharlas === 'todas' ||
-      (filtroCharlas === 'vos' ? c.bot_pausado : c.pide_humano));
+    const visibles = charlasVisibles();
+    // Las que ya no están (borradas o recargadas) dejan de estar elegidas
+    const hay = new Set(charlas.map(claveCharla));
+    Array.from(elegidas).forEach((k) => { if (!hay.has(k)) elegidas.delete(k); });
 
     $('mCuerpoCharlas').innerHTML = visibles.map((c) =>
       '<tr data-canal="' + escapar(c.canal) + '" data-usuario="' + escapar(c.usuario) + '">' +
+        '<td class="col-check"><input type="checkbox" data-elegir aria-label="Elegir esta charla"' +
+          (elegidas.has(claveCharla(c)) ? ' checked' : '') + '></td>' +
         '<td>' +
           '<div class="nombre-lead">' + escapar(nombreCharla(c)) + '</div>' +
           '<div class="dato-secundario">' +
@@ -625,9 +653,12 @@ const panelMonedas = (() => {
             : '<span class="chip chip-atendido">La atiende el bot</span>') +
         '</td>' +
       '</tr>').join('');
+    pintarSeleccion(visibles);
 
     if (visibles.length) return ocultar($('mSinCharlas'));
-    $('mSinCharlas').innerHTML = filtroCharlas === 'humano'
+    $('mSinCharlas').innerHTML = busquedaCharlas.trim()
+      ? '<strong>No encontramos a nadie con eso</strong>Probá con otra parte del nombre o del número.'
+      : filtroCharlas === 'humano'
       ? '<strong>Nadie está esperando que le escribas</strong>' +
           'Cuando alguien le pida al bot hablar con Walter, aparece acá.'
       : filtroCharlas === 'vos'
@@ -635,6 +666,52 @@ const panelMonedas = (() => {
           'Cuando le escribas a alguien desde acá, el bot se calla en esa charla y aparece en esta lista.'
       : '<strong>Todavía no hay charlas</strong>Van a aparecer apenas alguien escriba.';
     ver($('mSinCharlas'));
+  }
+
+  function pintarSeleccion(visibles) {
+    const n = elegidas.size;
+    $('mSeleccion').classList.toggle('hidden', !n);
+    $('mCuantas').textContent = n === 1 ? '1 charla elegida' : n + ' charlas elegidas';
+    const vis = (visibles || charlasVisibles()).map(claveCharla);
+    const todas = vis.length > 0 && vis.every((k) => elegidas.has(k));
+    $('mElegirTodas').checked = todas;
+    $('mElegirTodas').indeterminate = !todas && vis.some((k) => elegidas.has(k));
+  }
+
+  function elegirCharla(fila, si) {
+    const k = fila.dataset.canal + '|' + fila.dataset.usuario;
+    if (si) elegidas.add(k); else elegidas.delete(k);
+    pintarSeleccion();
+  }
+
+  function elegirTodas(si) {
+    charlasVisibles().forEach((c) => { if (si) elegidas.add(claveCharla(c)); else elegidas.delete(claveCharla(c)); });
+    pintarCharlas();
+  }
+
+  // Una por una con la misma acción que "Eliminar charla": si alguna falla, las demás siguen
+  async function borrarElegidas() {
+    const lista = charlas.filter((c) => elegidas.has(claveCharla(c)));
+    if (!lista.length) return;
+    const nombres = lista.slice(0, 5).map(nombreCharla).join(', ') + (lista.length > 5 ? ' y ' + (lista.length - 5) + ' más' : '');
+    if (!confirm('¿Eliminar ' + (lista.length === 1 ? 'la charla' : 'las ' + lista.length + ' charlas') + '?\n\n' +
+      nombres + '\n\nSe borran todos los mensajes. Los pedidos quedan.')) return;
+    $('mBorrarElegidas').disabled = true;
+    let fallaron = 0;
+    for (let i = 0; i < lista.length; i++) {
+      const c = lista[i];
+      $('mCuantas').textContent = 'Eliminando ' + (i + 1) + ' de ' + lista.length + '…';
+      const r = await llamarBot({ accion: 'borrar', canal: c.canal, usuario: c.usuario });
+      if (r.error) { fallaron++; continue; }
+      charlas = charlas.filter((x) => x !== c);
+      elegidas.delete(claveCharla(c));
+    }
+    $('mBorrarElegidas').disabled = false;
+    pintarTarjetas();
+    pintarCharlas();
+    toast(fallaron
+      ? 'No se pudieron eliminar ' + fallaron + '. Probá de nuevo.'
+      : lista.length === 1 ? 'Charla eliminada' : lista.length + ' charlas eliminadas');
   }
 
   // Meta deja escribir libre hasta 24 horas después del último mensaje del cliente.
@@ -650,16 +727,72 @@ const panelMonedas = (() => {
     $('mChipBot').textContent = c.bot_pausado ? 'La atendés vos' : 'La atiende el bot';
 
     const abierta = ultimoDelCliente && Date.now() - new Date(ultimoDelCliente).getTime() < VENTANA;
-    $('mRespuesta').disabled = !abierta;
+    $('mRespuesta').disabled = !abierta || !!grabacion;
     $('mEnviar').disabled = !abierta;
     // Las fotos y los audios salen solo por WhatsApp
     $('mFotoBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp');
-    $('mAudioBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp' || !puedeGrabar());
+    pintarBotonesEnvio();
+    if (grabacion || /Safari no te pida/.test($('mVentana').textContent)) return;
     $('mVentana').textContent = abierta
       ? 'Sale por el número del bot. Mientras atendés vos, el bot no contesta.'
       : ultimoDelCliente
       ? 'Pasaron más de 24 horas desde su último mensaje: WhatsApp no deja escribirle hasta que vuelva a escribir.'
       : 'Todavía no te escribió: WhatsApp solo deja escribirle primero con el saludo aprobado.';
+  }
+
+  // Como en WhatsApp: con la caja vacía se ve el botón de grabar; con algo escrito, el de mandar
+  function pintarBotonesEnvio() {
+    const c = charlaAbierta;
+    if (!c) return;
+    const abierta = ultimoDelCliente && Date.now() - new Date(ultimoDelCliente).getTime() < VENTANA;
+    const audio = abierta && c.canal === 'whatsapp' && puedeGrabar();
+    const conTexto = !!$('mRespuesta').value.trim();
+    $('mAudioBtn').classList.toggle('hidden', !audio || (conTexto && !grabacion));
+    $('mEnviar').classList.toggle('hidden', audio && (!conTexto || !!grabacion));
+  }
+
+  // ---------- Contestar citando un mensaje (como "Responder" en WhatsApp) ----------
+  // Cada mensaje de WhatsApp tiene un id (wa_id, desde schema/69). Al contestar se manda el id del citado
+  // y el cliente ve la cita arriba de la respuesta. Lo que cita el cliente queda en responde_a.
+  let mensajesCharla = [];
+  let cita = null; // { c, wa_id, quien, texto }
+
+  function quienDe(m) {
+    if (m.direccion === 'entra') return charlaAbierta ? nombreCharla(charlaAbierta) : 'Cliente';
+    return m.autor === 'walter' ? 'Vos' : 'Bot';
+  }
+
+  function textoCita(m) {
+    if (m.media_tipo && SOLO_ETIQUETA.test(m.texto || '')) {
+      return { imagen: '📷 Foto', audio: '🎤 Audio', video: '🎥 Video', documento: '📄 Archivo', sticker: 'Sticker' }[m.media_tipo];
+    }
+    return String(m.texto || '').slice(0, 200);
+  }
+
+  function elegirCita(waId) {
+    const m = mensajesCharla.find((x) => x.wa_id === waId);
+    if (!m || !charlaAbierta) return;
+    cita = { c: charlaAbierta, wa_id: waId, quien: quienDe(m), texto: textoCita(m) };
+    $('mCitaQuien').textContent = cita.quien;
+    $('mCitaTexto').textContent = cita.texto;
+    ver($('mCita'));
+    $('mRespuesta').focus();
+  }
+
+  function quitarCita() {
+    cita = null;
+    ocultar($('mCita'));
+  }
+
+  const citaDe = (c) => (cita && cita.c === c ? cita.wa_id : undefined);
+
+  // Tocar una cita lleva al mensaje citado
+  function irAMensaje(waId) {
+    const b = Array.from($('mFichaCharla').querySelectorAll('[data-wa]')).find((n) => n.dataset.wa === waId);
+    if (!b) return;
+    b.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    b.classList.add('resaltada');
+    setTimeout(() => b.classList.remove('resaltada'), 1500);
   }
 
   // Lo que queda como texto de una foto o un audio sin epígrafe: en la burbuja se ve el archivo
@@ -695,8 +828,17 @@ const panelMonedas = (() => {
     const clase = m.direccion === 'entra' ? 'de-cliente' : m.autor === 'walter' ? 'de-walter' : 'de-bot';
     const quien = m.direccion === 'entra' ? '' : m.autor === 'walter' ? 'Vos · ' : 'Bot · ';
     const texto = m.media_tipo && SOLO_ETIQUETA.test(m.texto || '') ? '' : escapar(m.texto);
-    return '<div class="burbuja ' + clase + '">' + htmlMedio(m) + texto +
-      '<span class="hora">' + escapar(quien + fechaHora(m.creado)) + '</span></div>';
+    const wa = m.wa_id ? escapar(m.wa_id).replace(/"/g, '&quot;') : '';
+    let citado = '';
+    if (m.responde_a) {
+      const o = mensajesCharla.find((x) => x.wa_id === m.responde_a);
+      citado = '<span class="cita" data-ir-a="' + escapar(m.responde_a).replace(/"/g, '&quot;') + '">' +
+        (o ? '<strong>' + escapar(quienDe(o)) + '</strong>' + escapar(textoCita(o)) : 'Un mensaje anterior') + '</span>';
+    }
+    return '<div class="burbuja ' + clase + '"' + (wa ? ' data-wa="' + wa + '"' : '') + '>' + citado + htmlMedio(m) + texto +
+      '<span class="hora">' + escapar(quien + fechaHora(m.creado)) +
+        (wa ? '<button type="button" class="responder-a" data-citar="' + wa + '">Responder</button>' : '') +
+      '</span></div>';
   }
 
   // Links firmados de las fotos y audios: valen una hora, se piden de nuevo antes de que venzan
@@ -728,7 +870,7 @@ const panelMonedas = (() => {
   async function cargarMensajes(c) {
     const { data, error } = await sb
       .from('walter_mensajes')
-      .select('direccion, texto, creado, autor, media_tipo, media_path')
+      .select('direccion, texto, creado, autor, media_tipo, media_path, wa_id, responde_a')
       .eq('canal', c.canal)
       .eq('usuario', c.usuario)
       .order('id', { ascending: false })
@@ -739,6 +881,7 @@ const panelMonedas = (() => {
     // Si estaba leyendo más arriba, un mensaje nuevo no lo lleva al final
     const alFinal = caja.scrollHeight - caja.scrollTop - caja.clientHeight < 40;
     const lista = (data || []).reverse();
+    mensajesCharla = lista;
     const ult = lista.filter((m) => m.direccion === 'entra').pop();
     ultimoDelCliente = ult ? ult.creado : null;
 
@@ -757,6 +900,9 @@ const panelMonedas = (() => {
     if (!c) return;
     charlaAbierta = c;
     ultimoDelCliente = null;
+    mensajesCharla = [];
+    quitarCita();
+    $('mVentana').textContent = '';
 
     ocultar($('mFichaError'));
     $('mFichaNombre').textContent = nombreCharla(c);
@@ -783,6 +929,8 @@ const panelMonedas = (() => {
 
   function cerrarCharla() {
     terminarAudio(false); // si estaba grabando, no se manda
+    cerrarMic();
+    quitarCita();
     ocultar($('mTelon'));
     charlaAbierta = null;
   }
@@ -820,7 +968,7 @@ const panelMonedas = (() => {
     $('mEnviar').disabled = true;
     $('mEnviar').textContent = 'Enviando…';
 
-    const r = await llamarBot({ accion: 'enviar', canal: c.canal, usuario: c.usuario, texto });
+    const r = await llamarBot({ accion: 'enviar', canal: c.canal, usuario: c.usuario, texto, responder_a: citaDe(c) });
 
     $('mEnviar').textContent = 'Enviar';
     if (charlaAbierta !== c) return;
@@ -829,6 +977,7 @@ const panelMonedas = (() => {
       return pintarFichaEstado();
     }
     $('mRespuesta').value = '';
+    quitarCita();
     c.bot_pausado = true;
     c.pide_humano = false;
     await cargarMensajes(c);
@@ -867,7 +1016,7 @@ const panelMonedas = (() => {
     $('mEnviar').disabled = true;
     $('mFotoBtn').textContent = 'Enviando foto…';
 
-    const r = await llamarBot({ accion: 'enviar_foto', canal: c.canal, usuario: c.usuario, foto, texto });
+    const r = await llamarBot({ accion: 'enviar_foto', canal: c.canal, usuario: c.usuario, foto, texto, responder_a: citaDe(c) });
 
     $('mFotoBtn').textContent = 'Foto';
     if (charlaAbierta !== c) return;
@@ -876,6 +1025,7 @@ const panelMonedas = (() => {
       return pintarFichaEstado();
     }
     $('mRespuesta').value = '';
+    quitarCita();
     c.bot_pausado = true;
     c.pide_humano = false;
     await cargarMensajes(c);
@@ -884,85 +1034,258 @@ const panelMonedas = (() => {
   }
 
   // ---------- Audios desde el panel ----------
-  // Se graba con el micrófono y se pasa a MP3 (mono, 64 kbps): WhatsApp no acepta el formato en el que graba
-  // Chrome, y el MP3 lo aceptan todos. El conversor (lamejs) se baja la primera vez que se graba.
-  const MAX_AUDIO = 5 * 60; // segundos
+  // Como en WhatsApp: con la caja de texto vacía, el botón verde graba. Mantenido apretado graba y al
+  // soltarlo se manda (deslizando a la izquierda se cancela). Con un toque queda grabando, con botones para
+  // pausar, cancelar o mandar. Se graba en OGG (opus), que WhatsApp muestra como nota de voz con la foto del
+  // negocio; el codificador (opus-recorder) se baja la primera vez. Si no anda, sale en MP3 como antes (lamejs).
+  const MAX_AUDIO = 4 * 60; // segundos: a 16 kbps queda debajo de 512 KB, hasta donde WhatsApp lo muestra como nota de voz
+  const OPUS = 'https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/';
   const LAMEJS = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
+  const TOQUE = 400; // ms: soltar antes es un toque, no mantener apretado
+  const MIC_ABIERTO = 2 * 60 * 1000; // después del último audio, el micrófono queda abierto este rato
   let grabacion = null;
+  // El micrófono queda abierto mientras la charla está abierta (y un rato después del último audio):
+  // así el navegador no pide permiso para cada audio.
+  let mic = null;
 
+  const Ctx = window.AudioContext || window.webkitAudioContext;
   function puedeGrabar() {
-    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && Ctx);
   }
 
-  function cargarLame() {
-    if (window.lamejs) return Promise.resolve();
-    return new Promise((ok, mal) => {
-      const s = document.createElement('script');
-      s.src = LAMEJS;
-      s.onload = ok;
-      s.onerror = mal;
-      document.head.appendChild(s);
-    });
-  }
-
-  async function tocarAudio() {
-    if (grabacion) return terminarAudio(true);
-    const c = charlaAbierta;
-    if (!c) return;
-    ocultar($('mFichaError'));
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      return errorFicha('No se pudo usar el micrófono. Fijate que el navegador tenga permiso.');
+  const scripts = {};
+  function cargarScript(src) {
+    if (!scripts[src]) {
+      scripts[src] = new Promise((ok, mal) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = ok;
+        s.onerror = () => { delete scripts[src]; mal(new Error('no cargó ' + src)); };
+        document.head.appendChild(s);
+      });
     }
-    cargarLame().catch(() => {}); // mientras habla
+    return scripts[src];
+  }
+
+  // El codificador corre en un worker, y un worker no puede venir de otro sitio: se baja y se usa como blob
+  let workerOpus = null;
+  async function cargarOpus() {
+    if (!window.WebAssembly) throw new Error('sin WebAssembly');
+    await cargarScript(OPUS + 'recorder.min.js');
+    if (!workerOpus) {
+      workerOpus = fetch(OPUS + 'encoderWorker.min.js')
+        .then((r) => { if (!r.ok) throw new Error('worker ' + r.status); return r.blob(); })
+        .then((b) => URL.createObjectURL(new Blob([b], { type: 'application/javascript' })))
+        .catch((e) => { workerOpus = null; throw e; });
+    }
+    return workerOpus;
+  }
+
+  async function abrirMic() {
+    clearTimeout(cerrarMic.reloj);
+    if (mic && mic.getAudioTracks().some((t) => t.readyState === 'live')) return mic;
+    mic = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    });
+    avisoPermisoSafari();
+    return mic;
+  }
+
+  function cerrarMic() {
+    clearTimeout(cerrarMic.reloj);
+    if (mic) mic.getTracks().forEach((t) => t.stop());
+    mic = null;
+  }
+
+  // Safari pregunta por el micrófono cada vez que se abre la página, salvo que se le diga que siempre deje
+  function avisoPermisoSafari() {
+    const safari = /^Apple/.test(navigator.vendor || '') && !/CriOS|FxiOS/.test(navigator.userAgent);
+    let visto = false;
+    try { visto = localStorage.getItem('walterAvisoMic') === '1'; localStorage.setItem('walterAvisoMic', '1'); } catch (e) {}
+    if (!safari || visto) return;
+    $('mVentana').textContent = 'Para que Safari no te pida permiso cada vez: en la Mac, Safari › Ajustes › Sitios web › ' +
+      'Micrófono › bruwaltech.com.ar › Permitir. En el iPhone: Ajustes › Apps › Safari › Micrófono › Permitir.';
+  }
+
+  // Graba de lo que entra por el micrófono. ctx se crea en el mismo toque del botón: si se crea después,
+  // Safari lo deja mudo.
+  async function empezarMotor(stream, ctx) {
+    try {
+      const worker = await cargarOpus();
+      const rec = new window.Recorder({
+        encoderPath: worker, sourceNode: ctx.createMediaStreamSource(stream),
+        encoderApplication: 2048, encoderSampleRate: 16000, encoderBitRate: 16000, numberOfChannels: 1
+      });
+      let datos = null;
+      rec.ondataavailable = (d) => { datos = d; };
+      const fin = new Promise((ok) => { rec.onstop = ok; });
+      await rec.start();
+      return {
+        pausar: () => rec.pause(),
+        seguir: () => rec.resume(),
+        async terminar() {
+          await rec.stop();
+          await fin;
+          ctx.close();
+          return datos && datos.length ? new Blob([datos], { type: 'audio/ogg' }) : null;
+        },
+        cancelar() { rec.stop().catch(() => {}).then(() => ctx.close()); }
+      };
+    } catch (e) {
+      console.warn('audio en opus no anduvo, va en MP3', e);
+      ctx.close();
+    }
+    // MP3: lo que grabe el navegador (webm, ogg o mp4) se convierte al final
+    if (!window.MediaRecorder) throw new Error('sin MediaRecorder');
+    cargarScript(LAMEJS).catch(() => {}); // mientras habla
     const rec = new MediaRecorder(stream);
     const partes = [];
     rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
-    const inicio = Date.now();
-    const g = { c, rec, stream, partes, enviar: false };
-    grabacion = g;
-    g.reloj = setInterval(() => {
-      const s = Math.floor((Date.now() - inicio) / 1000);
-      $('mAudioBtn').textContent = 'Enviar audio (' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ')';
-      if (s >= MAX_AUDIO) terminarAudio(true);
-    }, 250);
-    rec.onstop = () => audioGrabado(g);
+    const fin = new Promise((ok) => { rec.onstop = ok; });
     rec.start();
+    return {
+      pausar: () => rec.pause && rec.pause(),
+      seguir: () => rec.resume && rec.resume(),
+      async terminar() {
+        if (rec.state !== 'inactive') rec.stop();
+        await fin;
+        if (!partes.length) return null;
+        await cargarScript(LAMEJS);
+        return aMp3(new Blob(partes, { type: rec.mimeType }));
+      },
+      cancelar() { if (rec.state !== 'inactive') rec.stop(); }
+    };
+  }
+
+  const segundosGrabados = (g) => (g.acumulado + (g.pausado || !g.desde ? 0 : Date.now() - g.desde)) / 1000;
+
+  function pintarGrabando(g) {
+    const s = Math.floor(segundosGrabados(g));
+    $('mAudioReloj').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    $('mGrabando').classList.toggle('pausado', g.pausado);
+    $('mAudioAyuda').textContent = !g.motor ? 'Abriendo el micrófono…'
+      : g.apretado ? (g.cancelando ? 'Soltá para cancelar' : 'Soltá para mandar · deslizá a la izquierda para cancelar')
+      : g.pausado ? 'En pausa' : 'Grabando…';
+    $('mAudioPausa').textContent = g.pausado ? 'Seguir' : 'Pausar';
+    ['mAudioCancelar', 'mAudioPausa', 'mAudioEnviar'].forEach((id) => $(id).classList.toggle('hidden', g.apretado));
+    $('mAudioPausa').disabled = !g.motor;
+  }
+
+  async function apretarAudio(e) {
+    if (grabacion || e.button > 0) return;
+    const c = charlaAbierta;
+    if (!c) return;
+    e.preventDefault();
+    try { $('mAudioBtn').setPointerCapture(e.pointerId); } catch (err) {}
+    ocultar($('mFichaError'));
+    const ctx = new Ctx();
+    ctx.resume();
+    const g = { c, ctx, apretado: true, x0: e.clientX, inicio: Date.now(), acumulado: 0, desde: 0, pausado: false };
+    grabacion = g;
     $('mAudioBtn').classList.add('grabando');
-    $('mAudioBtn').textContent = 'Enviar audio (0:00)';
-    mostrar($('mAudioCancelar'));
-  }
+    $('mRespuesta').disabled = true;
+    ver($('mGrabando'));
+    pintarGrabando(g);
+    g.reloj = setInterval(() => {
+      pintarGrabando(g);
+      if (segundosGrabados(g) >= MAX_AUDIO) terminarAudio(true);
+    }, 250);
 
-  function terminarAudio(enviar) {
-    const g = grabacion;
-    if (!g) return;
-    grabacion = null;
-    g.enviar = enviar;
-    clearInterval(g.reloj);
-    if (g.rec.state !== 'inactive') g.rec.stop();
-    g.stream.getTracks().forEach((t) => t.stop());
-    $('mAudioBtn').classList.remove('grabando');
-    $('mAudioBtn').textContent = 'Grabar audio';
-    ocultar($('mAudioCancelar'));
-  }
-
-  async function audioGrabado(g) {
-    if (!g.enviar || !g.partes.length) return;
-    $('mAudioBtn').disabled = true;
-    $('mAudioBtn').textContent = 'Enviando audio…';
+    let stream;
     try {
-      await cargarLame();
-      const mp3 = await aMp3(new Blob(g.partes, { type: g.rec.mimeType }));
+      stream = await abrirMic();
+    } catch (err) {
+      ctx.close();
+      if (grabacion === g) limpiarGrabacion(g);
+      return errorFicha('No se pudo usar el micrófono. Fijate que el navegador tenga permiso para usarlo en esta página.');
+    }
+    try {
+      g.motor = await empezarMotor(stream, ctx);
+    } catch (err) {
+      if (grabacion === g) limpiarGrabacion(g);
+      return errorFicha('Este navegador no deja grabar audios. Probá con Chrome o Safari actualizados.');
+    }
+    g.desde = Date.now();
+    // Si lo soltó o canceló mientras se abría el micrófono
+    if (grabacion !== g) return g.final ? terminarAudio(true, g) : g.motor.cancelar();
+    pintarGrabando(g);
+  }
+
+  function moverAudio(e) {
+    const g = grabacion;
+    if (!g || !g.apretado) return;
+    const dx = e.clientX - g.x0;
+    if (dx < -120) return terminarAudio(false);
+    g.cancelando = dx < -50;
+    $('mGrabando').classList.toggle('cancelar', g.cancelando);
+    pintarGrabando(g);
+  }
+
+  function soltarAudio() {
+    const g = grabacion;
+    if (!g || !g.apretado) return;
+    g.apretado = false;
+    $('mGrabando').classList.remove('cancelar');
+    // Un toque: queda grabando con los botones a la vista
+    if (Date.now() - g.inicio < TOQUE) return pintarGrabando(g);
+    terminarAudio(!g.cancelando);
+  }
+
+  function pausarAudio() {
+    const g = grabacion;
+    if (!g || !g.motor) return;
+    if (g.pausado) {
+      g.motor.seguir();
+      g.desde = Date.now();
+    } else {
+      g.motor.pausar();
+      g.acumulado += Date.now() - g.desde;
+    }
+    g.pausado = !g.pausado;
+    pintarGrabando(g);
+  }
+
+  function limpiarGrabacion(g) {
+    if (grabacion === g) grabacion = null;
+    clearInterval(g.reloj);
+    $('mAudioBtn').classList.remove('grabando');
+    $('mGrabando').classList.remove('cancelar', 'pausado');
+    ocultar($('mGrabando'));
+    $('mRespuesta').disabled = false;
+    clearTimeout(cerrarMic.reloj);
+    cerrarMic.reloj = setTimeout(cerrarMic, MIC_ABIERTO);
+    if (charlaAbierta === g.c) pintarFichaEstado();
+  }
+
+  // pendiente: la grabación que se soltó mientras todavía se abría el micrófono
+  async function terminarAudio(enviar, pendiente) {
+    const g = pendiente || grabacion;
+    if (!g) return;
+    if (!pendiente) {
+      const segundos = segundosGrabados(g);
+      limpiarGrabacion(g);
+      if (!g.motor) { g.final = enviar; return; } // sigue cuando el micrófono esté listo
+      if (enviar && segundos < 1) {
+        g.motor.cancelar();
+        return toast('Muy corto: mantené apretado mientras hablás');
+      }
+    }
+    if (!enviar) return g.motor.cancelar();
+
+    $('mAudioBtn').disabled = true;
+    $('mAudioBtn').textContent = 'Enviando…';
+    try {
+      const archivo = await g.motor.terminar();
+      if (!archivo) throw new Error('vacío');
       const audio = await new Promise((ok) => {
         const fr = new FileReader();
         fr.onload = () => ok(fr.result);
-        fr.readAsDataURL(mp3);
+        fr.readAsDataURL(archivo);
       });
-      const r = await llamarBot({ accion: 'enviar_audio', canal: g.c.canal, usuario: g.c.usuario, audio });
+      const r = await llamarBot({ accion: 'enviar_audio', canal: g.c.canal, usuario: g.c.usuario, audio, responder_a: citaDe(g.c) });
       if (charlaAbierta !== g.c) return;
       if (r.error) return errorFicha(r.error);
+      quitarCita();
       g.c.bot_pausado = true;
       g.c.pide_humano = false;
       await cargarMensajes(g.c);
@@ -972,7 +1295,7 @@ const panelMonedas = (() => {
       errorFicha('No se pudo preparar el audio. Probá de nuevo.');
     } finally {
       $('mAudioBtn').disabled = false;
-      $('mAudioBtn').textContent = 'Grabar audio';
+      $('mAudioBtn').textContent = '🎤 Audio';
       if (charlaAbierta === g.c) pintarFichaEstado();
     }
   }
@@ -1577,8 +1900,22 @@ const panelMonedas = (() => {
     });
     $('mCuerpoCharlas').addEventListener('click', (e) => {
       const fila = e.target.closest('tr');
-      if (fila) abrirCharla(fila.dataset.canal, fila.dataset.usuario);
+      if (!fila) return;
+      // La casilla (o su celda) elige la charla para borrar; el resto de la fila la abre
+      if (e.target.closest('.col-check')) {
+        const caja = fila.querySelector('[data-elegir]');
+        if (e.target !== caja) caja.checked = !caja.checked;
+        return elegirCharla(fila, caja.checked);
+      }
+      abrirCharla(fila.dataset.canal, fila.dataset.usuario);
     });
+    $('mBuscadorCharlas').addEventListener('input', (e) => {
+      busquedaCharlas = e.target.value;
+      pintarCharlas();
+    });
+    $('mElegirTodas').addEventListener('change', (e) => elegirTodas(e.target.checked));
+    $('mBorrarElegidas').addEventListener('click', borrarElegidas);
+    $('mSoltarElegidas').addEventListener('click', () => { elegidas.clear(); pintarCharlas(); });
     $('mCerrarFicha').addEventListener('click', cerrarCharla);
     $('mTelon').addEventListener('click', (e) => { if (e.target === $('mTelon')) cerrarCharla(); });
     document.addEventListener('keydown', (e) => {
@@ -1592,8 +1929,22 @@ const panelMonedas = (() => {
     $('mBtnBorrar').addEventListener('click', borrarCharla);
     $('mFormResponder').addEventListener('submit', enviarRespuesta);
     $('mFoto').addEventListener('change', elegirFotoCharla);
-    $('mAudioBtn').addEventListener('click', tocarAudio);
+    $('mAudioBtn').addEventListener('pointerdown', apretarAudio);
+    $('mAudioBtn').addEventListener('pointermove', moverAudio);
+    $('mAudioBtn').addEventListener('pointerup', soltarAudio);
+    $('mAudioBtn').addEventListener('pointercancel', () => terminarAudio(false));
+    $('mAudioBtn').addEventListener('contextmenu', (e) => e.preventDefault()); // mantener apretado en el celular
     $('mAudioCancelar').addEventListener('click', () => terminarAudio(false));
+    $('mAudioPausa').addEventListener('click', pausarAudio);
+    $('mAudioEnviar').addEventListener('click', () => terminarAudio(true));
+    $('mRespuesta').addEventListener('input', pintarBotonesEnvio);
+    $('mCitaQuitar').addEventListener('click', quitarCita);
+    $('mFichaCharla').addEventListener('click', (e) => {
+      const citar = e.target.closest('[data-citar]');
+      if (citar) return elegirCita(citar.dataset.citar);
+      const ir = e.target.closest('[data-ir-a]');
+      if (ir) irAMensaje(ir.dataset.irA);
+    });
     // Enter manda, como en WhatsApp; Shift+Enter hace otro renglón
     $('mRespuesta').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) enviarRespuesta(e);
