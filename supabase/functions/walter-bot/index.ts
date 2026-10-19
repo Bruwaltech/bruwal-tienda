@@ -161,7 +161,8 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
 
     // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
     const n = norm(texto);
-    if (/^(si|no|dale|ok|okey|perfecto|listo|joya|de una|confirmo)\b/.test(n)) {
+    // En "¿tenés de otro tipo?" el sí o el no es para el pedido que está armando
+    if (/^(si|no|dale|ok|okey|perfecto|listo|joya|de una|confirmo)\b/.test(n) && estado?.step !== "mas") {
       const { data: p } = await db.from("walter_pedidos").select("id").eq("canal", canal).eq("usuario", usuario)
         .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
         .order("dia", { ascending: false }).limit(1).maybeSingle();
@@ -194,7 +195,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
       const p = r.pedido;
       await db.from("walter_pedidos").insert({
         canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, tipo: p.tipo, cantidad: p.cant,
-        retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad,
+        retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad, ...(p.items ? { items: p.items } : {}),
       });
     }
     // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no

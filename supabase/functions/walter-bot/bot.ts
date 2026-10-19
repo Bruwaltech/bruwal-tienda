@@ -18,8 +18,12 @@ export type Config = {
   modo?: "auto" | "manual";
 };
 
+// Una línea de monedas del pedido: un tipo contado, o mezcladas por kilo (sin tipo)
+export type Linea = { modo: "kg" | "u"; tipo?: string; cant: number };
 export type Datos = {
   loc?: string; mat?: "Monedas" | "Cobre" | "Bronce"; modo?: "kg" | "u"; tipo?: string; cant?: number;
+  // Las monedas de otros tipos que ya sumó al pedido; la que está cotizando ahora va en modo, tipo y cant
+  items?: Linea[];
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
 };
 // Pistas: lo que la IA entendió de un mensaje escrito libremente y todavía no se usó
@@ -28,6 +32,8 @@ export type Estado = { step: string; d: Datos; p?: Pistas };
 export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
   tipo: string | null; dir: string | null; monto: number; tarifa: string; prioridad: boolean;
+  // Con varios tipos de moneda: cada línea con su precio y su total (walter_pedidos.items, schema/70)
+  items: (Linea & { precio: number; total: number })[] | null;
 };
 // consulta: el cliente hizo una pregunta que hay que contestar antes de seguir (la contesta la IA con hechos())
 export type Resultado = { estado: Estado; respuestas: Respuesta[]; pedido?: Pedido; derivar?: boolean; consulta?: boolean };
@@ -100,6 +106,8 @@ export function rechazar(estado: Estado | null, c: Config, prohibido: boolean, t
 }
 
 export const MEZCLADAS = "Mezcladas";
+const OTRO_TIPO = "Sí, de otro tipo";
+const NADA_MAS = "No, eso es todo";
 // Lo que se usa por dentro cuando las pistas dicen que van por kilo (findTipo lo lee como MEZCLADAS).
 // Ya no es una opción de la lista: Walter ofrece primero pagar por unidad.
 const OPCION_KILO = "Por kilo o mezcladas";
@@ -140,19 +148,48 @@ export function cotizar(c: Config, mat: string, modo: string, cant: number, tipo
   return { precio, total: cant * precio, tarifa: may ? "mayorista" : "minorista" };
 }
 
-const cantTxt = (d: Datos) => {
+const cantTxt = (d: Pick<Datos, "modo" | "tipo" | "cant">) => {
   if (d.modo !== "u") return kgf(d.cant ?? 0);
   const n = (d.cant ?? 0).toLocaleString("es-AR");
   return d.tipo ? n + " " + nombreTipo(d.tipo) : n + " unidades";
 };
 // "300 monedas de $10", "12,5 kg de cobre"
-const queTxt = (d: Datos) => (d.tipo ? cantTxt(d) : cantTxt(d) + " de " + d.mat?.toLowerCase());
+const lineaTxt = (d: Pick<Datos, "mat" | "modo" | "tipo" | "cant">) => (d.tipo ? cantTxt(d) : cantTxt(d) + " de " + (d.mat ?? "Monedas").toLowerCase());
 
-// Kilos estimados: las contadas se pasan a kilos con cuántas hacen un kilo; null si el tipo no lo dice
+/** Las líneas de monedas del pedido: las que ya sumó y la que está cotizando. Vacío si no son monedas. */
+export function lineas(d: Datos): Linea[] {
+  if (d.mat !== "Monedas") return [];
+  const ahora: Linea[] = d.cant != null && d.modo ? [{ modo: d.modo, ...(d.tipo ? { tipo: d.tipo } : {}), cant: d.cant }] : [];
+  // El mismo tipo dos veces ("200 de 10" y después "100 de 10 más") va sumado
+  const todas: Linea[] = [];
+  for (const l of [...(d.items ?? []), ...ahora]) {
+    const igual = todas.find((x) => x.modo === l.modo && x.tipo === l.tipo);
+    if (igual) igual.cant += l.cant;
+    else todas.push({ ...l });
+  }
+  return todas;
+}
+const varias = (d: Datos) => lineas(d).length > 1;
+// "300 monedas de $10 y 2 kg de monedas"; con una sola línea, como siempre
+const queTxt = (d: Datos) => (varias(d) ? enLista(lineas(d).map((l) => lineaTxt({ mat: "Monedas", ...l }))) : lineaTxt(d));
+// "a, b y c"
+const enLista = (xs: string[]) => (xs.length > 1 ? xs.slice(0, -1).join(", ") + " y " + xs[xs.length - 1] : xs[0] ?? "");
+
+// Kilos estimados: las contadas se pasan a kilos con cuántas hacen un kilo; null si ningún tipo lo dice
+function kilosLinea(l: Linea, c: Config): number | null {
+  if (l.modo !== "u") return l.cant;
+  const kg = tipoPorNombre(c, l.tipo)?.kg;
+  return kg ? l.cant / kg : null;
+}
 function kilosDe(d: Datos, c: Config): number | null {
-  if (d.modo !== "u") return d.cant ?? 0;
-  const kg = tipoPorNombre(c, d.tipo)?.kg;
-  return kg ? (d.cant ?? 0) / kg : null;
+  if (d.mat !== "Monedas") return d.cant ?? 0;
+  const k = lineas(d).map((l) => kilosLinea(l, c)).filter((x): x is number => x !== null);
+  return k.length ? k.reduce((a, b) => a + b, 0) : null;
+}
+// Cuánto se paga por todas las monedas del pedido (o por el cobre o el bronce)
+function totalDe(d: Datos, c: Config): number {
+  if (d.mat !== "Monedas") return cotizar(c, d.mat!, d.modo!, d.cant!, d.tipo).total;
+  return lineas(d).reduce((a, l) => a + cotizar(c, "Monedas", l.modo, l.cant, l.tipo).total, 0);
 }
 const soloDeposito = (d: Datos, c: Config) => {
   const k = kilosDe(d, c);
@@ -160,7 +197,7 @@ const soloDeposito = (d: Datos, c: Config) => {
 };
 // "Pasamos a buscar desde 2 kg (unas 222 monedas de $10)."
 function minTxt(d: Datos, c: Config) {
-  const kg = d.modo === "u" ? tipoPorNombre(c, d.tipo)?.kg : undefined;
+  const kg = d.modo === "u" && !varias(d) ? tipoPorNombre(c, d.tipo)?.kg : undefined;
   const eq = kg && d.tipo ? ` (unas ${Math.ceil(c.minRetiro! * kg).toLocaleString("es-AR")} ${nombreTipo(d.tipo)})` : "";
   return `Pasamos a buscar desde ${kgf(c.minRetiro!)}${eq}. Con menos, lo podés traer a uno de nuestros depósitos.`;
 }
@@ -171,6 +208,7 @@ export function hechos(c: Config): string {
     precios(c),
     // Walter compra las monedas por unidad; el kilo es solo para las mezcladas o las que no quieren contar
     tiposDe(c).length ? `Las monedas las compramos por unidad. Solo si están mezcladas o no las quieren contar, por kilo a ${fmt(c.monedaKg)}.` : "",
+    "En un mismo pedido se pueden juntar monedas de varios tipos: el bot pregunta por cada tipo y suma.",
     `Pasamos a buscar (a domicilio o en un punto de encuentro) en: ${LOCALIDADES.map((x) => x.n).join(", ")}.`,
     c.minRetiro ? `Pasamos a buscar desde ${kgf(c.minRetiro)}; con menos, lo traen al depósito.` : "",
     `Desde ${c.umbralMay} kg de cobre o bronce pagamos precio mayorista.`,
@@ -201,7 +239,10 @@ function pregunta(e: Estado, c: Config): Respuesta {
     case "loc": return { text: "¿De qué localidad nos escribís?" };
     case "cat": return { text: "¿Qué querés vender?", options: ["Monedas", "Cobre", "Bronce"] };
     case "unit": return { text: "¿Las tenés contadas o pesadas?", options: ["Por kilo", "Por unidad"] };
-    case "tipo": return { text: "¿De qué monedas son? Las pagamos por unidad, cada tipo a su precio.", options: tiposDe(c).map((t) => t.n) };
+    case "tipo":
+      if (d.items?.length) return { text: "¿De qué tipo son las otras?", options: tiposDe(c).map((t) => t.n) };
+      return { text: "¿De qué monedas son? Las pagamos por unidad, cada tipo a su precio.", options: tiposDe(c).map((t) => t.n) };
+    case "mas": return { text: "¿Tenés monedas de otro tipo? Las sumo al mismo pedido.", options: [OTRO_TIPO, NADA_MAS] };
     case "qty":
       if (d.mat === "Monedas") {
         if (d.modo !== "u") return { text: "¿Cuántos kilos tenés, aproximadamente?" };
@@ -360,6 +401,25 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       }
       return cantidad(e, q, c);
     }
+    case "mas": {
+      // Antes que el "sí": "no tengo de otro tipo" también dice "tengo"
+      if (/^(no|nop|nada|ninguna|ningun|eso es todo|eso nomas|solo eso|nomas eso|listo|es todo)\b/.test(n) || n === norm(NADA_MAS)) {
+        return cerrarMonedas(e, c);
+      }
+      const tipo = findTipo(c, t);
+      const otro = /^(si|dale|otro|otra|otras|tengo|tambien|ademas|mas|y )/.test(n) || n === norm(OTRO_TIPO);
+      if (!tipo && !otro) return out(pregunta(e, c));
+      // La que estaba cotizando pasa a la lista y arranca la próxima
+      d.items = lineas(d);
+      delete d.tipo; delete d.cant; delete d.modo;
+      if (!tipo) { e.step = "tipo"; return out(pregunta(e, c)); }
+      e.step = "qty";
+      if (tipo === MEZCLADAS) { d.modo = "kg"; return out({ text: `Por kilo pagamos ${fmt(c.monedaKg)}.` }, pregunta(e, c)); }
+      d.modo = "u"; d.tipo = tipo;
+      // "200 de 50": el número que no es el del tipo es la cantidad
+      const q = cantidadConTipo(t, tipo);
+      return q ? cantidad(e, q, c) : out(pregunta(e, c));
+    }
     case "mod": {
       if (/encuentro|punto|nos vemos/.test(n)) d.ret = "Punto de encuentro";
       else if (/deposito|llevo|voy/.test(n)) d.ret = "Depósito";
@@ -389,6 +449,15 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     }
     default: return out(pregunta(e, c));
   }
+}
+
+// En "200 de 50" o "de 50 tengo 200", la cantidad es el número que no forma parte del nombre del tipo
+function cantidadConTipo(t: string, tipo: string): number | null {
+  const delTipo = norm(tipo).match(/\d+/)?.[0];
+  const nums = (t.match(/\d[\d.,]*/g) ?? []).map((x) => x.replace(/[.,]$/, ""));
+  const otro = nums.find((x) => x.replace(/\D/g, "") !== delTipo);
+  const q = otro ? parseNum(otro) : null;
+  return q && q > 0 ? q : null;
 }
 
 // Una dirección escrita en vez de elegir cómo entregarlo: calle y número, sin horarios ni cantidades
@@ -458,6 +527,10 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
       // Kilos de monedas que veníamos contando: pasan a ir por kilo
       if (p.cant && p.modo === "kg" && d.modo === "u" && d.mat === "Monedas" && !esLlave(d.tipo)) return { texto: `${p.cant} kg`, campo: "cant" };
       return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
+    // Nombró otro tipo ("también tengo de 50"): se suma al pedido
+    case "mas":
+      if (p.tipo && p.tipo !== MEZCLADAS && p.tipo !== d.tipo && !(d.items ?? []).some((x) => x.tipo === p.tipo)) return { texto: p.tipo, campo: "tipo" };
+      return null;
     case "mod":
       // Con pocos kilos solo queda el depósito: eso ya se lo dijimos con la cotización
       if (p.ret === "Depósito") return { texto: "Llevo al depósito", campo: "ret" };
@@ -493,7 +566,8 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     return rechazar(estado, c, true, texto);
   }
   // No quiere vender ("gracias, no quiero nada"): se despide sin volver a preguntar
-  if (l?.intencion === "no_vende" && !traeDatos(l, estado)) {
+  // En "¿tenés de otro tipo?", un "no, gracias" cierra las monedas y sigue con el pedido
+  if (l?.intencion === "no_vende" && !traeDatos(l, estado) && estado?.step !== "mas") {
     return {
       estado: { step: "done", d: estado?.d.loc ? { loc: estado.d.loc } : {} },
       respuestas: [{ text: "¡Dale, gracias por escribir! Cuando quieras vender algo, escribinos por acá." }],
@@ -576,25 +650,47 @@ function pistasDe(l: Lectura, c: Config): Pistas {
 function cantidad(e: Estado, q: number, c: Config): Resultado {
   const d = e.d; d.cant = q;
   const r = cotizar(c, d.mat!, d.modo!, q, d.tipo);
-  let text: string;
+  // Las monedas van por tipo: después de cada una pregunta si tiene de otro tipo, y al final suma todo
   if (d.mat === "Monedas") {
-    text = `Por ${queTxt(d)} te pagamos ${fmt(r.total)} (` +
-      (d.modo === "u" ? `${fmt(r.precio)} cada una` : `hoy ${fmt(r.precio)} el kilo`) + ").";
+    e.step = "mas";
+    return { estado: e, respuestas: [{ text: `Por ${lineaTxt(d)} te pagamos ${fmt(r.total)} (` +
+      (d.modo === "u" ? `${fmt(r.precio)} cada una` : `hoy ${fmt(r.precio)} el kilo`) + ")." }, pregunta(e, c)] };
   }
-  else text = `Por ${kgf(q)} de ${d.mat!.toLowerCase()} te pagamos ${fmt(r.total)} (${fmt(r.precio)} el kilo, precio ${r.tarifa}).` +
+  const text = `Por ${kgf(q)} de ${d.mat!.toLowerCase()} te pagamos ${fmt(r.total)} (${fmt(r.precio)} el kilo, precio ${r.tarifa}).` +
     (r.tarifa === "mayorista" ? "" : `\nDesde ${c.umbralMay} kg pagamos precio mayorista.`);
   e.step = "mod";
   const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al pesar en el momento del retiro.";
   return { estado: e, respuestas: [{ text: text + "\n" + fin }, pregunta(e, c)] };
 }
 
+// No tiene más monedas: con varios tipos, el total de todo, y sigue con cómo lo entrega
+function cerrarMonedas(e: Estado, c: Config): Resultado {
+  const d = e.d;
+  e.step = "mod";
+  const total = varias(d) ? `En total: ${queTxt(d)}, ${fmt(totalDe(d, c))}.\n` : "";
+  const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al contarlas o pesarlas en el momento del retiro.";
+  return { estado: e, respuestas: [{ text: total + fin }, pregunta(e, c)] };
+}
+
 function armarPedido(d: Datos, c: Config, dir: string | null): Pedido {
-  const r = cotizar(c, d.mat!, d.modo!, d.cant!, d.tipo);
   // Las contadas también cuentan para la prioridad, pasadas a kilos; las llaves no son monedas.
-  const kilos = kilosDe(d, c) ?? 0;
+  const monedas = lineas(d).filter((l) => !esLlave(l.tipo));
+  const kilos = monedas.reduce((a, l) => a + (kilosLinea(l, c) ?? 0), 0);
+  const base = { loc: d.loc!, mat: d.mat!, ret: d.ret!, nombre: d.nombre!, dir, prioridad: d.mat === "Monedas" && monedas.length > 0 && kilos >= c.umbralPrio };
+  if (!varias(d)) {
+    const r = cotizar(c, d.mat!, d.modo!, d.cant!, d.tipo);
+    return { ...base, modo: d.modo!, tipo: d.tipo ?? null, cant: d.cant!, monto: Math.round(r.total), tarifa: r.tarifa, items: null };
+  }
+  // Varios tipos: cada línea con su precio. modo y cantidad resumen el pedido para lo que lee una sola línea:
+  // todas contadas = unidades en total; si hay alguna por kilo, los kilos estimados de todo.
+  const items = lineas(d).map((l) => {
+    const r = cotizar(c, "Monedas", l.modo, l.cant, l.tipo);
+    return { ...l, precio: r.precio, total: Math.round(r.total) };
+  });
+  const contadas = items.every((l) => l.modo === "u");
+  const cant = contadas ? items.reduce((a, l) => a + l.cant, 0) : Math.round((kilosDe(d, c) ?? 0) * 10) / 10;
   return {
-    loc: d.loc!, mat: d.mat!, modo: d.modo!, tipo: d.tipo ?? null, cant: d.cant!, ret: d.ret!, nombre: d.nombre!, dir,
-    monto: Math.round(r.total), tarifa: r.tarifa,
-    prioridad: d.mat === "Monedas" && !esLlave(d.tipo) && kilos >= c.umbralPrio,
+    ...base, modo: contadas ? "u" : "kg", tipo: null, cant, items,
+    monto: items.reduce((a, l) => a + l.total, 0), tarifa: contadas ? "por unidad" : "varias",
   };
 }
