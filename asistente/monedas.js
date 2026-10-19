@@ -40,6 +40,7 @@ const panelMonedas = (() => {
   const PASOS = {
     loc: 'Diciendo de qué localidad es', cat: 'Eligiendo qué vende',
     unit: 'Eligiendo unidades o kilos', tipo: 'Eligiendo el tipo de moneda', qty: 'Diciendo la cantidad',
+    mas: 'Viendo si tiene de otro tipo',
     mod: 'Eligiendo cómo lo entrega', name: 'Dando su nombre',
     addr: 'Dando la dirección', done: 'Pedido tomado', out: 'Fuera de la zona'
   };
@@ -75,12 +76,28 @@ const panelMonedas = (() => {
   // Monedas con tipo "Llaves".
   const esLlave = (p) => /llave/i.test(p.tipo || '');
   const materialDe = (p) => (esLlave(p) ? 'Llaves' : p.material);
-  // Las contadas llevan los kilos estimados, con cuántas de ese tipo hacen un kilo (pestaña Precios)
+  // Un pedido puede traer varios tipos de moneda (items, schema/70): cada uno es una línea.
+  // Los de un solo tipo son una línea con lo de siempre.
+  const lineasDe = (p) => (Array.isArray(p.items) && p.items.length
+    ? p.items
+    : [{ modo: p.modo, tipo: p.tipo, cant: p.cantidad }]);
+  // Kilos de una línea: las contadas, con cuántas de ese tipo hacen un kilo (pestaña Precios); null si no se sabe
+  const kilosLinea = (l) => {
+    if (l.modo !== 'u') return Number(l.cant);
+    const t = (cfg.monedas || []).find((x) => x.n === l.tipo);
+    return t && t.kg > 0 ? Number(l.cant) / t.kg : null;
+  };
+  // Las contadas llevan los kilos estimados
+  const textoLinea = (l) => {
+    if (l.modo !== 'u') return kilos(l.cant);
+    const k = kilosLinea(l);
+    return Number(l.cant).toLocaleString('es-AR') + (l.tipo && !/llave/i.test(l.tipo) ? ' de ' + l.tipo : l.tipo ? ' llaves' : ' unidades') +
+      (k !== null ? ' (≈ ' + kilos(k) + ')' : '');
+  };
   const cantidadDe = (p) => {
-    if (p.modo !== 'u') return kilos(p.cantidad);
-    const t = (cfg.monedas || []).find((x) => x.n === p.tipo);
-    return Number(p.cantidad).toLocaleString('es-AR') + (p.tipo && !esLlave(p) ? ' de ' + p.tipo : ' unidades') +
-      (t && t.kg > 0 ? ' (≈ ' + kilos(p.cantidad / t.kg) + ')' : '');
+    const ls = lineasDe(p);
+    // Con varios tipos, la de kilos son las mezcladas
+    return ls.map((l) => textoLinea(l) + (ls.length > 1 && l.modo !== 'u' ? ' mezcladas' : '')).join(' + ');
   };
   const canalDe = (c) => (c === 'messenger' ? 'Messenger' : 'WhatsApp');
 
@@ -114,10 +131,10 @@ const panelMonedas = (() => {
   // cuántas de ese tipo hacen un kilo.
   const esPrioridad = (p) => {
     if (p.material !== 'Monedas' || esLlave(p)) return false;
-    if (p.modo === 'kg') return Number(p.cantidad) >= Number(cfg.umbralPrio);
-    const tipo = (cfg.monedas || []).find((t) => t.n === p.tipo);
-    if (!tipo || !tipo.kg) return !!p.prioridad;
-    return Number(p.cantidad) / tipo.kg >= Number(cfg.umbralPrio);
+    const monedas = lineasDe(p).filter((l) => !/llave/i.test(l.tipo || ''));
+    const k = monedas.map(kilosLinea);
+    if (!monedas.length || k.every((x) => x === null)) return !!p.prioridad;
+    return k.reduce((a, x) => a + (x || 0), 0) >= Number(cfg.umbralPrio);
   };
 
   const cerrado = (p) => p.estado === 'retirado' || p.estado === 'cancelado';
@@ -506,8 +523,8 @@ const panelMonedas = (() => {
             '<span class="tramo">' + (tramo < 1 ? 'misma zona' : '+' + Math.round(tramo) + ' km') + '</span>' +
           '</li>').join('');
 
-    const totalKg = ruta.reduce((a, { p }) => a + (p.modo === 'kg' ? Number(p.cantidad) : 0), 0);
-    const unidades = ruta.reduce((a, { p }) => a + (p.modo === 'u' ? Number(p.cantidad) : 0), 0);
+    const totalKg = ruta.reduce((a, { p }) => a + lineasDe(p).reduce((b, l) => b + (l.modo === 'kg' ? Number(l.cant) : 0), 0), 0);
+    const unidades = ruta.reduce((a, { p }) => a + lineasDe(p).reduce((b, l) => b + (l.modo === 'u' ? Number(l.cant) : 0), 0), 0);
     const efectivo = ruta.reduce((a, { p }) => a + Number(p.monto), 0);
     const recorrido = ruta.reduce((a, s) => a + s.tramo, 0);
 

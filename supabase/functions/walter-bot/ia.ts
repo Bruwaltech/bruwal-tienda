@@ -9,6 +9,7 @@ const MODELO = "claude-haiku-5-5";
 const PREGUNTAS: Record<string, string> = {
   loc: "de qué localidad escribe", out: "si quiere probar con otra localidad", cat: "qué quiere vender",
   unit: "si las monedas están contadas o pesadas", tipo: "de qué tipo son las monedas, o si van por kilo", qty: "cuánto tiene",
+  mas: "si tiene monedas de otro tipo para sumar al mismo pedido",
   mod: "si se lo pasamos a buscar (y en ese caso la dirección), nos encontramos en un punto o lo lleva al depósito",
 };
 
