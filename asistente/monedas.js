@@ -1673,9 +1673,15 @@ const panelMonedas = (() => {
 
   // ---------------------------------------------------------- avisos
 
-  // Avisa cuando escribe un cliente, aunque el panel esté en otra pestaña o minimizado.
-  // Necesita el panel abierto: con el navegador cerrado no llega nada.
+  // Avisa cuando escribe un cliente. Con Web Push (walter-bot + /sw.js) llega aunque el panel esté
+  // cerrado, en el celu o en la compu; si el navegador no tiene push, solo con el panel abierto.
+  // En el iPhone el push anda solo con Bruwal Chat agregado a la pantalla de inicio.
   const AVISOS_KEY = 'walter-avisos';
+  let suscripcion = null; // la de este aparato, si tiene push
+  const hayPush = () => 'serviceWorker' in navigator && 'PushManager' in window;
+  const iphoneSinInstalar = () => /iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone &&
+    !(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+
   function avisosActivos() {
     try { return 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(AVISOS_KEY) !== 'no'; }
     catch (e) { return false; }
@@ -1683,22 +1689,72 @@ const panelMonedas = (() => {
 
   function pintarAvisos() {
     const b = $('mBtnAvisos');
-    if (!('Notification' in window)) return ocultar(b);
-    b.textContent = avisosActivos() ? '🔔 Avisos activados' : '🔕 Activar avisos';
+    if (!('Notification' in window) && !iphoneSinInstalar()) return ocultar(b);
+    b.textContent = avisosActivos() ? (suscripcion ? '🔔 Avisos activados (también con el panel cerrado)' : '🔔 Avisos activados')
+      : '🔕 Activar avisos';
+  }
+
+  // La suscripción de este aparato, si ya la tenía (al abrir el panel)
+  async function revisarPush() {
+    if (!hayPush()) return;
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      suscripcion = await reg.pushManager.getSubscription();
+      // Si Walter los tenía activados y el navegador renovó la suscripción, se vuelve a anotar
+      if (suscripcion && avisosActivos()) llamarBot({ accion: 'push_alta', sub: suscripcion.toJSON(), aparato: aparato() });
+    } catch (e) { suscripcion = null; }
+    pintarAvisos();
+  }
+
+  const aparato = () => (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+
+  function deBase64url(t) {
+    const b = atob(t.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((t.length + 3) % 4));
+    return Uint8Array.from(b, (c) => c.charCodeAt(0));
+  }
+
+  async function suscribirPush() {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    const k = await llamarBot({ accion: 'push_clave' });
+    if (k.error || !k.clave) throw new Error(k.error || 'sin clave');
+    const sub = (await reg.pushManager.getSubscription()) ||
+      (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: deBase64url(k.clave) }));
+    const r = await llamarBot({ accion: 'push_alta', sub: sub.toJSON(), aparato: aparato() });
+    if (r.error) throw new Error(r.error);
+    suscripcion = sub;
   }
 
   async function activarAvisos() {
     if (avisosActivos()) {
       try { localStorage.setItem(AVISOS_KEY, 'no'); } catch (e) { /* sin guardado, igual se apaga hasta recargar */ }
+      if (suscripcion) {
+        const endpoint = suscripcion.endpoint;
+        suscripcion.unsubscribe().catch(() => {});
+        suscripcion = null;
+        llamarBot({ accion: 'push_baja', endpoint });
+      }
       pintarAvisos();
-      return toast('Avisos apagados');
+      return toast('Avisos apagados en este aparato');
+    }
+    if (iphoneSinInstalar()) {
+      return alert('Para que te lleguen los avisos en el iPhone:\n\n1. Tocá el botón Compartir de Safari (el cuadrado con la flecha).\n' +
+        '2. Elegí "Agregar a pantalla de inicio".\n3. Abrí Bruwal Chat desde ese ícono y tocá "Activar avisos" de nuevo.');
     }
     const permiso = await Notification.requestPermission();
     try { localStorage.removeItem(AVISOS_KEY); } catch (e) { /* nada */ }
+    if (permiso !== 'granted') {
+      pintarAvisos();
+      return toast('El navegador no dio permiso. Activalo en la configuración del sitio.');
+    }
+    let conPush = false;
+    if (hayPush()) {
+      try { await suscribirPush(); conPush = true; } catch (e) { console.warn('push', e); }
+    }
     pintarAvisos();
-    if (permiso !== 'granted') return toast('El navegador no dio permiso. Activalo en la configuración del sitio.');
     sonar();
-    toast('Listo: te avisa cuando escriba un cliente');
+    toast(conPush ? 'Listo: te avisa cuando escriba un cliente, aunque cierres el panel'
+      : 'Listo: te avisa cuando escriba un cliente, con el panel abierto');
   }
 
   function sonar() {
@@ -1723,6 +1779,8 @@ const panelMonedas = (() => {
     const titulo = c ? nombreCharla(c) : m.canal === 'whatsapp' ? '+' + m.usuario : 'Cliente nuevo';
     const cuerpo = SOLO_ETIQUETA.test(m.texto || '') ? 'Mandó ' + NOMBRE_MEDIO[m.media_tipo] : m.texto;
     sonar();
+    // Con push, el aviso lo muestra el service worker: acá solo suena, para que no salga dos veces
+    if (suscripcion) return;
     const opciones = { body: cuerpo, tag: m.canal + ':' + m.usuario, icon: '/icon-192.png' };
     try {
       const n = new Notification(titulo, opciones);
@@ -2092,11 +2150,26 @@ const panelMonedas = (() => {
 
   // ---------------------------------------------------------- entrada
 
+  // /chat?charla=whatsapp:549… (al tocar un aviso): abre esa charla
+  function abrirDesdeAviso(url) {
+    let charla = null;
+    try { charla = new URL(url, location.href).searchParams.get('charla'); } catch (e) { /* nada */ }
+    const m = charla && charla.match(/^(whatsapp|messenger):(.+)$/);
+    if (!m) return false;
+    mostrarPestana('charlas');
+    abrirCharla(m[1], m[2]);
+    return true;
+  }
+
   async function abrir() {
     if (!eventosAtados) {
       atarEventos();
       escucharEnVivo();
       eventosAtados = true;
+      revisarPush();
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.abrir) abrirDesdeAviso(e.data.abrir); });
+      }
     }
     if (!(await cargar())) return;
 
@@ -2104,6 +2177,7 @@ const panelMonedas = (() => {
     filtroCharlas = charlas.some((c) => c.pide_humano) ? 'humano' : 'todas';
     marcarFiltro('mFiltrosCharlas', filtroCharlas);
     mostrarPestana(pestana);
+    if (abrirDesdeAviso(location.href)) history.replaceState(null, '', '/chat');
   }
 
   return { abrir };
