@@ -288,7 +288,46 @@ tbody tr:hover { background: #F8FBFF; }
 .burbuja .medio-link { display: inline-block; margin: 4px 0; color: inherit; font-size: 13px; text-decoration: underline; }
 .burbuja .medio-falta { display: block; font-style: italic; opacity: .75; }
 .burbuja .medio-link + .medio-link { margin-left: 10px; }
-#mAudioBtn.grabando { background: #FDECEC; border-color: #F2B8B8; color: #A12626; }
+#mAudioBtn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#mAudioBtn.grabando { background: #C53030; }
+.grabando {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 8px; border-radius: 10px;
+  background: #FDECEC; border: 1px solid #F2B8B8;
+}
+.grabando .dato-secundario { flex: 1; min-width: 140px; }
+.grabando.cancelar { background: #F3F4F6; border-color: var(--line); }
+.punto-rojo { width: 10px; height: 10px; border-radius: 50%; background: #C53030; animation: latido 1s infinite; }
+.grabando.pausado .punto-rojo { animation: none; background: #9CA3AF; }
+@keyframes latido { 50% { opacity: .25; } }
+
+/* Contestar citando un mensaje */
+.burbuja .responder-a {
+  display: none; margin-left: 8px; font-size: 11px; color: inherit; opacity: .8;
+  background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font-family: inherit;
+}
+.burbuja:hover .responder-a, .burbuja:focus-within .responder-a { display: inline; }
+@media (hover: none) { .burbuja .responder-a { display: inline; } }
+.burbuja .cita, .cita-elegida {
+  display: block; border-left: 3px solid var(--celeste); background: rgba(0,0,0,.06);
+  border-radius: 6px; padding: 5px 8px; margin-bottom: 5px; font-size: 12.5px;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+.burbuja.de-bot .cita, .burbuja.de-walter .cita { background: rgba(255,255,255,.18); border-left-color: #fff; }
+.cita strong, .cita-texto strong { display: block; font-size: 12px; }
+.cita-elegida { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; -webkit-line-clamp: unset; }
+.cita-texto { flex: 1; white-space: pre-wrap; word-break: break-word; max-height: 4.4em; overflow: hidden; }
+.burbuja.resaltada { outline: 2px solid var(--celeste); outline-offset: 2px; }
+
+/* Borrar varias charlas */
+.col-check { width: 36px; padding-right: 0; }
+.col-check input { width: 18px; height: 18px; cursor: pointer; }
+.barra-seleccion {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 10px; border-radius: var(--radius);
+  background: #FEF2F2; border: 1px solid #FECACA;
+}
+.barra-seleccion strong { flex: 1; min-width: 140px; }
 
 /* Contestar desde el panel: sale por el número del bot */
 .responder { margin-top: 10px; }
@@ -653,7 +692,9 @@ tbody tr:hover { background: #F8FBFF; }
             <button type="button" class="filtro activo" data-filtro="humano">Quieren hablar con vos</button>
             <button type="button" class="filtro" data-filtro="vos">Las atendés vos</button>
             <button type="button" class="filtro" data-filtro="todas">Todas</button>
+            <button type="button" class="filtro" data-filtro="contactos">Contactos (A-Z)</button>
           </div>
+          <input type="search" class="buscador" id="mBuscadorCharlas" placeholder="🔍 Buscar nombre o número…" aria-label="Buscar contacto">
           <button type="button" class="btn btn-suave" id="mNuevoContacto">+ Contacto nuevo</button>
         </div>
         <!-- Para todas las charlas a la vez: contesta el bot o contesta Walter -->
@@ -665,10 +706,17 @@ tbody tr:hover { background: #F8FBFF; }
           <button type="button" class="btn btn-suave" id="mBtnModo">Pasar a manual</button>
           <button type="button" class="btn btn-suave" id="mBtnAvisos">Activar avisos</button>
         </div>
+        <!-- Aparece al tildar charlas: para borrar varias sin abrir cada una -->
+        <div class="barra-seleccion hidden" id="mSeleccion">
+          <strong id="mCuantas"></strong>
+          <button type="button" class="btn btn-peligro" id="mBorrarElegidas">Eliminar las elegidas</button>
+          <button type="button" class="btn btn-suave" id="mSoltarElegidas">Cancelar</button>
+        </div>
         <div class="tabla-scroll">
           <table>
             <thead>
               <tr>
+                <th class="col-check"><input type="checkbox" id="mElegirTodas" aria-label="Elegir todas las que se ven"></th>
                 <th>Cliente</th>
                 <th class="opcional">Canal</th>
                 <th class="opcional">Último mensaje</th>
@@ -844,13 +892,27 @@ tbody tr:hover { background: #F8FBFF; }
         <div class="charla" id="mFichaCharla"></div>
         <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
         <form class="responder" id="mFormResponder" onsubmit="return false">
+          <!-- El mensaje que se va a citar, como "Responder" en WhatsApp -->
+          <div class="cita-elegida hidden" id="mCita">
+            <div class="cita-texto"><strong id="mCitaQuien"></strong><span id="mCitaTexto"></span></div>
+            <button type="button" class="cerrar" id="mCitaQuitar" aria-label="No citar">&times;</button>
+          </div>
+          <!-- Mientras graba un audio: mantener apretado y soltar para mandar, o tocar y usar estos botones -->
+          <div class="grabando hidden" id="mGrabando">
+            <span class="punto-rojo" id="mAudioPunto"></span>
+            <strong id="mAudioReloj">0:00</strong>
+            <span class="dato-secundario" id="mAudioAyuda"></span>
+            <button type="button" class="btn btn-suave" id="mAudioCancelar">Cancelar</button>
+            <button type="button" class="btn btn-suave" id="mAudioPausa">Pausar</button>
+            <button type="button" class="btn btn-ok" id="mAudioEnviar">Enviar audio</button>
+          </div>
           <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente… (Enter envía, Shift+Enter baja de renglón)" maxlength="4000"></textarea>
           <div class="responder-pie">
             <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
             <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
             <input type="file" id="mFoto" accept="image/*" class="solo-lector">
-            <button type="button" class="btn btn-suave hidden" id="mAudioBtn">Grabar audio</button>
-            <button type="button" class="btn btn-suave hidden" id="mAudioCancelar">Cancelar</button>
+            <!-- Como en WhatsApp: con la caja vacía el botón graba, con texto manda -->
+            <button type="button" class="btn btn-ok hidden" id="mAudioBtn" title="Mantené apretado para grabar y soltá para mandar">🎤 Audio</button>
             <button type="submit" class="btn btn-ok" id="mEnviar">Enviar</button>
           </div>
         </form>
@@ -909,7 +971,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261018f"></script>
+<script src="/asistente/monedas.js?v=20261019a"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
