@@ -99,8 +99,13 @@ Deno.serve(async (req) => {
       if (texto && ev.sender?.id) tareas.push(atender("messenger", ev.sender.id, texto, libre));
     }
   }
-  await Promise.allSettled(tareas);
-  return new Response("ok", { status: 200 }); // Meta reintenta si no recibe 200
+  // Meta reintenta si no recibe 200 enseguida: contestamos ya y atendemos en segundo plano
+  // (atender espera unos segundos por si el cliente sigue escribiendo)
+  const todo = Promise.allSettled(tareas);
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
+  if (runtime) runtime.waitUntil(todo);
+  else await todo;
+  return new Response("ok", { status: 200 });
 });
 
 async function config(): Promise<Config> {
@@ -138,6 +143,18 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
         canal, usuario, pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
       });
       return;
+    }
+
+    // Mensajes seguidos ("hola" / "tengo cobre" / "en Funes"): esperamos un poco y contesta solo el
+    // último. Los anteriores sin respuesta van en la charla reciente, y la IA los lee aunque el último sea un botón.
+    if (id) {
+      await new Promise((r) => setTimeout(r, ESPERA_SEGUIDOS));
+      const { data: nuevos } = await db.from("walter_mensajes").select("texto")
+        .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gt("id", id);
+      // Un "hola" o una foto sin texto que llegan después no contestan esto: en ese caso contesta este
+      const etiquetas: string[] = Object.values(ETIQUETA);
+      if ((nuevos ?? []).some((m) => !esSaludo(String(m.texto)) && !etiquetas.includes(String(m.texto)))) return;
+      if (await sinRespuesta(canal, usuario, id)) libre = true;
     }
 
     // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
@@ -190,6 +207,20 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
   } catch (e) {
     console.error("atender", canal, usuario, e);
   }
+}
+
+// Cuánto espera el bot por si el cliente manda otro mensaje enseguida
+const ESPERA_SEGUIDOS = 5000;
+
+// Mensajes del cliente de los últimos 2 minutos, antes del actual, que el bot todavía no contestó
+async function sinRespuesta(canal: Canal, usuario: string, hastaId: number): Promise<number> {
+  const { data: ult } = await db.from("walter_mensajes").select("id").eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "sale").lt("id", hastaId).order("id", { ascending: false }).limit(1).maybeSingle();
+  let q = db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "entra").lt("id", hastaId).gte("creado", new Date(Date.now() - 120e3).toISOString());
+  if (ult) q = q.gt("id", ult.id);
+  const { count } = await q;
+  return count ?? 0;
 }
 
 // Los últimos mensajes antes del actual, del más viejo al más nuevo
