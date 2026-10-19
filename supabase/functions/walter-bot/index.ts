@@ -1,7 +1,7 @@
 // Edge Function del bot de Walter: webhook de WhatsApp Cloud API y de Messenger,
 // tarea de avisos (?tarea=avisos) que llama pg_cron y lo que Walter hace desde
 // el panel de Bruwal Chat (?tarea=panel): contestar (texto o foto), ver las fotos y audios
-// de los clientes, mandar audios, borrar charlas, cargar contactos y cambiar la foto y los datos del perfil
+// de los clientes (los audios se pasan a texto con Whisper si está TRANSCRIPCION_KEY), mandar audios, borrar charlas, cargar contactos y cambiar la foto y los datos del perfil
 // de WhatsApp del bot. Las fotos y audios quedan en el bucket privado walter-media (schema/68)
 // y se borran solos a los 30 días (limpiarMedios, con los avisos).
 //
@@ -269,8 +269,10 @@ const EXT: Record<string, string> = {
 };
 const BUCKET = "walter-media";
 
-// Baja el archivo de Meta (primero el link, después los bytes) y lo guarda en el bucket; null si no se pudo
-async function guardarMedia(usuario: string, mediaId: string, mime?: string, archivo?: string): Promise<string | null> {
+// Baja el archivo de Meta (primero el link, después los bytes) y lo guarda en el bucket; null si no se pudo bajar.
+// path queda null si se bajó pero no se pudo guardar.
+async function guardarMedia(usuario: string, mediaId: string, mime?: string, archivo?: string):
+  Promise<{ path: string | null; bytes: Uint8Array<ArrayBuffer>; tipo: string; ext: string } | null> {
   try {
     const auth = { Authorization: `Bearer ${await secreto("WA_TOKEN")}` };
     const info = await fetch(`${GRAPH}/${mediaId}`, { headers: auth });
@@ -283,8 +285,8 @@ async function guardarMedia(usuario: string, mediaId: string, mime?: string, arc
     const ext = EXT[tipo] ?? archivo?.match(/\.([a-z0-9]{1,5})$/i)?.[1]?.toLowerCase() ?? "bin";
     const path = `${usuario}/${Date.now()}-${mediaId}.${ext}`;
     const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: tipo, upsert: true });
-    if (error) { console.error("media guardar", error.message); return null; }
-    return path;
+    if (error) console.error("media guardar", error.message);
+    return { path: error ? null : path, bytes, tipo, ext };
   } catch (e) {
     console.error("media", e);
     return null;
@@ -294,10 +296,16 @@ async function guardarMedia(usuario: string, mediaId: string, mime?: string, arc
 async function recibirMedia(canal: Canal, usuario: string,
   m: { tipo: MediaTipo; id: string; mime?: string; caption?: string; archivo?: string }, nombrePerfil?: string) {
   try {
-    const media: Media = { tipo: m.tipo, path: await guardarMedia(usuario, m.id, m.mime, m.archivo) };
+    const bajado = await guardarMedia(usuario, m.id, m.mime, m.archivo);
+    const media: Media = { tipo: m.tipo, path: bajado?.path ?? null };
     // Con epígrafe ("tengo estas, ¿cuánto me dan?"): el bot lee el texto como cualquier mensaje
     const caption = m.caption?.trim();
     if (caption) return atender(canal, usuario, caption, true, nombrePerfil, media);
+    // Un audio se pasa a texto y se contesta como si lo hubiera escrito. Si no se puede, sigue como antes.
+    if (m.tipo === "audio" && bajado) {
+      const dicho = await transcribir(bajado.bytes, bajado.tipo, bajado.ext);
+      if (dicho) return atender(canal, usuario, dicho, true, nombrePerfil, media);
+    }
 
     const id = await log(canal, usuario, "entra", ETIQUETA[m.tipo], undefined, media);
     const [cfg, { data: conv }] = await Promise.all([
@@ -320,6 +328,37 @@ async function recibirMedia(canal: Canal, usuario: string,
     await enviar(canal, usuario, [{ text: RECIBIDO[m.tipo]! }]);
   } catch (e) {
     console.error("recibirMedia", canal, usuario, e);
+  }
+}
+
+// Audio a texto con Whisper. TRANSCRIPCION_KEY es la clave de Groq (o de OpenAI con TRANSCRIPCION=openai).
+// null si no hay clave, si falla o si el audio no dice nada.
+const TRANSCRIPTORES: Record<string, { url: string; modelo: string }> = {
+  groq: { url: "https://api.groq.com/openai/v1/audio/transcriptions", modelo: "whisper-large-v3-turbo" },
+  openai: { url: "https://api.openai.com/v1/audio/transcriptions", modelo: "gpt-4o-mini-transcribe" },
+};
+async function transcribir(bytes: Uint8Array<ArrayBuffer>, tipo: string, ext: string): Promise<string | null> {
+  const clave = await secreto("TRANSCRIPCION_KEY");
+  if (!clave) return null;
+  const t = TRANSCRIPTORES[(await secreto("TRANSCRIPCION")) || "groq"] ?? TRANSCRIPTORES.groq;
+  try {
+    const form = new FormData();
+    // WhatsApp manda los audios como ogg (opus); Whisper reconoce el formato por la extensión
+    form.append("file", new Blob([bytes], { type: tipo }), `audio.${ext === "bin" ? "ogg" : ext}`);
+    form.append("model", t.modelo);
+    form.append("language", "es");
+    form.append("response_format", "json");
+    const res = await fetch(t.url, {
+      method: "POST", headers: { Authorization: `Bearer ${clave}` }, body: form, signal: AbortSignal.timeout(15000),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { console.error("transcribir", res.status, JSON.stringify(j).slice(0, 300)); return null; }
+    const texto = String(j.text ?? "").trim();
+    console.log("transcripcion", JSON.stringify({ largo: texto.length }));
+    return texto.length >= 2 ? texto.slice(0, 2000) : null;
+  } catch (e) {
+    console.error("transcribir", e);
+    return null;
   }
 }
 
