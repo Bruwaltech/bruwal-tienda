@@ -1,0 +1,17 @@
+{
+  "id": "/bruwal-chat",
+  "name": "Bruwal Chat",
+  "short_name": "Bruwal Chat",
+  "description": "El panel de tu chatbot: charlas, pedidos y hoja de ruta.",
+  "lang": "es-AR",
+  "start_url": "/chat",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#15294D",
+  "theme_color": "#15294D",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

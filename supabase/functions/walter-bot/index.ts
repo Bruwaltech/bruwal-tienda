@@ -11,6 +11,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { conPerfil, type Config, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
+import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
 const env = (k: string, def = "") => Deno.env.get(k) ?? def;
 const GRAPH = `https://graph.facebook.com/${env("GRAPH_VERSION", "v21.0")}`;
@@ -31,8 +32,9 @@ type Canal = "whatsapp" | "messenger";
 const sumarUso = (servicio: string, entrada: number, salida = 0) =>
   db.rpc("walter_sumar_uso", { p_servicio: servicio, p_entrada: Math.round(entrada), p_salida: Math.round(salida) })
     .then(({ error }) => { if (error) console.error("uso", error.message); });
-const usos: PromiseLike<unknown>[] = [];
-contarUso((e, s) => { usos.push(sumarUso("ia", e, s)); });
+// Lo que corre aparte (uso de la IA, avisos al celular): el webhook lo espera antes de terminar
+const aparte: PromiseLike<unknown>[] = [];
+contarUso((e, s) => { aparte.push(sumarUso("ia", e, s)); });
 
 // Claves: primero los secretos de la Edge Function; si no están, Vault (walter_secreto, solo prefijo walter_).
 const cache: Record<string, string> = {};
@@ -110,7 +112,7 @@ Deno.serve(async (req) => {
   }
   // Meta reintenta si no recibe 200 enseguida: contestamos ya y atendemos en segundo plano
   // (atender espera unos segundos por si el cliente sigue escribiendo)
-  const todo = Promise.allSettled(tareas).then(() => Promise.allSettled(usos.splice(0)));
+  const todo = Promise.allSettled(tareas).then(() => Promise.allSettled(aparte.splice(0)));
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
   if (runtime) runtime.waitUntil(todo);
   else await todo;
@@ -130,6 +132,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
     // Walter tocó "Ver las paradas" en la plantilla de la hoja de ruta: le llega el detalle, sin pasar por el bot
     if (canal === "whatsapp" && !libre && norm(texto) === norm(VER_PARADAS) && await mandarRutaPendiente(usuario)) return;
     const id = await log(canal, usuario, "entra", texto, undefined, media, wa);
+    aparte.push(avisarWalter(canal, usuario, texto, nombrePerfil, media));
     // "Hola" y "Buenas" seguidos (o un "Hola" justo después de otro mensaje): contesta solo el primero.
     // Si llegan juntos, el de id menor.
     if (esSaludo(texto) && id) {
@@ -367,6 +370,7 @@ async function recibirMedia(canal: Canal, usuario: string,
     }
 
     const id = await log(canal, usuario, "entra", ETIQUETA[m.tipo], undefined, media, wa);
+    aparte.push(avisarWalter(canal, usuario, ETIQUETA[m.tipo], nombrePerfil, media));
     const [cfg, { data: conv }] = await Promise.all([
       config(),
       db.from("walter_conversaciones").select("bot_pausado, actualizado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
@@ -563,6 +567,12 @@ async function panel(req: Request): Promise<Response> {
     if (b.accion === "perfil") return await panelPerfil();
     if (b.accion === "enviar_ruta") return await panelEnviarRuta(b);
     if (b.accion === "uso") return await panelUso();
+    if (b.accion === "push_clave") return respuesta({ ok: true, clave: await clavePush() });
+    if (b.accion === "push_alta") return await panelPushAlta(b, u.user.id);
+    if (b.accion === "push_baja") {
+      await db.from("walter_push").delete().eq("endpoint", String(b.endpoint ?? ""));
+      return respuesta({ ok: true });
+    }
     if (b.accion === "perfil_guardar") return await panelPerfilGuardar(b);
     return respuesta({ error: "Acción desconocida" }, 400);
   } catch (e) {
@@ -947,4 +957,66 @@ async function usoMeta(inicio: Date) {
     console.error("uso meta", e);
     return null;
   }
+}
+
+// ---------- Avisos al celular o la compu de Walter (Web Push), aunque el panel esté cerrado ----------
+// El panel se suscribe con "Activar avisos" (walter_push, schema/72) y el service worker del sitio (/sw.js)
+// muestra el aviso. Las claves VAPID van en el secreto VAPID_KEYS (las JWK que exporta @negrel/webpush).
+let servidorPush: Promise<webpush.ApplicationServer | null> | null = null;
+function push() {
+  servidorPush ??= (async () => {
+    const jwk = await secreto("VAPID_KEYS");
+    if (!jwk) return null;
+    const vapidKeys = await webpush.importVapidKeys(JSON.parse(jwk), { extractable: false });
+    return await webpush.ApplicationServer.new({ contactInformation: "mailto:administracion@bruwaltech.com", vapidKeys });
+  })().catch((e) => { console.error("push claves", e); servidorPush = null; return null; });
+  return servidorPush;
+}
+
+async function clavePush(): Promise<string | null> {
+  const jwk = await secreto("VAPID_KEYS");
+  if (!jwk) return null;
+  return await webpush.exportApplicationServerKey(await webpush.importVapidKeys(JSON.parse(jwk), { extractable: true }));
+}
+
+/** Avisa a todos los aparatos donde Walter activó los avisos. Los que ya no existen se borran. */
+async function avisarWalter(canal: Canal, usuario: string, texto: string, nombrePerfil?: string, media?: Media) {
+  try {
+    const app = await push();
+    if (!app) return;
+    const { data: subs } = await db.from("walter_push").select("endpoint, p256dh, auth");
+    if (!subs?.length) return;
+    let titulo = nombrePerfil;
+    if (!titulo) {
+      const { data: c } = await db.from("walter_conversaciones").select("nombre_perfil").eq("canal", canal).eq("usuario", usuario).maybeSingle();
+      titulo = c?.nombre_perfil ?? (canal === "whatsapp" ? "+" + usuario : "Cliente de Messenger");
+    }
+    const cuerpo = media && Object.values(ETIQUETA).includes(texto)
+      ? "Mandó " + ({ imagen: "una foto", audio: "un audio", video: "un video", documento: "un archivo", sticker: "un sticker" }[media.tipo])
+      : texto.slice(0, 180);
+    const aviso = JSON.stringify({ title: titulo, body: cuerpo, tag: `${canal}:${usuario}`, url: `/chat?charla=${canal}:${usuario}` });
+    await Promise.all(subs.map(async (s) => {
+      try {
+        await app.subscribe({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } })
+          .pushTextMessage(aviso, { ttl: 6 * 3600, urgency: webpush.Urgency.High, topic: `${canal}${usuario}`.replace(/\W/g, "").slice(0, 32) });
+      } catch (e) {
+        // 404 o 410: el aparato se dio de baja (desinstaló, borró los datos del sitio)
+        if (e instanceof webpush.PushMessageError && e.isGone()) await db.from("walter_push").delete().eq("endpoint", s.endpoint);
+        else console.error("push", e instanceof webpush.PushMessageError ? e.toString() : e);
+      }
+    }));
+  } catch (e) {
+    console.error("avisar walter", e);
+  }
+}
+
+async function panelPushAlta(b: Record<string, unknown>, userId: string) {
+  const s = (b.sub ?? {}) as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } };
+  const endpoint = typeof s.endpoint === "string" && /^https:\/\/[\w.-]+\//.test(s.endpoint) ? s.endpoint : null;
+  const p256dh = typeof s.keys?.p256dh === "string" ? s.keys.p256dh : null;
+  const auth = typeof s.keys?.auth === "string" ? s.keys.auth : null;
+  if (!endpoint || !p256dh || !auth || endpoint.length > 1000) return respuesta({ error: "El navegador no dio una suscripción válida." }, 400);
+  const { error } = await db.from("walter_push").upsert({ endpoint, p256dh, auth, user_id: userId, aparato: String(b.aparato ?? "").slice(0, 120) });
+  if (error) throw error;
+  return respuesta({ ok: true });
 }
