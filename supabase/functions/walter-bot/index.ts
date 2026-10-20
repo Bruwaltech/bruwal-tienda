@@ -141,87 +141,95 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
         .gte("creado", new Date(Date.now() - 60e3).toISOString());
       if (count) return;
     }
-    const [cfg, conv] = await Promise.all([
-      config(),
-      db.from("walter_conversaciones").select("estado, actualizado, bot_pausado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
-    ]);
-    let estado = (conv.data?.estado ?? null) as Estado | null;
-    // Una charla vieja (más de 2 días sin hablar) arranca de cero, con saludo
-    const vieja = !!conv.data && Date.now() - new Date(conv.data.actualizado).getTime() > 2 * 86400e3;
-    if (vieja) estado = null;
-
-    // Walter la está atendiendo desde el panel (o puso el modo manual para todas): el bot guarda el
-    // mensaje y no contesta. Si la charla quedó quieta más de 2 días, vuelve a contestar el bot.
-    if ((conv.data?.bot_pausado && !vieja) || cfg.modo === "manual") {
-      await db.from("walter_conversaciones").upsert({
-        canal, usuario, pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
-      });
-      return;
-    }
-
-    // Mensajes seguidos ("hola" / "tengo cobre" / "en Funes"): esperamos un poco y contesta solo el
-    // último. Los anteriores sin respuesta van en la charla reciente, y la IA los lee aunque el último sea un botón.
-    if (id) {
-      await new Promise((r) => setTimeout(r, ESPERA_SEGUIDOS));
-      const { data: nuevos } = await db.from("walter_mensajes").select("texto")
-        .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gt("id", id);
-      // Un "hola" o una foto sin texto que llegan después no contestan esto: en ese caso contesta este
-      const etiquetas: string[] = Object.values(ETIQUETA);
-      if ((nuevos ?? []).some((m) => !esSaludo(String(m.texto)) && !etiquetas.includes(String(m.texto)))) return;
-      if (await sinRespuesta(canal, usuario, id)) libre = true;
-    }
-
-    // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
-    const n = norm(texto);
-    // En "¿tenés de otro tipo?" el sí o el no es para el pedido que está armando
-    if (/^(si|no|dale|ok|okey|perfecto|listo|joya|de una|confirmo)\b/.test(n) && estado?.step !== "mas") {
-      const { data: p } = await db.from("walter_pedidos").select("id").eq("canal", canal).eq("usuario", usuario)
-        .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
-        .order("dia", { ascending: false }).limit(1).maybeSingle();
-      if (p) {
-        const si = !n.startsWith("no");
-        await db.from("walter_pedidos").update({ respuesta_aviso: si ? "confirmó" : "no puede" }).eq("id", p.id);
-        return enviar(canal, usuario, [{
-          text: si ? "¡Gracias! Te esperamos. 👍" : "Gracias por avisar. Le paso a Walter para coordinar otro día.",
-        }]);
-      }
-    }
-
-    // Lo último de la charla, para que la IA no lea cada mensaje suelto (y vea lo que llegó mientras Walter atendía)
-    const charla = id ? await charlaReciente(canal, usuario, id) : "";
-    const clave = await secreto("ANTHROPIC_API_KEY");
-    // Lo escrito libremente lo lee Haiku antes, salvo el nombre y la dirección, que se anotan tal cual
-    const lectura = libre && !["name", "addr"].includes(estado?.step ?? "")
-      ? await leer(clave, texto, estado, cfg, charla) : null;
-    if (lectura) console.log("lectura", JSON.stringify({ step: estado?.step, intencion: lectura.intencion ?? null, campos: Object.keys(lectura) }));
-    // Con pistas guardadas de un mensaje anterior, también cuando toca un botón
-    const r0 = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);
-    // En WhatsApp el nombre sale del perfil: no hace falta preguntarlo
-    const r = conPerfil(r0, nombreDePerfil(nombrePerfil), cfg);
-    await db.from("walter_conversaciones").upsert({
-      canal, usuario, estado: r.estado, actualizado: new Date().toISOString(), bot_pausado: false,
-      ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
-      ...(r.derivar ? { pide_humano: true } : {}),
-    });
-    if (r.pedido) {
-      const p = r.pedido;
-      await db.from("walter_pedidos").insert({
-        canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, tipo: p.tipo, cantidad: p.cant,
-        retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad, ...(p.items ? { items: p.items } : {}),
-      });
-    }
-    // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no
-    // puede contestarla con lo que sabe el negocio, le avisamos a Walter.
-    if (r.consulta) {
-      const resp = await contestar(clave, texto, hechos(cfg), charla);
-      r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma Walter, ya le aviso." });
-      if (!resp) await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
-    }
-    // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
-    await enviar(canal, usuario, await redactar(clave, texto, juntar(r.respuestas), charla));
+    await responder(canal, usuario, texto, libre, id, nombrePerfil);
   } catch (e) {
     console.error("atender", canal, usuario, e);
   }
+}
+
+// La respuesta del bot al mensaje id (ya guardado). pendiente: Walter le devolvió la charla al bot y este
+// mensaje del cliente había quedado sin contestar mientras la atendía él.
+async function responder(canal: Canal, usuario: string, texto: string, libre: boolean, id: number | null, nombrePerfil?: string, pendiente = false) {
+  const [cfg, conv] = await Promise.all([
+    config(),
+    db.from("walter_conversaciones").select("estado, actualizado, bot_pausado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
+  ]);
+  let estado = (conv.data?.estado ?? null) as Estado | null;
+  // Una charla vieja (más de 2 días sin hablar) arranca de cero, con saludo
+  const vieja = !!conv.data && Date.now() - new Date(conv.data.actualizado).getTime() > 2 * 86400e3;
+  if (vieja) estado = null;
+
+  // Walter la está atendiendo desde el panel (o puso el modo manual para todas): el bot guarda el
+  // mensaje y no contesta. Si la charla quedó quieta más de 2 días, vuelve a contestar el bot.
+  if ((conv.data?.bot_pausado && !vieja) || cfg.modo === "manual") {
+    if (pendiente) return;
+    await db.from("walter_conversaciones").upsert({
+      canal, usuario, pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
+    });
+    return;
+  }
+
+  // Mensajes seguidos ("hola" / "tengo cobre" / "en Funes"): esperamos un poco y contesta solo el
+  // último. Los anteriores sin respuesta van en la charla reciente, y la IA los lee aunque el último sea un botón.
+  if (id && pendiente) libre = true;
+  else if (id) {
+    await new Promise((r) => setTimeout(r, ESPERA_SEGUIDOS));
+    const { data: nuevos } = await db.from("walter_mensajes").select("texto")
+      .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gt("id", id);
+    // Un "hola" o una foto sin texto que llegan después no contestan esto: en ese caso contesta este
+    const etiquetas: string[] = Object.values(ETIQUETA);
+    if ((nuevos ?? []).some((m) => !esSaludo(String(m.texto)) && !etiquetas.includes(String(m.texto)))) return;
+    if (await sinRespuesta(canal, usuario, id)) libre = true;
+  }
+
+  // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
+  const n = norm(texto);
+  // En "¿tenés de otro tipo?" el sí o el no es para el pedido que está armando
+  if (/^(si|no|dale|ok|okey|perfecto|listo|joya|de una|confirmo)\b/.test(n) && estado?.step !== "mas") {
+    const { data: p } = await db.from("walter_pedidos").select("id").eq("canal", canal).eq("usuario", usuario)
+      .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
+      .order("dia", { ascending: false }).limit(1).maybeSingle();
+    if (p) {
+      const si = !n.startsWith("no");
+      await db.from("walter_pedidos").update({ respuesta_aviso: si ? "confirmó" : "no puede" }).eq("id", p.id);
+      return enviar(canal, usuario, [{
+        text: si ? "¡Gracias! Te esperamos. 👍" : "Gracias por avisar. Le paso a Walter para coordinar otro día.",
+      }]);
+    }
+  }
+
+  // Lo último de la charla, para que la IA no lea cada mensaje suelto (y vea lo que llegó mientras Walter atendía)
+  const charla = id ? await charlaReciente(canal, usuario, id) : "";
+  const clave = await secreto("ANTHROPIC_API_KEY");
+  // Lo escrito libremente lo lee Haiku antes, salvo el nombre y la dirección, que se anotan tal cual
+  const lectura = libre && !["name", "addr"].includes(estado?.step ?? "")
+    ? await leer(clave, texto, estado, cfg, charla) : null;
+  if (lectura) console.log("lectura", JSON.stringify({ step: estado?.step, intencion: lectura.intencion ?? null, campos: Object.keys(lectura) }));
+  // Con pistas guardadas de un mensaje anterior, también cuando toca un botón
+  const r0 = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);
+  // En WhatsApp el nombre sale del perfil: no hace falta preguntarlo
+  const r = conPerfil(r0, nombreDePerfil(nombrePerfil), cfg);
+  await db.from("walter_conversaciones").upsert({
+    canal, usuario, estado: r.estado, actualizado: new Date().toISOString(), bot_pausado: false,
+    ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
+    ...(r.derivar ? { pide_humano: true } : {}),
+  });
+  if (r.pedido) {
+    const p = r.pedido;
+    await db.from("walter_pedidos").insert({
+      canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, tipo: p.tipo, cantidad: p.cant,
+      retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad, ...(p.items ? { items: p.items } : {}),
+    });
+  }
+  // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no
+  // puede contestarla con lo que sabe el negocio, le avisamos a Walter.
+  if (r.consulta) {
+    const resp = await contestar(clave, texto, hechos(cfg), charla);
+    r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma Walter, ya le aviso." });
+    if (!resp) await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
+  }
+  // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
+  await enviar(canal, usuario, await redactar(clave, texto, juntar(r.respuestas), charla));
 }
 
 // Cuánto espera el bot por si el cliente manda otro mensaje enseguida
@@ -564,6 +572,7 @@ async function panel(req: Request): Promise<Response> {
     if (b.accion === "contacto") {
       return await panelContacto(String(b.numero ?? ""), String(b.nombre ?? "").trim(), String(b.localidad ?? "").trim(), !!b.saludar);
     }
+    if (b.accion === "contestar_pendiente") return await panelPendiente(String(b.canal), String(b.usuario));
     if (b.accion === "retomar") return await panelRetomar(String(b.canal), String(b.usuario));
     if (b.accion === "borrar_pedidos") return await panelBorrarPedidos(b.ids);
     if (b.accion === "perfil") return await panelPerfil();
@@ -745,6 +754,23 @@ async function panelContacto(numero: string, nombre: string, localidad: string, 
   if (motivo) return respuesta({ ok: true, usuario, existia: !!hay, saludo: false, motivo });
   await log("whatsapp", usuario, "sale", SALUDO_CONTACTO.replace("{{1}}", nombre.split(" ")[0]), "walter");
   return respuesta({ ok: true, usuario, existia: !!hay, saludo: true });
+}
+
+// Walter le devolvió la charla al bot: si lo último es del cliente y quedó sin contestar, el bot lo contesta ya
+// (con la charla reciente, que incluye lo que escribió Walter). Una foto o un audio sin texto los sigue viendo Walter.
+async function panelPendiente(canal: string, usuario: string) {
+  if (canal !== "whatsapp" && canal !== "messenger") return respuesta({ error: "Canal inválido" }, 400);
+  const { data: conv } = await db.from("walter_conversaciones").select("nombre_perfil, bot_pausado").eq("canal", canal).eq("usuario", usuario).maybeSingle();
+  if (!conv) return respuesta({ error: "No encontramos esa charla." }, 404);
+  const { data: ult } = await db.from("walter_mensajes").select("id, direccion, texto").eq("canal", canal).eq("usuario", usuario)
+    .order("id", { ascending: false }).limit(1).maybeSingle();
+  const etiquetas: string[] = Object.values(ETIQUETA);
+  if (conv.bot_pausado || !ult || ult.direccion !== "entra" || etiquetas.includes(String(ult.texto)) || !(await ventanaAbierta(canal, usuario))) {
+    return respuesta({ ok: true, contesto: false });
+  }
+  await responder(canal, usuario, String(ult.texto), true, ult.id, conv.nombre_perfil ?? undefined, true);
+  await Promise.allSettled(aparte.splice(0));
+  return respuesta({ ok: true, contesto: true });
 }
 
 // Pasadas las 24 horas WhatsApp solo deja escribirle con una plantilla aprobada: va el saludo
@@ -1041,7 +1067,8 @@ async function avisarWalter(canal: Canal, usuario: string, texto: string, nombre
       } catch (e) {
         // 404 o 410: el aparato se dio de baja (desinstaló, borró los datos del sitio)
         if (e instanceof webpush.PushMessageError && e.isGone()) await db.from("walter_push").delete().eq("endpoint", s.endpoint);
-        else console.error("push", e instanceof webpush.PushMessageError ? e.toString() : e);
+        // Apple y Google dicen el motivo en el cuerpo ({"reason": "BadJwtToken"}, por ejemplo)
+        else console.error("push", e instanceof webpush.PushMessageError ? e.toString() + " " + (await e.response.text().catch(() => "")).slice(0, 300) : e);
       }
     }));
   } catch (e) {
