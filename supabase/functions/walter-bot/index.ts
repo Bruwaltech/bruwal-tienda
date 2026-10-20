@@ -564,6 +564,8 @@ async function panel(req: Request): Promise<Response> {
     if (b.accion === "contacto") {
       return await panelContacto(String(b.numero ?? ""), String(b.nombre ?? "").trim(), String(b.localidad ?? "").trim(), !!b.saludar);
     }
+    if (b.accion === "retomar") return await panelRetomar(String(b.canal), String(b.usuario));
+    if (b.accion === "borrar_pedidos") return await panelBorrarPedidos(b.ids);
     if (b.accion === "perfil") return await panelPerfil();
     if (b.accion === "enviar_ruta") return await panelEnviarRuta(b);
     if (b.accion === "uso") return await panelUso();
@@ -743,6 +745,43 @@ async function panelContacto(numero: string, nombre: string, localidad: string, 
   if (motivo) return respuesta({ ok: true, usuario, existia: !!hay, saludo: false, motivo });
   await log("whatsapp", usuario, "sale", SALUDO_CONTACTO.replace("{{1}}", nombre.split(" ")[0]), "walter");
   return respuesta({ ok: true, usuario, existia: !!hay, saludo: true });
+}
+
+// Pasadas las 24 horas WhatsApp solo deja escribirle con una plantilla aprobada: va el saludo
+// (primer_contacto) y, cuando el cliente contesta, Walter le vuelve a escribir libre. La charla queda
+// pausada para que conteste Walter y no el bot.
+async function panelRetomar(canal: string, usuario: string) {
+  if (canal !== "whatsapp") return respuesta({ error: "El saludo para retomar sale solo por WhatsApp." }, 400);
+  const { data: conv } = await db.from("walter_conversaciones").select("nombre_perfil").eq("canal", canal).eq("usuario", usuario).maybeSingle();
+  if (!conv) return respuesta({ error: "No encontramos esa charla." }, 404);
+  if (await ventanaAbierta(canal, usuario)) return respuesta({ error: "La charla sigue abierta: escribile directamente." }, 409);
+  // Un saludo por día: si ya salió y el cliente no contestó, otro no suma (y Meta cobra cada uno)
+  const { data: ult } = await db.from("walter_mensajes").select("texto, creado").eq("canal", canal).eq("usuario", usuario)
+    .order("id", { ascending: false }).limit(1).maybeSingle();
+  const saludoDe = SALUDO_CONTACTO.split("{{1}}")[1];
+  if (ult && String(ult.texto).endsWith(saludoDe) && Date.now() - new Date(ult.creado).getTime() < VENTANA) {
+    return respuesta({ error: "Ya le mandaste el saludo hoy. Cuando conteste vas a poder escribirle." }, 409);
+  }
+  const nombre = (nombreDePerfil(conv.nombre_perfil ?? "") ?? "").split(" ")[0] || "de nuevo";
+  const { error: motivo, id: waId } = await graphEnviar(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"), {
+    messaging_product: "whatsapp", to: usuario, type: "template",
+    template: { name: (await secreto("WA_TEMPLATE_CONTACTO")) || "primer_contacto", language: { code: "es_AR" },
+      components: [{ type: "body", parameters: [{ type: "text", text: nombre }] }] },
+  });
+  if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
+  await log(canal, usuario, "sale", SALUDO_CONTACTO.replace("{{1}}", nombre), "walter", undefined, { id: waId });
+  await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
+    .eq("canal", canal).eq("usuario", usuario);
+  return respuesta({ ok: true });
+}
+
+// Borra pedidos de a uno o varios. Va por acá porque el panel solo puede editar pedidos, no borrarlos.
+async function panelBorrarPedidos(ids: unknown) {
+  const lista = Array.isArray(ids) ? [...new Set(ids.map(Number).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 500) : [];
+  if (!lista.length) return respuesta({ error: "Elegí al menos un pedido." }, 400);
+  const { data, error } = await db.from("walter_pedidos").delete().in("id", lista).select("id");
+  if (error) throw error;
+  return respuesta({ ok: true, borrados: (data ?? []).map((x) => x.id) });
 }
 
 // ---------- Perfil de WhatsApp del bot: lo que ve el cliente al tocar el nombre ----------
