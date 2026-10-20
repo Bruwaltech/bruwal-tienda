@@ -1529,6 +1529,12 @@ const panelMonedas = (() => {
     pintarTarjetas();
     pintarCharlas();
     toast(pausar ? 'El bot no va a contestar en esta charla' : 'La charla vuelve a atenderla el bot');
+    // Si el cliente escribió mientras la atendías vos, el bot le contesta ahora (la respuesta llega en vivo)
+    if (!pausar) {
+      llamarBot({ accion: 'contestar_pendiente', canal: c.canal, usuario: c.usuario }).then((r) => {
+        if (r && r.error) errorFicha('El bot no pudo contestar lo pendiente: ' + r.error);
+      });
+    }
   }
 
   async function borrarCharla() {
