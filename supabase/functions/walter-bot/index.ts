@@ -1062,8 +1062,9 @@ async function avisarWalter(canal: Canal, usuario: string, texto: string, nombre
     const aviso = JSON.stringify({ title: titulo, body: cuerpo, tag: `${canal}:${usuario}`, url: `/chat?charla=${canal}:${usuario}` });
     await Promise.all(subs.map(async (s) => {
       try {
+        // Sin Topic: Apple lo rechaza (400 BadWebPushTopic). Los avisos de una misma charla se agrupan por el tag.
         await app.subscribe({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } })
-          .pushTextMessage(aviso, { ttl: 6 * 3600, urgency: webpush.Urgency.High, topic: `${canal}${usuario}`.replace(/\W/g, "").slice(0, 32) });
+          .pushTextMessage(aviso, { ttl: 6 * 3600, urgency: webpush.Urgency.High });
       } catch (e) {
         // 404 o 410: el aparato se dio de baja (desinstaló, borró los datos del sitio)
         if (e instanceof webpush.PushMessageError && e.isGone()) await db.from("walter_push").delete().eq("endpoint", s.endpoint);
