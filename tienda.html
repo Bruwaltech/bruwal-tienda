@@ -1130,6 +1130,33 @@ byId('custCodigoAfiliado').addEventListener('change', async () => {
   }
 });
 
+// Las columnas que la tienda puede leer sin sesión: todas menos el costo y
+// el proveedor (schema/73-costos-ocultos-al-publico.sql). Con select('*')
+// la base rechazaría el pedido entero, porque esas columnas ya no son
+// públicas. Una columna nueva que haga falta acá se suma a esta lista Y se
+// habilita en la base con grant select (columna) ... to anon.
+const CAMPOS_PRODUCTO_PUBLICOS = [
+  'id', 'store_slug', 'name', 'description', 'price', 'image_url', 'category', 'stock', 'in_stock',
+  'ean', 'created_at', 'updated_at', 'imagenes', 'opciones', 'tipo', 'tiene_variantes',
+  'variante_campos', 'variantes', 'stock_ultima_carga', 'fecha_ultima_carga', 'specs', 'solo_interno',
+  'moneda', 'precio_original', 'cotizacion', 'imei', 'numero', 'estado_equipo',
+  'pendiente_restauracion', 'duracion_minutos', 'mostrar_precio', 'unidad_medida', 'insumos',
+  'plu_balanza', 'unidad_nombre', 'pausado', 'precio_oferta', 'orden', 'categorias', 'ml_nota',
+  'ml_opiniones', 'ml_link', 'ml_es_catalogo', 'ml_opiniones_al', 'precios_por_cantidad'
+].join(',');
+
+async function cargarProductosPublicos(slug){
+  const { data, error } = await sb.from('store_products').select(CAMPOS_PRODUCTO_PUBLICOS)
+    .eq('store_slug', slug).order('name');
+  if (!error) return data;
+  // Mientras schema/73 no esté corrido, o si alguien sumó a la lista una
+  // columna que todavía no existe o no es pública: la tienda no se queda
+  // vacía, se pide como antes.
+  console.warn('Productos con la lista de campos fallaron, se piden todos:', error.message);
+  const todo = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
+  return todo.data;
+}
+
 async function init(){
   hide(byId('notFoundState'));
   hide(byId('storeView'));
@@ -1255,7 +1282,7 @@ async function init(){
   armarOpcionesDeCheckout(store);
   armarTurnos(store);
 
-  const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
+  const prods = await cargarProductosPublicos(slug);
   // solo_interno: repuestos y demás productos que el dueño usa desde el
   // panel (por ejemplo, en una reparación) pero que nunca deberían poder
   // comprarse acá. Se filtra ACÁ, antes de cualquier otra cosa, para que
