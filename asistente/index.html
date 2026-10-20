@@ -1011,7 +1011,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261020b"></script>
+<script src="/asistente/monedas.js?v=20261020c"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
@@ -1072,6 +1072,10 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
     detectSessionInUrl: true
   }
+});
+// Si la sesión se pierde con el panel abierto (no se pudo renovar), se vuelve a la pantalla de entrar
+sb.auth.onAuthStateChange((evento) => {
+  if (evento === 'SIGNED_OUT' && clienteActual) window.location.reload();
 });
 
 // Los tokens de sesión viajan en el # de la URL. Si alguien copia esa dirección

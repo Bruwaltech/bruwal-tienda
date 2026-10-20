@@ -155,7 +155,7 @@ const panelMonedas = (() => {
 
   // ---------------------------------------------------------- datos
 
-  async function cargar() {
+  async function cargar(reintento = false) {
     if (cargando) return false;
     cargando = true;
     const { hoy } = ahoraAR();
@@ -177,6 +177,16 @@ const panelMonedas = (() => {
     cargando = false;
 
     const error = rc.error || rp.error || rch.error || rr.error;
+    // "permission denied": la consulta salió sin la sesión (el celular la perdió con el panel abierto,
+    // por ejemplo). Se renueva y se prueba una vez más; si no hay sesión, vuelve a la pantalla de entrar.
+    if (error && error.code === '42501' && !reintento) {
+      const { data: r } = await sb.auth.refreshSession();
+      if (r && r.session) return cargar(true);
+      mostrarError('Tu sesión venció. Volvé a entrar.');
+      await sb.auth.signOut();
+      window.location.reload();
+      return false;
+    }
     if (error || !rc.data) {
       // Sin error y sin config: la política no lo dejó ver, o sea que el
       // usuario no está vinculado al cliente de Walter.
