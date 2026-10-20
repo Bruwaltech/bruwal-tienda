@@ -1736,6 +1736,7 @@ tr:last-child td { border-bottom: none; }
 .comanda-cobro.abonado { background:#E8F6F1; color:#10614F; }
 .comanda-cobro.a-cobrar { background:#FDECEC; color:#97201D; }
 .comanda-cobro button { border:1px solid currentColor; background:transparent; color:inherit; border-radius:6px; padding:3px 8px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; }
+.comanda-cobro button.medio-editable, .medio-editable { border:none; border-bottom:1px dashed currentColor; border-radius:0; background:transparent; color:inherit; padding:0; font:inherit; cursor:pointer; text-align:left; }
 .comanda-acciones { display:flex; gap:6px; margin-top:11px; }
 .comanda-acciones .principal { flex:1; border:none; border-radius:8px; padding:10px; font-weight:700; font-size:13px; color:#fff; cursor:pointer; font-family:inherit; }
 .comanda-acciones .chico { border:1px solid var(--line); background:var(--surface); border-radius:8px; padding:0 11px; cursor:pointer; font-size:14px; }
@@ -2593,6 +2594,7 @@ tr:last-child td { border-bottom: none; }
         <input type="date" id="cajaFecha" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;">
         <button type="button" id="cajaHoyBtn" class="btn-ghost" style="width:auto;padding:8px 14px;font-size:13px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Hoy</button>
         <div style="flex:1;"></div>
+        <button type="button" id="arqueoCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">🧮 Arqueo de caja</button>
         <button type="button" id="cierreCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">🧾 Cierre de caja</button>
         <button type="button" id="nuevoMovimientoCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Movimiento manual</button>
       </div>
@@ -4566,6 +4568,41 @@ tr:last-child td { border-bottom: none; }
     <div class="field"><label>Notas (opcional)</label><input type="text" id="movCajaNotas" placeholder="Detalle adicional"></div>
 
     <button type="button" id="guardarMovimientoCajaBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar movimiento</button>
+  </div>
+</div>
+
+<!-- MODAL CAMBIAR MEDIO DE PAGO -->
+<div class="modal-overlay hidden" id="medioPagoModal">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" id="closeMedioPagoModal">✕</button>
+    <h3><i class="fa-solid fa-credit-card" style="color:var(--celeste);"></i> Cambiar medio de pago</h3>
+    <div id="medioPagoResumen" style="font-size:13px;color:var(--text-mute);margin:-8px 0 14px;line-height:1.5;"></div>
+    <div class="field">
+      <label>¿Cómo pagó al final?</label>
+      <select id="medioPagoNuevo" style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;"></select>
+    </div>
+    <button type="button" id="guardarMedioPagoBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">Guardar</button>
+  </div>
+</div>
+
+<!-- MODAL ARQUEO DE CAJA -->
+<div class="modal-overlay hidden" id="arqueoModal">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" id="closeArqueoModal">✕</button>
+    <h3><i class="fa-solid fa-scale-balanced" style="color:var(--celeste);"></i> Arqueo de caja</h3>
+    <div id="arqueoFecha" style="font-size:13px;color:var(--text-mute);margin:-8px 0 12px;line-height:1.5;"></div>
+    <table style="width:100%;">
+      <thead><tr><th style="text-align:left;">Medio</th><th style="text-align:right;">Debería haber</th><th style="text-align:right;">Contaste</th><th style="text-align:right;">Diferencia</th></tr></thead>
+      <tbody id="arqueoBody"></tbody>
+    </table>
+    <div id="arqueoTotal" style="margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--bg);font-size:14px;"></div>
+    <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
+      <button type="button" id="arqueoImprimirBtn" class="btn" style="flex:1;min-width:150px;background:#fff;color:var(--navy);border:1px solid var(--line);">🧾 Imprimir arqueo</button>
+      <button type="button" id="arqueoAjustarBtn" class="btn btn-primary" style="flex:1;min-width:150px;">Guardar diferencias</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-mute);margin-top:8px;line-height:1.5;">
+      "Guardar diferencias" anota cada faltante o sobrante como un movimiento manual del día, así la caja queda igual a lo que contaste.
+    </div>
   </div>
 </div>
 
@@ -15266,14 +15303,18 @@ function renderOrders() {
     // El ticket va en cualquier estado: de un pedido pendiente sirve como
     // comanda para la cocina, y de uno confirmado como comprobante.
     const botonTicket = '<button class="icon-btn" data-ticket-pedido="' + o.id + '" title="Imprimir el ticket">🧾</button>';
+    // El medio de pago se puede corregir aunque ya este confirmado: el
+    // cliente dice "efectivo" y en el mostrador paga con transferencia.
+    const botonMedio = e === 'cancelado' ? ''
+      : '<button class="icon-btn" data-medio-pago="' + o.id + '" title="Cambiar el medio de pago (' + escapeHtml(o.medio_pago || 'sin especificar') + ')">💳</button>';
 
     const acciones = e === 'pendiente'
-      ? '<div class="row-actions">' + botonTicket +
-          '<button class="icon-btn" data-confirmar="' + o.id + '" title="Marcar como confirmado y descontar stock" style="color:var(--stock);">✓ Confirmar</button>' +
+      ? '<div class="row-actions">' + botonTicket + botonMedio +
+          '<button class="icon-btn" data-confirmar=""' + o.id + '" title="Marcar como confirmado y descontar stock" style="color:var(--stock);">✓ Confirmar</button>' +
           '<button class="icon-btn danger" data-cancelar="' + o.id + '" title="No llegó nunca">✕</button>' +
           '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar directamente">🗑</button>' +
         '</div>'
-      : '<div class="row-actions">' + botonTicket + (e === 'confirmado'
+      : '<div class="row-actions">' + botonTicket + botonMedio + (e === 'confirmado'
           ? '<button class="icon-btn danger" data-anular="' + o.id + '" title="Anular y devolver el stock">Anular</button>'
           : '<button class="icon-btn danger" data-eliminar-pedido="' + o.id + '" title="Borrar de la lista">🗑</button>') +
         '</div>';
@@ -15301,7 +15342,9 @@ function renderOrders() {
               escapeHtml(o.trade_in_descripcion) + ' (' + money(o.trade_in_valor) + ')</div>'
           : '') +
       '</td>' +
-      '<td style="font-weight:600;">' + money(o.total) + '</td>' +
+      '<td style="font-weight:600;">' + money(o.total) +
+        (o.medio_pago ? '<div style="font-size:11.5px;font-weight:400;color:var(--text-mute);">' + escapeHtml(o.medio_pago) + '</div>' : '') +
+      '</td>' +
       '<td style="font-size:12.5px;">' + fechaHoraAR(o.created_at, {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
       // La hora prometida, grande y aparte de la hora de carga: son dos
       // cosas distintas y mezclarlas es lo que hace que un pedido "para
@@ -15332,6 +15375,8 @@ function renderOrders() {
     b.addEventListener('click', () => eliminarPedido(b.dataset.eliminarPedido)));
   cuerpo.querySelectorAll('[data-ticket-pedido]').forEach(b =>
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketPedido)));
+  cuerpo.querySelectorAll('[data-medio-pago]').forEach(b =>
+    b.addEventListener('click', () => abrirCambioMedioPago(b.dataset.medioPago)));
 
   renderComandas();
 
@@ -15458,7 +15503,8 @@ function tarjetaComanda(o, etapa) {
 // Medio de pago y si ya esta abonado. Sin la migracion 56 no hay donde
 // guardarlo: se muestra solo el medio, como antes.
 function bloquePagoComanda(o) {
-  const medio = o.medio_pago ? escapeHtml(o.medio_pago) : 'Sin medio de pago';
+  const medio = '<button type="button" class="medio-editable" data-medio-pago="' + o.id + '" title="Cambiar el medio de pago">' +
+    (o.medio_pago ? escapeHtml(o.medio_pago) : 'Sin medio de pago') + ' ✎</button>';
   if (!('pagado' in o)) return '<div class="comanda-pago">' + medio + '</div>';
   return o.pagado
     ? '<div class="comanda-cobro abonado"><span>✓ Abonado · ' + medio + '</span>' +
@@ -15543,6 +15589,8 @@ function renderComandas() {
     b.addEventListener('click', () => moverComanda(b.dataset.comandaEtapa, b.dataset.de, b.dataset.a)));
   panel.querySelectorAll('[data-comanda-pagado]').forEach(b =>
     b.addEventListener('click', () => marcarPagadoComanda(b.dataset.comandaPagado, b.dataset.valor === '1')));
+  panel.querySelectorAll('[data-medio-pago]').forEach(b =>
+    b.addEventListener('click', () => abrirCambioMedioPago(b.dataset.medioPago)));
   panel.querySelectorAll('[data-comanda-ticket]').forEach(b =>
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.comandaTicket)));
 }
@@ -18920,6 +18968,7 @@ function renderCaja() {
         origen: 'venta', hora: o.created_at, tipo: 'ingreso',
         concepto: 'Venta — ' + (o.customer_name || 'Mostrador'),
         medio: o.medio_pago || 'Sin especificar',
+        ordenId: o.id,
         monto: cobradoDinero,
         costo: costo,
         // Si quedo fiado o entro un equipo en parte de pago, lo que entro en
@@ -19040,7 +19089,12 @@ function renderCaja() {
       '<td>' + escapeHtml(m.concepto) +
         (m.detalle ? '<div style="font-size:11.5px;color:var(--text-mute);margin-top:2px;">' + escapeHtml(m.detalle) + '</div>' : '') +
       '</td>' +
-      '<td style="font-size:12.5px;color:var(--text-mute);">' + escapeHtml(m.medio) + '</td>' +
+      // En una venta el medio se puede corregir desde aca mismo: es donde
+      // se nota que no cierra.
+      '<td style="font-size:12.5px;color:var(--text-mute);">' + (m.ordenId
+        ? '<button type="button" class="medio-editable" data-medio-pago="' + m.ordenId + '" title="Cambiar el medio de pago">' +
+            escapeHtml(m.medio) + ' ✎</button>'
+        : escapeHtml(m.medio)) + '</td>' +
       '<td style="text-align:right;font-weight:600;">' + (m.tipo === 'egreso' ? '-' : '') + money(m.monto) +
         // Debajo del precio, lo que costo y lo que dejo. Tapado con el
         // mismo PIN que el resto de los costos: en el mostrador esta fila
@@ -19061,6 +19115,8 @@ function renderCaja() {
 
   cuerpo.querySelectorAll('[data-eliminar-mov-caja]').forEach(b =>
     b.addEventListener('click', () => eliminarMovimientoCaja(b.getAttribute('data-eliminar-mov-caja'))));
+  cuerpo.querySelectorAll('[data-medio-pago]').forEach(b =>
+    b.addEventListener('click', () => abrirCambioMedioPago(b.dataset.medioPago)));
 }
 
 byId('cajaFecha').addEventListener('change', renderCaja);
@@ -19115,6 +19171,181 @@ async function eliminarMovimientoCaja(id) {
   if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
   await refreshData();
 }
+
+// ===================== CAMBIAR EL MEDIO DE PAGO =====================
+// El cliente avisa "pago en efectivo", el pedido se carga asi, y en el
+// mostrador termina pagando con transferencia. Si el medio no se puede
+// corregir, la caja dice que hay efectivo que no esta y el arqueo no cierra.
+// Se puede cambiar en cualquier estado: no toca stock ni montos, solo dice
+// por donde entro la plata.
+let medioPagoEditando = null;
+
+function abrirCambioMedioPago(id) {
+  if (!puedeOperar()) return;
+  const o = pedidosTodos.find(x => String(x.id) === String(id)) || orders.find(x => String(x.id) === String(id));
+  if (!o) return;
+  medioPagoEditando = o.id;
+
+  const actual = o.medio_pago || '';
+  const opciones = MEDIOS_DE_PAGO.includes(actual) || !actual ? MEDIOS_DE_PAGO : [actual, ...MEDIOS_DE_PAGO];
+  byId('medioPagoNuevo').innerHTML = (actual ? '' : '<option value="">Sin especificar</option>') +
+    opciones.map(m => '<option' + (m === actual ? ' selected' : '') + '>' + escapeHtml(m) + '</option>').join('');
+  byId('medioPagoResumen').innerHTML =
+    escapeHtml(o.customer_name || 'Mostrador') + ' · ' + money(o.total) +
+    '<br>Ahora figura: <b>' + escapeHtml(actual || 'Sin especificar') + '</b>';
+  show(byId('medioPagoModal'));
+}
+
+async function guardarCambioMedioPago() {
+  if (!puedeOperar() || medioPagoEditando == null) return;
+  const id = medioPagoEditando;
+  const medio = byId('medioPagoNuevo').value || null;
+
+  const { error } = await sb.from('orders').update({ medio_pago: medio }).eq('id', id);
+  if (error) { dialogoAviso('No se pudo cambiar el medio de pago:\n\n' + humano(error)); return; }
+
+  // Si fue fiado y pago una parte al momento, ese pago tambien se cobro con
+  // el medio nuevo. Si no se puede (permisos), el pedido ya quedo bien.
+  if (pagos.some(p => String(p.order_id) === String(id) && p.nota === 'Pago al momento de la venta')) {
+    await sb.from('store_pagos').update({ medio_pago: medio })
+      .eq('order_id', id).eq('nota', 'Pago al momento de la venta');
+  }
+
+  medioPagoEditando = null;
+  hide(byId('medioPagoModal'));
+  await refreshData();
+}
+
+byId('closeMedioPagoModal').addEventListener('click', () => { medioPagoEditando = null; hide(byId('medioPagoModal')); });
+byId('guardarMedioPagoBtn').addEventListener('click', guardarCambioMedioPago);
+
+// ===================== ARQUEO DE CAJA =====================
+// Contar lo que hay de verdad y compararlo, medio por medio, con lo que
+// dice el sistema. El "Cierre de caja" solo pregunta el efectivo para el
+// ticket; aca se ve cada medio y, si hace falta, la diferencia se guarda
+// como movimiento manual para que la caja quede igual a lo contado.
+function filasArqueo() {
+  const r = ultimoResumenCaja;
+  if (!r) return [];
+  const medios = Object.keys(r.porMedio).filter(m => m !== 'Equipo usado');
+  if (!medios.includes('Efectivo')) medios.push('Efectivo');
+  medios.sort((a, b) => (a === 'Efectivo' ? -1 : b === 'Efectivo' ? 1 : a.localeCompare(b)));
+  return medios.map(m => {
+    const input = byId('arqueoBody').querySelector('[data-arqueo-medio="' + CSS.escape(m) + '"]');
+    const texto = input ? input.value.trim() : '';
+    const contado = texto === '' ? null : Number(texto);
+    const esperado = Number(r.porMedio[m] || 0);
+    return { medio: m, esperado, contado: Number.isFinite(contado) ? contado : null,
+             diferencia: Number.isFinite(contado) && contado !== null ? contado - esperado : null };
+  });
+}
+
+function textoDiferencia(d) {
+  if (d == null) return '<span style="color:var(--text-mute);">—</span>';
+  if (Math.abs(d) < 0.5) return '<span style="color:#1FA088;font-weight:600;">OK</span>';
+  return d > 0
+    ? '<span style="color:#1FA088;font-weight:600;">sobra ' + money(d) + '</span>'
+    : '<span style="color:#DC2626;font-weight:600;">falta ' + money(-d) + '</span>';
+}
+
+function actualizarArqueo() {
+  const filas = filasArqueo();
+  filas.forEach(f => {
+    const celda = byId('arqueoBody').querySelector('[data-arqueo-dif="' + CSS.escape(f.medio) + '"]');
+    if (celda) celda.innerHTML = textoDiferencia(f.diferencia);
+  });
+  const contadas = filas.filter(f => f.contado != null);
+  const total = contadas.reduce((s, f) => s + f.diferencia, 0);
+  byId('arqueoTotal').innerHTML = contadas.length
+    ? 'Resultado: ' + textoDiferencia(total) + ' <span style="color:var(--text-mute);font-size:12.5px;">(' +
+        contadas.length + ' de ' + filas.length + ' medios contados)</span>'
+    : '<span style="color:var(--text-mute);">Escribí lo que contaste en cada medio. El efectivo, contando los billetes; los demás, mirando el banco o la app.</span>';
+}
+
+function abrirArqueo() {
+  if (!puedeOperar()) return;
+  renderCaja();
+  const r = ultimoResumenCaja;
+  if (!r) return;
+  byId('arqueoFecha').textContent = 'Día ' + fechaAR(r.fecha) +
+    '. "Debería haber" es lo que entró menos lo que salió ese día por cada medio.';
+  const medios = Object.keys(r.porMedio).filter(m => m !== 'Equipo usado');
+  if (!medios.includes('Efectivo')) medios.push('Efectivo');
+  medios.sort((a, b) => (a === 'Efectivo' ? -1 : b === 'Efectivo' ? 1 : a.localeCompare(b)));
+  byId('arqueoBody').innerHTML = medios.map(m =>
+    '<tr>' +
+      '<td>' + escapeHtml(m) + '</td>' +
+      '<td style="text-align:right;font-weight:600;">' + money(r.porMedio[m] || 0) + '</td>' +
+      '<td style="text-align:right;"><input type="number" inputmode="decimal" step="1" min="0" data-arqueo-medio="' + escapeHtml(m) + '" ' +
+        'style="width:110px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;text-align:right;font-size:14px;"></td>' +
+      '<td style="text-align:right;" data-arqueo-dif="' + escapeHtml(m) + '"></td>' +
+    '</tr>').join('');
+  byId('arqueoBody').querySelectorAll('[data-arqueo-medio]').forEach(i => i.addEventListener('input', actualizarArqueo));
+  actualizarArqueo();
+  show(byId('arqueoModal'));
+  byId('arqueoBody').querySelector('input')?.focus();
+}
+
+function imprimirArqueo() {
+  const r = ultimoResumenCaja;
+  if (!r) return;
+  const filas = filasArqueo();
+  const ahora = new Date();
+  const fila = (a, b) => '<div class="tk-fila"><span>' + a + '</span><span>' + b + '</span></div>';
+  const signo = d => (d < 0 ? '-' : d > 0 ? '+' : '') + money(Math.abs(d));
+  const contadas = filas.filter(f => f.contado != null);
+  const html =
+    '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
+    '<div class="tk-sub">ARQUEO DE CAJA</div>' +
+    '<div class="tk-sep"></div>' +
+    fila('Día', fechaAR(r.fecha)) +
+    fila('Hecho', fechaAR(ahora) + ' ' + horaAR(ahora, { hour: '2-digit', minute: '2-digit', hour12: false })) +
+    filas.map(f =>
+      '<div class="tk-sep"></div>' +
+      '<div class="tk-sub">' + escapeHtml(f.medio).toUpperCase() + '</div>' +
+      fila('Debería haber', money(f.esperado)) +
+      fila('Contado', f.contado != null ? money(f.contado) : 'sin contar') +
+      (f.contado != null ? fila('<b>Diferencia</b>', '<b>' + signo(f.diferencia) + '</b>') : '')
+    ).join('') +
+    (contadas.length
+      ? '<div class="tk-sep"></div><div class="tk-total"><span>DIFERENCIA</span><span>' +
+          signo(contadas.reduce((s, f) => s + f.diferencia, 0)) + '</span></div>'
+      : '') +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-pie">Firma: ____________________</div>';
+  abrirVentanaTicket('Arqueo de caja ' + r.fecha, html, true);
+}
+
+async function guardarDiferenciasArqueo() {
+  if (!puedeOperar()) return;
+  const r = ultimoResumenCaja;
+  if (!r) return;
+  const conDiferencia = filasArqueo().filter(f => f.diferencia != null && Math.abs(f.diferencia) >= 0.5);
+  if (!conDiferencia.length) { dialogoAviso('No hay diferencias para guardar: lo contado coincide con la caja.'); return; }
+
+  const lista = conDiferencia.map(f => '• ' + f.medio + ': ' + (f.diferencia > 0 ? 'sobran ' : 'faltan ') + money(Math.abs(f.diferencia))).join('\n');
+  if (!await dialogoConfirmar('Se van a anotar estos ajustes en la caja del ' + fechaAR(r.fecha) + ':\n\n' + lista +
+      '\n\nAntes revisá si alguna venta quedó con el medio de pago equivocado: eso se corrige en la venta, no con un ajuste.')) return;
+
+  const { error } = await sb.from('store_movimientos_caja').insert(conDiferencia.map(f => ({
+    store_slug: currentStore.slug,
+    tipo: f.diferencia > 0 ? 'ingreso' : 'egreso',
+    concepto: 'Ajuste de arqueo — ' + (f.diferencia > 0 ? 'sobrante' : 'faltante'),
+    monto: Math.abs(f.diferencia),
+    medio_pago: f.medio === 'Sin especificar' ? null : f.medio,
+    fecha: r.fecha,
+    notas: 'Debería haber ' + money(f.esperado) + ', se contó ' + money(f.contado)
+  })));
+  if (error) { dialogoAviso('No se pudieron guardar los ajustes:\n\n' + humano(error)); return; }
+
+  hide(byId('arqueoModal'));
+  await refreshData();
+}
+
+byId('arqueoCajaBtn')?.addEventListener('click', abrirArqueo);
+byId('closeArqueoModal').addEventListener('click', () => hide(byId('arqueoModal')));
+byId('arqueoImprimirBtn').addEventListener('click', imprimirArqueo);
+byId('arqueoAjustarBtn').addEventListener('click', guardarDiferenciasArqueo);
 
 // ===================== HISTORIAL POR IMEI =====================
 // Un mismo equipo puede pasar por ingreso, reparación y venta en momentos
@@ -19610,6 +19841,7 @@ function renderSalesHistory() {
       '<td style="text-align:right;color:var(--navy);font-weight:600;">' + money(o.total) + '</td>' +
       '<td style="text-align:right;">' +
         '<button class="icon-btn" data-ticket-venta="' + o.id + '" title="Reimprimir el ticket">🧾</button>' +
+        '<button class="icon-btn" data-medio-pago="' + o.id + '" title="Cambiar el medio de pago (' + escapeHtml(o.medio_pago || 'sin especificar') + ')">💳</button>' +
         '<button class="icon-btn" data-borrar-venta="' + o.id + '" title="Anular esta venta" ' +
         'style="color:var(--danger);">🗑</button></td>' +
       '</tr>';
@@ -19620,6 +19852,9 @@ function renderSalesHistory() {
   });
   el.querySelectorAll('[data-ticket-venta]').forEach(b => {
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketVenta));
+  });
+  el.querySelectorAll('[data-medio-pago]').forEach(b => {
+    b.addEventListener('click', () => abrirCambioMedioPago(b.dataset.medioPago));
   });
 }
 
