@@ -1735,6 +1735,7 @@ tr:last-child td { border-bottom: none; }
 .comanda-cobro { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; padding:7px 9px; border-radius:8px; font-size:12.5px; font-weight:700; }
 .comanda-cobro.abonado { background:#E8F6F1; color:#10614F; }
 .comanda-cobro.a-cobrar { background:#FDECEC; color:#97201D; }
+.comanda-cobro button.medio-editable, .medio-editable { border:none; border-bottom:1px dashed currentColor; border-radius:0; background:transparent; color:inherit; padding:0; font:inherit; cursor:pointer; text-align:left; }
 .comanda-cobro button { border:1px solid currentColor; background:transparent; color:inherit; border-radius:6px; padding:3px 8px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; }
 .comanda-acciones { display:flex; gap:6px; margin-top:11px; }
 .comanda-acciones .principal { flex:1; border:none; border-radius:8px; padding:10px; font-weight:700; font-size:13px; color:#fff; cursor:pointer; font-family:inherit; }
@@ -2533,6 +2534,23 @@ tr:last-child td { border-bottom: none; }
                     <option value="">Sin especificar</option>
                     <option>Efectivo</option><option>Débito</option><option>Crédito</option><option>Transferencia</option><option>Mercado Pago</option>
                   </select>
+                </div>
+                <!-- Pago dividido: "mitad efectivo, mitad transferencia" (Empire). Ver leerDosMediosVenta. -->
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-mute);margin-top:6px;cursor:pointer;">
+                  <input type="checkbox" id="barcodeDosMedios" style="width:auto;margin:0;"> Paga con dos medios
+                </label>
+                <div id="barcodeDosMediosBox" class="hidden" style="margin-top:6px;">
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <label style="font-size:13px;color:var(--text-mute);white-space:nowrap;">Con el 1º:</label>
+                    <input type="text" inputmode="decimal" id="barcodeMonto1" placeholder="Monto" style="width:110px;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+                    <label style="font-size:13px;color:var(--text-mute);white-space:nowrap;">El resto con:</label>
+                    <select id="barcodeMedioPago2" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+                      <option value="">Elegí…</option>
+                      <option>Efectivo</option><option>Débito</option><option>Crédito</option><option>Transferencia</option><option>Mercado Pago</option>
+                    </select>
+                  </div>
                 </div>
                 <div id="barcodeAliasBox" class="hidden" style="margin-top:8px;padding:10px 12px;background:#EAF4FD;border-radius:8px;"></div>
                 <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);">
@@ -7624,7 +7642,9 @@ function costoDeProducto(p) {
 // Mitad, Entera): "Media" a secas en otro rubro no se toca porque se
 // pregunta rubroEsComida() primero.
 const PORCIONES_POR_PIZZA = 8;
-const PORCIONES_POR_TAMANIO = { 'porcion': 1, 'cuarto': 2, '1/4': 2, 'media': 4, 'mitad': 4, '1/2': 4, 'entera': 8, 'completa': 8 };
+// "Grande" cuenta como entera: hay pizzerias que la cargan asi (Empire,
+// GREEN: Porcion / Cuarto / Media / Grande).
+const PORCIONES_POR_TAMANIO = { 'porcion': 1, 'cuarto': 2, '1/4': 2, 'media': 4, 'mitad': 4, '1/2': 4, 'entera': 8, 'completa': 8, 'grande': 8 };
 
 function porcionesDeValor(valor) {
   const t = String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -15265,7 +15285,8 @@ function renderOrders() {
     // confirmado de un paso, para no perder el stock sin darse cuenta.
     // El ticket va en cualquier estado: de un pedido pendiente sirve como
     // comanda para la cocina, y de uno confirmado como comprobante.
-    const botonTicket = '<button class="icon-btn" data-ticket-pedido="' + o.id + '" title="Imprimir el ticket">🧾</button>';
+    const botonTicket = '<button class="icon-btn" data-ticket-pedido="' + o.id + '" title="Imprimir el ticket">🧾</button>' +
+      (e !== 'cancelado' ? '<button class="icon-btn" data-agregar-pedido="' + o.id + '" title="Agregar productos a este pedido">➕</button>' : '');
 
     const acciones = e === 'pendiente'
       ? '<div class="row-actions">' + botonTicket +
@@ -15301,7 +15322,14 @@ function renderOrders() {
               escapeHtml(o.trade_in_descripcion) + ' (' + money(o.trade_in_valor) + ')</div>'
           : '') +
       '</td>' +
-      '<td style="font-weight:600;">' + money(o.total) + '</td>' +
+      '<td style="font-weight:600;">' + money(o.total) +
+        // Se puede corregir aunque ya este confirmado: el cliente dice
+        // "efectivo" y en el mostrador paga con transferencia.
+        (e !== 'cancelado'
+          ? '<div><button type="button" class="icon-btn" data-medio-pedido="' + o.id + '" title="Cambiar con qué pagó" ' +
+            'style="font-size:11.5px;font-weight:600;padding:2px 7px;margin-top:4px;white-space:nowrap;color:' +
+            (o.medio_pago ? 'var(--navy)' : '#8A5200') + ';">💳 ' + escapeHtml(o.medio_pago || 'Sin especificar') + ' ✎</button></div>'
+          : '') + '</td>' +
       '<td style="font-size:12.5px;">' + fechaHoraAR(o.created_at, {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</td>' +
       // La hora prometida, grande y aparte de la hora de carga: son dos
       // cosas distintas y mezclarlas es lo que hace que un pedido "para
@@ -15314,6 +15342,10 @@ function renderOrders() {
       '</tr>';
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px;">Sin pedidos</td></tr>';
 
+  cuerpo.querySelectorAll('[data-medio-pedido]').forEach(b =>
+    b.addEventListener('click', () => editarMedioDePago(b.dataset.medioPedido)));
+  cuerpo.querySelectorAll('[data-agregar-pedido]').forEach(b =>
+    b.addEventListener('click', () => abrirAgregarAlPedido(b.dataset.agregarPedido)));
   cuerpo.querySelectorAll('[data-confirmar]').forEach(b =>
     b.addEventListener('click', () => cambiarEstadoPedido(b.dataset.confirmar, 'confirmado')));
   cuerpo.querySelectorAll('[data-cancelar]').forEach(b =>
@@ -15417,7 +15449,7 @@ function tarjetaComanda(o, etapa) {
   const filas = items.map(it => {
     const qty = Number(it.qty || 1);
     const precio = Number(it.price || 0) * qty;
-    return '<tr><td>' + qty + 'x ' + escapeHtml(nombreDelItem(it) + detalleDelItem(it)) + '</td>' +
+    return '<tr><td>' + (it.agregado ? '<b title="Agregado después">➕ </b>' : '') + qty + 'x ' + escapeHtml(nombreDelItem(it) + detalleDelItem(it)) + '</td>' +
       '<td>' + (precio ? money(precio) : '') + '</td></tr>';
   }).join('');
 
@@ -15426,7 +15458,8 @@ function tarjetaComanda(o, etapa) {
     : '';
 
   let acciones = '';
-  const ticket = '<button class="chico" data-comanda-ticket="' + o.id + '" title="Imprimir comanda">🧾</button>';
+  const ticket = '<button class="chico" data-comanda-ticket="' + o.id + '" title="Imprimir comanda">🧾</button>' +
+    '<button class="chico" data-agregar-pedido="' + o.id + '" title="Agregar productos">➕</button>';
   if (etapa === 'nuevo') {
     acciones = '<button class="principal" style="background:#DC2626;" data-comanda-aceptar="' + o.id + '">Aceptar y preparar</button>' +
       ticket + '<button class="chico peligro" data-comanda-rechazar="' + o.id + '" title="Rechazar">✕</button>';
@@ -15434,7 +15467,8 @@ function tarjetaComanda(o, etapa) {
     acciones = '<button class="principal" style="background:var(--warn);" data-comanda-etapa="' + o.id + '" data-de="en_preparacion" data-a="listo">Listo ✓</button>' + ticket;
   } else if (etapa === 'listo') {
     acciones = '<button class="principal" style="background:var(--stock);" data-comanda-etapa="' + o.id + '" data-de="listo" data-a="entregado">Entregado</button>' +
-      '<button class="chico" data-comanda-etapa="' + o.id + '" data-de="listo" data-a="en_preparacion" title="Volver a En preparación">↩</button>';
+      '<button class="chico" data-comanda-etapa="' + o.id + '" data-de="listo" data-a="en_preparacion" title="Volver a En preparación">↩</button>' +
+      '<button class="chico" data-agregar-pedido="' + o.id + '" title="Agregar productos">➕</button>';
   }
 
   return '<div class="comanda' + (etapa === 'nuevo' ? ' es-nueva' : '') + '" data-comanda="' + o.id + '">' +
@@ -15458,7 +15492,8 @@ function tarjetaComanda(o, etapa) {
 // Medio de pago y si ya esta abonado. Sin la migracion 56 no hay donde
 // guardarlo: se muestra solo el medio, como antes.
 function bloquePagoComanda(o) {
-  const medio = o.medio_pago ? escapeHtml(o.medio_pago) : 'Sin medio de pago';
+  const medio = '<button type="button" class="medio-editable" data-medio-pedido="' + o.id + '" title="Cambiar con qué pagó">' +
+    (o.medio_pago ? escapeHtml(o.medio_pago) : 'Sin medio de pago') + ' ✎</button>';
   if (!('pagado' in o)) return '<div class="comanda-pago">' + medio + '</div>';
   return o.pagado
     ? '<div class="comanda-cobro abonado"><span>✓ Abonado · ' + medio + '</span>' +
@@ -15514,7 +15549,7 @@ function renderComandas() {
   // Se redibuja solo si algo cambio: si no, cada vuelta del "en vivo"
   // recargaria los mapas y la pantalla parpadearia.
   const firma = JSON.stringify(Object.values(porEtapa).map(l =>
-    l.map(o => [o.id, o.etapa, o.estado, o.hora_entrega, o.total, o.pagado, o.medio_pago])));
+    l.map(o => [o.id, o.etapa, o.estado, o.hora_entrega, o.total, o.pagado, o.medio_pago, (o.items || []).length])));
   if (firma === comandasFirma) {
     panel.querySelectorAll('[data-hace]').forEach(el => { el.textContent = haceCuanto(el.dataset.hace); });
     return;
@@ -15545,6 +15580,10 @@ function renderComandas() {
     b.addEventListener('click', () => marcarPagadoComanda(b.dataset.comandaPagado, b.dataset.valor === '1')));
   panel.querySelectorAll('[data-comanda-ticket]').forEach(b =>
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.comandaTicket)));
+  panel.querySelectorAll('[data-medio-pedido]').forEach(b =>
+    b.addEventListener('click', () => editarMedioDePago(b.dataset.medioPedido)));
+  panel.querySelectorAll('[data-agregar-pedido]').forEach(b =>
+    b.addEventListener('click', () => abrirAgregarAlPedido(b.dataset.agregarPedido)));
 }
 
 async function moverComanda(id, de, a) {
@@ -15724,6 +15763,362 @@ async function eliminarPedido(id) {
     dialogoAviso('No se pudo borrar el pedido:\n\n' + humano(error));
     return;
   }
+  await refreshData();
+}
+
+// ===================== CON QUE PAGO UN PEDIDO =====================
+// Corregir el medio de pago, o partirlo en dos (Empire, 4/10 y 19/10):
+// "te dicen efectivo y despues pagan por transferencia", "mitad y mitad".
+// Con un medio se guarda como siempre en medio_pago. Con dos, medio_pago
+// queda "Efectivo + Transferencia" (lo que leen ticket y listados) y los
+// montos van en pagos_divididos, que es lo que usa la Caja para repartir.
+// No toca stock ni montos: solo dice por donde entro la plata.
+function mediosDePagoDeLaTienda(actuales) {
+  const propios = Array.isArray(currentStore?.medios_pago) && currentStore.medios_pago.length
+    ? currentStore.medios_pago : MEDIOS_DE_PAGO;
+  const lista = propios.slice();
+  (actuales || []).forEach(m => { if (m && !lista.includes(m)) lista.push(m); });
+  return lista;
+}
+
+function cobradoDelPedido(o) {
+  return Math.max(0, Number(o.total || 0) - Number(o.saldo_pendiente || 0) - Number(o.trade_in_valor || 0));
+}
+
+function editarMedioDePago(id) {
+  if (!puedeOperar()) return;
+  const o = pedidosTodos.find(x => String(x.id) === String(id));
+  if (!o) return;
+  const cobrado = cobradoDelPedido(o);
+  const div = Array.isArray(o.pagos_divididos) && o.pagos_divididos.length >= 2 ? o.pagos_divididos : null;
+  const medioSolo = div ? '' : (o.medio_pago || '');
+  const medios = mediosDePagoDeLaTienda(div ? div.map(d => d.medio) : [medioSolo]);
+  const opciones = (sel) => '<option value="">Elegí…</option>' +
+    medios.map(m => '<option' + (m === sel ? ' selected' : '') + '>' + escapeHtml(m) + '</option>').join('');
+  const estilo = 'padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;';
+
+  document.getElementById('medioPedidoModal')?.remove();   // se crea en el momento, no está en el HTML
+  const capa = document.createElement('div');
+  capa.className = 'modal-overlay';
+  capa.id = 'medioPedidoModal';
+  capa.innerHTML =
+    '<div class="modal" style="max-width:420px;">' +
+      '<button class="modal-close" data-cerrar-medio>✕</button>' +
+      '<h3>💳 Con qué pagó</h3>' +
+      '<p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;">' + escapeHtml(o.customer_name || 'Pedido') +
+        ' · cobrado ' + money(cobrado) + '</p>' +
+      '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
+        '<select id="mpMedio1" style="flex:1;' + estilo + '">' + opciones(div ? div[0].medio : medioSolo) + '</select>' +
+        '<input id="mpMonto1" type="text" inputmode="decimal" class="mp-dividido" placeholder="Monto" style="width:120px;' + estilo + '" value="' + (div ? div[0].monto : '') + '">' +
+      '</div>' +
+      '<div class="mp-dividido" style="display:flex;gap:8px;margin-bottom:8px;">' +
+        '<select id="mpMedio2" style="flex:1;' + estilo + '">' + opciones(div ? div[1].medio : '') + '</select>' +
+        '<input id="mpMonto2" type="text" readonly style="width:120px;background:var(--bg);' + estilo + '">' +
+      '</div>' +
+      (cobrado > 0
+        ? '<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0 14px;cursor:pointer;">' +
+            '<input type="checkbox" id="mpDividir"' + (div ? ' checked' : '') + ' style="width:auto;"> Pagó con dos medios (ej. mitad efectivo, mitad transferencia)</label>'
+        : '') +
+      '<button type="button" class="btn btn-primary" id="mpGuardar" style="width:100%;">Guardar</button>' +
+    '</div>';
+  document.body.appendChild(capa);
+
+  const dividir = () => !!byId('mpDividir')?.checked;
+  const recalcular = () => {
+    capa.querySelectorAll('.mp-dividido').forEach(el => el.style.display = dividir() ? '' : 'none');
+    const m1 = numeroArgentino(byId('mpMonto1').value);
+    byId('mpMonto2').value = Number.isFinite(m1) ? money(Math.max(0, cobrado - m1)) : '';
+  };
+  byId('mpDividir')?.addEventListener('change', () => {
+    if (dividir() && !byId('mpMonto1').value) byId('mpMonto1').value = String(Math.round(cobrado / 2));
+    recalcular();
+  });
+  byId('mpMonto1').addEventListener('input', recalcular);
+  recalcular();
+
+  capa.querySelectorAll('[data-cerrar-medio]').forEach(b => b.addEventListener('click', () => capa.remove()));
+  capa.addEventListener('click', (ev) => { if (ev.target === capa) capa.remove(); });
+
+  byId('mpGuardar').addEventListener('click', async () => {
+    const m1 = byId('mpMedio1').value;
+    let cambios;
+    if (!dividir()) {
+      if (!m1) { dialogoAviso('Elegí con qué pagó.'); return; }
+      cambios = { medio_pago: m1, pagos_divididos: null };
+    } else {
+      const m2 = byId('mpMedio2').value;
+      const partes = validarPagoDividido(m1, m2, byId('mpMonto1').value, cobrado);
+      if (!partes) { byId('mpMonto1').focus(); return; }
+      cambios = { medio_pago: m1 + ' + ' + m2, pagos_divididos: partes };
+    }
+
+    const boton = byId('mpGuardar');
+    boton.disabled = true;
+    const { error } = await sb.from('orders').update(cambios).eq('id', o.id);
+    boton.disabled = false;
+    if (error) {
+      dialogoAviso(/pagos_divididos/.test(error.message || '')
+        ? 'Falta una actualización en la base: corré schema/55-pago-dividido.sql en Supabase.'
+        : 'No se pudo guardar:\n\n' + humano(error));
+      return;
+    }
+
+    // Si fue fiado y pago una parte al momento, ese pago tambien se cobro con
+    // el medio nuevo. Si no se puede (permisos), el pedido ya quedo bien.
+    if (pagos.some(p => String(p.order_id) === String(o.id) && p.nota === 'Pago al momento de la venta')) {
+      await sb.from('store_pagos').update({ medio_pago: cambios.medio_pago })
+        .eq('order_id', o.id).eq('nota', 'Pago al momento de la venta');
+    }
+
+    capa.remove();
+    await refreshData();
+  });
+}
+
+// Los dos montos de un pago dividido, o null (y avisa) si algo no cierra.
+function validarPagoDividido(m1, m2, textoMonto1, cobrado) {
+  const monto1 = Math.round(numeroArgentino(textoMonto1) * 100) / 100;
+  const monto2 = Math.round((cobrado - monto1) * 100) / 100;
+  if (!m1 || !m2) { dialogoAviso('Elegí los dos medios de pago.'); return null; }
+  if (m1 === m2) { dialogoAviso('Los dos medios son iguales. Destildá "dos medios" y elegí uno solo.'); return null; }
+  if (!(monto1 > 0) || !(monto2 > 0)) {
+    dialogoAviso('El primer monto tiene que ser mayor a 0 y menor a ' + money(cobrado) + '.');
+    return null;
+  }
+  return [{ medio: m1, monto: monto1 }, { medio: m2, monto: monto2 }];
+}
+
+// Las partes de un pago dividido, ajustadas a lo que entro de verdad (si
+// despues cambio el total, por ejemplo porque se agregaron productos, se
+// reparte en la misma proporcion). Null si se pago con un solo medio.
+function partesDelPago(o, cobrado) {
+  const d = Array.isArray(o.pagos_divididos) ? o.pagos_divididos.filter(x => x && x.medio && Number(x.monto) > 0) : [];
+  if (d.length < 2 || !(cobrado > 0)) return null;
+  const suma = d.reduce((s, x) => s + Number(x.monto), 0);
+  let acumulado = 0;
+  return d.map((x, k) => {
+    const monto = k === d.length - 1 ? Math.round((cobrado - acumulado) * 100) / 100
+                                     : Math.round(cobrado * Number(x.monto) / suma * 100) / 100;
+    acumulado += monto;
+    return { medio: x.medio, monto };
+  });
+}
+
+// ===================== AGREGAR PRODUCTOS A UN PEDIDO =====================
+// "Ya confirmamos el pedido y despues piden una gaseosa más" (Empire,
+// 19/10). Antes habia que anular y cargar todo de nuevo. Ahora se suman
+// lineas al mismo pedido:
+//  - el total sube y, si el pedido ya estaba confirmado, se descuenta el
+//    stock SOLO de lo agregado (lo de antes ya se desconto al confirmar);
+//  - si era fiado (quedaba saldo), lo agregado se suma a lo que debe; si no,
+//    entra con el mismo medio de pago (si pago con dos, se suma al segundo);
+//  - en la cocina, si ya estaba "Listo", vuelve a "En preparacion" para que
+//    lo agregado no se pierda, y la comanda marca lo nuevo con ➕.
+// Lo agregado pasa por el mismo armado de porciones que el mostrador.
+let agregadoPedido = null;   // { id, lineas: [], producto, }
+
+function abrirAgregarAlPedido(id) {
+  if (!puedeOperar()) return;
+  const o = pedidosTodos.find(x => String(x.id) === String(id));
+  if (!o) return;
+  if (estadoPedido(o) === 'cancelado') { dialogoAviso('Este pedido está anulado. Cargá una venta nueva.'); return; }
+  agregadoPedido = { id: o.id, lineas: [], producto: null };
+
+  document.getElementById('agregarPedidoModal')?.remove();   // se crea en el momento, no está en el HTML
+  const capa = document.createElement('div');
+  capa.className = 'modal-overlay';
+  capa.id = 'agregarPedidoModal';
+  const estilo = 'padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;';
+  capa.innerHTML =
+    '<div class="modal" style="max-width:460px;">' +
+      '<button class="modal-close" data-cerrar-agregar>✕</button>' +
+      '<h3>➕ Agregar al pedido</h3>' +
+      '<p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;">' + escapeHtml(o.customer_name || 'Pedido') +
+        ' · ahora ' + money(o.total) + (estadoPedido(o) === 'confirmado' ? ' · confirmado' : '') + '</p>' +
+      '<input id="apBuscar" type="search" placeholder="Buscar producto…" autocomplete="off" style="width:100%;' + estilo + '">' +
+      '<div id="apResultados" style="margin-top:6px;max-height:190px;overflow-y:auto;"></div>' +
+      '<div id="apElegido" class="hidden" style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px;">' +
+        '<div id="apElegidoNombre" style="font-weight:700;color:var(--navy);margin-bottom:8px;"></div>' +
+        '<select id="apVariante" class="hidden" style="width:100%;margin-bottom:8px;' + estilo + '"></select>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+          '<label style="font-size:13.5px;color:var(--text-mute);">Cantidad</label>' +
+          '<input id="apCantidad" type="number" min="0" step="1" value="1" style="width:90px;' + estilo + '">' +
+          '<button type="button" class="btn" id="apSumar" style="flex:1;width:auto;padding:9px 12px;">Sumar</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="apLista" style="margin-top:12px;"></div>' +
+      '<button type="button" class="btn btn-primary" id="apGuardar" style="width:100%;margin-top:12px;" disabled>Guardar en el pedido</button>' +
+    '</div>';
+  document.body.appendChild(capa);
+
+  const cerrar = () => { capa.remove(); agregadoPedido = null; };
+  capa.querySelectorAll('[data-cerrar-agregar]').forEach(b => b.addEventListener('click', cerrar));
+  capa.addEventListener('click', (ev) => { if (ev.target === capa) cerrar(); });
+  byId('apBuscar').addEventListener('input', pintarResultadosAgregado);
+  byId('apSumar').addEventListener('click', sumarLineaAgregado);
+  byId('apGuardar').addEventListener('click', guardarAgregadoAlPedido);
+  pintarResultadosAgregado();
+  pintarListaAgregado();
+  byId('apBuscar').focus();
+}
+
+function pintarResultadosAgregado() {
+  const q = normalizarTexto(byId('apBuscar').value || '');
+  const caja = byId('apResultados');
+  if (!q) { caja.innerHTML = ''; return; }
+  const encontrados = (products || []).filter(p => normalizarTexto(p.name || '').includes(q)).slice(0, 8);
+  caja.innerHTML = encontrados.map(p =>
+    '<button type="button" data-ap-producto="' + p.id + '" style="display:flex;justify-content:space-between;gap:8px;width:100%;' +
+      'padding:8px 10px;border:none;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;font:inherit;text-align:left;">' +
+      '<span>' + escapeHtml(p.name) + '</span><span style="color:var(--text-mute);white-space:nowrap;">' +
+      (p.tiene_variantes ? 'elegir' : money(precioVigente(p))) + '</span></button>').join('') ||
+    '<div style="color:var(--text-mute);font-size:13px;padding:8px 2px;">No hay productos con ese nombre.</div>';
+  caja.querySelectorAll('[data-ap-producto]').forEach(b =>
+    b.addEventListener('click', () => elegirProductoAgregado(b.dataset.apProducto)));
+}
+
+function elegirProductoAgregado(id) {
+  const p = (products || []).find(x => String(x.id) === String(id));
+  if (!p) return;
+  agregadoPedido.producto = p;
+  byId('apElegidoNombre').textContent = p.name;
+  const sel = byId('apVariante');
+  const variantes = p.tiene_variantes && Array.isArray(p.variantes) ? p.variantes : [];
+  sel.innerHTML = variantes.map((v, i) =>
+    '<option value="' + i + '">' + escapeHtml(Object.values(v.atributos || {}).join(' / ')) + ' · ' +
+      money(precioDeVentaMostrador(p, v.atributos)) + '</option>').join('');
+  sel.classList.toggle('hidden', !variantes.length);
+  byId('apCantidad').step = seVendePorMedida(p) ? 'any' : '1';
+  byId('apCantidad').value = '1';
+  byId('apElegido').classList.remove('hidden');
+  byId('apResultados').innerHTML = '';
+  byId('apBuscar').value = '';
+}
+
+function sumarLineaAgregado() {
+  const p = agregadoPedido?.producto;
+  if (!p) return;
+  const qty = redondearMedida(Number(byId('apCantidad').value));
+  if (!(qty > 0) || (!seVendePorMedida(p) && !Number.isInteger(qty))) {
+    dialogoAviso('Escribí una cantidad válida.');
+    return;
+  }
+  const variantes = p.tiene_variantes && Array.isArray(p.variantes) ? p.variantes : [];
+  const v = variantes.length ? variantes[Number(byId('apVariante').value)] : null;
+  if (variantes.length && !v) { dialogoAviso('Elegí cuál.'); return; }
+  const variante = v ? { ...v.atributos } : null;
+
+  // Lo que ya esta en esta lista de la misma combinacion cuenta contra el stock.
+  if (esProductoFisico(p)) {
+    const misma = (l) => String(l.product.id) === String(p.id) && claveVariante(l.variante || {}) === claveVariante(variante || {});
+    const yaSumado = agregadoPedido.lineas.filter(misma).reduce((s, l) => s + Number(l.qty), 0);
+    const disponible = (v ? Number(v.stock || 0) : Number(p.stock || 0)) - yaSumado;
+    if (qty > disponible) {
+      dialogoAviso('No hay stock suficiente: quedan ' + Math.max(0, disponible) + '.');
+      return;
+    }
+  }
+
+  agregadoPedido.lineas.push({ product: p, qty, variante, precioUnitario: precioDeVentaMostrador(p, variante) });
+  agregadoPedido.producto = null;
+  byId('apElegido').classList.add('hidden');
+  pintarListaAgregado();
+  byId('apBuscar').focus();
+}
+
+function pintarListaAgregado() {
+  const caja = byId('apLista');
+  const lineas = agregadoPedido?.lineas || [];
+  byId('apGuardar').disabled = !lineas.length;
+  if (!lineas.length) { caja.innerHTML = ''; return; }
+  const r = aplicarArmadoDePorciones(lineas);
+  caja.innerHTML =
+    r.lineas.map((l, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:14px;">' +
+        '<span style="flex:1;">' + (seVendePorMedida(l.product) ? formatearCantidad(l.qty, l.product) : l.qty) + ' × ' + escapeHtml(nombreDeLineaVenta(l)) + '</span>' +
+        '<b>' + money(l.importe) + '</b>' +
+        '<button type="button" class="icon-btn danger" data-ap-quitar="' + i + '" title="Sacar">✕</button>' +
+      '</div>').join('') +
+    r.ajustes.map(a => '<div style="font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;">' + escapeHtml(textoAjustePorciones(a)) + '</div>').join('') +
+    '<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--navy);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);">' +
+      '<span>Se suma al pedido</span><span>' + money(r.total) + '</span></div>';
+  caja.querySelectorAll('[data-ap-quitar]').forEach(b => b.addEventListener('click', () => {
+    agregadoPedido.lineas.splice(Number(b.dataset.apQuitar), 1);
+    pintarListaAgregado();
+  }));
+}
+
+async function guardarAgregadoAlPedido() {
+  if (!puedeOperar() || !agregadoPedido || !agregadoPedido.lineas.length) return;
+  const id = agregadoPedido.id;
+  const boton = byId('apGuardar');
+  boton.disabled = true;
+
+  // Se lee el pedido de la base y no de la memoria: la caja y la cocina
+  // pueden estar tocandolo desde otro aparato.
+  const { data: actual, error: errorLeer } = await sb.from('orders')
+    .select('*').eq('id', id).single();
+  if (errorLeer || !actual) {
+    boton.disabled = false;
+    dialogoAviso('No se pudo leer el pedido:\n\n' + humano(errorLeer || { message: 'no encontrado' }));
+    return;
+  }
+  const estado = actual.estado || 'confirmado';
+  if (estado === 'cancelado') {
+    dialogoAviso('Este pedido se anuló mientras tanto. Cargá una venta nueva.');
+    byId('agregarPedidoModal')?.remove();
+    agregadoPedido = null;
+    await refreshData();
+    return;
+  }
+
+  const resumen = aplicarArmadoDePorciones(agregadoPedido.lineas);
+  const nuevos = resumen.lineas.map(l => {
+    const it = { product_id: l.product.id, qty: l.qty, name: nombreDeLineaVenta(l), price: l.precioCobrado, variante: l.variante, agregado: true };
+    if (l.precioCobrado !== Number(l.precioUnitario)) it.precio_lista = Number(l.precioUnitario);
+    return it;
+  });
+  const items = [...(Array.isArray(actual.items) ? actual.items : []), ...nuevos];
+  const cambios = { items, total: Number(actual.total || 0) + resumen.total };
+  if (Number(actual.saldo_pendiente || 0) > 0) {
+    cambios.saldo_pendiente = Number(actual.saldo_pendiente) + resumen.total;
+  } else if (Array.isArray(actual.pagos_divididos) && actual.pagos_divididos.length >= 2) {
+    // Pagado con dos medios: lo agregado va al ultimo, asi la caja no
+    // reparte centavos raros. Si fue al reves, se corrige con 💳.
+    const partes = actual.pagos_divididos.map(x => ({ ...x }));
+    partes[partes.length - 1].monto = Math.round((Number(partes[partes.length - 1].monto) + resumen.total) * 100) / 100;
+    cambios.pagos_divididos = partes;
+  }
+  if (actual.etapa === 'listo') cambios.etapa = 'en_preparacion';
+
+  // Mismo cuidado que cambiarEstadoPedido: solo si nadie lo cambio entre la
+  // lectura y ahora. Si no, el stock de lo agregado se podria descontar
+  // sobre un pedido que ya no es el que vimos.
+  let consulta = sb.from('orders').update(cambios).eq('id', id).eq('total', actual.total);
+  consulta = actual.estado ? consulta.eq('estado', actual.estado) : consulta.is('estado', null);
+  const { data, error } = await consulta.select('id');
+  boton.disabled = false;
+  if (error) { dialogoAviso('No se pudo agregar:\n\n' + humano(error)); return; }
+  if (!data || !data.length) {
+    dialogoAviso('El pedido cambió mientras lo editabas. Volvé a abrirlo y probá de nuevo.');
+    await refreshData();
+    return;
+  }
+
+  // Confirmado = el stock de lo anterior ya se desconto. Se descuenta solo
+  // lo agregado. Un pendiente no toca stock: se descuenta todo junto al
+  // confirmarlo, que ya recorre todos los items.
+  if (estado === 'confirmado') {
+    let cambioImei = false;
+    for (const it of nuevos) {
+      const imei = await aplicarStockDeItem(it, -1);
+      if (imei) { it.imei = imei; cambioImei = true; }
+    }
+    if (cambioImei) await sb.from('orders').update({ items }).eq('id', id);
+  }
+
+  byId('agregarPedidoModal')?.remove();
+  agregadoPedido = null;
   await refreshData();
 }
 
@@ -18930,8 +19325,17 @@ function renderCaja() {
         // El detalle de lo vendido, para que "Venta — Juan" diga QUE se
         // vendio sin tener que ir a buscarlo a otra pestaña.
         detalle: (Array.isArray(o.items) ? o.items : [])
-          .map(it => (it.qty || 1) + '× ' + (it.name || 'Producto')).join(', ')
+          .map(it => (it.qty || 1) + '× ' + (it.name || 'Producto')).join(', '),
+        ordenId: o.id
       });
+      // Pagado con dos medios: un renglon por medio, asi el efectivo del
+      // cierre cuenta solo la parte que entro en efectivo.
+      const partes = partesDelPago(o, cobradoDinero);
+      if (partes) {
+        const base = movimientos.pop();
+        partes.forEach(pt => movimientos.push({ ...base, medio: pt.medio, monto: pt.monto,
+          costo: base.costo * pt.monto / cobradoDinero }));
+      }
     }
     if (equipo > 0) {
       movimientos.push({
@@ -19040,7 +19444,12 @@ function renderCaja() {
       '<td>' + escapeHtml(m.concepto) +
         (m.detalle ? '<div style="font-size:11.5px;color:var(--text-mute);margin-top:2px;">' + escapeHtml(m.detalle) + '</div>' : '') +
       '</td>' +
-      '<td style="font-size:12.5px;color:var(--text-mute);">' + escapeHtml(m.medio) + '</td>' +
+      // En una venta el medio se puede corregir desde aca mismo: es donde
+      // se nota que no cierra.
+      '<td style="font-size:12.5px;color:var(--text-mute);">' + (m.ordenId
+        ? '<button type="button" class="medio-editable" data-medio-pedido="' + m.ordenId + '" title="Cambiar con qué pagó">' +
+            escapeHtml(m.medio) + ' ✎</button>'
+        : escapeHtml(m.medio)) + '</td>' +
       '<td style="text-align:right;font-weight:600;">' + (m.tipo === 'egreso' ? '-' : '') + money(m.monto) +
         // Debajo del precio, lo que costo y lo que dejo. Tapado con el
         // mismo PIN que el resto de los costos: en el mostrador esta fila
@@ -19061,6 +19470,8 @@ function renderCaja() {
 
   cuerpo.querySelectorAll('[data-eliminar-mov-caja]').forEach(b =>
     b.addEventListener('click', () => eliminarMovimientoCaja(b.getAttribute('data-eliminar-mov-caja'))));
+  cuerpo.querySelectorAll('[data-medio-pedido]').forEach(b =>
+    b.addEventListener('click', () => editarMedioDePago(b.dataset.medioPedido)));
 }
 
 byId('cajaFecha').addEventListener('change', renderCaja);
@@ -20299,24 +20710,38 @@ function armarPorcionesOptimo(n, tamanios) {
 
 // Devuelve las lineas con su importe final y la lista de armados aplicados.
 // lineas: [{ product, qty, variante, precioUnitario, ... }]
+//
+// Dos pasos. Primero las pizzas de dos o mas gustos (media Cherry + media
+// Burrata = una entera, ver armarPizzasDeVariosGustos). Despues, con lo que
+// quedo, el armado por gusto de siempre (cuatro cuartos de Muzza = una
+// entera de Muzza).
 function aplicarArmadoDePorciones(lineas) {
   const salida = lineas.map(l => ({ ...l, importe: Number(l.precioUnitario) * Number(l.qty), precioCobrado: Number(l.precioUnitario) }));
   const ajustes = [];
+
+  // usadas[i]: cuantas unidades de la linea i ya se cobraron en una pizza de
+  // varios gustos, y por cuanto. El armado por gusto trabaja con el resto.
+  const usadas = salida.map(() => ({ qty: 0, importe: 0 }));
+  armarPizzasDeVariosGustos(salida, usadas, ajustes);
 
   const grupos = {};
   salida.forEach((l, i) => {
     const por = porcionesDeVariante(l.variante);
     if (!por || !Number.isInteger(Number(l.qty))) return;
+    if (Number(l.qty) - usadas[i].qty <= 0) return;
     const id = String(l.product.id);
     (grupos[id] = grupos[id] || []).push(i);
   });
+
+  const resto = (i) => Number(salida[i].qty) - usadas[i].qty;
+  const listaDeResto = (i) => Number(salida[i].precioUnitario) * resto(i);
 
   Object.values(grupos).forEach(indices => {
     const p = salida[indices[0]].product;
     const tamanios = tamaniosDePizza(p);
     if (tamanios.length < 2) return;
-    const n = indices.reduce((s, i) => s + porcionesDeVariante(salida[i].variante) * Number(salida[i].qty), 0);
-    const lista = indices.reduce((s, i) => s + salida[i].importe, 0);
+    const n = indices.reduce((s, i) => s + porcionesDeVariante(salida[i].variante) * resto(i), 0);
+    const lista = indices.reduce((s, i) => s + listaDeResto(i), 0);
     const armado = armarPorcionesOptimo(n, tamanios);
     if (!armado || armado.precio >= lista - 0.5) return;
 
@@ -20325,18 +20750,117 @@ function aplicarArmadoDePorciones(lineas) {
     const factor = armado.precio / lista;
     let acumulado = 0;
     indices.forEach((i, k) => {
-      const l = salida[i];
-      const importe = (k === indices.length - 1) ? armado.precio - acumulado : Math.round(l.importe * factor);
+      const importe = (k === indices.length - 1) ? armado.precio - acumulado : Math.round(listaDeResto(i) * factor);
       acumulado += importe;
-      l.importe = importe;
-      l.precioCobrado = Math.round((importe / Number(l.qty)) * 100) / 100;
+      salida[i].importe = usadas[i].importe + importe;
+      usadas[i].armado = true;
     });
 
     ajustes.push({ nombre: p.name, porciones: n, lista, armado: armado.precio, texto: armado.texto });
   });
 
+  salida.forEach((l, i) => {
+    if (!usadas[i].qty || usadas[i].armado) return;
+    l.importe = usadas[i].importe + listaDeResto(i);
+  });
+  salida.forEach((l, i) => {
+    if (usadas[i].qty || usadas[i].armado) l.precioCobrado = Math.round((l.importe / Number(l.qty)) * 100) / 100;
+  });
+
   const total = salida.reduce((s, l) => s + l.importe, 0);
   return { lineas: salida, total, ajustes };
+}
+
+// Pizza de dos gustos en el mostrador (Empire Pizzas, 19/10): una media
+// Cherry y una media Burrata son UNA pizza entera, y se cobra como la
+// entera del gusto mas caro (la de Burrata), no como dos medias sueltas.
+// Cada parte vale su fraccion de esa entera: cada media, la mitad.
+// Sirve igual con cuartos (cuatro cuartos de cuatro gustos).
+//
+// Solo entra lo que sobra de cada gusto: dos medias de Cherry ya son una
+// Cherry entera y eso lo arma el paso por gusto. Si las partes sueltas no
+// llegan a completar una pizza, quedan a precio de lista.
+function armarPizzasDeVariosGustos(salida, usadas, ajustes) {
+  const P = PORCIONES_POR_PIZZA;
+
+  // Las partes de cada gusto, una por unidad. Hace falta la entera cargada
+  // para saber cuanto vale la pizza.
+  const porGusto = {};
+  salida.forEach((l, i) => {
+    const por = porcionesDeVariante(l.variante);
+    const qty = Number(l.qty);
+    if (!por || por >= P || !Number.isInteger(qty) || qty < 1 || qty > 40) return;
+    const entera = tamaniosDePizza(l.product).find(t => t.porciones === P);
+    if (!entera) return;
+    const id = String(l.product.id);
+    const g = porGusto[id] = porGusto[id] || { entera: entera.precio, nombre: l.product.name, partes: [], total: 0 };
+    for (let k = 0; k < qty; k++) g.partes.push({ i, por });
+    g.total += por * qty;
+  });
+
+  // De cada gusto, las partes que no completan una pizza de ese mismo gusto.
+  // Se busca el grupo con menos piezas que sume exactamente lo que sobra.
+  let sueltas = [];
+  Object.values(porGusto).forEach(g => {
+    const sobra = g.total % P;
+    if (!sobra) return;
+    const partes = g.partes.slice().sort((a, b) => a.por - b.por);
+    const elegidas = subconjuntoQueSuma(partes, sobra);
+    if (elegidas) elegidas.forEach(u => sueltas.push({ ...u, entera: g.entera, nombre: g.nombre }));
+  });
+  if (new Set(sueltas.map(u => u.nombre)).size < 2) return;
+
+  // Se arman de la mas cara para abajo: la parte del gusto mas caro que
+  // queda arranca la pizza y se completa con las siguientes.
+  sueltas.sort((a, b) => b.entera - a.entera || b.por - a.por);
+  while (sueltas.length > 1) {
+    const [primera, ...otras] = sueltas;
+    const compania = subconjuntoQueSuma(otras, P - primera.por);
+    if (!compania) { sueltas = otras; continue; }
+    const pizza = [primera, ...compania];
+    const precio = Math.max(...pizza.map(u => u.entera));
+
+    let acumulado = 0, lista = 0;
+    pizza.forEach((u, k) => {
+      const monto = k === pizza.length - 1 ? precio - acumulado : Math.round(precio * u.por / P);
+      acumulado += monto;
+      lista += Number(salida[u.i].precioUnitario);
+      usadas[u.i].qty += 1;
+      usadas[u.i].importe += monto;
+    });
+
+    const gustos = [...new Set(pizza.map(u => u.nombre))];
+    const caro = pizza.find(u => u.entera === precio).nombre;
+    ajustes.push({
+      nombre: 'Pizza ' + gustos.join(' / '),
+      porciones: P,
+      lista,
+      armado: precio,
+      texto: '1 Entera al precio de ' + caro
+    });
+    sueltas = otras.filter(u => !compania.includes(u));
+  }
+}
+
+// El grupo con menos piezas que suma exactamente 'objetivo' porciones, o
+// null. Son pocas piezas (las de un pedido de mostrador), asi que alcanza
+// con probar en orden.
+function subconjuntoQueSuma(partes, objetivo) {
+  if (objetivo === 0) return [];
+  let mejor = null, pasos = 0;
+  const probar = (desde, falta, elegidas) => {
+    if (++pasos > 20000) return;   // un pedido raro y enorme: queda a lista
+    if (falta === 0) { if (!mejor || elegidas.length < mejor.length) mejor = elegidas.slice(); return; }
+    if (mejor && elegidas.length >= mejor.length - 1) return;
+    for (let k = desde; k < partes.length && k < desde + 40; k++) {
+      if (partes[k].por > falta) continue;
+      elegidas.push(partes[k]);
+      probar(k + 1, falta - partes[k].por, elegidas);
+      elegidas.pop();
+    }
+  };
+  probar(0, objetivo, []);
+  return mejor;
 }
 
 function resumenVentaActual() {
@@ -20347,8 +20871,9 @@ function resumenVentaActual() {
 }
 
 function textoAjustePorciones(a) {
+  const dif = a.lista - a.armado;
   return '🍕 ' + a.nombre + ': ' + a.porciones + ' porciones se cobran como ' + a.texto +
-         ' (ahorra ' + money(a.lista - a.armado) + ')';
+         (dif > 0.5 ? ' (ahorra ' + money(dif) + ')' : dif < -0.5 ? ' (' + money(-dif) + ' más que las partes sueltas)' : '');
 }
 
 function nombreDeLineaVenta(l) {
@@ -20459,7 +20984,7 @@ async function confirmarVentaCarrito() {
   }
   const abonaAhora = esFiado ? (Number(byId('barcodeFiadoAbono').value) || 0) : 0;
   const vendedor = (byId('barcodeVendedor')?.value || '').trim();
-  const medioPago = byId('barcodeMedioPago')?.value || '';
+  let medioPago = byId('barcodeMedioPago')?.value || '';
   const telefonoCliente = (byId('barcodeClienteTel')?.value || '').trim();
   const horaEntrega = rubroEsComida() ? (byId('barcodeHoraEntrega')?.value || '') : '';
 
@@ -20472,7 +20997,10 @@ async function confirmarVentaCarrito() {
   }
 
   const resumen = aplicarArmadoDePorciones(lineas);
-  const ok = await registrarVentaCarrito(resumen, cliente, { fiado: esFiado, abonaAhora, vendedor, medioPago, telefono: telefonoCliente, horaEntrega });
+  const pago = leerDosMediosVenta(medioPago, esFiado ? abonaAhora : resumen.total);
+  if (!pago) return;
+  medioPago = pago.medio;
+  const ok = await registrarVentaCarrito(resumen, cliente, { fiado: esFiado, abonaAhora, vendedor, medioPago, pagosDivididos: pago.partes, telefono: telefonoCliente, horaEntrega });
   if (!ok) return;
 
   guardarNombreVendedor(vendedor);
@@ -20502,6 +21030,7 @@ function limpiarDatosDeVentaRegistrada() {
   byId('campoFiadoMonto').classList.add('hidden');
   byId('barcodeFiadoAbono').value = '0';
   byId('barcodeMedioPago').value = '';
+  limpiarDosMediosVenta();
   actualizarAliasVenta();
   byId('barcodeAbono').value = '0';
   varianteSeleccionadaVenta = {};
@@ -20510,12 +21039,35 @@ function limpiarDatosDeVentaRegistrada() {
   avisoTelefonoVenta();
 }
 
+// Pago con dos medios en el mostrador. Devuelve { medio, partes } (partes
+// null si es un solo medio) o null si algo no cierra (ya avisado).
+// 'cobrado' es lo que entra en plata en esta venta: sin lo fiado ni el
+// equipo tomado.
+function leerDosMediosVenta(medioPago, cobrado) {
+  if (!byId('barcodeDosMedios')?.checked || !(cobrado > 0)) return { medio: medioPago, partes: null };
+  const partes = validarPagoDividido(medioPago, byId('barcodeMedioPago2').value, byId('barcodeMonto1').value, cobrado);
+  if (!partes) return null;
+  return { medio: partes[0].medio + ' + ' + partes[1].medio, partes };
+}
+
+function limpiarDosMediosVenta() {
+  if (byId('barcodeDosMedios')) byId('barcodeDosMedios').checked = false;
+  if (byId('barcodeMedioPago2')) byId('barcodeMedioPago2').value = '';
+  if (byId('barcodeMonto1')) byId('barcodeMonto1').value = '';
+  byId('barcodeDosMediosBox')?.classList.add('hidden');
+}
+
+byId('barcodeDosMedios')?.addEventListener('change', () => {
+  byId('barcodeDosMediosBox').classList.toggle('hidden', !byId('barcodeDosMedios').checked);
+  if (byId('barcodeDosMedios').checked) byId('barcodeMonto1').focus();
+});
+
 // Una sola orden con todas las lineas. Mismo contrato que registrarVenta()
 // (customer_phone 'scanner', estado confirmado, abono en store_pagos), pero
 // con varios items y el total ya armado.
 async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
-  const { fiado = false, abonaAhora = 0, vendedor = '', medioPago = '', telefono = '', horaEntrega = '' } = opciones || {};
+  const { fiado = false, abonaAhora = 0, vendedor = '', medioPago = '', pagosDivididos = null, telefono = '', horaEntrega = '' } = opciones || {};
 
   const total = resumen.total;
   const nombre = (nombreCliente || '').trim() ||
@@ -20541,6 +21093,9 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
     saldo_pendiente: saldoPendiente,
     vendedor: vendedor || null,
     medio_pago: medioPago || null,
+    // Solo si pago con dos medios: asi una tienda sin la columna (schema 55)
+    // sigue vendiendo como siempre.
+    ...(pagosDivididos ? { pagos_divididos: pagosDivididos } : {}),
     created_at: new Date().toISOString()
   }]).select('id');
 
@@ -20598,7 +21153,7 @@ function imprimirTicketPedidoMostrador(resumen, v) {
   resumen.ajustes.forEach(a => items.push({
     texto: 'Armado: ' + escapeHtml(a.porciones + ' porc. = ' + a.texto),
     detalle: '',
-    importe: '-' + money(a.lista - a.armado),
+    importe: (a.lista >= a.armado ? '-' : '+') + money(Math.abs(a.lista - a.armado)),
     unitario: ''
   }));
 
@@ -20812,7 +21367,7 @@ async function confirmBarcodeVenta() {
     : null;
 
   const vendedor = (byId('barcodeVendedor')?.value || '').trim();
-  const medioPago = byId('barcodeMedioPago')?.value || '';
+  let medioPago = byId('barcodeMedioPago')?.value || '';
   const telefonoCliente = (byId('barcodeClienteTel')?.value || '').trim();
   // Solo se guarda si el rubro la usa: en los demas el campo esta oculto y
   // mandaria la hora sugerida sin que nadie la haya decidido.
@@ -20833,7 +21388,12 @@ async function confirmBarcodeVenta() {
     return;
   }
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta });
+  const totalVenta = precioDeVentaMostrador(product, variante) * qty;
+  const pago = leerDosMediosVenta(medioPago,
+    esFiado ? abonaAhora : totalVenta - (tradeIn ? Number(tradeIn.valor || 0) : 0));
+  if (!pago) return;
+  medioPago = pago.medio;
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, pagosDivididos: pago.partes, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta });
   if (ok) {
     guardarNombreVendedor(vendedor);
     let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioDeVentaMostrador(product, variante) * qty);
@@ -20875,6 +21435,7 @@ async function confirmBarcodeVenta() {
     byId('campoFiadoMonto').classList.add('hidden');
     byId('barcodeFiadoAbono').value = '0';
     byId('barcodeMedioPago').value = '';
+    limpiarDosMediosVenta();
     byId('barcodeTradeIn').checked = false;
     byId('campoTradeIn').classList.add('hidden');
     tasacionEnPesos = 0;
@@ -21005,7 +21566,7 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', horaEntrega = '', imei: imeiElegido = null } = opciones || {};
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', pagosDivididos = null, telefono = '', horaEntrega = '', imei: imeiElegido = null } = opciones || {};
   const total = precioDeVentaMostrador(product, variante) * qty;
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
@@ -21036,6 +21597,9 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     trade_in_valor: tradeIn ? valorEquipo : null,
     vendedor: vendedor || null,
     medio_pago: medioPago || null,
+    // Solo si pago con dos medios: asi una tienda sin la columna (schema 55)
+    // sigue vendiendo como siempre.
+    ...(pagosDivididos ? { pagos_divididos: pagosDivididos } : {}),
     created_at: new Date().toISOString()
   }]).select('id');
 
