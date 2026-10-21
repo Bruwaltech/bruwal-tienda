@@ -5185,6 +5185,14 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   }
 });
 
+// Cliente SIEMPRE anonimo para leer datos publicos de tiendas. La tienda, la
+// portada y el panel comparten dominio: con `sb`, un duenio logueado lee con
+// SU sesion, y desde la migracion 75 esa sesion solo ve su propio negocio.
+// Sin sesion guardada ni refresco: nunca manda el token de nadie.
+const sbPublico = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'bruwal-publico' }
+});
+
 // Los tokens de sesion viajan en el # de la URL despues de confirmar el mail.
 // Si alguien copia esa direccion de la barra y la comparte, esta regalando su
 // sesion: el que la abre entra como el. Los borramos apenas Supabase los leyo.
@@ -10012,7 +10020,7 @@ async function onLoggedIn() {
       let baseSlug = slug;
       let counter = 1;
       while (true) {
-        let slugExists = await sb.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
+        let slugExists = await sbPublico.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
         if (!slugExists.data) break;
         counter++;
         slug = baseSlug + '-' + counter;
@@ -13146,7 +13154,7 @@ async function agregarNegocio() {
     const base = slug;
     let n = 1;
     while (true) {
-      const { data: tomado } = await sb.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
+      const { data: tomado } = await sbPublico.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
       if (!tomado) break;
       n++;
       slug = base + '-' + n;
@@ -26644,7 +26652,7 @@ async function checkIfPublicStore() {
   const slug = window.location.pathname.split('/').filter(Boolean)[0];
   if (!slug || slug === 'index.html' || slug === 'admin' || slug === 'dashboard') return false;
 
-  const { data: store } = await sb.from('store_profiles').select('*').eq('slug', slug).maybeSingle();
+  const { data: store } = await sbPublico.from('store_profiles').select('slug').eq('slug', slug).maybeSingle();
   return !!store;
 }
 
