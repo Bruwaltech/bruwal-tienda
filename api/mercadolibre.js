@@ -1488,25 +1488,35 @@ async function accionFlexEnvios(slug) {
 // en el corredor, y devuelve los vendedores (no las publicaciones): son los
 // prospectos del CRM de Envíos Flex.
 //
-// La búsqueda de ML no filtra por ciudad con un nombre: hay que pedirle los
-// filtros disponibles, elegir la provincia por nombre y después las
-// ciudades. Se hace en tres pasos y se corta en PROSPECTOS_MAXIMOS
+// No usa /sites/MLA/search: ML se la niega a las aplicaciones comunes
+// (responde 403 "forbidden"). Va por el catálogo, que sí está abierto:
+// /products/search da los productos del rubro y /products/{id}/items las
+// publicaciones que compiten en cada uno, con el vendedor y su dirección.
+// Quedan afuera los que no publican en catálogo, pero en los rubros que se
+// venden mucho son casi todos.
+//
+// Se corta en PROSPECTOS_PRODUCTOS productos y PROSPECTOS_MAXIMOS
 // vendedores por la misma razón que PAGINAS_MAXIMAS: el tope de tiempo.
 const PROVINCIA_CORREDOR = 'santa fe';
-const PROSPECTOS_PAGINAS = 2;
+const PROSPECTOS_PRODUCTOS = 30;
 const PROSPECTOS_MAXIMOS = 40;
-
-function valoresDeFiltro(respuesta, id) {
-  const lista = [].concat((respuesta && respuesta.available_filters) || [], (respuesta && respuesta.filters) || []);
-  const filtro = lista.find((f) => f && f.id === id);
-  return (filtro && filtro.values) || [];
-}
 
 // Flex en una publicación: o la logística es self_service, o el envío trae
 // la etiqueta self_service_in (Flex prendido además de Mercado Envíos).
 function publicacionConFlex(item) {
   const envio = (item && item.shipping) || {};
   return envio.logistic_type === 'self_service' || (envio.tags || []).includes('self_service_in');
+}
+
+// Hay San Lorenzo en Corrientes y en Salta: además de la ciudad se mira la
+// provincia, salvo que ML no la mande.
+function zonaDePublicacion(item) {
+  const direccion = (item && (item.seller_address || item.address)) || {};
+  const ciudad = (direccion.city && direccion.city.name) || direccion.city_name || '';
+  const provincia = (direccion.state && direccion.state.name) || direccion.state_name || '';
+  if (provincia && sinTildesMl(provincia) !== PROVINCIA_CORREDOR) return { ciudad: ciudad, zona: null };
+  const zona = zonaDeCiudad(ciudad);
+  return { ciudad: ciudad, zona: zona && zona !== 'otra' ? zona : null };
 }
 
 async function accionBuscarVendedores(slug, texto) {
@@ -1517,42 +1527,37 @@ async function accionBuscarVendedores(slug, texto) {
   const cuenta = await cuentaDeTienda(slug);
   if (!cuenta) return { conectado: false };
   const token = await tokenDeTienda(slug);
-  const base = '/sites/MLA/search?q=' + encodeURIComponent(q);
 
-  const inicial = await pedirAMl(base + '&limit=1', token);
-  const provincia = valoresDeFiltro(inicial, 'state').find((v) => sinTildesMl(v.name) === PROVINCIA_CORREDOR);
-  if (!provincia) return { conectado: true, ok: true, q: q, vendedores: [], motivo: 'No hay publicaciones de "' + q + '" en Santa Fe.' };
+  const productos = await pedirAMl('/products/search?site_id=MLA&status=active&q=' + encodeURIComponent(q) +
+    '&limit=' + PROSPECTOS_PRODUCTOS, token);
+  const lista = ((productos && productos.results) || []).filter((p) => p && p.id).slice(0, PROSPECTOS_PRODUCTOS);
+  const ids = lista.map((p) => p.id);
+  if (!ids.length) return { conectado: true, ok: true, q: q, vendedores: [], motivo: 'Mercado Libre no tiene productos de catálogo para "' + q + '". Probá con otra palabra.' };
 
-  const enProvincia = await pedirAMl(base + '&state=' + encodeURIComponent(provincia.id) + '&limit=1', token);
-  const ciudades = valoresDeFiltro(enProvincia, 'city')
-    .filter((v) => zonaDeCiudad(v.name) && zonaDeCiudad(v.name) !== 'otra');
-  if (!ciudades.length) return { conectado: true, ok: true, q: q, vendedores: [], motivo: 'No hay publicaciones de "' + q + '" en el corredor.' };
+  const paginas = await enTandas(ids, FLEX_EN_PARALELO,
+    (id) => pedirAMl('/products/' + encodeURIComponent(id) + '/items?limit=100', token));
 
-  const pedidos = [];
-  ciudades.forEach((c) => {
-    for (let pag = 0; pag < PROSPECTOS_PAGINAS; pag++) {
-      pedidos.push(base + '&city=' + encodeURIComponent(c.id) + '&limit=' + POR_PAGINA + '&offset=' + pag * POR_PAGINA);
-    }
-  });
-  const paginas = await enTandas(pedidos, FLEX_EN_PARALELO, (ruta) => pedirAMl(ruta, token));
-
-  // Una fila por vendedor, con cuántas publicaciones del rubro tiene y
-  // cuántas con Flex. Se excluye la propia cuenta.
+  // Una fila por vendedor del corredor, con cuántas publicaciones del rubro
+  // tiene y cuántas con Flex. Se excluye la propia cuenta.
   const porVendedor = new Map();
   const vistas = new Set();
-  paginas.forEach((pagina) => ((pagina && pagina.results) || []).forEach((item) => {
-    const id = item.seller && item.seller.id;
-    if (!id || String(id) === String(cuenta.ml_user_id) || vistas.has(item.id)) return;
-    vistas.add(item.id);
-    const direccion = item.seller_address || item.address || {};
-    const ciudad = (direccion.city && direccion.city.name) || direccion.city_name || '';
+  let revisadas = 0;
+  paginas.forEach((pagina, n) => ((pagina && pagina.results) || []).forEach((item) => {
+    const itemId = item.item_id || item.id;
+    const id = item.seller_id || (item.seller && item.seller.id);
+    if (!id || vistas.has(itemId)) return;
+    vistas.add(itemId);
+    revisadas += 1;
+    if (String(id) === String(cuenta.ml_user_id)) return;
+    const lugar = zonaDePublicacion(item);
+    if (!lugar.zona) return;
     const v = porVendedor.get(String(id)) || {
-      ml_seller_id: String(id), nick: (item.seller && item.seller.nickname) || '', ciudad: ciudad,
-      zona: zonaDeCiudad(ciudad), publicaciones: 0, con_flex: 0, ejemplo: null
+      ml_seller_id: String(id), nick: '', ciudad: lugar.ciudad, zona: lugar.zona,
+      publicaciones: 0, con_flex: 0, ejemplo: null
     };
     v.publicaciones += 1;
     if (publicacionConFlex(item)) v.con_flex += 1;
-    if (!v.ejemplo) v.ejemplo = { titulo: item.title || '', link: item.permalink || '' };
+    if (!v.ejemplo) v.ejemplo = { titulo: item.title || lista[n].name || '', link: 'https://articulo.mercadolibre.com.ar/' + String(itemId).replace(/^MLA/, 'MLA-') };
     porVendedor.set(String(id), v);
   }));
 
@@ -1569,8 +1574,6 @@ async function accionBuscarVendedores(slug, texto) {
     if (!u) return;
     v.nick = u.nickname || v.nick;
     v.perfil = u.permalink || '';
-    const ciudad = u.address && u.address.city;
-    if (!v.ciudad && ciudad) { v.ciudad = ciudad; v.zona = zonaDeCiudad(ciudad); }
     const rep = u.seller_reputation || {};
     v.ventas = rep.transactions && rep.transactions.total != null ? rep.transactions.total : null;
     v.lider = rep.power_seller_status || null;
@@ -1580,9 +1583,12 @@ async function accionBuscarVendedores(slug, texto) {
     conectado: true,
     ok: true,
     q: q,
-    ciudades: ciudades.map((c) => c.name),
+    productos: ids.length,
+    revisadas: revisadas,
     recortado: todos.length > vendedores.length,
-    vendedores: vendedores
+    vendedores: vendedores,
+    motivo: vendedores.length ? undefined
+      : 'Se revisaron ' + revisadas + ' publicaciones de ' + ids.length + ' productos y ninguna es de un vendedor del corredor. Probá con otro rubro.'
   };
 }
 
