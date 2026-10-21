@@ -20,6 +20,8 @@
 //                    las tiene habilitadas
 //   flex_envios   -> envíos Flex de los últimos 14 días (solo tiendas con
 //                    features.envios_flex)
+//   flex_buscar_vendedores -> vendedores de ML del corredor que publican
+//                    un rubro, para el CRM de Envíos Flex (mismo flag)
 // Y una por GET, que es la que abre Mercado Libre al volver:
 //   callback     -> /api/ml-callback?code=...&state=...
 
@@ -1407,7 +1409,7 @@ const FLEX_DIAS = 14;
 const FLEX_MAXIMOS = 40;
 const FLEX_EN_PARALELO = 8;
 
-const { flexHabilitado, esFlex, filaDeEnvio, guardarFilas } = require('./_flex');
+const { flexHabilitado, esFlex, filaDeEnvio, guardarFilas, zonaDeCiudad, sinTildes: sinTildesMl } = require('./_flex');
 
 async function enTandas(lista, cuantos, fn) {
   const salida = [];
@@ -1477,6 +1479,110 @@ async function accionFlexEnvios(slug) {
     recortado: porEnvio.size > ids.length,
     guardados: guardados,
     envios: filas
+  };
+}
+
+// ---- Buscar vendedores para la mensajería ----
+//
+// Busca en Mercado Libre publicaciones de un rubro cuyos vendedores estén
+// en el corredor, y devuelve los vendedores (no las publicaciones): son los
+// prospectos del CRM de Envíos Flex.
+//
+// La búsqueda de ML no filtra por ciudad con un nombre: hay que pedirle los
+// filtros disponibles, elegir la provincia por nombre y después las
+// ciudades. Se hace en tres pasos y se corta en PROSPECTOS_MAXIMOS
+// vendedores por la misma razón que PAGINAS_MAXIMAS: el tope de tiempo.
+const PROVINCIA_CORREDOR = 'santa fe';
+const PROSPECTOS_PAGINAS = 2;
+const PROSPECTOS_MAXIMOS = 40;
+
+function valoresDeFiltro(respuesta, id) {
+  const lista = [].concat((respuesta && respuesta.available_filters) || [], (respuesta && respuesta.filters) || []);
+  const filtro = lista.find((f) => f && f.id === id);
+  return (filtro && filtro.values) || [];
+}
+
+// Flex en una publicación: o la logística es self_service, o el envío trae
+// la etiqueta self_service_in (Flex prendido además de Mercado Envíos).
+function publicacionConFlex(item) {
+  const envio = (item && item.shipping) || {};
+  return envio.logistic_type === 'self_service' || (envio.tags || []).includes('self_service_in');
+}
+
+async function accionBuscarVendedores(slug, texto) {
+  if (!(await flexHabilitado(slug))) return { ok: false, motivo: 'Envíos Flex no está habilitado para esta tienda.' };
+  const q = String(texto || '').trim().slice(0, 80);
+  if (!q) return { ok: false, motivo: 'Escribí qué buscar, por ejemplo "suplementos".' };
+
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+  const token = await tokenDeTienda(slug);
+  const base = '/sites/MLA/search?q=' + encodeURIComponent(q);
+
+  const inicial = await pedirAMl(base + '&limit=1', token);
+  const provincia = valoresDeFiltro(inicial, 'state').find((v) => sinTildesMl(v.name) === PROVINCIA_CORREDOR);
+  if (!provincia) return { conectado: true, ok: true, q: q, vendedores: [], motivo: 'No hay publicaciones de "' + q + '" en Santa Fe.' };
+
+  const enProvincia = await pedirAMl(base + '&state=' + encodeURIComponent(provincia.id) + '&limit=1', token);
+  const ciudades = valoresDeFiltro(enProvincia, 'city')
+    .filter((v) => zonaDeCiudad(v.name) && zonaDeCiudad(v.name) !== 'otra');
+  if (!ciudades.length) return { conectado: true, ok: true, q: q, vendedores: [], motivo: 'No hay publicaciones de "' + q + '" en el corredor.' };
+
+  const pedidos = [];
+  ciudades.forEach((c) => {
+    for (let pag = 0; pag < PROSPECTOS_PAGINAS; pag++) {
+      pedidos.push(base + '&city=' + encodeURIComponent(c.id) + '&limit=' + POR_PAGINA + '&offset=' + pag * POR_PAGINA);
+    }
+  });
+  const paginas = await enTandas(pedidos, FLEX_EN_PARALELO, (ruta) => pedirAMl(ruta, token));
+
+  // Una fila por vendedor, con cuántas publicaciones del rubro tiene y
+  // cuántas con Flex. Se excluye la propia cuenta.
+  const porVendedor = new Map();
+  const vistas = new Set();
+  paginas.forEach((pagina) => ((pagina && pagina.results) || []).forEach((item) => {
+    const id = item.seller && item.seller.id;
+    if (!id || String(id) === String(cuenta.ml_user_id) || vistas.has(item.id)) return;
+    vistas.add(item.id);
+    const direccion = item.seller_address || item.address || {};
+    const ciudad = (direccion.city && direccion.city.name) || direccion.city_name || '';
+    const v = porVendedor.get(String(id)) || {
+      ml_seller_id: String(id), nick: (item.seller && item.seller.nickname) || '', ciudad: ciudad,
+      zona: zonaDeCiudad(ciudad), publicaciones: 0, con_flex: 0, ejemplo: null
+    };
+    v.publicaciones += 1;
+    if (publicacionConFlex(item)) v.con_flex += 1;
+    if (!v.ejemplo) v.ejemplo = { titulo: item.title || '', link: item.permalink || '' };
+    porVendedor.set(String(id), v);
+  }));
+
+  const todos = [...porVendedor.values()]
+    .sort((a, b) => b.con_flex - a.con_flex || b.publicaciones - a.publicaciones);
+  const vendedores = todos.slice(0, PROSPECTOS_MAXIMOS);
+
+  // El nombre, el link al perfil y la reputación salen de /users. Si falla
+  // para alguno, se muestra igual con lo que trajo la búsqueda.
+  const perfiles = await enTandas(vendedores, FLEX_EN_PARALELO,
+    (v) => pedirAMl('/users/' + encodeURIComponent(v.ml_seller_id), token));
+  vendedores.forEach((v, i) => {
+    const u = perfiles[i];
+    if (!u) return;
+    v.nick = u.nickname || v.nick;
+    v.perfil = u.permalink || '';
+    const ciudad = u.address && u.address.city;
+    if (!v.ciudad && ciudad) { v.ciudad = ciudad; v.zona = zonaDeCiudad(ciudad); }
+    const rep = u.seller_reputation || {};
+    v.ventas = rep.transactions && rep.transactions.total != null ? rep.transactions.total : null;
+    v.lider = rep.power_seller_status || null;
+  });
+
+  return {
+    conectado: true,
+    ok: true,
+    q: q,
+    ciudades: ciudades.map((c) => c.name),
+    recortado: todos.length > vendedores.length,
+    vendedores: vendedores
   };
 }
 
@@ -1605,6 +1711,9 @@ module.exports = async (req, res) => {
     if (accion === 'calidad') return res.status(200).json(await accionCalidadPublicaciones(tienda.slug));
     if (accion === 'ventas_faltantes') return res.status(200).json(await accionVentasFaltantes(tienda.slug));
     if (accion === 'flex_envios') return res.status(200).json(await accionFlexEnvios(tienda.slug));
+    if (accion === 'flex_buscar_vendedores') {
+      return res.status(200).json(await accionBuscarVendedores(tienda.slug, cuerpo.texto));
+    }
     if (accion === 'importar_venta') {
       const cuerpo = req.body || {};
       return res.status(200).json(await accionImportarVenta(tienda.slug, cuerpo.ml_order_id));

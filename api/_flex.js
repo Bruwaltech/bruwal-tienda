@@ -55,7 +55,7 @@ function esFlex(envio) {
 
 // La zona del corredor sale del nombre de la ciudad que manda ML. Se compara
 // sin tildes ni mayúsculas porque ML no siempre escribe igual ("Capitan
-// Bermudez", "Granadero Baigorria", "San Lorenzo"). Lo que no es del
+// Bermudez", "Granadero Baigorria", "Puerto Gral. San Martin"). Lo que no es del
 // corredor queda en 'otra': es justamente lo que hay que mirar aparte.
 function sinTildes(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -66,6 +66,7 @@ function zonaDeCiudad(ciudad) {
   if (c.includes('baigorria')) return 'baigorria';
   if (c.includes('bermudez')) return 'bermudez';
   if (c.includes('san lorenzo')) return 'san_lorenzo';
+  if (c.includes('san martin') && (c.includes('puerto') || c.includes('pto'))) return 'puerto_san_martin';
   if (c.includes('rosario')) return 'rosario';
   return 'otra';
 }
@@ -145,4 +146,4 @@ async function guardarEnvioFlex(slug, envioId, token, orden) {
   return fila;
 }
 
-module.exports = { flexHabilitado, esFlex, zonaDeCiudad, filaDeEnvio, guardarFilas, guardarEnvioFlex };
+module.exports = { flexHabilitado, esFlex, zonaDeCiudad, sinTildes, filaDeEnvio, guardarFilas, guardarEnvioFlex };
