@@ -383,6 +383,14 @@ tbody tr:hover { background: #F8FBFF; }
 }
 .pedido:first-child { border-top: none; }
 .pedido-cerrado { opacity: .6; }
+/* Borrar pedidos: tilde arriba a la izquierda y "Borrar pedido" abajo de la agenda */
+.pedido { position: relative; padding-left: 50px; }
+.pedido-check { position: absolute; left: 18px; top: 18px; width: 18px; height: 18px; cursor: pointer; }
+.pedido-elegido { background: #FEF2F2; opacity: 1; }
+.link-borrar {
+  margin-top: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--danger); font-size: 13px; text-decoration: underline;
+}
 .fila-agenda { display: flex; gap: 6px; flex-wrap: wrap; }
 .fila-agenda input, .fila-agenda select, .selector {
   padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
@@ -667,6 +675,12 @@ tbody tr:hover { background: #F8FBFF; }
         </div>
         <p class="nota-panel">Poné día y turno a cada retiro. El bot le avisa al cliente la noche
           anterior si es a la mañana, o esa misma mañana si es a la tarde, y le pide que confirme.</p>
+        <div class="barra-seleccion hidden" id="mSeleccionPedidos">
+          <strong id="mCuantosPedidos"></strong>
+          <button type="button" class="btn btn-peligro" id="mBorrarPedidos">Borrar los elegidos</button>
+          <button type="button" class="btn btn-suave" id="mElegirTodosPedidos">Elegir todos los que se ven</button>
+          <button type="button" class="btn btn-suave" id="mSoltarPedidos">Cancelar</button>
+        </div>
         <div id="mListaPedidos"></div>
         <div class="vacio hidden" id="mSinPedidos"></div>
       </div>
@@ -934,6 +948,7 @@ tbody tr:hover { background: #F8FBFF; }
           <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente… (Enter envía, Shift+Enter baja de renglón)" maxlength="4000"></textarea>
           <div class="responder-pie">
             <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
+            <button type="button" class="btn btn-ok hidden" id="mRetomar">Mandar saludo para retomar</button>
             <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
             <input type="file" id="mFoto" accept="image/*" class="solo-lector">
             <!-- Como en WhatsApp: con la caja vacía el botón graba, con texto manda -->
@@ -996,7 +1011,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261019d"></script>
+<script src="/asistente/monedas.js?v=20261020b"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';

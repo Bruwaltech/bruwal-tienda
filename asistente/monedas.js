@@ -57,6 +57,7 @@ const panelMonedas = (() => {
   let filtroCharlas = 'humano';
   let busquedaCharlas = '';
   const elegidas = new Set(); // charlas tildadas para borrar de a varias ("canal|usuario")
+  const pedidosElegidos = new Set(); // ids de pedidos tildados para borrar de a varios
   let diaRuta = null;
   let turnoRuta = 'Mañana';
   let turnoElegido = false;
@@ -325,7 +326,10 @@ const panelMonedas = (() => {
           '<option' + (p.turno === t ? ' selected' : '') + '>' + t + '</option>').join('') +
       '</select>';
 
-    return '<div class="pedido' + (fijo ? ' pedido-cerrado' : '') + '" data-id="' + escapar(p.id) + '">' +
+    return '<div class="pedido' + (fijo ? ' pedido-cerrado' : '') +
+      (pedidosElegidos.has(p.id) ? ' pedido-elegido' : '') + '" data-id="' + escapar(p.id) + '">' +
+      '<input type="checkbox" class="pedido-check" data-elegir-pedido aria-label="Elegir este pedido"' +
+        (pedidosElegidos.has(p.id) ? ' checked' : '') + '>' +
       '<div>' +
         '<div class="nombre-lead">' + escapar(p.nombre) +
           (esPrioridad(p) ? ' <span class="chip chip-prioridad">Prioridad</span>' : '') + '</div>' +
@@ -353,13 +357,14 @@ const panelMonedas = (() => {
               escapar(aviso.texto) +
             '</div>'
           : '') +
+        '<button type="button" class="link-borrar" data-borrar-pedido>Borrar pedido</button>' +
       '</div>' +
     '</div>';
   }
 
-  function pintarPedidos() {
+  function pedidosVisibles() {
     const texto = busqueda.trim().toLowerCase();
-    const visibles = pedidos.filter((p) => {
+    return pedidos.filter((p) => {
       if (filtroPedidos === 'pendientes' && cerrado(p)) return false;
       if (filtroPedidos === 'retirados' && p.estado !== 'retirado') return false;
       if (filtroPedidos === 'cancelados' && p.estado !== 'cancelado') return false;
@@ -368,8 +373,13 @@ const panelMonedas = (() => {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(texto));
     }).sort(ordenPedidos);
+  }
 
+  function pintarPedidos() {
+    const texto = busqueda.trim().toLowerCase();
+    const visibles = pedidosVisibles();
     $('mListaPedidos').innerHTML = visibles.map(htmlPedido).join('');
+    pintarSeleccionPedidos(visibles);
 
     if (visibles.length) return ocultar($('mSinPedidos'));
     $('mSinPedidos').innerHTML = texto
@@ -378,6 +388,54 @@ const panelMonedas = (() => {
       ? '<strong>No hay pedidos pendientes</strong>Los que tome el bot van a aparecer acá.'
       : '<strong>No hay pedidos para mostrar</strong>';
     ver($('mSinPedidos'));
+  }
+
+  // ---------- Borrar pedidos de a uno o varios ----------
+  function pintarSeleccionPedidos(visibles) {
+    const ids = new Set(pedidos.map((p) => p.id));
+    [...pedidosElegidos].forEach((id) => { if (!ids.has(id)) pedidosElegidos.delete(id); });
+    const n = pedidosElegidos.size;
+    $('mSeleccionPedidos').classList.toggle('hidden', !n);
+    $('mCuantosPedidos').textContent = n === 1 ? '1 pedido elegido' : n + ' pedidos elegidos';
+    const vis = (visibles || pedidosVisibles()).map((p) => p.id);
+    $('mElegirTodosPedidos').disabled = !vis.length || vis.every((id) => pedidosElegidos.has(id));
+  }
+
+  function clicEnPedido(e) {
+    const tarjeta = e.target.closest('.pedido');
+    if (!tarjeta) return;
+    const id = Number(tarjeta.dataset.id);
+    if (e.target.matches('[data-elegir-pedido]')) {
+      if (e.target.checked) pedidosElegidos.add(id); else pedidosElegidos.delete(id);
+      tarjeta.classList.toggle('pedido-elegido', e.target.checked);
+      pintarSeleccionPedidos();
+    } else if (e.target.matches('[data-borrar-pedido]')) {
+      borrarPedidos([id]);
+    }
+  }
+
+  async function borrarPedidos(ids) {
+    const lista = pedidos.filter((p) => ids.includes(p.id));
+    if (!lista.length) return;
+    const nombres = lista.slice(0, 5).map((p) => p.nombre + (p.localidad ? ' (' + p.localidad + ')' : '')).join(', ') +
+      (lista.length > 5 ? ' y ' + (lista.length - 5) + ' más' : '');
+    if (!confirm('¿Borrar ' + (lista.length === 1 ? 'el pedido' : 'los ' + lista.length + ' pedidos') + '?\n\n' +
+      nombres + '\n\nNo se puede deshacer. Las charlas quedan.')) return;
+    $('mBorrarPedidos').disabled = true;
+    const r = await llamarBot({ accion: 'borrar_pedidos', ids: lista.map((p) => p.id) });
+    $('mBorrarPedidos').disabled = false;
+    if (!r || r.error || !Array.isArray(r.borrados)) {
+      mostrarError('No se pudo borrar' + (r && r.error ? ': ' + r.error : '. Probá de nuevo.'));
+      return;
+    }
+    ocultar($('mError'));
+    const borrados = new Set(r.borrados);
+    pedidos = pedidos.filter((p) => !borrados.has(p.id));
+    borrados.forEach((id) => pedidosElegidos.delete(id));
+    pintarTarjetas();
+    pintarPedidos();
+    if (typeof pintarRuta === 'function') pintarRuta();
+    toast(borrados.size === 1 ? 'Pedido borrado' : borrados.size + ' pedidos borrados');
   }
 
   // Cada cambio se guarda en el momento. La tarjeta se redibuja en su lugar y
@@ -827,13 +885,33 @@ const panelMonedas = (() => {
     $('mEnviar').disabled = !abierta;
     // Las fotos y los audios salen solo por WhatsApp
     $('mFotoBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp');
+    $('mRetomar').classList.toggle('hidden', !!abierta || c.canal !== 'whatsapp');
     pintarBotonesEnvio();
     if (grabacion || /Safari no te pida/.test($('mVentana').textContent)) return;
     $('mVentana').textContent = abierta
       ? 'Sale por el número del bot. Mientras atendés vos, el bot no contesta.'
       : ultimoDelCliente
-      ? 'Pasaron más de 24 horas desde su último mensaje: WhatsApp no deja escribirle hasta que vuelva a escribir.'
+      ? 'Pasaron más de 24 horas desde su último mensaje: WhatsApp no deja escribirle libre. ' +
+        (c.canal === 'whatsapp' ? 'Mandale el saludo y, cuando conteste, le escribís normal.' : 'Hay que esperar que vuelva a escribir.')
       : 'Todavía no te escribió: WhatsApp solo deja escribirle primero con el saludo aprobado.';
+  }
+
+  // Pasadas las 24 horas solo se puede mandar el saludo aprobado (primer_contacto). Cuando contesta,
+  // se abre la charla otra vez. Queda pausado el bot para que la siga Walter.
+  async function retomarCharla() {
+    const c = charlaAbierta;
+    if (!c) return;
+    if (!confirm('¿Mandarle el saludo a ' + nombreCharla(c) + '?\n\nLe llega el mensaje aprobado de Punto Metales. ' +
+      'Cuando conteste vas a poder escribirle normal.')) return;
+    $('mRetomar').disabled = true;
+    const r = await llamarBot({ accion: 'retomar', canal: c.canal, usuario: c.usuario });
+    $('mRetomar').disabled = false;
+    if (!r || r.error) return errorFicha(r && r.error ? r.error : 'No se pudo mandar el saludo. Probá de nuevo.');
+    ocultar($('mFichaError'));
+    c.bot_pausado = true;
+    c.pide_humano = false;
+    toast('Saludo enviado');
+    if (charlaAbierta === c) cargarMensajes(c);
   }
 
   // Como en WhatsApp: con la caja vacía se ve el botón de grabar; con algo escrito, el de mandar
@@ -1453,6 +1531,12 @@ const panelMonedas = (() => {
     pintarTarjetas();
     pintarCharlas();
     toast(pausar ? 'El bot no va a contestar en esta charla' : 'La charla vuelve a atenderla el bot');
+    // Si el cliente escribió mientras la atendías vos, el bot le contesta ahora (la respuesta llega en vivo)
+    if (!pausar) {
+      llamarBot({ accion: 'contestar_pendiente', canal: c.canal, usuario: c.usuario }).then((r) => {
+        if (r && r.error) errorFicha('El bot no pudo contestar lo pendiente: ' + r.error);
+      });
+    }
   }
 
   async function borrarCharla() {
@@ -2044,6 +2128,14 @@ const panelMonedas = (() => {
       pintarPedidos();
     });
     $('mListaPedidos').addEventListener('change', guardarPedido);
+    $('mListaPedidos').addEventListener('click', clicEnPedido);
+    $('mBorrarPedidos').addEventListener('click', () => borrarPedidos([...pedidosElegidos]));
+    $('mElegirTodosPedidos').addEventListener('click', () => {
+      pedidosVisibles().forEach((p) => pedidosElegidos.add(p.id));
+      pintarPedidos();
+    });
+    $('mSoltarPedidos').addEventListener('click', () => { pedidosElegidos.clear(); pintarPedidos(); });
+    $('mRetomar').addEventListener('click', retomarCharla);
 
     $('mDiaRuta').addEventListener('change', (e) => {
       diaRuta = e.target.value || null;
