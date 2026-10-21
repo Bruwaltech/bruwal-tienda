@@ -7,6 +7,11 @@
 <title>Bruwal Chat — Panel de tu chatbot · BRUWAL</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="theme-color" content="#15294D">
+<!-- Agregado a la pantalla de inicio (en el iPhone es lo que hace andar los avisos con el panel cerrado) -->
+<link rel="manifest" href="/asistente/manifest-chat.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bruwal Chat">
 <meta name="robots" content="noindex, nofollow">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -288,7 +293,46 @@ tbody tr:hover { background: #F8FBFF; }
 .burbuja .medio-link { display: inline-block; margin: 4px 0; color: inherit; font-size: 13px; text-decoration: underline; }
 .burbuja .medio-falta { display: block; font-style: italic; opacity: .75; }
 .burbuja .medio-link + .medio-link { margin-left: 10px; }
-#mAudioBtn.grabando { background: #FDECEC; border-color: #F2B8B8; color: #A12626; }
+#mAudioBtn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#mAudioBtn.grabando { background: #C53030; }
+.grabando {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 8px; border-radius: 10px;
+  background: #FDECEC; border: 1px solid #F2B8B8;
+}
+.grabando .dato-secundario { flex: 1; min-width: 140px; }
+.grabando.cancelar { background: #F3F4F6; border-color: var(--line); }
+.punto-rojo { width: 10px; height: 10px; border-radius: 50%; background: #C53030; animation: latido 1s infinite; }
+.grabando.pausado .punto-rojo { animation: none; background: #9CA3AF; }
+@keyframes latido { 50% { opacity: .25; } }
+
+/* Contestar citando un mensaje */
+.burbuja .responder-a {
+  display: none; margin-left: 8px; font-size: 11px; color: inherit; opacity: .8;
+  background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font-family: inherit;
+}
+.burbuja:hover .responder-a, .burbuja:focus-within .responder-a { display: inline; }
+@media (hover: none) { .burbuja .responder-a { display: inline; } }
+.burbuja .cita, .cita-elegida {
+  display: block; border-left: 3px solid var(--celeste); background: rgba(0,0,0,.06);
+  border-radius: 6px; padding: 5px 8px; margin-bottom: 5px; font-size: 12.5px;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+.burbuja.de-bot .cita, .burbuja.de-walter .cita { background: rgba(255,255,255,.18); border-left-color: #fff; }
+.cita strong, .cita-texto strong { display: block; font-size: 12px; }
+.cita-elegida { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; -webkit-line-clamp: unset; }
+.cita-texto { flex: 1; white-space: pre-wrap; word-break: break-word; max-height: 4.4em; overflow: hidden; }
+.burbuja.resaltada { outline: 2px solid var(--celeste); outline-offset: 2px; }
+
+/* Borrar varias charlas */
+.col-check { width: 36px; padding-right: 0; }
+.col-check input { width: 18px; height: 18px; cursor: pointer; }
+.barra-seleccion {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 10px; border-radius: var(--radius);
+  background: #FEF2F2; border: 1px solid #FECACA;
+}
+.barra-seleccion strong { flex: 1; min-width: 140px; }
 
 /* Contestar desde el panel: sale por el número del bot */
 .responder { margin-top: 10px; }
@@ -339,6 +383,14 @@ tbody tr:hover { background: #F8FBFF; }
 }
 .pedido:first-child { border-top: none; }
 .pedido-cerrado { opacity: .6; }
+/* Borrar pedidos: tilde arriba a la izquierda y "Borrar pedido" abajo de la agenda */
+.pedido { position: relative; padding-left: 50px; }
+.pedido-check { position: absolute; left: 18px; top: 18px; width: 18px; height: 18px; cursor: pointer; }
+.pedido-elegido { background: #FEF2F2; opacity: 1; }
+.link-borrar {
+  margin-top: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--danger); font-size: 13px; text-decoration: underline;
+}
 .fila-agenda { display: flex; gap: 6px; flex-wrap: wrap; }
 .fila-agenda input, .fila-agenda select, .selector {
   padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
@@ -371,6 +423,8 @@ tbody tr:hover { background: #F8FBFF; }
   border-top: 1px solid var(--line); background: #F8FBFF;
 }
 .resumen-ruta:empty { display: none; }
+.tarjetas.uso { padding: 16px 18px 0; margin-bottom: 4px; }
+.tarjetas.uso .tarjeta .dato-secundario { margin-top: 4px; }
 .resumen-ruta .rotulo {
   display: block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px;
   color: var(--text-mute); font-weight: 600;
@@ -602,6 +656,7 @@ tbody tr:hover { background: #F8FBFF; }
         <button type="button" class="pestana" data-pestana="ruta" role="tab">Hoja de ruta</button>
         <button type="button" class="pestana" data-pestana="charlas" role="tab">Charlas</button>
         <button type="button" class="pestana" data-pestana="precios" role="tab">Precios y ajustes</button>
+        <button type="button" class="pestana" data-pestana="uso" role="tab">Uso del mes</button>
         <button type="button" class="btn btn-suave" id="mActualizar">Actualizar</button>
       </div>
 
@@ -620,6 +675,12 @@ tbody tr:hover { background: #F8FBFF; }
         </div>
         <p class="nota-panel">Poné día y turno a cada retiro. El bot le avisa al cliente la noche
           anterior si es a la mañana, o esa misma mañana si es a la tarde, y le pide que confirme.</p>
+        <div class="barra-seleccion hidden" id="mSeleccionPedidos">
+          <strong id="mCuantosPedidos"></strong>
+          <button type="button" class="btn btn-peligro" id="mBorrarPedidos">Borrar los elegidos</button>
+          <button type="button" class="btn btn-suave" id="mElegirTodosPedidos">Elegir todos los que se ven</button>
+          <button type="button" class="btn btn-suave" id="mSoltarPedidos">Cancelar</button>
+        </div>
         <div id="mListaPedidos"></div>
         <div class="vacio hidden" id="mSinPedidos"></div>
       </div>
@@ -642,6 +703,7 @@ tbody tr:hover { background: #F8FBFF; }
           <button type="button" class="btn btn-ok" id="mAprobar">Aprobar hoja de ruta</button>
           <button type="button" class="btn btn-suave" id="mImprimir">Imprimir</button>
           <a class="btn btn-suave" id="mMapa" target="_blank" rel="noopener">Abrir en Google Maps</a>
+          <button type="button" class="btn btn-suave" id="mEnviarRuta">Mandármela por WhatsApp</button>
           <span class="dato-secundario" id="mEstadoRuta"></span>
         </div>
       </div>
@@ -653,7 +715,9 @@ tbody tr:hover { background: #F8FBFF; }
             <button type="button" class="filtro activo" data-filtro="humano">Quieren hablar con vos</button>
             <button type="button" class="filtro" data-filtro="vos">Las atendés vos</button>
             <button type="button" class="filtro" data-filtro="todas">Todas</button>
+            <button type="button" class="filtro" data-filtro="contactos">Contactos (A-Z)</button>
           </div>
+          <input type="search" class="buscador" id="mBuscadorCharlas" placeholder="🔍 Buscar nombre o número…" aria-label="Buscar contacto">
           <button type="button" class="btn btn-suave" id="mNuevoContacto">+ Contacto nuevo</button>
         </div>
         <!-- Para todas las charlas a la vez: contesta el bot o contesta Walter -->
@@ -665,10 +729,17 @@ tbody tr:hover { background: #F8FBFF; }
           <button type="button" class="btn btn-suave" id="mBtnModo">Pasar a manual</button>
           <button type="button" class="btn btn-suave" id="mBtnAvisos">Activar avisos</button>
         </div>
+        <!-- Aparece al tildar charlas: para borrar varias sin abrir cada una -->
+        <div class="barra-seleccion hidden" id="mSeleccion">
+          <strong id="mCuantas"></strong>
+          <button type="button" class="btn btn-peligro" id="mBorrarElegidas">Eliminar las elegidas</button>
+          <button type="button" class="btn btn-suave" id="mSoltarElegidas">Cancelar</button>
+        </div>
         <div class="tabla-scroll">
           <table>
             <thead>
               <tr>
+                <th class="col-check"><input type="checkbox" id="mElegirTodas" aria-label="Elegir todas las que se ven"></th>
                 <th>Cliente</th>
                 <th class="opcional">Canal</th>
                 <th class="opcional">Último mensaje</th>
@@ -684,6 +755,19 @@ tbody tr:hover { background: #F8FBFF; }
           <button type="button" class="btn btn-suave" id="mCopiaCharlas">Descargar charlas</button>
           <button type="button" class="btn btn-suave" id="mCopiaPedidos">Descargar pedidos</button>
         </div>
+      </div>
+
+      <!-- Cuánto se usó en el mes: lo arma walter-bot (accion uso) -->
+      <div class="panel hidden" data-seccion="uso">
+        <div class="panel-cabecera">
+          <h2>Uso del mes</h2>
+          <span class="dato-secundario" id="mUsoPeriodo"></span>
+          <button type="button" class="btn btn-suave" id="mUsoActualizar">Actualizar</button>
+        </div>
+        <div class="aviso aviso-error hidden" id="mUsoError" style="margin:14px 18px 0;"></div>
+        <div class="tarjetas uso" id="mUso"><div class="dato-secundario">Cargando…</div></div>
+        <p class="nota-panel" id="mUsoNota">Lo que cobra Meta lo informa Meta y puede tardar unas horas en aparecer.
+          La IA se calcula con el precio de lista, en dólares.</p>
       </div>
 
       <form class="panel hidden" data-seccion="precios" id="mFormPrecios" novalidate>
@@ -726,6 +810,9 @@ tbody tr:hover { background: #F8FBFF; }
             <input id="mHoraNoche" data-cfg="horaNoche" type="time"></div>
           <div class="campo"><label for="mHoraManana">Turno tarde: ese mismo día a las</label>
             <input id="mHoraManana" data-cfg="horaManana" type="time"></div>
+          <div class="campo"><label for="mWaWalter">Tu WhatsApp (ahí te llega la hoja de ruta)</label>
+            <input id="mWaWalter" data-cfg="waWalter" data-opcional type="tel" inputmode="tel" placeholder="341 5551234">
+            <div class="dato-secundario">Código de área sin el 0 y el número sin el 15. Al cliente nunca le llega.</div></div>
         </div>
 
         <h3 class="titulo-grupo">Depósitos y saludo</h3>
@@ -844,13 +931,28 @@ tbody tr:hover { background: #F8FBFF; }
         <div class="charla" id="mFichaCharla"></div>
         <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
         <form class="responder" id="mFormResponder" onsubmit="return false">
+          <!-- El mensaje que se va a citar, como "Responder" en WhatsApp -->
+          <div class="cita-elegida hidden" id="mCita">
+            <div class="cita-texto"><strong id="mCitaQuien"></strong><span id="mCitaTexto"></span></div>
+            <button type="button" class="cerrar" id="mCitaQuitar" aria-label="No citar">&times;</button>
+          </div>
+          <!-- Mientras graba un audio: mantener apretado y soltar para mandar, o tocar y usar estos botones -->
+          <div class="grabando hidden" id="mGrabando">
+            <span class="punto-rojo" id="mAudioPunto"></span>
+            <strong id="mAudioReloj">0:00</strong>
+            <span class="dato-secundario" id="mAudioAyuda"></span>
+            <button type="button" class="btn btn-suave" id="mAudioCancelar">Cancelar</button>
+            <button type="button" class="btn btn-suave" id="mAudioPausa">Pausar</button>
+            <button type="button" class="btn btn-ok" id="mAudioEnviar">Enviar audio</button>
+          </div>
           <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente… (Enter envía, Shift+Enter baja de renglón)" maxlength="4000"></textarea>
           <div class="responder-pie">
             <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
+            <button type="button" class="btn btn-ok hidden" id="mRetomar">Mandar saludo para retomar</button>
             <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
             <input type="file" id="mFoto" accept="image/*" class="solo-lector">
-            <button type="button" class="btn btn-suave hidden" id="mAudioBtn">Grabar audio</button>
-            <button type="button" class="btn btn-suave hidden" id="mAudioCancelar">Cancelar</button>
+            <!-- Como en WhatsApp: con la caja vacía el botón graba, con texto manda -->
+            <button type="button" class="btn btn-ok hidden" id="mAudioBtn" title="Mantené apretado para grabar y soltá para mandar">🎤 Audio</button>
             <button type="submit" class="btn btn-ok" id="mEnviar">Enviar</button>
           </div>
         </form>
@@ -909,7 +1011,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261018f"></script>
+<script src="/asistente/monedas.js?v=20261020b"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';

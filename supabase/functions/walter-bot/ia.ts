@@ -9,6 +9,7 @@ const MODELO = "claude-haiku-5-5";
 const PREGUNTAS: Record<string, string> = {
   loc: "de qué localidad escribe", out: "si quiere probar con otra localidad", cat: "qué quiere vender",
   unit: "si las monedas están contadas o pesadas", tipo: "de qué tipo son las monedas, o si van por kilo", qty: "cuánto tiene",
+  mas: "si tiene monedas de otro tipo para sumar al mismo pedido",
   mod: "si se lo pasamos a buscar (y en ese caso la dirección), nos encontramos en un punto o lo lleva al depósito",
 };
 
@@ -52,6 +53,13 @@ Te paso también la charla reciente. Si en mensajes anteriores del cliente hay d
 
 let cliente: Anthropic | null = null;
 
+// Para contar lo que se usa de la IA (pestaña Uso del panel): index.ts lo guarda en walter_uso
+let alUsar: ((entrada: number, salida: number) => void) | null = null;
+export function contarUso(f: (entrada: number, salida: number) => void) { alUsar = f; }
+const anotar = (res: { usage?: { input_tokens?: number; output_tokens?: number } }) => {
+  try { alUsar?.(res.usage?.input_tokens ?? 0, res.usage?.output_tokens ?? 0); } catch { /* no frena la respuesta */ }
+};
+
 /** Lo que Haiku entendió del mensaje, o null si no se pudo leer (sin clave, error, demora). */
 export async function leer(apiKey: string, texto: string, estado: Estado | null, c: Config, charla = ""): Promise<Lectura | null> {
   if (!apiKey) return null;
@@ -68,6 +76,7 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
       output_config: { effort: "low", format: { type: "json_schema", schema: esquema(c) } },
       messages: [{ role: "user", content: `${contexto}${charla ? `\n\nCharla reciente:\n${charla}` : ""}\n\nMensaje del cliente:\n${texto}` }],
     });
+    anotar(res);
     if (res.stop_reason !== "end_turn") {
       console.error("ia: stop_reason", res.stop_reason);
       return null;
@@ -135,6 +144,7 @@ export async function redactar(apiKey: string, cliente_dijo: string, rs: { text:
         respuestas: rs.map((r) => (r.options?.length ? { texto: r.text, opciones: r.options } : { texto: r.text })),
       }) }],
     });
+    anotar(res);
     if (res.stop_reason !== "end_turn") { console.error("ia: redactar stop_reason", res.stop_reason); return rs; }
     const bloque = res.content.find((b) => b.type === "text");
     if (!bloque || bloque.type !== "text") return rs;
@@ -186,6 +196,7 @@ export async function contestar(apiKey: string, pregunta: string, hechos: string
       },
       messages: [{ role: "user", content: JSON.stringify({ datos_del_negocio: hechos, ...(charla ? { charla_reciente: charla } : {}), pregunta }) }],
     });
+    anotar(res);
     if (res.stop_reason !== "end_turn") { console.error("ia: contestar stop_reason", res.stop_reason); return null; }
     const bloque = res.content.find((b) => b.type === "text");
     if (!bloque || bloque.type !== "text") return null;
