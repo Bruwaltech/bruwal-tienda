@@ -18,6 +18,8 @@
 //   publicaciones -> las publicaciones activas de la cuenta, con su stock
 //   publicidad    -> campañas de Product Ads y sus métricas, si la cuenta
 //                    las tiene habilitadas
+//   flex_envios   -> envíos Flex de los últimos 14 días (solo tiendas con
+//                    features.envios_flex)
 // Y una por GET, que es la que abre Mercado Libre al volver:
 //   callback     -> /api/ml-callback?code=...&state=...
 
@@ -1386,6 +1388,114 @@ async function accionGuardarOpiniones(slug) {
   };
 }
 
+// ---------- Envíos Flex ----------
+//
+// Los envíos Flex recientes de la tienda, para la pestaña Envíos Flex.
+//
+// Cómo se reconoce un envío Flex: en el recurso /shipments el tipo de
+// logística es "self_service" (doc de Mercado Envíos 2, "Logistic type":
+// "Mercado Envíos Flex (self_service): Only in MLA, MLB, MLC, MCO y MLU").
+// Envíos Turbo también viene como self_service (doc de Envíos Turbo), y
+// para nosotros es lo mismo: lo entrega el vendedor.
+// Sin X-Format-New el campo es `logistic_type`; con él, `logistic.type`. Se
+// leen los dos por si ML cambia el formato por defecto.
+//
+// No hay búsqueda de envíos por tipo, así que se parte de las órdenes
+// recientes (las mismas 50 de ventas_faltantes) y se pide cada envío. Los
+// costos se piden solo para los que son Flex: es una llamada más por envío.
+const FLEX_DIAS = 14;
+const FLEX_MAXIMOS = 40;
+const FLEX_EN_PARALELO = 8;
+
+async function flexHabilitado(slug) {
+  const filas = await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) + '&select=features');
+  const f = filas && filas[0] && filas[0].features;
+  return !!(f && f.envios_flex === true);
+}
+
+async function enTandas(lista, cuantos, fn) {
+  const salida = [];
+  for (let i = 0; i < lista.length; i += cuantos) {
+    const tanda = await Promise.all(lista.slice(i, i + cuantos).map((x) => fn(x).catch(() => null)));
+    salida.push(...tanda);
+  }
+  return salida;
+}
+
+async function accionFlexEnvios(slug) {
+  // El flag se mira acá también: la pestaña no aparece sin él, pero el
+  // endpoint es público para cualquier tienda logueada.
+  if (!(await flexHabilitado(slug))) return { ok: false, motivo: 'Envíos Flex no está habilitado para esta tienda.' };
+
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+  const traidas = await ordenesRecientesDeMl(cuenta, token);
+  if (!traidas.ok) return { conectado: true, ok: false, motivo: 'No se pudieron leer las ventas de Mercado Libre.' };
+
+  const desde = Date.now() - FLEX_DIAS * 24 * 60 * 60 * 1000;
+  // Varias órdenes de un carrito comparten el mismo envío: va uno solo.
+  const porEnvio = new Map();
+  traidas.ordenes.forEach((o) => {
+    const envioId = o.shipping && o.shipping.id;
+    const fecha = new Date(o.date_created || o.date_closed || 0).getTime();
+    if (!envioId || fecha < desde || porEnvio.has(String(envioId))) return;
+    porEnvio.set(String(envioId), o);
+  });
+  const ids = [...porEnvio.keys()].slice(0, FLEX_MAXIMOS);
+
+  const envios = await enTandas(ids, FLEX_EN_PARALELO, (id) => pedirAMl('/shipments/' + encodeURIComponent(id), token));
+
+  const flex = [];
+  envios.forEach((s, i) => {
+    if (!s) return;
+    const tipo = s.logistic_type || (s.logistic && s.logistic.type) || null;
+    if (tipo !== 'self_service') return;
+    const orden = porEnvio.get(ids[i]);
+    const historial = s.status_history || {};
+    const destino = s.receiver_address || (s.destination && s.destination.shipping_address) || {};
+    flex.push({
+      envio_id: ids[i],
+      orden_id: String(orden.id),
+      fecha_venta: orden.date_created || null,
+      fecha_entrega: historial.date_delivered || null,
+      estado: s.status || null,
+      subestado: s.substatus || null,
+      ciudad: (destino.city && destino.city.name) || null,
+      total_venta: Number(orden.total_amount) || 0,
+      productos: (orden.order_items || []).map((li) => (li.item && li.item.title) || '').filter(Boolean)
+    });
+  });
+
+  // Lo que ML dice del costo del envío para el vendedor y el comprador. La
+  // bonificación de Flex se acredita en Mercado Pago, y la doc no dice en
+  // qué campo de /costs aparece: se devuelve lo que haya y el panel lo
+  // muestra como "según ML", para contrastar con Mercado Pago.
+  const costos = await enTandas(flex, FLEX_EN_PARALELO,
+    (e) => pedirAMl('/shipments/' + encodeURIComponent(e.envio_id) + '/costs', token));
+  flex.forEach((e, i) => {
+    const c = costos[i];
+    if (!c) return;
+    const vendedor = (c.senders || [])[0] || {};
+    const comp = vendedor.compensation;
+    e.costo_comprador = c.receiver && c.receiver.cost != null ? Number(c.receiver.cost) : null;
+    e.costo_vendedor = vendedor.cost != null ? Number(vendedor.cost) : null;
+    e.compensacion_vendedor = comp == null ? null
+      : Number(typeof comp === 'object' ? comp.amount : comp) || 0;
+    e.costo_bruto = c.gross_amount != null ? Number(c.gross_amount) : null;
+  });
+
+  return {
+    conectado: true,
+    ok: true,
+    dias: FLEX_DIAS,
+    revisados: ids.length,
+    recortado: porEnvio.size > ids.length,
+    envios: flex
+  };
+}
+
 async function accionEstado(slug) {
   const filas = await sb('/rest/v1/store_ml_cuenta?store_slug=eq.' + encodeURIComponent(slug) +
                          '&select=ml_user_id,nickname,conectado_en');
@@ -1510,6 +1620,7 @@ module.exports = async (req, res) => {
     if (accion === 'facturacion') return res.status(200).json(await accionFacturacion(tienda.slug));
     if (accion === 'calidad') return res.status(200).json(await accionCalidadPublicaciones(tienda.slug));
     if (accion === 'ventas_faltantes') return res.status(200).json(await accionVentasFaltantes(tienda.slug));
+    if (accion === 'flex_envios') return res.status(200).json(await accionFlexEnvios(tienda.slug));
     if (accion === 'importar_venta') {
       const cuerpo = req.body || {};
       return res.status(200).json(await accionImportarVenta(tienda.slug, cuerpo.ml_order_id));
