@@ -27,7 +27,8 @@ export type Datos = {
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
 };
 // Pistas: lo que la IA entendió de un mensaje escrito libremente y todavía no se usó
-export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret" | "dir">>;
+// items: varias clases de monedas con su cantidad en un mismo mensaje ("145 de 1, 58 de 50, 348 de 10")
+export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret" | "dir" | "items">>;
 export type Estado = { step: string; d: Datos; p?: Pistas };
 export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
@@ -270,6 +271,10 @@ function pregunta(e: Estado, c: Config): Respuesta {
 const SALUDO = "(hola|holis|buenas|buen dia|buenos dias|buenas tardes|buenas noches|que tal|como estas|como va)";
 /** "Hola", "Hola buen día", "Buenas, qué tal": nada más que un saludo. */
 export const esSaludo = (s: string) => new RegExp(`^${SALUDO}( ${SALUDO})*$`).test(norm(s).replace(/[.,]/g, " ").replace(/\s+/g, " ").trim());
+
+/** "Hola tengo", "son de": el cliente cortó la frase y seguro manda otro mensaje enseguida. */
+export const pareceCortado = (s: string) =>
+  /\b(tengo|de|y|con|unas?|unos?|son|hay|las|los|el|la|tambien|ademas|mas|como|mira|te cuento)$/.test(norm(s).replace(/[.,]+$/, ""));
 
 export function nuevoEstado(): Estado { return { step: "loc", d: {} }; }
 
@@ -549,7 +554,7 @@ const esPregunta = (s: string) => /[?¿]/.test(s) &&
 
 // La IA saca datos también de la charla reciente: cuentan solo los que el bot todavía no tenía
 const traeDatos = (l: Lectura, e: Estado | null) =>
-  !!l.cant || !!l.dir || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k]);
+  !!l.cant || !!l.dir || !!l.items?.length || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k]);
 
 const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, string>> =
   { precios: "precios", depositos: "deposito", humano: "hablar con Walter" };
@@ -614,6 +619,15 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   const respuestas: Respuesta[] = [];
   let prefijo = "";
   for (let i = 0; i < 8 && !r.derivar && !r.pedido; i++) {
+    // Mandó la lista de monedas: se cotiza toda junta y sigue con cómo lo entrega
+    if (p.items?.length && ["cat", "unit", "tipo", "qty"].includes(r.estado.step) && (r.estado.step === "cat" || r.estado.d.mat === "Monedas")) {
+      const items = p.items;
+      delete p.items; delete p.mat; delete p.modo; delete p.tipo; delete p.cant;
+      if (r.estado.step === "cat" && !prefijo && r.estado.d.loc && r.estado.d.loc !== estado?.d.loc) prefijo = `¡Genial, en ${r.estado.d.loc} trabajamos! `;
+      respuestas.push(...r.respuestas.slice(0, -1));
+      r = conLista(r.estado, items, c);
+      continue;
+    }
     const a = respuestaDesde(r.estado, p, c);
     if (!a) break;
     delete p[a.campo];
@@ -644,7 +658,33 @@ function pistasDe(l: Lectura, c: Config): Pistas {
   if (typeof l.cant === "number" && l.cant > 0) p.cant = l.cant;
   if (l.ret === "Retiro a domicilio" || l.ret === "Punto de encuentro" || l.ret === "Depósito") p.ret = l.ret;
   if (typeof l.dir === "string" && l.dir.trim()) p.dir = l.dir.trim().slice(0, 120);
+  const items = (l.items ?? []).flatMap((x): Linea[] => {
+    if (!(typeof x?.cant === "number" && x.cant > 0)) return [];
+    if (x.tipo === MEZCLADAS || x.modo === "kg") return [{ modo: "kg", cant: x.cant }];
+    return tipoPorNombre(c, x.tipo) ? [{ modo: "u", tipo: x.tipo, cant: x.cant }] : [];
+  });
+  // Una sola clase ya la cubren tipo y cant; la lista sirve desde dos
+  if (items.length > 1) p.items = items;
   return p;
+}
+
+/** Cotiza la lista de monedas que mandó junta: cada clase con su total, la suma, y la pregunta de cómo lo entrega. */
+function conLista(e: Estado, items: Linea[], c: Config): Resultado {
+  const d: Datos = { ...e.d, mat: "Monedas" };
+  const ult = items[items.length - 1];
+  d.items = [...(d.items ?? []), ...items.slice(0, -1)];
+  d.modo = ult.modo; d.cant = ult.cant;
+  if (ult.tipo) d.tipo = ult.tipo; else delete d.tipo;
+  const detalle = lineas(d).map((l) => {
+    const r = cotizar(c, "Monedas", l.modo, l.cant, l.tipo);
+    return `• ${lineaTxt({ mat: "Monedas", ...l })}: ${fmt(r.total)} (` + (l.modo === "u" ? `${fmt(r.precio)} cada una` : `${fmt(r.precio)} el kilo`) + ")";
+  }).join("\n");
+  const r = cerrarMonedas({ step: "mas", d }, c);
+  // La suma va con el detalle; de cerrarMonedas queda lo que se confirma al retirar y la pregunta
+  const fin = r.respuestas[0].text.replace(/^En total:[^\n]*\n/, "");
+  return { ...r, respuestas: [
+    { text: `Por lo que me pasaste te pagamos:\n${detalle}\nTotal: ${fmt(totalDe(d, c))}.\n${fin}` }, ...r.respuestas.slice(1),
+  ] };
 }
 
 function cantidad(e: Estado, q: number, c: Config): Resultado {

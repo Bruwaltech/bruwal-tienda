@@ -9,7 +9,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { conPerfil, type Config, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
@@ -173,7 +173,8 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   // último. Los anteriores sin respuesta van en la charla reciente, y la IA los lee aunque el último sea un botón.
   if (id && pendiente) libre = true;
   else if (id) {
-    await new Promise((r) => setTimeout(r, ESPERA_SEGUIDOS));
+    // "Hola tengo": la frase sigue en el próximo mensaje, se espera un poco más
+    await new Promise((r) => setTimeout(r, pareceCortado(texto) ? ESPERA_CORTADO : ESPERA_SEGUIDOS));
     const { data: nuevos } = await db.from("walter_mensajes").select("texto")
       .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gt("id", id);
     // Un "hola" o una foto sin texto que llegan después no contestan esto: en ese caso contesta este
@@ -234,6 +235,7 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
 
 // Cuánto espera el bot por si el cliente manda otro mensaje enseguida
 const ESPERA_SEGUIDOS = 5000;
+const ESPERA_CORTADO = 15000;
 
 // Mensajes del cliente de los últimos 2 minutos, antes del actual, que el bot todavía no contestó
 async function sinRespuesta(canal: Canal, usuario: string, hastaId: number): Promise<number> {
