@@ -20,6 +20,7 @@ const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const ML_API = 'https://api.mercadolibre.com';
 
 const { tokenDeTienda } = require('./mercadolibre');
+const flex = require('./_flex');
 
 function faltanVariables() {
   return ['ML_CLIENT_ID', 'ML_CLIENT_SECRET', 'SUPABASE_SERVICE_ROLE_KEY']
@@ -437,6 +438,43 @@ async function registrarOrdenEnBruwal(slug, orden, token, mlUserId) {
 }
 
 
+// ---------- Envíos Flex ----------
+//
+// Las tiendas con features.envios_flex guardan cada envío Flex en
+// flex_envios (ver api/_flex.js). Es un extra: si falla, se anota en el log
+// y la venta sigue su camino. Nunca se contesta 500 por esto, porque ML
+// reintentaría el aviso entero y eso no arregla nada.
+async function anotarEnvioFlex(slug, envioId, token, orden) {
+  try {
+    if (!envioId || !(await flex.flexHabilitado(slug))) return null;
+    return await flex.guardarEnvioFlex(slug, envioId, token, orden);
+  } catch (err) {
+    console.warn('ml-webhook: no se pudo guardar el envío Flex', envioId, String(err.message || err));
+    return null;
+  }
+}
+
+// Aviso del tópico `shipments`: un envío cambió de estado (salió, se
+// entregó, no se pudo entregar). Igual que con las órdenes, del cuerpo solo
+// se toman el user_id y el número: el envío se le pide a ML.
+async function avisoDeEnvio(aviso, res) {
+  const idEnvio = String(aviso.resource || '').split('/').filter(Boolean).pop();
+  if (!idEnvio) return res.status(200).json({ ignorado: 'sin resource' });
+
+  const tiendas = await sb('/rest/v1/store_ml_cuenta?ml_user_id=eq.' +
+    encodeURIComponent(String(aviso.user_id)) + '&select=store_slug');
+  const tienda = tiendas && tiendas[0];
+  if (!tienda) return res.status(200).json({ ignorado: 'cuenta no conectada' });
+  if (!(await flex.flexHabilitado(tienda.store_slug))) return res.status(200).json({ ignorado: 'sin envíos flex' });
+
+  const token = await tokenDeTienda(tienda.store_slug);
+  if (!token) return res.status(200).json({ ignorado: 'sin token' });
+
+  const fila = await flex.guardarEnvioFlex(tienda.store_slug, idEnvio, token, null);
+  return res.status(200).json(fila ? { ok: true, flex: true, estado: fila.estado } : { ignorado: 'no es flex' });
+}
+
+
 // ---------- Entrada ----------
 
 module.exports = async (req, res) => {
@@ -454,8 +492,19 @@ module.exports = async (req, res) => {
   const aviso = req.body || {};
   const topico = aviso.topic || aviso.Topic;
 
-  // Solo ventas. El resto de los tópicos se acepta y se ignora, para que ML
-  // no los reintente en loop si algún día se activan de más.
+  // Envíos: solo para Envíos Flex. Un error acá sí es un 500, para que ML
+  // reintente: el aviso no trae nada más que eso.
+  if (topico === 'shipments') {
+    try {
+      return await avisoDeEnvio(aviso, res);
+    } catch (err) {
+      console.error('ml-webhook shipments', aviso.resource, err);
+      return res.status(500).json({ error: String(err.message || err) });
+    }
+  }
+
+  // Ventas. El resto de los tópicos se acepta y se ignora, para que ML no
+  // los reintente en loop si algún día se activan de más.
   if (topico !== 'orders_v2') return res.status(200).json({ ignorado: topico || 'sin topico' });
 
   const recurso = String(aviso.resource || '');
@@ -500,6 +549,7 @@ module.exports = async (req, res) => {
         headers: { Prefer: 'return=minimal' },
         body: { estado: orden.status, detalle: orden, actualizado_en: new Date().toISOString() }
       });
+      await anotarEnvioFlex(slug, orden.shipping && orden.shipping.id, token, orden);
       return res.status(200).json({ ok: true, repetida: true, stock_descontado: reclamo.stock_descontado });
     }
 
@@ -557,6 +607,8 @@ module.exports = async (req, res) => {
       delete fila.costo_envio;
       await sb(rutaFila, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: fila });
     }
+
+    await anotarEnvioFlex(slug, orden.shipping && orden.shipping.id, token, orden);
 
     return res.status(200).json({
       ok: true,

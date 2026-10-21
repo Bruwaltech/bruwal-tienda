@@ -18,7 +18,17 @@
 //   Repartidores-> la red de repartidores independientes
 //   Liquidación -> semana por semana: qué pagar y qué cobrar
 //   Referencias -> de dónde salen los números
-// Y, si la tienda tiene Mercado Libre conectado, sus envíos Flex reales.
+// Y, si la tienda tiene Mercado Libre conectado, sus envíos Flex reales:
+// quedan guardados en flex_envios (los carga el servidor, con el aviso de
+// ML y con el botón "Actualizar desde Mercado Libre").
+//
+// PLAZO DE PAGO A REPARTIDORES:
+// la semana va de lunes a domingo. ML le acredita al vendedor a los 8 días
+// de la entrega, así que la plata de la semana está adentro a los
+// `cobro_dias` del domingo, y a los repartidores se les paga entre el día
+// `pago_rep_desde` y el `pago_rep_hasta`. Pagando después de cobrar no hay
+// caja que adelantar. Los tres números van en el acuerdo con el repartidor
+// (botón "Acuerdo" al editarlo).
 //
 // Mismo criterio que planes.js y demo.js: un archivo propio, sin saber nada
 // del panel más allá de lo que recibe en montar().
@@ -70,7 +80,9 @@
     { k: 'dias_semana',        def: 5,     t: 'Días hábiles por semana', u: '' },
     { k: 'gasto_vehiculo_pct', def: 50,    t: 'Gasto de vehículo del repartidor (% de lo que cobra)', u: '%' },
     { k: 'ref_camionero',      def: 44830, t: 'Referencia diaria camionero 1.ª cat.', u: '$' },
-    { k: 'semanas_desfase',    def: 2,     t: 'Semanas de desfase de caja', u: '' },
+    { k: 'cobro_dias',         def: 8,     t: 'Cobro: días después del domingo en que entra la plata', u: '' },
+    { k: 'pago_rep_desde',     def: 9,     t: 'Pago a repartidores: desde el día (después del domingo)', u: '' },
+    { k: 'pago_rep_hasta',     def: 15,    t: 'Pago a repartidores: hasta el día (después del domingo)', u: '' },
     { k: 'gastos_fijos_mes',   def: 0,     t: 'Gastos fijos mensuales', u: '$' }
   ];
   var SEMANAS_POR_MES = 4.33;
@@ -93,7 +105,10 @@
   var liquidaciones = [];  // de la semana que se está mirando
   var semana = null;       // Date del lunes
   var seccion = 'numeros';
-  var enviosMl = null;     // respuesta de flex_envios
+  var consultaMl = null;   // la última respuesta de la acción flex_envios
+  var enviosGuardados = null; // filas de flex_envios; null = no se pudo leer (falta schema/77)
+  var entregadosSemana = null; // envíos Flex entregados en la semana de la liquidación
+  var DIAS_GUARDADOS = 30;
   var guardarParamsTimer = null;
 
   // ---- Utilidades ----
@@ -136,6 +151,16 @@
     var f = function (d) { return d.getDate() + '/' + (d.getMonth() + 1); };
     return 'Semana del ' + f(lunes) + ' al ' + f(dom) + '/' + dom.getFullYear();
   }
+  function masDias(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function diaCorto(d) {
+    return ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'][d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth() + 1);
+  }
+  // Las fechas de cobro y pago de la semana que empieza en `lunes`.
+  function plazosDe(lunes) {
+    var dom = masDias(lunes, 6);
+    return { domingo: dom, cobro: masDias(dom, p('cobro_dias')),
+             desde: masDias(dom, p('pago_rep_desde')), hasta: masDias(dom, p('pago_rep_hasta')) };
+  }
 
   // ---- Cálculos (sección 4 del brief) ----
   function p(k) {
@@ -156,7 +181,12 @@
     r.margen_mes = r.margen_semana * SEMANAS_POR_MES - p('gastos_fijos_mes');
     r.rep_bruto_dia = p('entregas_por_rep') * (p('pago_rep') + pctCruz * p('extra_cruzado'));
     r.rep_neto_dia = r.rep_bruto_dia * (1 - p('gasto_vehiculo_pct') / 100);
-    r.caja_a_adelantar = r.costo_x_paquete * r.paquetes_dia * dias * p('semanas_desfase');
+    // Días que se le paga al repartidor ANTES de que entre la plata. Si se
+    // paga después de cobrar (el acuerdo de 9 a 15 días), no hay adelanto.
+    var antes = p('cobro_dias') - p('pago_rep_desde');
+    r.semanas_adelanto = antes < 0 ? 0 : Math.max(1, Math.ceil((antes + 1) / 7));
+    r.pago_semana = r.costo_x_paquete * r.paquetes_dia * dias;
+    r.caja_a_adelantar = r.pago_semana * r.semanas_adelanto;
     r.equilibrio_paq_dia = p('gastos_fijos_mes') > 0 && r.margen_x_paquete > 0 && dias > 0
       ? p('gastos_fijos_mes') / (r.margen_x_paquete * dias * SEMANAS_POR_MES)
       : null;
@@ -178,6 +208,7 @@
       '.fx-chip.activo{background:var(--navy);border-color:var(--navy);color:#fff}',
       '.fx-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}',
       '.fx-kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}',
+      '.fx-plazos{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.6}',
       '.fx-kpi .l{font-size:12px;color:var(--text-mute);margin-bottom:4px}',
       '.fx-kpi .v{font-size:20px;font-weight:700;color:var(--navy)}',
       '.fx-kpi .s{font-size:11.5px;color:var(--text-mute);margin-top:3px}',
@@ -254,14 +285,31 @@
     params = (r[0].data && r[0].data.params) || {};
     vendedores = r[1].data || [];
     repartidores = r[2].data || [];
-    await cargarSemana();
+    await Promise.all([cargarSemana(), cargarEnvios()]);
   }
 
   async function cargarSemana() {
-    var res = await ctx.sb.from('flex_liquidaciones').select('*')
-      .eq('store_slug', ctx.store.slug).eq('semana_inicio', isoLocal(semana));
-    if (res.error) throw res.error;
-    liquidaciones = res.data || [];
+    var hasta = masDias(semana, 7);
+    var r = await Promise.all([
+      ctx.sb.from('flex_liquidaciones').select('*')
+        .eq('store_slug', ctx.store.slug).eq('semana_inicio', isoLocal(semana)),
+      ctx.sb.from('flex_envios').select('envio_id', { count: 'exact', head: true })
+        .eq('store_slug', ctx.store.slug).eq('estado', 'delivered')
+        .gte('fecha_entrega', semana.toISOString()).lt('fecha_entrega', hasta.toISOString())
+    ]);
+    if (r[0].error) throw r[0].error;
+    liquidaciones = r[0].data || [];
+    entregadosSemana = r[1].error ? null : (r[1].count || 0);
+  }
+
+  // Los envíos guardados no son imprescindibles para abrir la pestaña: si
+  // la tabla todavía no existe, se sigue sin ellos.
+  async function cargarEnvios() {
+    var desde = masDias(new Date(), -DIAS_GUARDADOS);
+    var res = await ctx.sb.from('flex_envios').select('*')
+      .eq('store_slug', ctx.store.slug).gte('fecha_venta', desde.toISOString())
+      .order('fecha_venta', { ascending: false }).limit(500);
+    enviosGuardados = res.error ? null : (res.data || []);
   }
 
   function guardarParamsLuego() {
@@ -325,7 +373,9 @@
       kpi('Margen por día', plata(r.margen_dia)) +
       kpi('Margen por semana', plata(r.margen_semana), p('dias_semana') + ' días hábiles') +
       kpi('Margen por mes', plata(r.margen_mes), p('gastos_fijos_mes') ? 'ya restados ' + plata(p('gastos_fijos_mes')) + ' fijos' : '× 4,33 semanas', r.margen_mes < 0 ? 'fx-neg' : 'fx-pos') +
-      kpi('Caja a adelantar', plata(r.caja_a_adelantar), p('semanas_desfase') + ' semana(s) pagando antes de cobrar', 'fx-neg') +
+      (r.semanas_adelanto
+        ? kpi('Caja a adelantar', plata(r.caja_a_adelantar), r.semanas_adelanto + ' semana(s) pagando antes de cobrar', 'fx-neg')
+        : kpi('Caja a adelantar', plata(0), 'pagás después de cobrar. Colchón por si un vendedor se atrasa: ' + plata(r.pago_semana), 'fx-pos')) +
       kpi('Punto de equilibrio',
         r.equilibrio_paq_dia == null ? '—' : entero(Math.ceil(r.equilibrio_paq_dia)) + ' paq/día',
         p('gastos_fijos_mes') ? 'para cubrir los gastos fijos' : 'cargá los gastos fijos') +
@@ -372,7 +422,7 @@
       '</div></div>';
 
     html += '<div class="fx-panel"><div class="fx-head">📦 Envíos Flex reales de ' + esc(ctx.store.business_name || 'la tienda') +
-      ' <button type="button" class="fx-btn sec" id="fxTraerMl">Traer de Mercado Libre</button></div>' +
+      ' <button type="button" class="fx-btn sec" id="fxTraerMl">Actualizar desde Mercado Libre</button></div>' +
       '<div class="fx-body" id="fxMl">' + htmlEnviosMl() + '</div></div>';
 
     c.innerHTML = html;
@@ -397,45 +447,64 @@
     c.querySelector('#fxTraerMl').addEventListener('click', traerEnviosMl);
   }
 
-  function htmlEnviosMl() {
-    if (!enviosMl) {
-      return '<div class="fx-nota">Trae los envíos Flex de los últimos 14 días desde la cuenta de Mercado Libre conectada ' +
-        '(los reconoce porque ML los marca con el tipo de logística <code>self_service</code>).</div>';
-    }
-    if (enviosMl.cargando) return '<div class="fx-nota">Consultando Mercado Libre…</div>';
-    if (enviosMl.error) return '<div class="fx-nota fx-neg">' + esc(enviosMl.error) + '</div>';
-    if (enviosMl.conectado === false) return '<div class="fx-nota">Esta tienda no tiene Mercado Libre conectado. Conectalo desde la pestaña Mercado Libre.</div>';
-    if (!enviosMl.ok) return '<div class="fx-nota fx-neg">' + esc(enviosMl.motivo || 'No se pudo leer.') + '</div>';
+  var NOMBRE_ESTADO_ENVIO = {
+    pending: 'Pendiente', handling: 'Preparando', ready_to_ship: 'Para despachar', shipped: 'En camino',
+    delivered: 'Entregado', not_delivered: 'No entregado', cancelled: 'Cancelado'
+  };
 
-    var lista = enviosMl.envios || [];
+  function htmlEnviosMl() {
+    var estado = '';
+    var c = consultaMl;
+    if (c && c.cargando) estado = '<div class="fx-nota">Consultando Mercado Libre…</div>';
+    else if (c && c.error) estado = '<div class="fx-nota fx-neg">' + esc(c.error) + '</div>';
+    else if (c && c.conectado === false) estado = '<div class="fx-nota">Esta tienda no tiene Mercado Libre conectado. Conectalo desde la pestaña Mercado Libre.</div>';
+    else if (c && !c.ok) estado = '<div class="fx-nota fx-neg">' + esc(c.motivo || 'No se pudo leer.') + '</div>';
+    if (estado) estado = '<div style="margin-bottom:10px;">' + estado + '</div>';
+
+    // Lo normal: lo guardado en flex_envios. Si la tabla todavía no existe,
+    // lo que acaba de traer la consulta, avisando que no quedó guardado.
+    var lista, dias, sub;
+    if (enviosGuardados) {
+      lista = enviosGuardados; dias = DIAS_GUARDADOS; sub = 'guardados en BRUWAL';
+    } else if (c && c.ok) {
+      lista = c.envios || []; dias = c.dias; sub = 'de ' + c.revisados + ' envíos revisados';
+      estado += '<div class="fx-alerta">Falta correr <code>schema/77-flex-envios.sql</code>: estos envíos se ven pero no quedan guardados.</div>';
+    } else {
+      return estado + '<div class="fx-nota">Todavía no hay envíos guardados. "Actualizar desde Mercado Libre" trae los de los últimos 14 días; ' +
+        'de ahí en más entran solos con cada aviso de Mercado Libre (los reconoce porque ML los marca con el tipo de logística <code>self_service</code>).</div>';
+    }
+
     var hoy = isoLocal(new Date());
     var lunes = isoLocal(lunesDe(new Date()));
-    var deHoy = 0, deSemana = 0, bonif = 0, conBonif = 0;
+    var deHoy = 0, deSemana = 0, entregados = 0, fuera = 0, bonif = 0, conBonif = 0;
     lista.forEach(function (e) {
       var f = e.fecha_venta ? isoLocal(new Date(e.fecha_venta)) : '';
       if (f === hoy) deHoy++;
       if (f >= lunes) deSemana++;
-      if (e.compensacion_vendedor) { bonif += e.compensacion_vendedor; conBonif++; }
+      if (e.estado === 'delivered') entregados++;
+      if (e.zona === 'otra') fuera++;
+      if (e.compensacion_vendedor) { bonif += num(e.compensacion_vendedor); conBonif++; }
     });
 
-    var html = '<div class="fx-grid">' +
+    var html = estado + '<div class="fx-grid">' +
       kpi('Vendidos hoy', entero(deHoy)) +
       kpi('Esta semana', entero(deSemana), 'desde el lunes') +
-      kpi('Últimos ' + enviosMl.dias + ' días', entero(lista.length), 'de ' + enviosMl.revisados + ' envíos revisados') +
+      kpi('Últimos ' + dias + ' días', entero(lista.length), sub) +
+      kpi('Entregados', entero(entregados), fuera ? fuera + ' fuera del corredor' : 'todos dentro del corredor') +
       kpi('Bonificación según ML', conBonif ? plata(bonif) : '—', conBonif ? 'en ' + conBonif + ' envío(s)' : 'ML no la informa en el envío') +
       '</div>';
-    if (enviosMl.recortado) html += '<div class="fx-nota" style="margin-bottom:8px;">Hay más envíos de los que se revisan de una vez: se muestran los más recientes.</div>';
+    if (c && c.ok && c.recortado) html += '<div class="fx-nota" style="margin-bottom:8px;">Había más envíos de los que se revisan de una vez: se trajeron los más recientes.</div>';
     if (!lista.length) return html + '<div class="fx-nota">No hay envíos Flex en ese período.</div>';
 
+    var dm = function (v) { var d = new Date(v); return d.getDate() + '/' + (d.getMonth() + 1); };
     html += '<div class="fx-scroll"><table class="fx-tabla"><thead><tr><th>Venta</th><th>Destino</th><th>Estado</th>' +
       '<th class="fx-der">Paga comprador</th><th class="fx-der">Costo vendedor</th><th class="fx-der">Bonif.</th></tr></thead><tbody>' +
       lista.map(function (e) {
-        var f = e.fecha_venta ? new Date(e.fecha_venta) : null;
         var cel = function (v) { return v == null ? '—' : plata(v); };
-        return '<tr><td>' + (f ? f.getDate() + '/' + (f.getMonth() + 1) : '') +
+        return '<tr><td>' + (e.fecha_venta ? dm(e.fecha_venta) : '') +
           '<div class="fx-nota">' + esc((e.productos || []).join(', ').slice(0, 60)) + '</div></td>' +
-          '<td>' + esc(e.ciudad || '—') + '</td>' +
-          '<td>' + esc(e.estado || '') + (e.fecha_entrega ? '<div class="fx-nota">entregado ' + new Date(e.fecha_entrega).getDate() + '/' + (new Date(e.fecha_entrega).getMonth() + 1) + '</div>' : '') + '</td>' +
+          '<td>' + esc(e.ciudad || '—') + (e.zona === 'otra' ? ' <span class="fx-badge warn">fuera</span>' : '') + '</td>' +
+          '<td>' + esc(NOMBRE_ESTADO_ENVIO[e.estado] || e.estado || '') + (e.fecha_entrega ? '<div class="fx-nota">entregado ' + dm(e.fecha_entrega) + '</div>' : '') + '</td>' +
           '<td class="fx-der">' + cel(e.costo_comprador) + '</td>' +
           '<td class="fx-der">' + cel(e.costo_vendedor) + '</td>' +
           '<td class="fx-der">' + cel(e.compensacion_vendedor) + '</td></tr>';
@@ -445,16 +514,16 @@
   }
 
   async function traerEnviosMl() {
-    var cont = raiz.querySelector('#fxMl');
-    enviosMl = { cargando: true };
-    if (cont) cont.innerHTML = htmlEnviosMl();
+    var pintar = function () { var cont = raiz.querySelector('#fxMl'); if (cont) cont.innerHTML = htmlEnviosMl(); };
+    consultaMl = { cargando: true };
+    pintar();
     try {
-      enviosMl = await ctx.llamarApiMl('flex_envios');
+      consultaMl = await ctx.llamarApiMl('flex_envios');
+      if (consultaMl && consultaMl.ok && consultaMl.guardados) await cargarEnvios();
     } catch (e) {
-      enviosMl = { error: String(e.message || e) };
+      consultaMl = { error: String(e.message || e) };
     }
-    cont = raiz.querySelector('#fxMl');
-    if (cont) cont.innerHTML = htmlEnviosMl();
+    pintar();
   }
 
   // ---- 2. Corredor ----
@@ -526,6 +595,7 @@
     }
     var primero = form.querySelector('input');
     if (primero && global.innerWidth > 700) primero.focus();
+    return m;
   }
 
   function valor(form, nombre) {
@@ -659,9 +729,11 @@
       '<label>CVU o alias de MP<input name="alias_mp" value="' + esc(x.alias_mp) + '"></label>' +
       '<label>Monotributo<select name="monotributo">' + opciones(MONOTRIBUTO, x.monotributo) + '</select></label>' +
       '<label>Estado<select name="estado">' + opciones(ESTADOS_REPARTIDOR, x.estado) + '</select></label>' +
-      '<label class="ancho">Pago por paquete<input name="pago_x_paquete" type="number" inputmode="numeric" min="0" value="' + esc(x.pago_x_paquete) + '" placeholder="General: ' + p('pago_rep') + '"></label>';
+      '<label class="ancho">Pago por paquete<input name="pago_x_paquete" type="number" inputmode="numeric" min="0" value="' + esc(x.pago_x_paquete) + '" placeholder="General: ' + p('pago_rep') + '"></label>' +
+      (r ? '<div style="grid-column:1/-1;"><button type="button" class="fx-btn sec" data-fx-acuerdo>📄 Acuerdo para firmar</button>' +
+        ' <span class="fx-nota">con su pago y los plazos de hoy</span></div>' : '');
 
-    abrirModal(r ? 'Editar repartidor' : 'Nuevo repartidor', cuerpo, async function (form) {
+    var modal = abrirModal(r ? 'Editar repartidor' : 'Nuevo repartidor', cuerpo, async function (form) {
       var fila = {
         store_slug: ctx.store.slug,
         nombre: valor(form, 'nombre'),
@@ -690,6 +762,68 @@
       render();
       return true;
     } : null);
+    var btnAcuerdo = modal.querySelector('[data-fx-acuerdo]');
+    if (btnAcuerdo) btnAcuerdo.addEventListener('click', function () { abrirAcuerdo(r); });
+  }
+
+  // ---- Acuerdo con el repartidor ----
+  // Un modelo para imprimir y firmar, armado con los datos del repartidor y
+  // los supuestos de hoy (pago por paquete, extra por cruzado y plazos). Lo
+  // que el panel no sabe (DNI, CUIT, datos del operador) va en blanco para
+  // completar a mano. Se abre en una ventana aparte para imprimir o guardar
+  // como PDF desde el navegador.
+  function textoAcuerdo(r) {
+    var pago = r.pago_x_paquete != null ? num(r.pago_x_paquete) : p('pago_rep');
+    var ej = plazosDe(lunesDe(new Date()));
+    var blanco = '<span class="b"></span>';
+    var hoy = new Date();
+    var meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    var cl = function (n, titulo, txt) { return '<h2>' + n + '. ' + titulo + '</h2><p>' + txt + '</p>'; };
+    return '<h1>Acuerdo de prestación de servicios de entrega<br><small>Mercado Envíos Flex</small></h1>' +
+      '<p>En ' + blanco + ', a los ' + hoy.getDate() + ' días de ' + meses[hoy.getMonth()] + ' de ' + hoy.getFullYear() + ', entre:</p>' +
+      '<p><b>EL OPERADOR:</b> ' + blanco + ', CUIT ' + blanco + ', con domicilio en ' + blanco + '; y</p>' +
+      '<p><b>EL REPARTIDOR:</b> ' + esc(r.nombre) + ', DNI ' + blanco + ', CUIT ' + blanco + ', domicilio ' + blanco +
+      (r.telefono ? ', teléfono ' + esc(r.telefono) : ', teléfono ' + blanco) + ',</p>' +
+      '<p>acuerdan lo siguiente:</p>' +
+      cl(1, 'Objeto', 'El Repartidor presta al Operador, en forma independiente, el servicio de retiro y entrega de paquetes vendidos con Mercado Envíos Flex, ' +
+        'principalmente en la zona de <b>' + esc(NOMBRE_ZONA[r.zona] || r.zona) + '</b> del corredor Rosario – San Lorenzo.') +
+      cl(2, 'Independencia', 'Es una prestación de servicios entre partes independientes (arts. 1251 y siguientes del Código Civil y Comercial). ' +
+        'No hay relación de dependencia, horario fijo ni exclusividad: el Repartidor elige los días que trabaja y avisa su disponibilidad con anticipación, ' +
+        'y puede prestar servicios a terceros. Usa su propio vehículo (' + esc(nombreDe(VEHICULOS, r.vehiculo).toLowerCase()) + ') y se hace cargo de sus gastos.') +
+      cl(3, 'Retribución', 'El Operador paga <b>' + plata(pago) + ' por paquete entregado</b> y <b>' + plata(p('extra_cruzado')) + ' adicionales por envío cruzado</b> ' +
+        '(retiro en una localidad del corredor y entrega en otra). Un paquete que no se pudo entregar por causa del Repartidor no se paga; ' +
+        'uno reprogramado se paga cuando se entrega. Los precios se pueden actualizar avisando con 7 días de anticipación, y nunca para entregas ya hechas.') +
+      cl(4, 'Liquidación y plazo de pago', 'Las entregas se liquidan por semana, de lunes a domingo. Mercado Libre acredita el dinero de cada envío ' +
+        'a los 8 días de la entrega; por eso el pago se hace <b>entre el día ' + p('pago_rep_desde') + ' y el día ' + p('pago_rep_hasta') +
+        ' posteriores al domingo que cierra la semana</b>, por transferencia al CVU o alias ' + (r.alias_mp ? '<b>' + esc(r.alias_mp) + '</b>' : blanco) +
+        ', contra la Factura C del Repartidor por el total de la semana. Ejemplo: la semana que termina el ' + diaCorto(ej.domingo) +
+        ' se paga entre el ' + diaCorto(ej.desde) + ' y el ' + diaCorto(ej.hasta) + '. Sin factura recibida, el plazo corre desde que llega.') +
+      cl(5, 'Obligaciones del Repartidor', 'Tener el monotributo activo y emitir Factura C; tener licencia de conducir, seguro del vehículo y ' +
+        'seguro de accidentes personales vigentes; entregar en el día según las condiciones de Mercado Envíos Flex y registrar cada entrega en la aplicación; ' +
+        'cuidar los paquetes y responder por la pérdida o el daño causados por su culpa, hasta el valor de la venta.') +
+      cl(6, 'Datos de los compradores', 'Los nombres, direcciones y teléfonos de los compradores se usan solo para hacer la entrega. ' +
+        'El Repartidor no los guarda, copia ni comparte (Ley 25.326 de Protección de Datos Personales).') +
+      cl(7, 'Duración y fin del acuerdo', 'El acuerdo es por tiempo indeterminado. Cualquiera de las partes puede terminarlo avisando por escrito ' +
+        '(WhatsApp incluido) con 7 días de anticipación, o sin aviso ante un incumplimiento grave. Las entregas ya hechas se pagan en el plazo de la cláusula 4.') +
+      '<div class="firmas"><div>Firma y aclaración<br>EL OPERADOR</div><div>Firma y aclaración<br>EL REPARTIDOR</div></div>';
+  }
+
+  function abrirAcuerdo(r) {
+    var w = global.open('', '_blank');
+    if (!w) { aviso('El navegador bloqueó la ventana. Permití las ventanas emergentes para este sitio y probá de nuevo.'); return; }
+    w.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Acuerdo ' + esc(r.nombre) + '</title><style>' +
+      'body{font-family:Georgia,serif;max-width:720px;margin:0 auto;padding:24px 16px;color:#111;background:#fff;line-height:1.55;font-size:15px}' +
+      'h1{font-size:20px;text-align:center;margin:0 0 20px}h1 small{font-size:14px;font-weight:400}h2{font-size:15px;margin:18px 0 4px}p{margin:0 0 8px}' +
+      '.b{display:inline-block;min-width:150px;border-bottom:1px solid #111}' +
+      '.firmas{display:flex;justify-content:space-between;gap:24px;margin-top:70px}.firmas div{flex:1;border-top:1px solid #111;padding-top:6px;text-align:center;font-size:13px}' +
+      '.barra{font-family:system-ui,sans-serif;background:#fff7e0;border:1px solid #e5c76b;border-radius:8px;padding:10px 12px;margin-bottom:20px;font-size:13px}' +
+      '.barra button{font:inherit;margin-left:8px;padding:5px 12px;cursor:pointer}' +
+      '@media print{.barra{display:none}body{padding:0}}' +
+      '</style></head><body><div class="barra">Modelo orientativo: revisalo con tu contador o un abogado antes de firmar. ' +
+      'Completá los espacios en blanco a mano. <button onclick="print()">Imprimir o guardar PDF</button></div>' +
+      textoAcuerdo(r) + '</body></html>');
+    w.document.close();
   }
 
   // ---- 5. Liquidación semanal ----
@@ -714,6 +848,9 @@
   }
 
   function renderLiquidacion(c) {
+    var plazos = plazosDe(semana);
+    var hoy = isoLocal(new Date());
+    var vencido = hoy > isoLocal(plazos.hasta);
     var reps = sujetos('repartidor');
     var vends = sujetos('vendedor');
     var tot = { aPagar: 0, aCobrar: 0, entregas: 0, paquetes: 0, cruzR: 0, cruzV: 0 };
@@ -735,7 +872,8 @@
             '<td><input type="number" inputmode="numeric" min="0" step="1" value="' + (l.id ? cruz : '') + '" placeholder="0" data-campo="cruzados"' + attrs + '></td>' +
             '<td class="fx-der"><b>' + plata(monto) + '</b></td>' +
             (esRep ? '<td><input type="checkbox" data-campo="factura_ok"' + attrs + (l.factura_ok ? ' checked' : '') + '></td>' : '') +
-            '<td><input type="checkbox" data-campo="pagado_ok"' + attrs + (l.pagado_ok ? ' checked' : '') + '></td></tr>';
+            '<td><input type="checkbox" data-campo="pagado_ok"' + attrs + (l.pagado_ok ? ' checked' : '') + '>' +
+            (esRep && vencido && monto > 0 && !l.pagado_ok ? ' <span class="fx-badge mal">vencido</span>' : '') + '</td></tr>';
         }).join('') : '<tr><td colspan="6" class="fx-nota">No hay ' + (esRep ? 'repartidores' : 'vendedores') + ' activos.</td></tr>') +
         '</tbody></table></div>';
     };
@@ -750,12 +888,18 @@
     html += '<div class="fx-grid">' +
       kpi('A cobrar', plata(tot.aCobrar), entero(tot.paquetes) + ' paquetes') +
       kpi('A pagar', plata(tot.aPagar), entero(tot.entregas) + ' entregas') +
-      kpi('Margen de la semana', plata(margen), '', margen >= 0 ? 'fx-pos' : 'fx-neg') + '</div>';
+      kpi('Margen de la semana', plata(margen), '', margen >= 0 ? 'fx-pos' : 'fx-neg') +
+      kpi('Entregados según ML', entregadosSemana == null ? '—' : entero(entregadosSemana),
+        entregadosSemana == null ? 'falta schema/77' : 'envíos Flex de la tienda, para contrastar') + '</div>';
+    html += '<div class="fx-plazos">📅 Cobro a vendedores: hasta el <b>' + diaCorto(plazos.cobro) + '</b> · ' +
+      'Pago a repartidores: entre el <b>' + diaCorto(plazos.desde) + '</b> y el <b>' + diaCorto(plazos.hasta) + '</b>' +
+      ' <span class="fx-nota">(días ' + p('cobro_dias') + ' y ' + p('pago_rep_desde') + ' a ' + p('pago_rep_hasta') + ' después del domingo)</span></div>';
     if (noCoinciden && (tot.entregas || tot.paquetes)) {
       html += '<div class="fx-alerta">⚠️ No coinciden: los repartidores marcan ' + entero(tot.entregas) + ' entregas (' + entero(tot.cruzR) +
         ' cruzados) y los vendedores ' + entero(tot.paquetes) + ' paquetes (' + entero(tot.cruzV) + ' cruzados). Revisá antes de pagar o cobrar.</div>';
     }
-    html += '<div class="fx-panel"><div class="fx-head">🛵 Repartidores <span class="fx-nota" style="font-weight:400;">transferencia a su CVU/alias contra su Factura C</span></div>' + tablaRep + '</div>';
+    html += '<div class="fx-panel"><div class="fx-head">🛵 Repartidores <span class="fx-nota" style="font-weight:400;">transferencia a su CVU/alias contra su Factura C, entre el ' +
+      diaCorto(plazos.desde) + ' y el ' + diaCorto(plazos.hasta) + '</span></div>' + tablaRep + '</div>';
     html += '<div class="fx-panel"><div class="fx-head">🏪 Vendedores <span class="fx-nota" style="font-weight:400;">contra nuestra factura</span></div>' + tablaVen + '</div>';
     html += '<div class="fx-nota">El monto se calcula con el precio de cada uno (o el general) al cargar la cantidad, y queda guardado: si después cambia el precio, lo de esta semana no se mueve.</div>';
     c.innerHTML = html;
@@ -811,7 +955,7 @@
       '<div class="fx-panel"><div class="fx-head">Lo que paga Mercado Libre <span class="fx-nota" style="font-weight:400;">página oficial de tarifas Flex, consultada el 21/10/2026</span></div><div class="fx-body"><ul class="fx-ref">' +
       '<li>Producto de menos de <b>$33.000</b> (paga el comprador), "otras ciudades" (incluye Rosario y San Lorenzo): el vendedor recibe <b>$4.990</b> por envío, tarifa plana sin importar la distancia.</li>' +
       '<li>Producto de <b>$33.000 o más</b> (envío gratis): hasta 10% de la tarifa según reputación, <b>≈ $499</b>.</li>' +
-      '<li>ML acredita venta + envío en Mercado Pago <b>8 días después de la entrega</b>.</li>' +
+      '<li>ML acredita venta + envío en Mercado Pago <b>8 días después de la entrega</b>. Por eso el acuerdo con los repartidores paga entre los días 9 y 15 después de cerrar la semana: sin caja que adelantar.</li>' +
       '<li>Reprogramaciones y recargos por clima los paga el vendedor.</li>' +
       '<li>Tarifa plana: un cruzado San Lorenzo → Rosario paga lo mismo que una entrega a 10 cuadras. Por eso los cruzados se cobran con recargo.</li>' +
       '</ul></div></div>' +
@@ -844,5 +988,5 @@
     render();
   }
 
-  global.bruwalFlex = { montar: montar, calcular: calcular, ZONAS: ZONAS };
+  global.bruwalFlex = { montar: montar, calcular: calcular, textoAcuerdo: textoAcuerdo, ZONAS: ZONAS };
 })(window);

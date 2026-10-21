@@ -1407,11 +1407,7 @@ const FLEX_DIAS = 14;
 const FLEX_MAXIMOS = 40;
 const FLEX_EN_PARALELO = 8;
 
-async function flexHabilitado(slug) {
-  const filas = await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) + '&select=features');
-  const f = filas && filas[0] && filas[0].features;
-  return !!(f && f.envios_flex === true);
-}
+const { flexHabilitado, esFlex, filaDeEnvio, guardarFilas } = require('./_flex');
 
 async function enTandas(lista, cuantos, fn) {
   const salida = [];
@@ -1449,23 +1445,9 @@ async function accionFlexEnvios(slug) {
 
   const flex = [];
   envios.forEach((s, i) => {
-    if (!s) return;
-    const tipo = s.logistic_type || (s.logistic && s.logistic.type) || null;
-    if (tipo !== 'self_service') return;
-    const orden = porEnvio.get(ids[i]);
-    const historial = s.status_history || {};
-    const destino = s.receiver_address || (s.destination && s.destination.shipping_address) || {};
-    flex.push({
-      envio_id: ids[i],
-      orden_id: String(orden.id),
-      fecha_venta: orden.date_created || null,
-      fecha_entrega: historial.date_delivered || null,
-      estado: s.status || null,
-      subestado: s.substatus || null,
-      ciudad: (destino.city && destino.city.name) || null,
-      total_venta: Number(orden.total_amount) || 0,
-      productos: (orden.order_items || []).map((li) => (li.item && li.item.title) || '').filter(Boolean)
-    });
+    if (!s || !esFlex(s)) return;
+    if (!s.id) s.id = ids[i];
+    flex.push({ envio: s, orden: porEnvio.get(ids[i]) });
   });
 
   // Lo que ML dice del costo del envío para el vendedor y el comprador. La
@@ -1473,18 +1455,19 @@ async function accionFlexEnvios(slug) {
   // qué campo de /costs aparece: se devuelve lo que haya y el panel lo
   // muestra como "según ML", para contrastar con Mercado Pago.
   const costos = await enTandas(flex, FLEX_EN_PARALELO,
-    (e) => pedirAMl('/shipments/' + encodeURIComponent(e.envio_id) + '/costs', token));
-  flex.forEach((e, i) => {
-    const c = costos[i];
-    if (!c) return;
-    const vendedor = (c.senders || [])[0] || {};
-    const comp = vendedor.compensation;
-    e.costo_comprador = c.receiver && c.receiver.cost != null ? Number(c.receiver.cost) : null;
-    e.costo_vendedor = vendedor.cost != null ? Number(vendedor.cost) : null;
-    e.compensacion_vendedor = comp == null ? null
-      : Number(typeof comp === 'object' ? comp.amount : comp) || 0;
-    e.costo_bruto = c.gross_amount != null ? Number(c.gross_amount) : null;
-  });
+    (e) => pedirAMl('/shipments/' + encodeURIComponent(e.envio.id) + '/costs', token));
+  const filas = flex.map((e, i) => filaDeEnvio(slug, e.envio, e.orden, costos[i]));
+
+  // Se guardan en flex_envios: esto rellena lo que el aviso de ML no haya
+  // traído (un aviso perdido, o envíos de antes de suscribir el tópico).
+  // Si la tabla todavía no existe (falta schema/77), se devuelven igual.
+  let guardados = true;
+  try {
+    await guardarFilas(filas);
+  } catch (err) {
+    guardados = false;
+    console.warn('flex_envios: no se pudieron guardar', String(err.message || err));
+  }
 
   return {
     conectado: true,
@@ -1492,7 +1475,8 @@ async function accionFlexEnvios(slug) {
     dias: FLEX_DIAS,
     revisados: ids.length,
     recortado: porEnvio.size > ids.length,
-    envios: flex
+    guardados: guardados,
+    envios: filas
   };
 }
 
