@@ -68,8 +68,7 @@ begin
 end;
 $function$;
 
-drop trigger if exists tr_proteger_features on public.store_profiles;
-create trigger tr_proteger_features
+create or replace trigger tr_proteger_features
   before insert or update on public.store_profiles
   for each row execute function public.proteger_features();
 
