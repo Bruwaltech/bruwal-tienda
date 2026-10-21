@@ -1498,8 +1498,25 @@ async function accionFlexEnvios(slug) {
 // Se corta en PROSPECTOS_PRODUCTOS productos y PROSPECTOS_MAXIMOS
 // vendedores por la misma razón que PAGINAS_MAXIMAS: el tope de tiempo.
 const PROVINCIA_CORREDOR = 'santa fe';
-const PROSPECTOS_PRODUCTOS = 30;
+const PROSPECTOS_PRODUCTOS = 15;
 const PROSPECTOS_MAXIMOS = 40;
+// ML corta con "local_rate_limited" si se le pide mucho junto: de a pocos,
+// y si igual corta, se espera y se reintenta.
+const PROSPECTOS_EN_PARALELO = 3;
+const PROSPECTOS_REINTENTOS = 2;
+
+const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+async function pedirAMlConEspera(ruta, token) {
+  for (let intento = 0; ; intento++) {
+    try {
+      return await pedirAMl(ruta, token);
+    } catch (err) {
+      const limitado = /rate.?limit|too many/i.test(String(err.message || err));
+      if (!limitado || intento >= PROSPECTOS_REINTENTOS) throw err;
+      await esperar(1500 * (intento + 1));
+    }
+  }
+}
 
 // Flex en una publicación: o la logística es self_service, o el envío trae
 // la etiqueta self_service_in (Flex prendido además de Mercado Envíos).
@@ -1528,20 +1545,23 @@ async function accionBuscarVendedores(slug, texto) {
   if (!cuenta) return { conectado: false };
   const token = await tokenDeTienda(slug);
 
-  const productos = await pedirAMl('/products/search?site_id=MLA&status=active&q=' + encodeURIComponent(q) +
+  const productos = await pedirAMlConEspera('/products/search?site_id=MLA&status=active&q=' + encodeURIComponent(q) +
     '&limit=' + PROSPECTOS_PRODUCTOS, token);
   const lista = ((productos && productos.results) || []).filter((p) => p && p.id).slice(0, PROSPECTOS_PRODUCTOS);
   const ids = lista.map((p) => p.id);
   if (!ids.length) return { conectado: true, ok: true, q: q, vendedores: [], motivo: 'Mercado Libre no tiene productos de catálogo para "' + q + '". Probá con otra palabra.' };
 
-  const paginas = await enTandas(ids, FLEX_EN_PARALELO,
-    (id) => pedirAMl('/products/' + encodeURIComponent(id) + '/items?limit=100', token));
+  const paginas = await enTandas(ids, PROSPECTOS_EN_PARALELO,
+    (id) => pedirAMlConEspera('/products/' + encodeURIComponent(id) + '/items?limit=100', token));
+  const fallidas = paginas.filter((p) => !p).length;
 
   // Una fila por vendedor del corredor, con cuántas publicaciones del rubro
   // tiene y cuántas con Flex. Se excluye la propia cuenta.
   const porVendedor = new Map();
   const vistas = new Set();
   let revisadas = 0;
+  let sinDireccion = 0;
+  const provincias = new Map();
   paginas.forEach((pagina, n) => ((pagina && pagina.results) || []).forEach((item) => {
     const itemId = item.item_id || item.id;
     const id = item.seller_id || (item.seller && item.seller.id);
@@ -1550,6 +1570,10 @@ async function accionBuscarVendedores(slug, texto) {
     revisadas += 1;
     if (String(id) === String(cuenta.ml_user_id)) return;
     const lugar = zonaDePublicacion(item);
+    if (!item.seller_address && !item.address) sinDireccion += 1;
+    const dir = item.seller_address || item.address || {};
+    const prov = (dir.state && dir.state.name) || dir.state_name;
+    if (prov) provincias.set(prov, (provincias.get(prov) || 0) + 1);
     if (!lugar.zona) return;
     const v = porVendedor.get(String(id)) || {
       ml_seller_id: String(id), nick: '', ciudad: lugar.ciudad, zona: lugar.zona,
@@ -1567,8 +1591,8 @@ async function accionBuscarVendedores(slug, texto) {
 
   // El nombre, el link al perfil y la reputación salen de /users. Si falla
   // para alguno, se muestra igual con lo que trajo la búsqueda.
-  const perfiles = await enTandas(vendedores, FLEX_EN_PARALELO,
-    (v) => pedirAMl('/users/' + encodeURIComponent(v.ml_seller_id), token));
+  const perfiles = await enTandas(vendedores, PROSPECTOS_EN_PARALELO,
+    (v) => pedirAMlConEspera('/users/' + encodeURIComponent(v.ml_seller_id), token));
   vendedores.forEach((v, i) => {
     const u = perfiles[i];
     if (!u) return;
@@ -1587,9 +1611,19 @@ async function accionBuscarVendedores(slug, texto) {
     revisadas: revisadas,
     recortado: todos.length > vendedores.length,
     vendedores: vendedores,
-    motivo: vendedores.length ? undefined
-      : 'Se revisaron ' + revisadas + ' publicaciones de ' + ids.length + ' productos y ninguna es de un vendedor del corredor. Probá con otro rubro.'
+    motivo: vendedores.length ? undefined : sinResultados(revisadas, ids.length, fallidas, sinDireccion, provincias)
   };
+}
+
+// Por qué no apareció nadie, con números: así se sabe si es el rubro o
+// si ML no mandó lo necesario.
+function sinResultados(revisadas, productos, fallidas, sinDireccion, provincias) {
+  let texto = 'Se revisaron ' + revisadas + ' publicaciones de ' + productos + ' productos y ninguna es de un vendedor del corredor.';
+  if (fallidas) texto += ' ' + fallidas + ' productos no se pudieron leer.';
+  if (sinDireccion) texto += ' ' + sinDireccion + ' publicaciones vinieron sin dirección del vendedor.';
+  const santaFe = [...provincias.entries()].find(([n]) => sinTildesMl(n) === PROVINCIA_CORREDOR);
+  texto += santaFe ? ' En Santa Fe había ' + santaFe[1] + ', pero de otras ciudades.' : ' Ninguna era de Santa Fe.';
+  return texto + ' Probá con un producto más de barrio (ej.: "funda celular", "repuesto moto").';
 }
 
 async function accionEstado(slug) {
