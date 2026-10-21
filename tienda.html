@@ -1141,7 +1141,12 @@ async function init(){
     return;
   }
 
-  const { data: store, error: storeError } = await sb.from('store_profiles').select('*').eq('slug', slug).maybeSingle();
+  // Columnas explicitas, nunca '*': costo, proveedor, IMEI, pin_costos y la
+  // suscripcion de MP no se habilitan para la llave publica (ver
+  // schema/73-columnas-publicas.sql). Columna nueva que la tienda necesite =
+  // sumarla aca Y en el grant de esa migracion.
+  const COLS_PERFIL_PUBLICO = 'id,user_id,slug,business_name,phone,created_at,website,instagram,location,description,image_url,email,lat,lng,mensaje_envio,plan,trial_ends_at,plan_updated_at,google_url,categorias,medios_pago,turnos,eslogan,portada_url,tema,hace_reparaciones,rubro_manual,plan_vence,costo_envio,horario_local,demora_texto,demora_minutos,ml_reputacion,transferencia,ofrece_envio,es_demo';
+  const { data: store, error: storeError } = await sb.from('store_profiles').select(COLS_PERFIL_PUBLICO).eq('slug', slug).maybeSingle();
   if (storeError || !store){
     hide(byId('loadingState'));
     show(byId('notFoundState'));
@@ -1255,7 +1260,8 @@ async function init(){
   armarOpcionesDeCheckout(store);
   armarTurnos(store);
 
-  const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
+  const COLS_PRODUCTO_PUBLICO = 'id,store_slug,name,description,price,image_url,category,stock,in_stock,ean,created_at,updated_at,imagenes,opciones,tipo,tiene_variantes,variante_campos,variantes,specs,solo_interno,moneda,precio_original,cotizacion,numero,estado_equipo,duracion_minutos,mostrar_precio,unidad_medida,unidad_nombre,pausado,precio_oferta,orden,categorias,ml_nota,ml_opiniones,ml_link,ml_es_catalogo,ml_opiniones_al,precios_por_cantidad';
+  const { data: prods } = await sb.from('store_products').select(COLS_PRODUCTO_PUBLICO).eq('store_slug', slug).order('name');
   // solo_interno: repuestos y demás productos que el dueño usa desde el
   // panel (por ejemplo, en una reparación) pero que nunca deberían poder
   // comprarse acá. Se filtra ACÁ, antes de cualquier otra cosa, para que

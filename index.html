@@ -1940,7 +1940,12 @@ function conDestacadasPrimero(lista) {
 
 async function loadStores() {
   try {
-    const { data, error } = await sb.from('store_profiles').select('*').order('business_name');
+    // Columnas explicitas, nunca '*': costo, proveedor, IMEI, pin_costos y la
+    // suscripcion de MP no se habilitan para la llave publica (ver
+    // schema/73-columnas-publicas.sql). Columna nueva que la tienda necesite =
+    // sumarla aca Y en el grant de esa migracion.
+    const COLS_PERFIL_PUBLICO = 'id,user_id,slug,business_name,phone,created_at,website,instagram,location,description,image_url,email,lat,lng,mensaje_envio,plan,trial_ends_at,plan_updated_at,google_url,categorias,medios_pago,turnos,eslogan,portada_url,tema,hace_reparaciones,rubro_manual,plan_vence,costo_envio,horario_local,demora_texto,demora_minutos,ml_reputacion,transferencia,ofrece_envio,es_demo';
+    const { data, error } = await sb.from('store_profiles').select(COLS_PERFIL_PUBLICO).order('business_name');
     if (error) throw error;
 
     stores = conDestacadasPrimero(data || []);
