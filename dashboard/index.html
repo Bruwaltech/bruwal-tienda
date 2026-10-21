@@ -271,6 +271,8 @@ h1, h2, h3 {
     font-weight: 400;
     color: var(--text-mute);
   }
+  /* ...y no en los paneles que no deslizan */
+  .panel-head.sin-deslizar::after { content: none; }
 
   /* El link de la tienda es largo y empujaba la barra a lo ancho */
   .store-link-bar { padding: 10px 12px; }
@@ -2584,6 +2586,17 @@ tr:last-child td { border-bottom: none; }
         <div class="stat-card">
           <div class="label">Mayor venta</div>
           <div class="value" id="statMaxSale">$0</div>
+        </div>
+      </div>
+
+      <!-- Solo pizzerias. Ver renderPizzasVendidas. -->
+      <div class="panel hidden" id="panelPizzasVendidas">
+        <div class="panel-head sin-deslizar">🍕 Pizzas vendidas</div>
+        <div style="padding:14px 16px;">
+          <div id="pizzasVendidasChips" style="display:flex;gap:6px;margin-bottom:12px;"></div>
+          <div id="pizzasVendidasLista" style="display:flex;flex-direction:column;gap:4px;"></div>
+          <div id="pizzasVendidasGustos" style="margin-top:14px;"></div>
+          <div style="margin-top:10px;font-size:12px;color:var(--text-mute);">Media = ½, cuarto = ¼ y porción = ⅛: una pizza de dos gustos suma 1.</div>
         </div>
       </div>
 
@@ -7793,7 +7806,9 @@ function costoDeProducto(p) {
 // Mitad, Entera): "Media" a secas en otro rubro no se toca porque se
 // pregunta rubroEsComida() primero.
 const PORCIONES_POR_PIZZA = 8;
-const PORCIONES_POR_TAMANIO = { 'porcion': 1, 'cuarto': 2, '1/4': 2, 'media': 4, 'mitad': 4, '1/2': 4, 'entera': 8, 'completa': 8 };
+// "Grande" cuenta como entera: hay pizzerias que la cargan asi (Empire,
+// GREEN: Porcion / Cuarto / Media / Grande).
+const PORCIONES_POR_TAMANIO = { 'porcion': 1, 'cuarto': 2, '1/4': 2, 'media': 4, 'mitad': 4, '1/2': 4, 'entera': 8, 'completa': 8, 'grande': 8 };
 
 function porcionesDeValor(valor) {
   const t = String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -19773,6 +19788,160 @@ function renderVentas() {
 
   renderHourlyChart();
   renderSalesHistory();
+  renderPizzasVendidas();
+}
+
+// ---- Pizzas vendidas por dia y por semana ----
+// Lo que pregunta una pizzeria (Empire, 19/10): cuantas pizzas salieron
+// hoy, en la semana, y de que gusto. Se cuentan pizzas enteras
+// equivalentes con las mismas porciones que el armado del mostrador
+// (PORCIONES_POR_TAMANIO): una media suma ½, un cuarto ¼, una porcion ⅛.
+// Asi media Cherry + media Burrata es UNA pizza, como en la cocina.
+let pizzasVendidasModo = 'dia';
+let pizzasVendidasElegido = null;
+
+function esPizzeria() {
+  if (!rubroEsComida()) return false;
+  const texto = normalizarTexto((currentStore?.description || '') + ' ' + (currentStore?.business_name || ''));
+  return texto.includes('pizz') || products.some(p => normalizarTexto(p.category || '').includes('pizz'));
+}
+
+// Cuanto de una pizza es una linea vendida (por unidad), o null si no es
+// pizza. Las claves con "_" son internas de la tienda (la media que se
+// arma con otra) y no son tamaños.
+function fraccionDePizza(item, p, hayCategoriaPizza) {
+  const valores = Object.entries(item.variante && typeof item.variante === 'object' ? item.variante : {})
+    .filter(([k]) => !k.startsWith('_')).map(([, v]) => v);
+  const porciones = valores.map(porcionesDeValor).find(Boolean);
+  const nombre = normalizarTexto((p ? p.name : item.name) || '');
+  // Con una categoria de pizzas cargada, manda la categoria: la porcion de
+  // faina o la media docena de empanadas no son pizza.
+  const esPizza = p && hayCategoriaPizza
+    ? normalizarTexto(p.category || '').includes('pizz') || nombre.includes('pizz')
+    : nombre.includes('pizz') || !!porciones;
+  if (!esPizza) return null;
+  // Sin tamaño reconocible ("Chica", o sin variantes) es una pizza.
+  return porciones ? porciones / PORCIONES_POR_PIZZA : 1;
+}
+
+// "YYYY-MM-DD" corrido n dias. Se opera en UTC para que no lo mueva la
+// zona del aparato: el dia ya viene calculado en hora argentina.
+function sumarDiasISO(dia, n) {
+  const d = new Date(dia + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// La semana arranca el lunes.
+function lunesDe(dia) {
+  const dow = new Date(dia + 'T00:00:00Z').getUTCDay();
+  return sumarDiasISO(dia, -((dow + 6) % 7));
+}
+
+// 12.5 -> "12 ½". En la pizzeria se habla de medias, no de "12,5".
+function cantidadDePizzas(n) {
+  const octavos = Math.round(n * PORCIONES_POR_PIZZA);
+  if (Math.abs(octavos - n * PORCIONES_POR_PIZZA) > 0.001) return n.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  const enteras = Math.floor(octavos / 8);
+  const resto = ['', '⅛', '¼', '⅜', '½', '⅝', '¾', '⅞'][octavos % 8];
+  if (!enteras && resto) return resto;
+  return enteras + (resto ? ' ' + resto : '');
+}
+
+function pizzasVendidasPorPeriodo(modo) {
+  const hayCategoriaPizza = products.some(p => normalizarTexto(p.category || '').includes('pizz'));
+  const hoy = diaARDe(new Date());
+  const claveDe = (dia) => modo === 'semana' ? lunesDe(dia) : dia;
+
+  // Las filas van siempre, aunque ese dia no se haya vendido nada: un
+  // martes en cero tambien es un dato.
+  const filas = [];
+  const cuantas = modo === 'semana' ? 8 : 14;
+  for (let k = 0; k < cuantas; k++) {
+    const clave = modo === 'semana' ? sumarDiasISO(lunesDe(hoy), -7 * k) : sumarDiasISO(hoy, -k);
+    filas.push({ clave, total: 0, gustos: {} });
+  }
+  const porClave = Object.fromEntries(filas.map(f => [f.clave, f]));
+
+  orders.forEach(o => {
+    const fila = porClave[claveDe(diaARDe(o.created_at))];
+    if (!fila) return;
+    (Array.isArray(o.items) ? o.items : []).forEach(item => {
+      const p = products.find(x => String(x.id) === String(item.product_id));
+      const f = fraccionDePizza(item, p, hayCategoriaPizza);
+      if (!f) return;
+      const cant = f * (Number(item.qty) || 1);
+      // El gusto es el producto: el nombre de la linea trae el tamaño
+      // pegado ("Cherry (Tamaño: Media)").
+      const gusto = p ? p.name : String(item.name || 'Sin nombre').replace(/\s*\(.*\)\s*$/, '');
+      fila.total += cant;
+      fila.gustos[gusto] = (fila.gustos[gusto] || 0) + cant;
+    });
+  });
+  return { filas, hoy };
+}
+
+function etiquetaPizzasVendidas(modo, clave, hoy) {
+  const corta = (dia) => dia.slice(8, 10) + '/' + dia.slice(5, 7);
+  if (modo === 'semana') {
+    if (clave === lunesDe(hoy)) return 'Esta semana';
+    if (clave === sumarDiasISO(lunesDe(hoy), -7)) return 'Semana pasada';
+    return corta(clave) + ' al ' + corta(sumarDiasISO(clave, 6));
+  }
+  if (clave === hoy) return 'Hoy';
+  if (clave === sumarDiasISO(hoy, -1)) return 'Ayer';
+  const dow = new Date(clave + 'T00:00:00Z').getUTCDay();
+  return ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'][dow] + ' ' + corta(clave);
+}
+
+function renderPizzasVendidas() {
+  const panel = byId('panelPizzasVendidas');
+  if (!panel) return;
+  if (!esPizzeria()) { hide(panel); return; }
+  show(panel);
+
+  const modo = pizzasVendidasModo;
+  byId('pizzasVendidasChips').innerHTML = [['dia', 'Por día'], ['semana', 'Por semana']].map(([v, txt]) =>
+    '<button type="button" data-pizzas-modo="' + v + '" style="padding:7px 14px;border-radius:7px;border:1.5px solid ' +
+    (modo === v ? 'var(--celeste)' : 'var(--line)') + ';background:' + (modo === v ? '#EAF4FD' : '#fff') +
+    ';color:var(--text-dark);font-family:inherit;font-size:12.5px;cursor:pointer;">' + txt + '</button>'
+  ).join('');
+  byId('pizzasVendidasChips').querySelectorAll('[data-pizzas-modo]').forEach(b => b.addEventListener('click', () => {
+    pizzasVendidasModo = b.dataset.pizzasModo;
+    pizzasVendidasElegido = null;
+    renderPizzasVendidas();
+  }));
+
+  const { filas, hoy } = pizzasVendidasPorPeriodo(modo);
+  const elegida = filas.find(f => f.clave === pizzasVendidasElegido) || filas[0];
+  const max = Math.max(1, ...filas.map(f => f.total));
+
+  byId('pizzasVendidasLista').innerHTML = filas.map(f => {
+    const activa = f === elegida;
+    return '<button type="button" data-pizzas-fila="' + f.clave + '" style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;' +
+      'border-radius:8px;border:1.5px solid ' + (activa ? 'var(--celeste)' : 'transparent') + ';background:' + (activa ? '#EAF4FD' : 'var(--bg)') +
+      ';font-family:inherit;font-size:13.5px;color:var(--text-dark);cursor:pointer;text-align:left;">' +
+        '<span style="flex:0 0 108px;white-space:nowrap;' + (activa ? 'font-weight:700;' : '') + '">' + etiquetaPizzasVendidas(modo, f.clave, hoy) + '</span>' +
+        '<span style="flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden;">' +
+          '<span style="display:block;height:100%;width:' + (f.total / max * 100).toFixed(1) + '%;background:#D97706;border-radius:4px;"></span></span>' +
+        '<span style="flex:0 0 56px;text-align:right;font-weight:700;">' + cantidadDePizzas(f.total) + '</span>' +
+      '</button>';
+  }).join('');
+  byId('pizzasVendidasLista').querySelectorAll('[data-pizzas-fila]').forEach(b => b.addEventListener('click', () => {
+    pizzasVendidasElegido = b.dataset.pizzasFila;
+    renderPizzasVendidas();
+  }));
+
+  const gustos = Object.entries(elegida.gustos).sort((a, b) => b[1] - a[1]);
+  byId('pizzasVendidasGustos').innerHTML =
+    '<div style="font-weight:700;font-size:14px;margin-bottom:6px;">' + escapeHtml(etiquetaPizzasVendidas(modo, elegida.clave, hoy)) +
+      ': ' + cantidadDePizzas(elegida.total) + (elegida.total === 1 ? ' pizza' : ' pizzas') + '</div>' +
+    (gustos.length
+      ? gustos.map(([g, n]) =>
+          '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13.5px;">' +
+            '<span>' + escapeHtml(g) + '</span><strong style="white-space:nowrap;">' + cantidadDePizzas(n) + '</strong></div>'
+        ).join('')
+      : '<div style="color:var(--text-mute);font-size:13px;">No se vendieron pizzas.</div>');
 }
 
 function renderHourlyChart() {
