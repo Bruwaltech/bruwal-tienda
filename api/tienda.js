@@ -90,7 +90,7 @@ module.exports = async (req, res) => {
       const [filasPrimeras, filasTienda] = await Promise.all([
         pedirProducto(CAMPOS_BASE + ',' + CAMPOS_EXTRA),
         fetch(SUPABASE_URL + '/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(slug) +
-              '&select=business_name', {
+              '&select=business_name,image_url', {
           headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
         }).then((r) => r.json()).catch(() => null)
       ]);
@@ -102,6 +102,7 @@ module.exports = async (req, res) => {
 
       const prod = Array.isArray(filasProd) ? filasProd[0] : null;
       const nombreTienda = (Array.isArray(filasTienda) && filasTienda[0] && filasTienda[0].business_name) || '';
+      const logoTienda = (Array.isArray(filasTienda) && filasTienda[0] && filasTienda[0].image_url) || null;
 
       // solo_interno son repuestos que el duenio usa desde el panel y que
       // nunca deberian poder comprarse: tampoco se comparten.
@@ -114,9 +115,11 @@ module.exports = async (req, res) => {
           ? 'Consultar precio'
           : '$' + vigente.toLocaleString('es-AR');
 
+        // Sin foto del producto, el logo del negocio: la imagen generica de
+        // BRUWAL hacia que el link pareciera de otra marca.
         const foto = (Array.isArray(prod.imagenes) && prod.imagenes.length)
           ? prod.imagenes[0]
-          : (prod.image_url || null);
+          : (prod.image_url || logoTienda);
 
         // El precio EN EL TITULO. La bajada la corta cada aplicacion donde
         // quiere, el titulo no: si el precio esta solo abajo, la mitad de

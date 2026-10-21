@@ -1831,7 +1831,9 @@ tr:last-child td { border-bottom: none; }
 /* iPad/iPhone: Safari hace zoom al tocar un campo con letra de menos de
    16px, y la pantalla de ventas quedaba corrida. */
 @supports (-webkit-touch-callout: none) {
-  input[type=text], input[type=tel], input[type=number], input[type=search], select, textarea { font-size: 16px !important; }
+  input[type=text], input[type=tel], input[type=number], input[type=search],
+  input[type=email], input[type=password], input[type=date], input[type=time],
+  input:not([type]), select, textarea { font-size: 16px !important; }
 }
 </style>
 <link rel="stylesheet" href="dashboard-motion.css">
@@ -2453,6 +2455,21 @@ tr:last-child td { border-bottom: none; }
                 <div id="barcodeVarianteUnidades" style="margin-top:8px;display:flex;flex-direction:column;gap:5px;"></div>
               </div>
 
+              <!-- Agregados (+cheddar) y lo que se saca (sin cebolla). Los
+                   agregados son los mismos que el producto ofrece en la
+                   tienda online. Lo pinta renderAgregadosVenta(). -->
+              <div class="hidden" id="barcodeAgregadosBloque" style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:8px;">
+                <div id="barcodeAgregadosLista"></div>
+                <label style="font-size:11.5px;color:var(--text-mute);display:block;margin:6px 0 5px;">Sacar o aclarar <span style="font-weight:400;">(opcional)</span></label>
+                <input type="text" id="barcodeAclaracion" placeholder="Ej: sin cebolla" autocomplete="off"
+                       style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
+              </div>
+
+              <label id="filaMayorista" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+                <input type="checkbox" id="barcodeMayorista" style="margin:0;width:auto;cursor:pointer;">
+                💼 Venta mayorista: precio por cantidad más bajo en todo
+              </label>
+
               <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="barcodeFiado" style="margin:0;width:auto;cursor:pointer;">
                 📓 Fiado — queda debiendo
@@ -2610,6 +2627,14 @@ tr:last-child td { border-bottom: none; }
         <div class="stat-card">
           <div class="label">Saldo del día</div>
           <div class="value" id="cajaSaldo">$0</div>
+        </div>
+        <div class="stat-card" title="Lo que quedó de todos los días anteriores. Los retiros cargalos como movimiento manual de egreso.">
+          <div class="label">Viene de días anteriores</div>
+          <div class="value" id="cajaAnterior">$0</div>
+        </div>
+        <div class="stat-card" title="Lo que venía más el saldo del día: la plata que tendría que haber.">
+          <div class="label">Saldo acumulado</div>
+          <div class="value" id="cajaAcumulado" style="color:var(--navy);">$0</div>
         </div>
         <div class="stat-card" title="Lo vendido en el día menos lo que costo. Un servicio cuenta lo que gasta en insumos.">
           <div class="label">🔒 Ganancia estimada</div>
@@ -5852,18 +5877,39 @@ function porcentajeOff(p) {
   return Math.round((1 - Number(p.precio_oferta) / Number(p.price)) * 100);
 }
 
+// La oferta del producto sobre un precio propio (el de una variante o el
+// de un equipo puntual). La oferta se carga a nivel producto, pero en un
+// producto con tamaños, talles o equipos el que se cobra es el precio de
+// la variante: sin esto el mostrador mostraba "% OFF" y cobraba entero.
+// Se aplica el mismo porcentaje. Misma regla que en tienda.html.
+function conOferta(p, precio) {
+  const n = Number(precio);
+  if (!hayOferta(p) || !(n > 0)) return n;
+  return Math.round(n * Number(p.precio_oferta) / Number(p.price));
+}
+
 // ---- Precio de la venta en el mostrador ----
 // Si el producto tiene variantes y hay una elegida, manda el precio de ESA
 // variante. Sin esto la venta miraba solo product.price: en una pizzeria,
 // una porcion de $7.500 se cobraba $28.500, el precio que quedo a nivel
-// producto. Mismo criterio que precioDeVariante() en tienda.html — una
-// variante con precio propio se cobra tal cual, sin la oferta encima.
+// producto. Mismo criterio que precioDeVariante() en tienda.html.
 function precioDeVentaMostrador(p, variante) {
   const base = precioVigente(p);
   if (!p || !p.tiene_variantes || !variante || !Object.keys(variante).length) return base;
   const vs = Array.isArray(p.variantes) ? p.variantes : [];
   const v = vs.find(x => claveVariante(x.atributos) === claveVariante(variante));
-  return (v && v.precio != null) ? Number(v.precio) : base;
+  return (v && v.precio != null) ? conOferta(p, v.precio) : base;
+}
+
+// Lo que valía sin la oferta, para el "antes $X" de la pantalla de venta.
+function precioDeListaMostrador(p, variante, unidad) {
+  if (unidad && unidad.precio != null) return Number(unidad.precio);
+  if (p && p.tiene_variantes && variante && Object.keys(variante).length) {
+    const v = (Array.isArray(p.variantes) ? p.variantes : [])
+      .find(x => claveVariante(x.atributos) === claveVariante(variante));
+    if (v && v.precio != null) return Number(v.precio);
+  }
+  return Number((p && p.price) || 0);
 }
 
 // El precio de lo que hay ahora mismo en la pantalla de venta.
@@ -5872,7 +5918,118 @@ function precioVentaEnPantalla() {
   // El equipo puntual manda: dos iPhone de la misma combinacion pueden
   // valer distinto por la bateria o una marca.
   const unidad = unidadesDisponiblesVenta().find(u => u.imei === imeiSeleccionadoVenta);
-  return precioDeUnidad(currentBarcodeProduct, varianteSeleccionadaVenta, unidad);
+  return precioDeUnidad(currentBarcodeProduct, varianteSeleccionadaVenta, unidad) +
+         sumaDeAgregados(agregadosElegidosVenta());
+}
+
+// El renglon de precio de la pantalla de venta: lo que se cobra y, con
+// oferta, cuanto valia antes. Mira la variante y el equipo elegidos, asi
+// el "antes" es el de ESA variante y no el del producto.
+function etiquetaPrecioVenta() {
+  const p = currentBarcodeProduct;
+  if (!p) return '';
+  const unidad = unidadesDisponiblesVenta().find(u => u.imei === imeiSeleccionadoVenta);
+  const cobra = precioDeUnidad(p, varianteSeleccionadaVenta, unidad);
+  const lista = precioDeListaMostrador(p, varianteSeleccionadaVenta, unidad);
+  return money(cobra) + sufijoPrecioPorMedida(p) +
+    (hayOferta(p) && lista > cobra ? '  (antes ' + money(lista) + ' \u2014 ' + porcentajeOff(p) + '% OFF)' : '');
+}
+
+// ---- Agregados y aclaraciones en el mostrador ----
+// Los agregados son los del producto (store_products.opciones, los mismos
+// que ofrece la tienda online). La aclaracion ("sin cebolla") va como un
+// agregado sin cargo, asi sale en el ticket y en la comanda igual que los
+// de la tienda.
+function sumaDeAgregados(lista) {
+  return (lista || []).reduce((s, o) => s + Number(o.precio || 0), 0);
+}
+
+function agregadosElegidosVenta() {
+  const p = currentBarcodeProduct;
+  const bloque = byId('barcodeAgregadosBloque');
+  if (!p || !bloque || bloque.classList.contains('hidden')) return [];
+  const opciones = Array.isArray(p.opciones) ? p.opciones : [];
+  const elegidos = Array.from(bloque.querySelectorAll('[data-agregado-venta]:checked'))
+    .map(c => opciones[Number(c.dataset.agregadoVenta)])
+    .filter(Boolean)
+    .map(o => ({ nombre: String(o.nombre), precio: Math.max(0, Number(o.precio) || 0) }));
+  const aclaracion = (byId('barcodeAclaracion')?.value || '').trim();
+  if (aclaracion) elegidos.push({ nombre: aclaracion.charAt(0).toUpperCase() + aclaracion.slice(1), precio: 0 });
+  return elegidos;
+}
+
+function renderAgregadosVenta() {
+  const bloque = byId('barcodeAgregadosBloque');
+  if (!bloque) return;
+  const p = currentBarcodeProduct;
+  const opciones = (p && Array.isArray(p.opciones)) ? p.opciones : [];
+  byId('barcodeAclaracion').value = '';
+  // La aclaracion sola tiene sentido en comida; en un celular no.
+  if (!p || (!opciones.length && !rubroEsComida())) {
+    bloque.classList.add('hidden');
+    byId('barcodeAgregadosLista').innerHTML = '';
+    return;
+  }
+  bloque.classList.remove('hidden');
+  byId('barcodeAgregadosLista').innerHTML = opciones.length
+    ? '<label style="font-size:11.5px;color:var(--text-mute);display:block;margin-bottom:5px;">Agregados</label>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;">' +
+      opciones.map((o, i) =>
+        '<label style="display:flex;align-items:center;gap:6px;font-size:13.5px;cursor:pointer;">' +
+          '<input type="checkbox" data-agregado-venta="' + i + '" style="margin:0;width:auto;cursor:pointer;">' +
+          escapeHtml(o.nombre) +
+          '<span style="color:var(--text-mute);font-size:12px;">' +
+            (Number(o.precio) > 0 ? '+' + money(o.precio) : 'sin cargo') + '</span>' +
+        '</label>').join('') +
+      '</div>'
+    : '';
+  bloque.querySelectorAll('[data-agregado-venta]').forEach(c => c.addEventListener('change', calculateTotal));
+}
+
+// ---- Precio por cantidad (mayorista) en el mostrador ----
+// Mismas reglas que la tienda online: los escalones se cuentan sobre el
+// total de ESE producto en el pedido, y solo se aplican si bajan el
+// precio. Con "Venta mayorista" tildado se usa el escalon mas bajo de cada
+// producto sin importar la cantidad: es el que el vendedor elige cuando le
+// vende a un revendedor.
+function escalonesDeProducto(p) {
+  return (Array.isArray(p && p.precios_por_cantidad) ? p.precios_por_cantidad : [])
+    .map(e => ({ desde: Number(e && e.desde), precio: Number(e && e.precio) }))
+    .filter(e => e.desde > 1 && e.precio > 0)
+    .sort((a, b) => a.desde - b.desde);
+}
+
+function aplicarPrecioMayorista(lineas) {
+  const forzado = !!byId('barcodeMayorista')?.checked;
+  const unidades = {};
+  lineas.forEach(l => {
+    const id = String(l.product.id);
+    unidades[id] = (unidades[id] || 0) + Number(l.qty || 0);
+  });
+  return lineas.map(l => {
+    const escalones = escalonesDeProducto(l.product);
+    if (!escalones.length) return l;
+    const suben = forzado ? escalones : escalones.filter(e => unidades[String(l.product.id)] >= e.desde);
+    if (!suben.length) return l;
+    const escalon = forzado
+      ? suben.reduce((a, b) => (b.precio < a.precio ? b : a))
+      : suben[suben.length - 1];
+    const extras = sumaDeAgregados(l.opciones);
+    const base = Number(l.precioUnitario) - extras;
+    if (!(escalon.precio < base)) return l;
+    return { ...l, precioUnitario: escalon.precio + extras, mayorista: { lista: base, precio: escalon.precio } };
+  });
+}
+
+// Mayorista primero y despues el armado de porciones: es la cuenta de toda
+// la pantalla de venta, el carrito y el registro.
+function resumirLineasVenta(lineas) {
+  return aplicarArmadoDePorciones(aplicarPrecioMayorista(lineas));
+}
+
+function textoMayorista(l) {
+  return '💼 ' + l.product.name + ': precio por cantidad ' + money(l.mayorista.precio) +
+         ' c/u (antes ' + money(l.mayorista.lista) + ')';
 }
 
 // La fecha de un día (YYYY-MM-DD) tal como la vive el usuario, NO en UTC.
@@ -8213,7 +8370,7 @@ function normalizarUnidadImei(u) {
 // El precio de UN equipo puntual: el suyo si lo tiene, si no el de su
 // combinacion, si no el general del producto.
 function precioDeUnidad(p, variante, unidad) {
-  if (unidad && unidad.precio != null) return Number(unidad.precio);
+  if (unidad && unidad.precio != null) return conOferta(p, unidad.precio);
   return precioDeVentaMostrador(p, variante);
 }
 
@@ -15079,8 +15236,13 @@ function renderProducts() {
     try {
       // Los textos se arman acá con las cuentas del panel; el dibujo lo hace
       // imagen-producto.js, el mismo que usa la tienda.
-      const link = window.location.origin + '/' + encodeURIComponent(currentStore.slug) +
-                   '?p=' + encodeURIComponent(prod.id);
+      // Un producto de stock interno no esta en la tienda: el link llevaba
+      // al catalogo y el cliente no lo encontraba. Va la imagen con el
+      // nombre y el precio, sin link, y el cliente responde por WhatsApp.
+      const enLaTienda = !prod.solo_interno;
+      const link = enLaTienda
+        ? window.location.origin + '/' + encodeURIComponent(currentStore.slug) + '?p=' + encodeURIComponent(prod.id)
+        : '';
       const conVariantes = prod.tiene_variantes && Array.isArray(prod.variantes) && prod.variantes.length;
       const como = await BruwalImagen.compartir({
         nombre: prod.name,
@@ -15091,7 +15253,7 @@ function renderProducts() {
         nota: prod.ml_nota,
         opiniones: prod.ml_opiniones,
         negocio: (currentStore && (currentStore.business_name || currentStore.name)) || ''
-      }, prod.name + ' \u2014 ' + money(precioVigente(prod)) + '\n' + link);
+      }, prod.name + ' \u2014 ' + money(precioVigente(prod)) + (link ? '\n' + link : ''));
 
       if (como === 'descargado') {
         dialogoAviso('\u2713 Imagen descargada.\n\nSub\u00edla a tu historia o a tu estado de WhatsApp.');
@@ -18009,6 +18171,13 @@ function detalleVarianteTicket(variante) {
     .join('');
 }
 
+// Los agregados de una linea del mostrador ([{nombre, precio}]), mismo
+// formato que los de un pedido de la tienda: "+ Cheddar, Sin cebolla".
+function detalleAgregadosTicket(opciones) {
+  const nombres = (opciones || []).map(o => (o && o.nombre) || o).filter(Boolean);
+  return nombres.length ? '<div class="det">+ ' + escapeHtml(nombres.join(', ')) + '</div>' : '';
+}
+
 // ---- Hora de entrega ----
 // La demora del local (cuanto tarda AHORA) solo SUGIERE una hora. La que
 // vale es la del pedido: si el cliente la pide para las 22, manda el
@@ -18282,7 +18451,7 @@ function imprimirTicketVenta(v) {
                 ? formatearCantidad(v.qty, v.producto)
                 : Number(v.qty).toLocaleString('es-AR')) +
              ' x ' + escapeHtml(v.producto.name),
-      detalle: detalleVarianteTicket(v.variante),
+      detalle: detalleVarianteTicket(v.variante) + detalleAgregadosTicket(v.agregados),
       importe: money(total),
       unitario: Number(v.qty) !== 1 ? money(v.precioUnitario) + ' c/u' : ''
     }],
@@ -18905,15 +19074,14 @@ function diaARDe(v) {
 // dice exactamente lo mismo que la pantalla, sin recalcular por otro lado.
 let ultimoResumenCaja = null;
 
-function renderCaja() {
-  const cuerpo = byId('cajaMovimientosBody');
-  if (!cuerpo) return;
-
-  const fecha = byId('cajaFecha').value || fechaLocalISO();
+// Los movimientos de caja de los dias que cumplan `enRango` (recibe el dia
+// "YYYY-MM-DD"). Se usa para el dia elegido y para todo lo anterior, que es
+// lo que da el remanente.
+function juntarMovimientosCaja(enRango) {
   // El dia de la venta EN EL LOCAL. created_at esta en UTC: recortarlo tal
   // cual mandaba todo lo vendido despues de las 21:00 a la caja de MANIANA
   // (la caja del dia arrancaba a las 21 de la noche anterior).
-  const esDelDia = (fechaHora) => diaARDe(fechaHora) === fecha;
+  const esDelDia = (fechaHora) => { const d = diaARDe(fechaHora); return !!d && enRango(d); };
 
   const movimientos = [];
 
@@ -18965,7 +19133,7 @@ function renderCaja() {
     });
   });
 
-  gastos.filter(g => g.fecha === fecha).forEach(g => {
+  gastos.filter(g => g.fecha && enRango(g.fecha)).forEach(g => {
     movimientos.push({
       origen: 'gasto', hora: g.fecha, tipo: 'egreso',
       concepto: g.concepto,
@@ -18974,7 +19142,7 @@ function renderCaja() {
     });
   });
 
-  movimientosCaja.filter(m => m.fecha === fecha).forEach(m => {
+  movimientosCaja.filter(m => m.fecha && enRango(m.fecha)).forEach(m => {
     movimientos.push({
       origen: 'manual', id: m.id, hora: m.created_at, tipo: m.tipo,
       concepto: m.concepto,
@@ -18984,6 +19152,26 @@ function renderCaja() {
   });
 
   movimientos.sort((a, b) => new Date(b.hora) - new Date(a.hora));
+  return movimientos;
+}
+
+// Saldo por medio de pago de una lista de movimientos.
+function saldoPorMedio(movimientos) {
+  const porMedio = {};
+  movimientos.forEach(m => {
+    const signo = m.tipo === 'ingreso' ? 1 : -1;
+    porMedio[m.medio] = (porMedio[m.medio] || 0) + signo * m.monto;
+  });
+  return porMedio;
+}
+
+function renderCaja() {
+  const cuerpo = byId('cajaMovimientosBody');
+  if (!cuerpo) return;
+
+  const fecha = byId('cajaFecha').value || fechaLocalISO();
+  const esDelDia = (fechaHora) => diaARDe(fechaHora) === fecha;
+  const movimientos = juntarMovimientosCaja(d => d === fecha);
 
   const ingresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0);
   const egresos = movimientos.filter(m => m.tipo === 'egreso').reduce((s, m) => s + m.monto, 0);
@@ -18991,6 +19179,16 @@ function renderCaja() {
   byId('cajaIngresos').textContent = money(ingresos);
   byId('cajaEgresos').textContent = money(egresos);
   byId('cajaSaldo').textContent = money(ingresos - egresos);
+
+  // El remanente: lo que quedo de todos los dias anteriores. La caja del
+  // dia sola no dice cuanta plata hay; sumada a lo que venia, si. Los
+  // retiros del dueño se cargan como movimiento manual de egreso, y asi
+  // salen de aca.
+  const anteriores = juntarMovimientosCaja(d => d < fecha);
+  const saldoAnterior = anteriores.reduce((s, m) => s + (m.tipo === 'ingreso' ? m.monto : -m.monto), 0);
+  const porMedioAnterior = saldoPorMedio(anteriores);
+  if (byId('cajaAnterior')) byId('cajaAnterior').textContent = money(saldoAnterior);
+  if (byId('cajaAcumulado')) byId('cajaAcumulado').textContent = money(saldoAnterior + ingresos - egresos);
 
   // Ganancia del dia. OJO: no es "ingresos menos egresos", que es otra cosa
   // (eso es el saldo de caja, y ahi entran los cobros de fiado de ventas
@@ -19027,17 +19225,18 @@ function renderCaja() {
     }
   }
 
-  const porMedio = {};
-  movimientos.forEach(m => {
-    const signo = m.tipo === 'ingreso' ? 1 : -1;
-    porMedio[m.medio] = (porMedio[m.medio] || 0) + signo * m.monto;
-  });
-  const medios = Object.keys(porMedio);
-  ultimoResumenCaja = { fecha, movimientos, ingresos, egresos, porMedio };
+  const porMedio = saldoPorMedio(movimientos);
+  const porMedioAcumulado = { ...porMedioAnterior };
+  Object.keys(porMedio).forEach(m => { porMedioAcumulado[m] = (porMedioAcumulado[m] || 0) + porMedio[m]; });
+  // Los medios del dia y, de los anteriores, los que todavia tienen plata.
+  const medios = Object.keys(porMedioAcumulado)
+    .filter(m => porMedio[m] != null || Math.abs(porMedioAcumulado[m]) >= 1);
+  ultimoResumenCaja = { fecha, movimientos, ingresos, egresos, porMedio, saldoAnterior, porMedioAnterior, porMedioAcumulado };
   byId('cajaPorMedio').innerHTML = medios.length ? medios.map(m =>
     '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;min-width:140px;">' +
       '<div style="font-size:12px;color:var(--text-mute);">' + escapeHtml(m) + '</div>' +
-      '<div style="font-weight:700;color:var(--navy);">' + money(porMedio[m]) + '</div>' +
+      '<div style="font-weight:700;color:var(--navy);">' + money(porMedio[m] || 0) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-mute);margin-top:2px;">acumulado ' + money(porMedioAcumulado[m]) + '</div>' +
     '</div>'
   ).join('') : '<div style="color:var(--text-mute);font-size:13.5px;">Sin movimientos este día.</div>';
 
@@ -19805,7 +20004,8 @@ function escaneoAutomaticoVenta(product, cantidad, porImei) {
 // Mete una linea al pedido. Si ya hay una del mismo producto y combinacion
 // (sin IMEI puntual), suma la cantidad ahi en vez de repetir la linea.
 function sumarLineaAlPedido(linea) {
-  const clave = (l) => String(l.product.id) + '|' + claveVariante(l.variante || {});
+  const clave = (l) => String(l.product.id) + '|' + claveVariante(l.variante || {}) + '|' +
+    (l.opciones || []).map(o => o.nombre).sort().join('~');
   const igual = !linea.imei && carritoVenta.find(l => !l.imei && clave(l) === clave(linea) &&
     Number(l.precioUnitario) === Number(linea.precioUnitario));
   if (igual) {
@@ -19916,8 +20116,7 @@ function seleccionarProductoVenta(id, cantidad) {
   // no el de lista: si no, canta un precio y el sistema registra otro.
   inicializarTicketVenta();
   aplicarVisibilidadEntrega();
-  byId('barcodeProductPrice').textContent = money(precioDeVentaMostrador(product, varianteSeleccionadaVenta)) + sufijoPrecioPorMedida(product) +
-    (hayOferta(product) ? '  (antes ' + money(product.price) + ' — ' + porcentajeOff(product) + '% OFF)' : '');
+  byId('barcodeProductPrice').textContent = etiquetaPrecioVenta();
 
   // Con venta por medida el campo cantidad acepta decimales y dice en qué
   // unidad se está vendiendo, así no hay dudas de si "12" son unidades o
@@ -19937,10 +20136,24 @@ function seleccionarProductoVenta(id, cantidad) {
   }
   salirDeModoPedido();
   renderVarianteVenta();
+  renderAgregadosVenta();
+  actualizarFilaMayorista();
   calculateTotal();
   show(byId('barcodeResult'));
   byId('barcodeQty').focus();
 }
+
+// La casilla de mayorista solo aparece si la tienda carga precios por
+// cantidad en algun producto: a la que no vende por mayor no le sirve.
+function actualizarFilaMayorista() {
+  const fila = byId('filaMayorista');
+  if (!fila) return;
+  fila.classList.toggle('hidden', !(products || []).some(p => escalonesDeProducto(p).length));
+}
+byId('barcodeMayorista')?.addEventListener('change', () => {
+  if (currentBarcodeProduct) calculateTotal(); else pintarTotalConCarrito();
+});
+byId('barcodeAclaracion')?.addEventListener('input', calculateTotal);
 
 // ---- Elegir talle/color al vender por el lector ----
 // Sin esto, una venta de mostrador de un producto con variantes descontaba
@@ -20044,6 +20257,8 @@ function renderUnidadesVenta() {
     b.addEventListener('click', () => {
       imeiSeleccionadoVenta = b.dataset.ventaImei;
       renderUnidadesVenta();
+      // Un equipo puede valer distinto que otro de la misma combinacion.
+      refrescarPrecioVenta();
     });
   });
 }
@@ -20088,9 +20303,7 @@ function cantidadVendida() {
 function refrescarPrecioVenta() {
   const p = currentBarcodeProduct;
   if (!p || !byId('barcodeProductPrice')) return;
-  const precio = precioDeVentaMostrador(p, varianteSeleccionadaVenta);
-  byId('barcodeProductPrice').textContent = money(precio) + sufijoPrecioPorMedida(p) +
-    (hayOferta(p) ? '  (antes ' + money(p.price) + ' \u2014 ' + porcentajeOff(p) + '% OFF)' : '');
+  byId('barcodeProductPrice').textContent = etiquetaPrecioVenta();
   calculateTotal();
 }
 
@@ -20213,6 +20426,7 @@ function lineaVentaEnPantalla() {
     qty,
     variante: conVariantes ? { ...varianteSeleccionadaVenta } : null,
     imei: imeiSeleccionadoVenta,
+    opciones: agregadosElegidosVenta(),
     precioUnitario: precioVentaEnPantalla()
   };
 }
@@ -20267,7 +20481,7 @@ function validarLineaVentaEnPantalla() {
     }
   }
 
-  return { product: p, qty, variante, imei: imeiSeleccionadoVenta, precioUnitario: precioVentaEnPantalla() };
+  return { product: p, qty, variante, imei: imeiSeleccionadoVenta, opciones: agregadosElegidosVenta(), precioUnitario: precioVentaEnPantalla() };
 }
 
 // ---- Armado de porciones ----
@@ -20318,6 +20532,9 @@ function aplicarArmadoDePorciones(lineas) {
 
   const grupos = {};
   salida.forEach((l, i) => {
+    // Con agregados o precio mayorista el precio ya no es el de lista del
+    // tamanio: armarla como pizza se comeria el extra o el descuento.
+    if ((l.opciones && l.opciones.length) || l.mayorista) return;
     const por = porcionesDeVariante(l.variante);
     if (!por || !Number.isInteger(Number(l.qty))) return;
     const id = String(l.product.id);
@@ -20356,7 +20573,7 @@ function resumenVentaActual() {
   const lineas = carritoVenta.slice();
   const enPantalla = lineaVentaEnPantalla();
   if (enPantalla) lineas.push(enPantalla);
-  return aplicarArmadoDePorciones(lineas);
+  return resumirLineasVenta(lineas);
 }
 
 function textoAjustePorciones(a) {
@@ -20370,21 +20587,31 @@ function nombreDeLineaVenta(l) {
     : '');
 }
 
+// Lo mismo, con los agregados a la vista: es lo que se lee en el carrito.
+function nombreConAgregados(l) {
+  const extras = (l.opciones || []).map(o => o.nombre);
+  return nombreDeLineaVenta(l) + (extras.length ? ' + ' + extras.join(', ') : '');
+}
+
 function renderCarritoVenta() {
   const caja = byId('carritoVentaBox');
   if (!caja) return;
   if (!carritoVenta.length) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
 
-  const r = aplicarArmadoDePorciones(carritoVenta);
+  // Con la linea de la pantalla incluida: puede ser la que hace llegar al
+  // precio por cantidad a lo que ya esta en el pedido.
+  const r = resumenVentaActual();
+  r.lineas = r.lineas.slice(0, carritoVenta.length);
   caja.innerHTML =
     '<div style="font-weight:700;color:var(--navy);margin-bottom:8px;">🛒 Pedido en curso</div>' +
     r.lineas.map((l, i) =>
       '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:14px;">' +
-        '<span style="flex:1;">' + (seVendePorMedida(l.product) ? formatearCantidad(l.qty, l.product) : l.qty) + ' × ' + escapeHtml(nombreDeLineaVenta(l)) + '</span>' +
+        '<span style="flex:1;">' + (seVendePorMedida(l.product) ? formatearCantidad(l.qty, l.product) : l.qty) + ' × ' + escapeHtml(nombreConAgregados(l)) + '</span>' +
         '<b>' + money(l.importe) + '</b>' +
         '<button type="button" class="icon-btn danger" data-quitar-linea-venta="' + i + '" title="Sacar del pedido">✕</button>' +
       '</div>').join('') +
     r.ajustes.map(a => '<div style="font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;">' + escapeHtml(textoAjustePorciones(a)) + '</div>').join('') +
+    r.lineas.filter(l => l.mayorista).map(l => '<div style="font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;">' + escapeHtml(textoMayorista(l)) + '</div>').join('') +
     '<div style="font-size:12.5px;color:var(--text-mute);margin-top:8px;">Buscá el próximo producto arriba, o completá los datos y tocá <b>Registrar venta</b>.</div>';
   caja.classList.remove('hidden');
 
@@ -20395,11 +20622,15 @@ function renderCarritoVenta() {
 function pintarTotalConCarrito() {
   const nota = byId('barcodeArmadoNota');
   const r = resumenVentaActual();
-  const hayPedido = carritoVenta.length > 0 || r.ajustes.length > 0;
-  if (hayPedido) byId('barcodeTotal').textContent = money(r.total);
+  if (r.lineas.length) byId('barcodeTotal').textContent = money(r.total);
   if (nota) {
-    nota.innerHTML = r.ajustes.map(a => escapeHtml(textoAjustePorciones(a))).join('<br>');
-    nota.classList.toggle('hidden', !r.ajustes.length);
+    // En la nota de abajo del total va solo lo de la linea en pantalla; lo
+    // del pedido ya se lee en el carrito.
+    const enPantalla = currentBarcodeProduct ? r.lineas.slice(carritoVenta.length) : [];
+    const textos = r.ajustes.map(textoAjustePorciones)
+      .concat(enPantalla.filter(l => l.mayorista).map(textoMayorista));
+    nota.innerHTML = textos.map(escapeHtml).join('<br>');
+    nota.classList.toggle('hidden', !textos.length);
   }
   renderCarritoVenta();
 }
@@ -20411,6 +20642,7 @@ function entrarEnModoPedido() {
   varianteSeleccionadaVenta = {};
   imeiSeleccionadoVenta = null;
   byId('barcodeVarianteBloque').classList.add('hidden');
+  byId('barcodeAgregadosBloque')?.classList.add('hidden');
   byId('barcodeStockRestante')?.classList.add('hidden');
   hide(byId('barcodeMatches'));
   const n = carritoVenta.length;
@@ -20484,7 +20716,7 @@ async function confirmarVentaCarrito() {
     return;
   }
 
-  const resumen = aplicarArmadoDePorciones(lineas);
+  const resumen = resumirLineasVenta(lineas);
   const ok = await registrarVentaCarrito(resumen, cliente, { fiado: esFiado, abonaAhora, vendedor, medioPago, telefono: telefonoCliente, horaEntrega });
   if (!ok) return;
 
@@ -20520,6 +20752,8 @@ function limpiarDatosDeVentaRegistrada() {
   varianteSeleccionadaVenta = {};
   imeiSeleccionadoVenta = null;
   byId('barcodeVarianteBloque').classList.add('hidden');
+  byId('barcodeAgregadosBloque')?.classList.add('hidden');
+  if (byId('barcodeMayorista')) byId('barcodeMayorista').checked = false;
   avisoTelefonoVenta();
 }
 
@@ -20537,6 +20771,8 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
 
   const items = resumen.lineas.map(l => {
     const it = { product_id: l.product.id, qty: l.qty, name: nombreDeLineaVenta(l), price: l.precioCobrado, variante: l.variante };
+    if (l.opciones && l.opciones.length) it.opciones = l.opciones.map(o => o.nombre);
+    if (l.mayorista) it.precio_lista = Number(l.mayorista.lista) + sumaDeAgregados(l.opciones);
     // El precio de lista queda anotado cuando se cobro armado como pizza.
     if (l.precioCobrado !== Number(l.precioUnitario)) it.precio_lista = Number(l.precioUnitario);
     if (l.imei) it.imei = l.imei;
@@ -20601,7 +20837,7 @@ function imprimirTicketPedidoMostrador(resumen, v) {
     return {
       texto: (seVendePorMedida(l.product) ? formatearCantidad(l.qty, l.product) : Number(l.qty).toLocaleString('es-AR')) +
              ' x ' + escapeHtml(l.product.name),
-      detalle: detalleVarianteTicket(l.variante),
+      detalle: detalleVarianteTicket(l.variante) + detalleAgregadosTicket(l.opciones),
       importe: money(lista),
       unitario: Number(l.qty) !== 1 ? money(l.precioUnitario) + ' c/u' : ''
     };
@@ -20683,7 +20919,9 @@ async function imprimirCierreCaja() {
 
   const ahora = new Date();
   const ventas = r.movimientos.filter(m => m.origen === 'venta' && m.medio !== 'Equipo usado').length;
-  const efectivoEsperado = Number(r.porMedio['Efectivo'] || 0);
+  // El efectivo que tiene que haber en el cajon es el acumulado: lo que
+  // quedo de antes mas lo del dia.
+  const efectivoEsperado = Number(r.porMedioAcumulado['Efectivo'] || 0);
 
   const contado = await dialogoPedir(
     'Cierre de caja del ' + fechaAR(r.fecha) + '\n\n' +
@@ -20693,7 +20931,7 @@ async function imprimirCierreCaja() {
   const contadoNum = contado.trim() === '' ? null : Number(contado.replace(/\./g, '').replace(',', '.'));
 
   const fila = (a, b) => '<div class="tk-fila"><span>' + a + '</span><span>' + b + '</span></div>';
-  const medios = Object.keys(r.porMedio).sort();
+  const medios = Object.keys(r.porMedioAcumulado).filter(m => r.porMedio[m] != null || Math.abs(r.porMedioAcumulado[m]) >= 1).sort();
 
   const html =
     '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
@@ -20705,10 +20943,12 @@ async function imprimirCierreCaja() {
     '<div class="tk-sep"></div>' +
     fila('Ingresos', money(r.ingresos)) +
     fila('Egresos', '-' + money(r.egresos)) +
-    '<div class="tk-total"><span>SALDO</span><span>' + money(r.ingresos - r.egresos) + '</span></div>' +
+    '<div class="tk-total"><span>SALDO DEL DÍA</span><span>' + money(r.ingresos - r.egresos) + '</span></div>' +
+    fila('Viene de días anteriores', money(r.saldoAnterior)) +
+    '<div class="tk-total"><span>ACUMULADO</span><span>' + money(r.saldoAnterior + r.ingresos - r.egresos) + '</span></div>' +
     '<div class="tk-sep"></div>' +
-    '<div class="tk-sub">POR MEDIO DE PAGO</div>' +
-    (medios.length ? medios.map(m => fila(escapeHtml(m), money(r.porMedio[m]))).join('') : fila('Sin movimientos', '')) +
+    '<div class="tk-sub">POR MEDIO DE PAGO (DÍA / ACUMULADO)</div>' +
+    (medios.length ? medios.map(m => fila(escapeHtml(m), money(r.porMedio[m] || 0) + ' / ' + money(r.porMedioAcumulado[m] || 0))).join('') : fila('Sin movimientos', '')) +
     (contadoNum != null && isFinite(contadoNum)
       ? '<div class="tk-sep"></div>' +
         fila('Efectivo esperado', money(efectivoEsperado)) +
@@ -20730,6 +20970,12 @@ async function confirmBarcodeVenta() {
   if (carritoVenta.length || (lineaSola && aplicarArmadoDePorciones([lineaSola]).ajustes.length)) {
     return confirmarVentaCarrito();
   }
+  // El precio que se ve en pantalla es el que se cobra: el del equipo
+  // elegido, con la oferta, los agregados y el precio por cantidad. Antes
+  // se registraba el de la variante a secas.
+  const cobrada = lineaSola ? resumirLineasVenta([lineaSola]).lineas[0] : null;
+  const precioCobrado = cobrada ? Number(cobrada.precioCobrado) : precioVentaEnPantalla();
+  const agregados = cobrada ? (cobrada.opciones || []) : [];
 
   const qty = cantidadVendida();
 
@@ -20846,10 +21092,10 @@ async function confirmBarcodeVenta() {
     return;
   }
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta });
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta, precioUnitario: precioCobrado, agregados });
   if (ok) {
     guardarNombreVendedor(vendedor);
-    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioDeVentaMostrador(product, variante) * qty);
+    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioCobrado * qty);
     if (ok.tradeIn) {
       mensaje += ok.equipoTomadoOk
         ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos.'
@@ -20864,8 +21110,9 @@ async function confirmBarcodeVenta() {
       imprimirTicketVenta({
         producto: product,
         qty,
-        precioUnitario: precioDeVentaMostrador(product, variante),
+        precioUnitario: precioCobrado,
         variante,
+        agregados,
         cliente,
         medioPago,
         vendedor,
@@ -20901,6 +21148,8 @@ async function confirmBarcodeVenta() {
     varianteSeleccionadaVenta = {};
     imeiSeleccionadoVenta = null;
     byId('barcodeVarianteBloque').classList.add('hidden');
+    byId('barcodeAgregadosBloque')?.classList.add('hidden');
+    if (byId('barcodeMayorista')) byId('barcodeMayorista').checked = false;
     avisoTelefonoVenta();
     clearBarcodeResult();
 
@@ -21018,8 +21267,14 @@ byId('barcodeTradeInValor').addEventListener('input', calculateChange);
 async function registrarVenta(product, qty, nombreCliente, opciones) {
   if (!puedeOperar()) return false;
 
-  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', horaEntrega = '', imei: imeiElegido = null } = opciones || {};
-  const total = precioDeVentaMostrador(product, variante) * qty;
+  const { fiado = false, abonaAhora = 0, tradeIn = null, variante = null, vendedor = '', medioPago = '', telefono = '', horaEntrega = '', imei: imeiElegido = null, agregados = [] } = opciones || {};
+  // El unitario lo arma la pantalla (equipo, oferta, agregados, mayorista);
+  // sin el, el de la variante como siempre.
+  const precioUnitario = (opciones && opciones.precioUnitario != null)
+    ? Number(opciones.precioUnitario)
+    : precioDeVentaMostrador(product, variante);
+  const total = precioUnitario * qty;
+  const opcionesItem = agregados.length ? { opciones: agregados.map(o => o.nombre) } : {};
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
   // El total de la venta sigue siendo el precio de lista (así se calculan
@@ -21041,7 +21296,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // entienden Pedidos, Fiado y el estado de cuenta (ver esTelefonoReal).
     customer_phone: String(telefono || '').trim() || 'scanner',
     hora_entrega: horaEntregaISO(horaEntrega),
-    items: [{ product_id: product.id, qty, name: nombreItem, price: precioDeVentaMostrador(product, variante), variante }],
+    items: [{ product_id: product.id, qty, name: nombreItem, price: precioUnitario, variante, ...opcionesItem }],
     total: total,
     estado: 'confirmado',        // una venta de mostrador ya ocurrió
     saldo_pendiente: saldoPendiente,
@@ -21082,7 +21337,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // campo IMEI del producto en sí. Se anota en la orden para poder
     // devolverlo exacto si la venta se anula, y arranca su historial.
     await sb.from('orders').update({
-      items: [{ product_id: product.id, qty, name: nombreItem, price: precioDeVentaMostrador(product, variante), variante, imei: imeiVendido }]
+      items: [{ product_id: product.id, qty, name: nombreItem, price: precioUnitario, variante, ...opcionesItem, imei: imeiVendido }]
     }).eq('id', data[0].id);
     await registrarEventoImei(imeiVendido, 'venta', 'Vendido a ' + nombre, total);
   }
@@ -21157,6 +21412,49 @@ byId('barcodeQty').addEventListener('keydown', (e) => {
   }
   byId('barcodeInput').focus();
 });
+
+// ---- El lector anda aunque el cursor no este en el buscador ----
+// El lector laser "tipea" el codigo y un Enter. Si el foco quedo en otro
+// lado (el campo Cliente, el medio de pago, o en ninguno despues de cerrar
+// un aviso) el codigo se perdia o se escribia donde no iba, y la venta no
+// arrancaba. Se reconoce por la velocidad: una persona no tipea 6 o mas
+// caracteres seguidos con menos de 40 ms entre tecla y tecla. Lo que se
+// llego a escribir en otro campo se devuelve como estaba.
+const lectorGlobal = { texto: '', ultimo: 0, campo: null, valorAntes: '' };
+document.addEventListener('keydown', (e) => {
+  const vista = byId('ventasView');
+  if (!vista || !vista.classList.contains('visible')) return;
+  const destino = e.target;
+  // El buscador y la cantidad ya saben manejar el lector.
+  if (destino === byId('barcodeInput') || destino === byId('barcodeQty')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  const ahora = Date.now();
+  if (e.key === 'Enter') {
+    const rapido = lectorGlobal.texto.length >= 6 && (ahora - lectorGlobal.ultimo) < 80;
+    const codigo = lectorGlobal.texto;
+    const campo = lectorGlobal.campo;
+    const valorAntes = lectorGlobal.valorAntes;
+    lectorGlobal.texto = '';
+    if (!rapido) return;
+    // Que el Enter del lector no apriete tambien el boton que tenga el foco.
+    e.preventDefault();
+    e.stopPropagation();
+    if (campo && 'value' in campo && campo.value !== valorAntes) campo.value = valorAntes;
+    byId('barcodeInput').value = codigo;
+    byId('barcodeInput').focus();
+    searchByBarcode();
+    return;
+  }
+  if (e.key.length !== 1) return;
+  if (ahora - lectorGlobal.ultimo > 40) {
+    lectorGlobal.texto = '';
+    lectorGlobal.campo = destino;
+    lectorGlobal.valorAntes = (destino && 'value' in destino) ? destino.value : '';
+  }
+  lectorGlobal.texto += e.key;
+  lectorGlobal.ultimo = ahora;
+}, true);
 
 // ============ ESCANEO CON LA CAMARA ============
 // Un lector por pantalla: el de ventas y el del alta de producto.
