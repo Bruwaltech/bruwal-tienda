@@ -13,8 +13,9 @@
 //
 // SECCIONES:
 //   Números     -> simulador con los supuestos editables y resultados en vivo
-//   Corredor    -> las 4 zonas, de sur a norte, con oferta y demanda
-//   Vendedores  -> CRM simple de los clientes de la mensajería
+//   Corredor    -> las 5 zonas, de sur a norte, con oferta y demanda
+//   Vendedores  -> CRM simple de los clientes de la mensajería, con un
+//                  buscador de vendedores del corredor en Mercado Libre
 //   Repartidores-> la red de repartidores independientes
 //   Liquidación -> semana por semana: qué pagar y qué cobrar
 //   Referencias -> de dónde salen los números
@@ -41,7 +42,8 @@
     { id: 'rosario',     nombre: 'Rosario' },
     { id: 'baigorria',   nombre: 'Granadero Baigorria' },
     { id: 'bermudez',    nombre: 'Capitán Bermúdez' },
-    { id: 'san_lorenzo', nombre: 'San Lorenzo' }
+    { id: 'san_lorenzo', nombre: 'San Lorenzo' },
+    { id: 'puerto_san_martin', nombre: 'Puerto San Martín' }
   ];
   var NOMBRE_ZONA = { otra: 'Otra' };
   ZONAS.forEach(function (z) { NOMBRE_ZONA[z.id] = z.nombre; });
@@ -608,6 +610,7 @@
 
   // ---- 3. Vendedores ----
   var filtroVendedores = 'todos';
+  var busquedaMl = null;   // null = cerrada; {} abierta; la respuesta de flex_buscar_vendedores
 
   function renderVendedores(c) {
     var lista = vendedores.filter(function (v) { return filtroVendedores === 'todos' || v.estado === filtroVendedores; });
@@ -615,7 +618,10 @@
       [{ id: 'todos', nombre: 'Todos' }].concat(ESTADOS_VENDEDOR).map(function (e) {
         var n = e.id === 'todos' ? vendedores.length : vendedores.filter(function (v) { return v.estado === e.id; }).length;
         return '<button type="button" class="fx-chip' + (filtroVendedores === e.id ? ' activo' : '') + '" data-fx-filtro="' + e.id + '">' + e.nombre + ' (' + n + ')</button>';
-      }).join('') + '</div><button type="button" class="fx-btn" id="fxNuevoVendedor">+ Nuevo vendedor</button></div>';
+      }).join('') + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<button type="button" class="fx-btn sec" id="fxAbrirBusqueda">🔎 Buscar en Mercado Libre</button>' +
+      '<button type="button" class="fx-btn" id="fxNuevoVendedor">+ Nuevo vendedor</button></div></div>';
+    if (busquedaMl) html += '<div class="fx-card" style="cursor:default;margin-bottom:14px;" id="fxBusqueda">' + htmlBusquedaMl() + '</div>';
 
     if (!lista.length) html += '<div class="fx-nota">No hay vendedores en esta lista.</div>';
     html += '<div class="fx-lista">' + lista.map(function (v) {
@@ -626,6 +632,7 @@
         (v.usa_flex ? 'Ya usa Flex' : 'Sin Flex') + ' · ' + entero(v.paq_dia_est) + ' paq/día · ' +
         (v.precio_acordado != null ? plata(v.precio_acordado) : 'precio general') +
         (v.contacto ? '<br>📞 ' + esc(v.contacto) : '') +
+        (v.ml_link ? '<br><a href="' + esc(v.ml_link) + '" target="_blank" rel="noopener" data-fx-link>Ver en Mercado Libre</a>' : '') +
         (v.notas ? '<br><i>' + esc(v.notas.slice(0, 120)) + '</i>' : '') + '</div>';
     }).join('') + '</div>';
     c.innerHTML = html;
@@ -634,11 +641,116 @@
       b.addEventListener('click', function () { filtroVendedores = b.dataset.fxFiltro; renderVendedores(c); });
     });
     c.querySelector('#fxNuevoVendedor').addEventListener('click', function () { editarVendedor(null); });
+    c.querySelector('#fxAbrirBusqueda').addEventListener('click', function () {
+      busquedaMl = busquedaMl ? null : {};
+      renderVendedores(c);
+    });
+    if (busquedaMl) conectarBusquedaMl(c);
+    c.querySelectorAll('[data-fx-link]').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
     c.querySelectorAll('[data-fx-vendedor]').forEach(function (el) {
       el.addEventListener('click', function () {
         editarVendedor(vendedores.find(function (v) { return v.id === el.dataset.fxVendedor; }));
       });
     });
+  }
+
+  // ---- Buscar vendedores en Mercado Libre ----
+  // Busca un rubro y lista los vendedores del corredor que lo publican,
+  // primero los que ya tienen Flex. "Agregar" los carga como prospectos.
+  // Contactarlos es por fuera de ML: ofrecer servicios por las preguntas o
+  // la mensajería de ML va contra sus reglas.
+  function yaCargado(mlId) {
+    return vendedores.some(function (v) { return v.ml_seller_id && String(v.ml_seller_id) === String(mlId); });
+  }
+
+  function htmlBusquedaMl() {
+    var b = busquedaMl || {};
+    var html = '<form id="fxFormBusqueda" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' +
+      '<input name="q" value="' + esc(b.q || '') + '" placeholder="Rubro o producto: suplementos, repuestos, celulares…" ' +
+      'style="flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;">' +
+      '<button type="submit" class="fx-btn">Buscar</button></form>' +
+      '<div class="fx-nota" style="margin-bottom:8px;">Vendedores de ' + ZONAS.map(function (z) { return z.nombre; }).join(', ') +
+      ' que publican ese rubro. Contactalos por WhatsApp o Instagram, nunca por las preguntas de Mercado Libre.</div>';
+    if (b.cargando) return html + '<div class="fx-nota">Buscando en Mercado Libre…</div>';
+    if (b.error) return html + '<div class="fx-nota fx-neg">' + esc(b.error) + '</div>';
+    if (b.conectado === false) return html + '<div class="fx-nota">Esta tienda no tiene Mercado Libre conectado. Conectalo desde la pestaña Mercado Libre.</div>';
+    if (b.ok === false) return html + '<div class="fx-nota fx-neg">' + esc(b.motivo || 'No se pudo buscar.') + '</div>';
+    if (!b.vendedores) return html;
+    if (!b.vendedores.length) return html + '<div class="fx-nota">' + esc(b.motivo || 'No apareció ningún vendedor del corredor.') + '</div>';
+
+    var nuevos = b.vendedores.filter(function (v) { return !yaCargado(v.ml_seller_id); }).length;
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">' +
+      '<span class="fx-nota">' + b.vendedores.length + ' vendedores' + (b.recortado ? ' (los primeros; probá un rubro más preciso)' : '') + '</span>' +
+      (nuevos ? '<button type="button" class="fx-btn sec" data-fx-agregar="todos">Agregar los ' + nuevos + ' nuevos</button>' : '') + '</div>';
+    html += '<div class="fx-scroll"><table class="fx-tabla"><thead><tr><th>Vendedor</th><th>Localidad</th>' +
+      '<th class="fx-der">Con Flex</th><th class="fx-der">Ventas</th><th></th></tr></thead><tbody>' +
+      b.vendedores.map(function (v) {
+        var link = v.perfil || (v.ejemplo && v.ejemplo.link) || '';
+        return '<tr><td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(v.nick || v.ml_seller_id) + '</a>' : esc(v.nick || v.ml_seller_id)) +
+          (v.ejemplo ? '<div class="fx-nota">' + esc(v.ejemplo.titulo.slice(0, 60)) + '</div>' : '') + '</td>' +
+          '<td>' + esc(NOMBRE_ZONA[v.zona] || v.ciudad || '—') + '</td>' +
+          '<td class="fx-der">' + (v.con_flex ? '<span class="fx-badge ok">' + v.con_flex + '/' + v.publicaciones + '</span>' : '0/' + v.publicaciones) + '</td>' +
+          '<td class="fx-der">' + (v.ventas == null ? '—' : entero(v.ventas)) + '</td>' +
+          '<td class="fx-der">' + (yaCargado(v.ml_seller_id) ? '<span class="fx-nota">En el CRM</span>'
+            : '<button type="button" class="fx-btn sec" data-fx-agregar="' + esc(v.ml_seller_id) + '">Agregar</button>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    return html;
+  }
+
+  function conectarBusquedaMl(c) {
+    var form = c.querySelector('#fxFormBusqueda');
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var q = form.elements.q.value.trim();
+      if (!q) return;
+      busquedaMl = { q: q, cargando: true };
+      renderVendedores(c);
+      try {
+        var r = await ctx.llamarApiMl('flex_buscar_vendedores', { texto: q });
+        busquedaMl = Object.assign({ q: q }, r);
+      } catch (err) {
+        busquedaMl = { q: q, error: String(err.message || err) };
+      }
+      renderVendedores(c);
+    });
+    c.querySelectorAll('[data-fx-agregar]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        var id = btn.dataset.fxAgregar;
+        var lista = (busquedaMl.vendedores || []).filter(function (v) {
+          return !yaCargado(v.ml_seller_id) && (id === 'todos' || String(v.ml_seller_id) === id);
+        });
+        btn.disabled = true;
+        await agregarProspectos(lista, busquedaMl.q);
+        renderVendedores(c);
+      });
+    });
+  }
+
+  async function agregarProspectos(lista, rubro) {
+    if (!lista.length) return;
+    var filas = lista.map(function (v) {
+      return {
+        store_slug: ctx.store.slug,
+        nombre: v.nick || ('Vendedor ML ' + v.ml_seller_id),
+        localidad: v.zona && v.zona !== 'otra' ? v.zona : 'otra',
+        rubro: rubro,
+        usa_flex: v.con_flex > 0,
+        estado: 'prospecto',
+        ml_seller_id: String(v.ml_seller_id),
+        ml_link: v.perfil || (v.ejemplo && v.ejemplo.link) || null,
+        notas: 'Encontrado en Mercado Libre buscando "' + rubro + '": ' + v.con_flex + ' de ' + v.publicaciones +
+          ' publicaciones con Flex' + (v.ejemplo && v.ejemplo.titulo ? '. Ej.: ' + v.ejemplo.titulo : '') + '.'
+      };
+    });
+    var res = await ctx.sb.from('flex_vendedores').insert(filas).select();
+    if (res.error) {
+      var falta = /ml_seller_id|ml_link|localidad_check/.test(res.error.message || '');
+      aviso(falta ? 'Falta correr schema/78-flex-prospectos.sql en Supabase.' : 'No se pudo guardar:\n\n' + res.error.message);
+      return;
+    }
+    vendedores = vendedores.concat(res.data || []);
   }
 
   function editarVendedor(v) {
