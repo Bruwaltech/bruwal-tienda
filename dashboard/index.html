@@ -2121,6 +2121,7 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabReparaciones"><i class="fa-solid fa-screwdriver-wrench"></i> Reparaciones</button>
       <button class="app-tab" id="tabGastos"><i class="fa-solid fa-file-invoice-dollar"></i> Gastos</button>
       <button class="app-tab" id="tabAfiliados"><i class="fa-solid fa-handshake"></i> Afiliados</button>
+      <button class="app-tab hidden" id="tabEnviosFlex"><i class="fa-solid fa-truck-fast"></i> Envíos Flex</button>
     </div>
   </div>
 
@@ -2800,6 +2801,9 @@ tr:last-child td { border-bottom: none; }
         </table>
       </div>
     </div>
+
+    <!-- ENVÍOS FLEX: solo tiendas con features.envios_flex (ver envios-flex.js) -->
+    <div id="enviosFlexView" class="hidden"></div>
 
     <!-- EMPLEADOS -->
     <div id="mercadoLibreView" class="hidden">
@@ -12255,6 +12259,7 @@ async function refreshData() {
   renderEmpleados();
   aplicarVisibilidadPorRubro();
   aplicarVisibilidadPorTurnos();
+  aplicarVisibilidadFlex();
   aplicarVisibilidadPorPlan();
   refrescarListaDeCategorias();
   pintarCampanita();
@@ -25257,6 +25262,45 @@ byId('tabAfiliados').addEventListener('click', () => {
   renderAfiliados();
 });
 byId('afiliadosMes').addEventListener('change', renderAfiliados);
+
+// ---- Envíos Flex ----
+// Solo para las tiendas con features.envios_flex (hoy, Novalis). El flag lo
+// pone el administrador (schema/76-envios-flex.sql) y el navegador no lo
+// puede cambiar; las tablas flex_* lo exigen también por RLS. El módulo se
+// pide recién al abrir la pestaña, como demo.js.
+function tieneEnviosFlex() {
+  return !!(currentStore && currentStore.features && currentStore.features.envios_flex === true);
+}
+
+function aplicarVisibilidadFlex() {
+  const tab = byId('tabEnviosFlex');
+  if (!tab) return;
+  tab.classList.toggle('hidden', !tieneEnviosFlex());
+  if (!tieneEnviosFlex() && tab.classList.contains('active')) byId('tabDashboard').click();
+}
+
+let flexMontadoEn = null;
+byId('tabEnviosFlex').addEventListener('click', () => {
+  if (!tieneEnviosFlex()) return;
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  byId('tabEnviosFlex').classList.add('active');
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('enviosFlexView').classList.add('visible');
+
+  // Se monta una vez por tienda: cambiar de negocio con Pro lo vuelve a armar.
+  if (flexMontadoEn === currentStore.slug) return;
+  flexMontadoEn = currentStore.slug;
+  const montar = () => window.bruwalFlex.montar({
+    sb, store: currentStore, contenedor: byId('enviosFlexView'),
+    llamarApiMl, confirmar: dialogoConfirmar, aviso: dialogoAviso
+  });
+  if (window.bruwalFlex) { montar(); return; }
+  const s = document.createElement('script');
+  s.src = '../envios-flex.js';
+  s.onload = montar;
+  s.onerror = () => { flexMontadoEn = null; dialogoAviso('No se pudo cargar Envíos Flex. Revisá la conexión.'); };
+  document.head.appendChild(s);
+});
 byId('nuevoAfiliadoBtn').addEventListener('click', () => {
   if (!puedeOperar()) return;
   abrirModalAfiliado(null);
