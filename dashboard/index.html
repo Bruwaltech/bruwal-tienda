@@ -16383,7 +16383,7 @@ async function guardarEdicionFiado() {
 
   const cambios = {
     customer_name: nombre,
-    customer_phone: telefono || deuda.customer_phone || null,
+    customer_phone: telefono || deuda.customer_phone || '',   // la columna no acepta null: sin teléfono queda vacío
     saldo_pendiente: monto
   };
 
