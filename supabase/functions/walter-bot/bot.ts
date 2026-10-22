@@ -39,7 +39,8 @@ export type Datos = {
 // items: varias clases de monedas con su cantidad en un mismo mensaje ("145 de 1, 58 de 50, 348 de 10")
 // varias: nombró llaves y monedas juntas, sin cantidades ("tengo monedas y llaves"): se pregunta por todo de una
 export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret" | "dir" | "items">> & { varias?: boolean };
-export type Estado = { step: string; d: Datos; p?: Pistas };
+// rep: cuántas veces seguidas el bot hizo la misma pregunta sin que la charla avance
+export type Estado = { step: string; d: Datos; p?: Pistas; rep?: number };
 export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
   tipo: string | null; dir: string | null; monto: number; tarifa: string; prioridad: boolean;
@@ -326,6 +327,17 @@ export const esPing = (s: string) => /\?/.test(s) &&
 export const pareceCortado = (s: string) =>
   /\b(tengo|de|y|con|unas?|unos?|son|hay|las|los|el|la|tambien|ademas|mas|como|mira|te cuento)$/.test(norm(s).replace(/[.,]+$/, ""));
 
+/**
+ * El saludo de Walter con el nombre del negocio y la dirección del depósito: sin eso, el cliente no sabe
+ * con quién habla y el negocio parece armado.
+ */
+export function saludoDe(c: Config): string {
+  let s = c.saludo.trim();
+  if (!/punto metales/i.test(s)) s = "¡Hola! Te escribimos de Punto Metales. " + s.replace(/^(¡?hola!?|buenas!?)[.,]?\s*/i, "");
+  const dir = c.depPA && !/confirmar/i.test(c.depPA) && !norm(s).includes(norm(c.depPA)) ? `El depósito está en ${c.depPA}, Pueblo Andino.` : "";
+  return dir ? `${s} ${dir}` : s;
+}
+
 export function nuevoEstado(): Estado { return { step: "loc", d: {} }; }
 
 /**
@@ -352,7 +364,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     const e = nuevoEstado();
     if (findLoc(texto)) return procesar(e, texto, c);
     // Lo que sigue necesita la localidad: si el saludo no la pide, la pide el bot.
-    const respuestas: Respuesta[] = [{ text: c.saludo }];
+    const respuestas: Respuesta[] = [{ text: saludoDe(c) }];
     if (!/localidad/.test(norm(c.saludo))) respuestas.push(pregunta(e, c));
     return { estado: e, respuestas };
   }
@@ -820,7 +832,7 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   }
   if (prefijo && respuestas.length && !respuestas.some((x) => x.text.startsWith("¡Genial, en ") || x.text.startsWith("Donde vivís"))) {
     // En el primer mensaje, después del saludo
-    const i = !estado && respuestas.length > 1 && respuestas[0].text === c.saludo ? 1 : 0;
+    const i = !estado && respuestas.length > 1 && respuestas[0].text === saludoDe(c) ? 1 : 0;
     respuestas[i] = { ...respuestas[i], text: prefijo + respuestas[i].text };
   }
 

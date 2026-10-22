@@ -856,6 +856,17 @@ tbody tr:hover { background: #F8FBFF; }
             <div class="dato-secundario">Si el saludo no pregunta la localidad, el bot la pregunta después.</div></div>
         </div>
 
+        <h3 class="titulo-grupo">Audio de bienvenida</h3>
+        <p class="nota-tipos">Una nota de voz corta que el bot le manda a cada cliente nuevo después del saludo, por ejemplo: "Hola, gracias por escribir a Punto Metales, ahora te paso los precios". Ayuda a que vean que atrás hay un negocio de verdad. Se manda una sola vez por cliente.</p>
+        <div class="acciones-tipos">
+          <audio id="mBienvenidaOir" class="hidden" controls preload="none" style="width:100%;max-width:360px;margin-bottom:8px;"></audio>
+          <div>
+            <button type="button" class="btn btn-suave" id="mBienvenidaGrabar">Grabar audio</button>
+            <button type="button" class="btn btn-suave hidden" id="mBienvenidaQuitar">Quitar</button>
+            <span class="dato-secundario" id="mBienvenidaEstado"></span>
+          </div>
+        </div>
+
         <div class="aviso aviso-error hidden" id="mPreciosError" style="margin:0 18px 14px;"></div>
         <div class="pie-form">
           <button type="submit" class="btn btn-primario" id="mGuardarPrecios">Guardar cambios</button>
@@ -1035,7 +1046,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261022b"></script>
+<script src="/asistente/monedas.js?v=20261022c"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
