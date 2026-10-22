@@ -476,6 +476,25 @@ tbody tr:hover { background: #F8FBFF; }
 .tipo-moneda input:focus { outline: none; border-color: var(--celeste); }
 .quitar-tipo { width: 40px; height: 40px; padding: 0; font-size: 20px; line-height: 1; }
 .acciones-tipos { padding: 10px 18px 0; }
+.recorridos { display: grid; gap: 10px; padding: 12px 18px 0; }
+.recorrido { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 10px; }
+.recorrido-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr) 40px; gap: 8px; align-items: center; }
+.recorrido-fila select, .recorrido-fila input {
+  width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff; color: var(--text-dark);
+}
+.recorrido-fila select:focus, .recorrido-fila input:focus { outline: none; border-color: var(--celeste); }
+.quitar-recorrido { width: 40px; height: 40px; padding: 0; font-size: 20px; line-height: 1; }
+.recorrido-locs { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-loc {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line);
+  border-radius: 999px; font-size: 13.5px; cursor: pointer; user-select: none;
+}
+.chip-loc:has(input:checked) { border-color: var(--celeste); background: rgba(56, 152, 236, .1); font-weight: 600; }
+@media (max-width: 560px) {
+  .recorrido-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px; }
+  .recorrido-fila [data-r="horario"] { grid-column: 1 / -1; grid-row: 2; }
+}
 /* En el celular el nombre va arriba, entero, y los dos números abajo */
 @media (max-width: 560px) {
   .tipos-cabecera, .tipo-moneda { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px; }
@@ -804,6 +823,11 @@ tbody tr:hover { background: #F8FBFF; }
             <div class="dato-secundario">Con menos, el bot ofrece traerlo al depósito. 0 si no hay mínimo.</div></div>
         </div>
 
+        <h3 class="titulo-grupo">Recorridos</h3>
+        <p class="nota-tipos">Qué día y en qué horario pasás por cada localidad. El bot se lo dice al cliente y anota el pedido para el próximo recorrido de su zona. Igual podés cambiarle el día en Pedidos.</p>
+        <div class="recorridos" id="mRecorridos"></div>
+        <div class="acciones-tipos"><button type="button" class="btn btn-suave" id="mAgregarRecorrido">Agregar un recorrido</button></div>
+
         <h3 class="titulo-grupo">Avisos al cliente</h3>
         <div class="grilla-campos">
           <div class="campo"><label for="mHoraNoche">Turno mañana: la noche anterior a las</label>
@@ -1011,7 +1035,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261020b"></script>
+<script src="/asistente/monedas.js?v=20261022a"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';

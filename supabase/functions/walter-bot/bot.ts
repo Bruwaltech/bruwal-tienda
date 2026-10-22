@@ -16,7 +16,12 @@ export type Config = {
   saludo: string;
   // manual: Walter atiende todas las charlas desde el panel y el bot no contesta ninguna
   modo?: "auto" | "manual";
+  // Los días y horarios en que Walter pasa por cada localidad (Precios y ajustes › Recorridos)
+  recorridos?: Recorrido[];
 };
+
+// dia: 0 domingo … 6 sábado. horario: como lo escribe Walter ("14 a 18 hs").
+export type Recorrido = { dia: number; turno: "Mañana" | "Tarde"; horario?: string; locs: string[] };
 
 // Una línea de monedas del pedido: un tipo contado, o mezcladas por kilo (sin tipo)
 export type Linea = { modo: "kg" | "u"; tipo?: string; cant: number };
@@ -27,6 +32,8 @@ export type Datos = {
   // Los tipos que eligió de la lista uno atrás de otro, todavía sin cantidad ("25 plateada", "$1", "$10")
   pend?: string[];
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
+  // Cuándo quedó anotado el retiro, por el recorrido ("el martes 27 a la tarde (14 a 18 hs)")
+  cuando?: string;
 };
 // Pistas: lo que la IA entendió de un mensaje escrito libremente y todavía no se usó
 // items: varias clases de monedas con su cantidad en un mismo mensaje ("145 de 1, 58 de 50, 348 de 10")
@@ -38,6 +45,8 @@ export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret
   tipo: string | null; dir: string | null; monto: number; tarifa: string; prioridad: boolean;
   // Con varios tipos de moneda: cada línea con su precio y su total (walter_pedidos.items, schema/70)
   items: (Linea & { precio: number; total: number })[] | null;
+  // El día y el turno del recorrido que pasa por su localidad; null si no hay recorrido cargado
+  dia?: string | null; turno?: "Mañana" | "Tarde" | null;
 };
 // consulta: el cliente hizo una pregunta que hay que contestar antes de seguir (la contesta la IA con hechos())
 export type Resultado = { estado: Estado; respuestas: Respuesta[]; pedido?: Pedido; derivar?: boolean; consulta?: boolean };
@@ -221,6 +230,7 @@ export function hechos(c: Config): string {
     `Desde ${c.umbralMay} kg de cobre o bronce pagamos precio mayorista.`,
     "El monto final se confirma al pesar o contar en el momento del retiro.",
     "No compramos medidores, placas de cementerio, cables telefónicos ni piezas con numeración.",
+    recorridosTxt(c),
     depositos(c),
   ].filter(Boolean).join("\n");
 }
@@ -273,7 +283,8 @@ function pregunta(e: Estado, c: Config): Respuesta {
       if (soloDeposito(d, c)) return { text: "¿Te queda cómodo acercarlo a uno de los depósitos, en San Lorenzo o en Pueblo Andino?", options: ["Llevo al depósito", "Hablar con alguien"] };
       // La dirección escrita ya elige el retiro a domicilio: un mensaje menos que tocar el botón y después escribirla
       return {
-        text: `¿Cómo lo hacemos? Si querés que lo pasemos a buscar, escribime la dirección en ${d.loc} (calle y número). Si no, elegí una opción.`,
+        text: (pasaTxt(c, d.loc) ? `Por ${d.loc} pasamos ${pasaTxt(c, d.loc)}. ` : "") +
+          `¿Cómo lo hacemos? Si querés que lo pasemos a buscar, escribime la dirección en ${d.loc} (calle y número). Si no, elegí una opción.`,
         options: ["Punto de encuentro", "Llevo al depósito"],
       };
     case "name": return { text: "¿A nombre de quién lo anotamos?" };
@@ -519,13 +530,60 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     case "done": {
       // Ya anotado, pide día u horario ("¿podés buscarlo hoy 14:04?"): eso lo coordina el equipo
       if (esCoordinar(t)) {
-        return { ...out({ text: "Lo tengo en cuenta. Se lo paso a quien arma los recorridos y te confirmamos por acá el día y el horario. 🙌" }), derivar: true };
+        return { ...out({ text: d.cuando
+          ? `Te tenemos anotado para ${d.cuando}. Lo que me decís se lo paso a quien arma los recorridos y, si hay que cambiarlo, te confirmamos por acá. 🙌`
+          : "Lo tengo en cuenta. Se lo paso a quien arma los recorridos y te confirmamos por acá el día y el horario. 🙌" }), derivar: true };
       }
       if (/^(no|nop|nada|gracias|listo|ok|okey|dale|eso es todo|por ahora no)\b/.test(n)) return out({ text: "¡Dale! Cualquier cosa, escribinos por acá." });
       return out(pregunta(e, c));
     }
     default: return out(pregunta(e, c));
   }
+}
+
+// ---------- Recorridos: qué días y en qué horario pasamos por cada localidad ----------
+const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const PLURAL = ["domingos", "lunes", "martes", "miércoles", "jueves", "viernes", "sábados"];
+const recorridosDe = (c: Config) => (c.recorridos ?? []).filter((r) => r && r.dia >= 0 && r.dia <= 6 && (r.turno === "Mañana" || r.turno === "Tarde") && r.locs?.length);
+const unRecorrido = (r: Recorrido) => `los ${PLURAL[r.dia]} a la ${r.turno.toLowerCase()}` + (r.horario ? ` (${r.horario})` : "");
+
+/** "los martes a la tarde (14 a 18 hs) y los jueves a la mañana", o "" si no hay recorrido para esa localidad. */
+export function pasaTxt(c: Config, loc?: string): string {
+  return enLista(recorridosDe(c).filter((r) => loc && r.locs.includes(loc)).sort((a, b) => a.dia - b.dia).map(unRecorrido));
+}
+
+function recorridosTxt(c: Config): string {
+  const rs = recorridosDe(c);
+  if (!rs.length) return "";
+  return "Recorridos para pasar a buscar:\n" + rs.map((r) => `• ${enLista(r.locs)}: ${unRecorrido(r)}`).join("\n");
+}
+
+// Fecha de Argentina (YYYY-MM-DD) de hoy más n días
+function fechaAR(n: number, ahora = new Date()): string {
+  const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(ahora);
+  const f = new Date(hoy + "T12:00:00Z");
+  f.setUTCDate(f.getUTCDate() + n);
+  return f.toISOString().slice(0, 10);
+}
+const diaSemana = (iso: string) => new Date(iso + "T12:00:00Z").getUTCDay();
+// "martes 27"
+const fechaTxt = (iso: string) => `${DIAS[diaSemana(iso)]} ${Number(iso.slice(8, 10))}`;
+
+/** El próximo recorrido que pasa por la localidad, desde mañana: día (YYYY-MM-DD), turno y horario. */
+export function proximoRetiro(c: Config, loc: string, ahora = new Date()): { dia: string; turno: "Mañana" | "Tarde"; horario?: string } | null {
+  const rs = recorridosDe(c).filter((r) => r.locs.includes(loc));
+  if (!rs.length) return null;
+  for (let i = 1; i <= 7; i++) {
+    const dia = fechaAR(i, ahora);
+    const r = rs.filter((x) => x.dia === diaSemana(dia)).sort((a, b) => (a.turno === "Mañana" ? -1 : 1) - (b.turno === "Mañana" ? -1 : 1))[0];
+    if (r) return { dia, turno: r.turno, ...(r.horario ? { horario: r.horario } : {}) };
+  }
+  return null;
+}
+
+/** El horario del recorrido de ese día y turno para la localidad, para el recordatorio. */
+export function horarioDe(c: Config, loc: string, dia: string, turno: string): string | null {
+  return recorridosDe(c).find((r) => r.locs.includes(loc) && r.dia === diaSemana(dia) && r.turno === turno)?.horario ?? null;
 }
 
 /** Pide o propone un día u horario para el retiro. */
@@ -550,12 +608,20 @@ function anotar(e: Estado, c: Config): Resultado {
   const d = e.d;
   e.step = "done";
   const p = armarPedido(d, c, d.dir!);
+  // Con recorrido cargado para su localidad, queda anotado para el próximo; si no, el día lo pone Walter
+  const r = proximoRetiro(c, d.loc!);
+  if (r) {
+    p.dia = r.dia; p.turno = r.turno;
+    d.cuando = `el ${fechaTxt(r.dia)} a la ${r.turno.toLowerCase()}` + (r.horario ? ` (${r.horario})` : "");
+  }
   return {
     estado: e,
     respuestas: [{
       // Con la dirección a la vista, para que el cliente la corrija si la escribió mal
       text: `¡Listo, ${d.nombre}! Quedó anotado:\n• ${queTxt(d)}\n• ${d.ret}: ${d.dir}, ${d.loc}\n• Estimado: ${fmt(p.monto)}\n\n` +
-        `Armamos los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.` +
+        (d.cuando
+          ? `Pasamos ${d.cuando}. Antes te mandamos un recordatorio por acá para confirmar.`
+          : `Armamos los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.`) +
         (p.prioridad ? "\n\nComo es una buena cantidad, te ponemos entre los primeros del recorrido." : ""),
       options: ["Empezar de nuevo"],
     }],
