@@ -593,11 +593,11 @@ const CORS = {
 };
 const respuesta = (cuerpo: Record<string, unknown>, status = 200) => Response.json(cuerpo, { status, headers: CORS });
 
-// El texto de la plantilla primer_contacto tal como se cargó en Meta (para que el panel muestre lo que le llegó)
 // Para retomar una charla que ya venía: no le vuelve a preguntar qué tiene. Plantilla retomar_charla, con
 // {{1}} el nombre; mientras Meta no la apruebe, sale primer_contacto.
 const SALUDO_RETOMAR = "¡Hola {{1}}! Te escribimos de Punto Metales para seguir con lo que venías hablando con nosotros. " +
   "Respondé este mensaje y lo seguimos por acá.";
+// El texto de la plantilla primer_contacto tal como se cargó en Meta (para que el panel muestre lo que le llegó)
 const SALUDO_CONTACTO = "¡Hola {{1}}! Te escribimos de Punto Metales: compramos monedas, llaves, cobre y bronce, " +
   "y pasamos a retirar por tu zona. ¿Tenés algo para vender? Respondé este mensaje y te pasamos el precio.";
 
