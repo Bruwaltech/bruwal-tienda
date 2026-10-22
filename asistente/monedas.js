@@ -1216,6 +1216,7 @@ const panelMonedas = (() => {
   const OPUS = 'https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/';
   const LAMEJS = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
   const TOQUE = 400; // ms: soltar antes es un toque, no mantener apretado
+  const PERMISO = 800; // ms: si el micrófono tarda más en abrir, el navegador preguntó por el permiso
   const MIC_ABIERTO = 2 * 60 * 1000; // después del último audio, el micrófono queda abierto este rato
   let grabacion = null;
   // El micrófono queda abierto mientras la charla está abierta (y un rato después del último audio):
@@ -1255,9 +1256,21 @@ const panelMonedas = (() => {
     return workerOpus;
   }
 
+  const micVivo = () => !!(mic && mic.getAudioTracks().some((t) => t.readyState === 'live'));
+
+  // ¿El navegador va a preguntar por el micrófono? Sin la API de permisos (Safari viejo) no se sabe: null
+  async function micSinPermiso() {
+    try {
+      const p = await navigator.permissions.query({ name: 'microphone' });
+      return p.state !== 'granted';
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function abrirMic() {
     clearTimeout(cerrarMic.reloj);
-    if (mic && mic.getAudioTracks().some((t) => t.readyState === 'live')) return mic;
+    if (micVivo()) return mic;
     mic = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     });
@@ -1366,12 +1379,22 @@ const panelMonedas = (() => {
     }, 250);
 
     let stream;
+    const yaAbierto = micVivo();
+    const preguntara = yaAbierto ? false : await micSinPermiso();
+    const t0 = Date.now();
     try {
       stream = await abrirMic();
     } catch (err) {
       ctx.close();
       if (grabacion === g) limpiarGrabacion(g);
       return errorFicha('No se pudo usar el micrófono. Fijate que el navegador tenga permiso para usarlo en esta página.');
+    }
+    // Si el navegador preguntó por el micrófono, el dedo se levantó para tocar "Permitir" y el soltar se
+    // pierde: quedaba grabando hasta otro toque. Como en WhatsApp, ese toque solo da el permiso.
+    if (!yaAbierto && (preguntara || (preguntara === null && Date.now() - t0 > PERMISO))) {
+      ctx.close();
+      if (grabacion === g) limpiarGrabacion(g);
+      return toast('Listo, ya tenés el micrófono. Mantené apretado para grabar y soltá para mandar.');
     }
     try {
       g.motor = await empezarMotor(stream, ctx);
