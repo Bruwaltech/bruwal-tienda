@@ -9,7 +9,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
+import { conPerfil, type Config, horarioDe, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
@@ -243,6 +243,8 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     await db.from("walter_pedidos").insert({
       canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, tipo: p.tipo, cantidad: p.cant,
       retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad, ...(p.items ? { items: p.items } : {}),
+      // Anotado en el recorrido de su localidad: el día ya se lo dijo el bot, no hace falta el aviso del día
+      ...(p.dia && p.turno ? { dia: p.dia, turno: p.turno, estado: "agendado", aviso_dia: "enviado" } : {}),
     });
   }
   // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no
@@ -518,7 +520,8 @@ async function enviarAvisos() {
       const nombre = String(p.nombre).split(" ")[0];
       const que = /llave/i.test(p.tipo ?? "") ? "las llaves"
         : p.material === "Monedas" ? "las monedas" : "el " + String(p.material).toLowerCase();
-      const cuando = g.turno === "Mañana" ? "mañana a la mañana" : "hoy a la tarde";
+      const hs = horarioDe(cfg, p.localidad, p.dia, p.turno);
+      const cuando = (g.turno === "Mañana" ? "mañana a la mañana" : "hoy a la tarde") + (hs ? ` (${hs})` : "");
       let ok: boolean;
       if (p.canal === "whatsapp") {
         // Plantilla aprobada en Meta con 3 variables: {{1}} nombre, {{2}} cuándo, {{3}} qué
