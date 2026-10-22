@@ -385,6 +385,13 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     return out({ text: "¡Dale, sin apuro! Cuando las tengas, pasame cuántas tenés de cada una y te hago la cuenta." });
   }
 
+  // Ya cotizado, corrige la cantidad o la localidad ("soy de Totoras, tengo unas 300 llaves"): se rehace la cuenta
+  if (e.step === "mod" && d.mat === "Monedas") {
+    const tipo = findTipo(c, t);
+    const q = tipo && tipo !== MEZCLADAS ? cantidadConTipo(t, tipo) : null;
+    if (q) return corregir(e, tipo!, q, findLoc(t), c);
+  }
+
   switch (e.step) {
     case "out":
       if (!findLoc(t)) return out(pregunta(e, c));
@@ -810,6 +817,19 @@ function cantidad(e: Estado, q: number, c: Config): Resultado {
   e.step = "mod";
   const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al pesar en el momento del retiro.";
   return { estado: e, respuestas: [{ text: text + "\n" + fin }, pregunta(e, c)] };
+}
+
+// Cambia la cantidad de un tipo que ya estaba (o lo suma) y, si nombró otra localidad, también esa
+function corregir(e: Estado, tipo: string, q: number, loc: string | null, c: Config): Resultado {
+  const d = e.d;
+  d.items = lineas(d).filter((l) => l.tipo !== tipo);
+  d.modo = "u"; d.tipo = tipo; d.cant = q;
+  if (!d.items.length) delete d.items;
+  if (loc) d.loc = loc;
+  delete d.ret; delete d.dir;
+  e.step = "mod";
+  const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al contarlas o pesarlas en el momento del retiro.";
+  return { estado: e, respuestas: [{ text: `Listo, lo corrijo. ${resumen(d, c)}\n${fin}` }, pregunta(e, c)] };
 }
 
 // No tiene más monedas: con varios tipos, el total de todo, y sigue con cómo lo entrega
