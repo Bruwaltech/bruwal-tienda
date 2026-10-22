@@ -9,7 +9,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { conPerfil, type Config, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
@@ -181,6 +181,8 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     const etiquetas: string[] = Object.values(ETIQUETA);
     if ((nuevos ?? []).some((m) => !esSaludo(String(m.texto)) && !etiquetas.includes(String(m.texto)))) return;
     if (await sinRespuesta(canal, usuario, id)) libre = true;
+    // "¿Estás?" mientras el bot contesta (o recién contestó) lo anterior: no hace falta otra respuesta
+    if (esPing(texto) && await escribioRecien(canal, usuario, id)) return;
   }
 
   // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
@@ -246,6 +248,13 @@ async function sinRespuesta(canal: Canal, usuario: string, hastaId: number): Pro
   if (ult) q = q.gt("id", ult.id);
   const { count } = await q;
   return count ?? 0;
+}
+
+// El cliente ya había escrito algo en los 2 minutos antes de este mensaje
+async function escribioRecien(canal: Canal, usuario: string, hastaId: number): Promise<boolean> {
+  const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "entra").lt("id", hastaId).gte("creado", new Date(Date.now() - 120e3).toISOString());
+  return (count ?? 0) > 0;
 }
 
 // Los últimos mensajes antes del actual, del más viejo al más nuevo
