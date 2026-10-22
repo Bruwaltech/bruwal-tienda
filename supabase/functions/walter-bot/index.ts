@@ -202,14 +202,22 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   const n = norm(texto);
   // En "¿tenés de otro tipo?" el sí o el no es para el pedido que está armando
   if (/^(si|no|dale|ok|okey|perfecto|listo|joya|de una|confirmo)\b/.test(n) && estado?.step !== "mas") {
-    const { data: p } = await db.from("walter_pedidos").select("id").eq("canal", canal).eq("usuario", usuario)
-      .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
-      .order("dia", { ascending: false }).limit(1).maybeSingle();
-    if (p) {
+    const [{ data: p }, { data: ult }] = await Promise.all([
+      db.from("walter_pedidos").select("id, aviso_enviado").eq("canal", canal).eq("usuario", usuario)
+        .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
+        .order("dia", { ascending: false }).limit(1).maybeSingle(),
+      db.from("walter_mensajes").select("texto, creado").eq("canal", canal).eq("usuario", usuario).eq("direccion", "sale")
+        .order("id", { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    // Solo si lo último que le mandamos es el aviso o el recordatorio: un "no" a "¿querés cotizar algo más?" no es un "no puedo".
+    // El recordatorio sale como plantilla y no queda en la charla: cuenta si salió después del último mensaje.
+    const alAviso = !!p && (!ult || String(ult.texto).includes(AVISO_DIA) ||
+      (!!p.aviso_enviado && new Date(p.aviso_enviado).getTime() > new Date(ult.creado).getTime()));
+    if (p && alAviso) {
       const si = !n.startsWith("no");
       await db.from("walter_pedidos").update({ respuesta_aviso: si ? "confirmó" : "no puede" }).eq("id", p.id);
       return enviar(canal, usuario, [{
-        text: si ? "¡Gracias! Te esperamos. 👍" : "Gracias por avisar. Le paso a Walter para coordinar otro día.",
+        text: si ? "¡Gracias! Te esperamos. 👍" : "Gracias por avisar. Le aviso al equipo para coordinar otro día.",
       }]);
     }
   }
@@ -241,7 +249,7 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   // puede contestarla con lo que sabe el negocio, le avisamos a Walter.
   if (r.consulta) {
     const resp = await contestar(clave, texto, hechos(cfg), charla);
-    r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma Walter, ya le aviso." });
+    r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma alguien del equipo, ya le aviso." });
     if (!resp) await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
   }
   // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
@@ -287,7 +295,7 @@ async function charlaReciente(canal: Canal, usuario: string, hastaId: number): P
   const { data } = await db.from("walter_mensajes").select("direccion, autor, texto").eq("canal", canal).eq("usuario", usuario)
     .lt("id", hastaId).gte("creado", new Date(Date.now() - 2 * 86400e3).toISOString()).order("id", { ascending: false }).limit(14);
   return (data ?? []).reverse()
-    .map((m) => `${m.direccion === "entra" ? "Cliente" : m.autor === "walter" ? "Walter" : "Bot"}: ${String(m.texto).slice(0, 500)}`).join("\n");
+    .map((m) => `${m.direccion === "entra" ? "Cliente" : m.autor === "walter" ? "Equipo" : "Bot"}: ${String(m.texto).slice(0, 500)}`).join("\n");
 }
 
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
@@ -364,10 +372,10 @@ const MEDIA: Record<string, MediaTipo> = { image: "imagen", audio: "audio", vide
 // El texto que queda en la charla (y que lee la IA) cuando no viene con epígrafe
 const ETIQUETA: Record<MediaTipo, string> = { imagen: "[Foto]", audio: "[Audio]", video: "[Video]", documento: "[Archivo]", sticker: "[Sticker]" };
 const RECIBIDO: Partial<Record<MediaTipo, string>> = {
-  imagen: "¡Gracias por la foto! Se la paso a Walter para que la vea y te contesta por acá.",
-  audio: "¡Gracias por el audio! Todavía no puedo escucharlos: se lo paso a Walter y te contesta por acá. Si preferís, escribime lo que necesitás y te cotizo ya.",
-  video: "¡Gracias por el video! Se lo paso a Walter para que lo vea y te contesta por acá.",
-  documento: "¡Gracias por el archivo! Se lo paso a Walter y te contesta por acá.",
+  imagen: "¡Gracias por la foto! Se la paso al equipo para que la vea y te contesta por acá.",
+  audio: "¡Gracias por el audio! Todavía no puedo escucharlos: se lo paso al equipo y te contesta por acá. Si preferís, escribime lo que necesitás y te cotizo ya.",
+  video: "¡Gracias por el video! Se lo paso al equipo para que lo vea y te contesta por acá.",
+  documento: "¡Gracias por el archivo! Se lo paso al equipo y te contesta por acá.",
 };
 const EXT: Record<string, string> = {
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a",
@@ -556,6 +564,8 @@ async function avisarPorVencer() {
   }
 }
 
+const AVISO_DIA = "Ya tenemos día para pasar a buscar";
+
 // Apenas Walter le pone día y turno a un pedido, se lo decimos al cliente. Solo si la charla sigue
 // abierta: Meta deja escribir libre hasta 24 horas después del último mensaje del cliente. Si no,
 // le llega solo el recordatorio. Corre después de los recordatorios, que tienen prioridad.
@@ -575,7 +585,7 @@ async function avisarDia(hoy: string, manana: string) {
       const dia = p.dia === hoy ? "hoy" : p.dia === manana ? "mañana"
         : "el " + new Intl.DateTimeFormat("es-AR", { weekday: "long", day: "numeric", timeZone: "UTC" }).format(new Date(p.dia + "T12:00:00Z"));
       await enviar(p.canal, p.usuario, [{
-        text: `¡Hola ${nombre}! Ya tenemos día para pasar a buscar ${que}: ${dia} a la ${String(p.turno).toLowerCase()}. ¿Te queda bien?`,
+        text: `¡Hola ${nombre}! ${AVISO_DIA} ${que}: ${dia} a la ${String(p.turno).toLowerCase()}. ¿Te queda bien?`,
         options: ["Sí, me queda bien", "No puedo ese día"],
       }]);
       enviados++;

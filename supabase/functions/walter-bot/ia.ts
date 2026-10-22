@@ -80,7 +80,8 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
   try {
     const res = await cliente.messages.create({
       model: MODELO,
-      max_tokens: 1024,
+      // Con listas largas o varios mensajes juntos, 1024 no alcanzaba (stop_reason max_tokens)
+      max_tokens: 4096,
       system: sistema(c),
       output_config: { effort: "low", format: { type: "json_schema", schema: esquema(c) } },
       messages: [{ role: "user", content: `${contexto}${charla ? `\n\nCharla reciente:\n${charla}` : ""}\n\nMensaje del cliente:\n${texto}` }],
@@ -125,7 +126,7 @@ Reglas:
 - Una respuesta tuya por cada respuesta del sistema, en el mismo orden.
 - Los datos van exactos: montos, precios, kilos, cantidades, direcciones, horarios, nombres y localidades, con el mismo formato ($75.000, 7,5 kg). No agregues números.
 - No inventes datos, promesas ni condiciones. Si el sistema hace una pregunta, la tuya también la hace al final.
-- No agregues nada que el sistema no diga: ni distancias, ni si un lugar queda cerca o lejos, ni lugares, días u horarios para encontrarse. Si el cliente propone algo (un lugar, un día), no lo aceptes ni lo confirmes: eso lo arregla Walter. Podés decir que lo tenés en cuenta, nada más.
+- No agregues nada que el sistema no diga: ni distancias, ni si un lugar queda cerca o lejos, ni lugares, días u horarios para encontrarse. Si el cliente propone algo (un lugar, un día), no lo aceptes ni lo confirmes: eso lo arregla alguien del equipo. Podés decir que lo tenés en cuenta, nada más.
 - No cambies palabras que no entendés del mensaje del cliente ni las repitas si suenan raras (los audios pasados a texto traen errores).
 - Cuando hay opciones, el cliente las ve como botones abajo del mensaje: no hace falta enumerarlas, pero si nombrás una, con el mismo nombre. Lo que está entre comillas va tal cual, con comillas.
 - Como mucho un emoji por mensaje. Nada de "estimado" ni "le informamos".
@@ -192,7 +193,7 @@ export function conservaDatos(original: string, nueva: string): boolean {
 
 const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una a tres frases), cálido, como una persona del negocio.
 
-Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma Walter. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.`;
+Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma alguien del equipo. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.`;
 
 /** Respuesta a una pregunta del cliente, con los números sacados de hechos; null si no se pudo o si inventó un número. */
 export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = ""): Promise<string | null> {
