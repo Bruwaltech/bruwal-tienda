@@ -131,7 +131,15 @@ const PLANES = {
         'Cargá el stock sacándole una foto a la factura (IA)',
         'Reconoce productos, cantidades y costos'
       ]},
-      { t: 'Soporte', items: [
+      { t: 'Mercado Libre', items: [
+        'Tu cuenta de Mercado Libre conectada al panel',
+        'Cada venta en ML descuenta el stock al instante',
+        'Ganancia real de cada venta: precio menos costo y comisión',
+        'Trae tus publicaciones con fotos, precios y variantes'
+      ]},
+      { t: 'Y además', items: [
+        'Varios negocios en una misma cuenta',
+        'Insumos que gasta cada servicio, descontados del stock',
         'Atención prioritaria por WhatsApp'
       ]}
     ],
