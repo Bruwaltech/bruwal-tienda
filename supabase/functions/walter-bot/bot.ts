@@ -586,6 +586,13 @@ export function horarioDe(c: Config, loc: string, dia: string, turno: string): s
   return recorridosDe(c).find((r) => r.locs.includes(loc) && r.dia === diaSemana(dia) && r.turno === turno)?.horario ?? null;
 }
 
+/** Cuándo pasamos, como se lo decimos al cliente: "hoy a la tarde (15 a 18 hs)", "el jueves 29 a la mañana". */
+export function cuandoDe(c: Config, loc: string, dia: string, turno: string, ahora = new Date()): string {
+  const hs = horarioDe(c, loc, dia, turno);
+  const d = dia === fechaAR(0, ahora) ? "hoy" : dia === fechaAR(1, ahora) ? "mañana" : `el ${fechaTxt(dia)}`;
+  return `${d} a la ${turno.toLowerCase()}` + (hs ? ` (${hs})` : "");
+}
+
 /** Pide o propone un día u horario para el retiro. */
 export const esCoordinar = (s: string) =>
   /\b(hoy|manana|pasado|lunes|martes|miercoles|jueves|viernes|sabado|domingo|hora|horario|cuando|vienen|venis|pasan|pasas|buscar|buscarlo|buscarlas|buscarlos|retiran|retiras|estoy|estare)\b|\d{1,2}[:.]\d{2}|\d{1,2} ?hs\b/.test(norm(s));
@@ -612,7 +619,7 @@ function anotar(e: Estado, c: Config): Resultado {
   const r = proximoRetiro(c, d.loc!);
   if (r) {
     p.dia = r.dia; p.turno = r.turno;
-    d.cuando = `el ${fechaTxt(r.dia)} a la ${r.turno.toLowerCase()}` + (r.horario ? ` (${r.horario})` : "");
+    d.cuando = cuandoDe(c, d.loc!, r.dia, r.turno);
   }
   return {
     estado: e,
@@ -717,6 +724,9 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   if (l?.intencion === "prohibido" || (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr")) {
     return rechazar(estado, c, true, texto);
   }
+  // Ya anotado, la IA vuelve a sacar la lista de la charla reciente aunque el mensaje no diga nada nuevo
+  // ("Soy de Rosario"): sin esto se cotizaba y se anotaba todo otra vez
+  if (estado?.step === "done" && l && !/moneda|llave|cobre|bronce|\d/.test(norm(texto))) l = l.intencion ? { intencion: l.intencion } : null;
   // Ya anotado, pide día u horario: lo contesta procesar (lo coordina el equipo), sin cotizar de nuevo
   if (estado?.step === "done" && esCoordinar(texto) && !(l?.mat || l?.tipo || l?.items?.length)) return procesar(estado, texto, c);
   // "¿Estás?": lo contesta procesar, sin que la IA lo lea como una consulta

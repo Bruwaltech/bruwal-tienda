@@ -9,7 +9,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, horarioDe, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
+import { conPerfil, type Config, cuandoDe, esCoordinar, horarioDe, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
@@ -198,6 +198,15 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     }
   }
 
+  // Ya anotado: Walter puede haberle cambiado el día en Pedidos, y el bot tiene que decir el que quedó
+  if (estado?.step === "done" && estado.d.cuando) {
+    const { data: ped } = await db.from("walter_pedidos").select("dia, turno, localidad").eq("canal", canal).eq("usuario", usuario)
+      .neq("estado", "cancelado").order("id", { ascending: false }).limit(1).maybeSingle();
+    estado = { ...estado, d: { ...estado.d } };
+    if (ped?.dia && ped.turno) estado.d.cuando = cuandoDe(cfg, ped.localidad, ped.dia, ped.turno);
+    else delete estado.d.cuando;
+  }
+
   // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
   const n = norm(texto);
   // En "¿tenés de otro tipo?" el sí o el no es para el pedido que está armando
@@ -246,6 +255,14 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
       // Anotado en el recorrido de su localidad: el día ya se lo dijo el bot, no hace falta el aviso del día
       ...(p.dia && p.turno ? { dia: p.dia, turno: p.turno, estado: "agendado", aviso_dia: "enviado" } : {}),
     });
+    // Antes de anotarlo dijo cuándo puede ("hoy estoy entre las 18 y 18:45"): el bot no lo acuerda, lo ve el equipo
+    if (id && [texto, ...await sinResponder(canal, usuario, id)].some(esCoordinar)) {
+      if (p.dia) {
+        const ult = r.respuestas[r.respuestas.length - 1];
+        ult.text += "\n\nLo que me dijiste de cuándo te queda bien se lo paso a quien arma los recorridos: si se puede otro día, te avisamos por acá.";
+      }
+      await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
+    }
   }
   // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no
   // puede contestarla con lo que sabe el negocio, le avisamos a Walter.
