@@ -5,6 +5,19 @@
 <script src="/seguimiento.js"></script>
 <script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+/* iPhone: Safari agranda la pantalla solo cuando se toca un campo con letra
+   chica (o cuando el panel enfoca uno al abrir), y no la vuelve a achicar.
+   maximum-scale=1 frena ese zoom automatico; en iOS el pellizco para hacer
+   zoom a mano sigue andando. Solo en iOS: en Android ese mismo valor
+   bloquearia el pellizco. */
+(function () {
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var vp = document.querySelector('meta[name=viewport]');
+  if (ios && vp) vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0');
+})();
+</script>
 <title>Tienda — BRUWAL</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="robots" content="noindex, follow">
