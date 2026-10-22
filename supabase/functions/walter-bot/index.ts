@@ -149,7 +149,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
         .gte("creado", new Date(Date.now() - 60e3).toISOString());
       if (count) return;
     }
-    await responder(canal, usuario, texto, libre, id, nombrePerfil);
+    await responder(canal, usuario, texto, libre, id, nombrePerfil, false, wa?.id);
   } catch (e) {
     console.error("atender", canal, usuario, e);
   }
@@ -157,7 +157,8 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
 
 // La respuesta del bot al mensaje id (ya guardado). pendiente: Walter le devolvió la charla al bot y este
 // mensaje del cliente había quedado sin contestar mientras la atendía él.
-async function responder(canal: Canal, usuario: string, texto: string, libre: boolean, id: number | null, nombrePerfil?: string, pendiente = false) {
+// waId: el id de WhatsApp del mensaje, para mostrarle al cliente que estamos escribiendo
+async function responder(canal: Canal, usuario: string, texto: string, libre: boolean, id: number | null, nombrePerfil?: string, pendiente = false, waId?: string | null) {
   const [cfg, conv] = await Promise.all([
     config(),
     db.from("walter_conversaciones").select("estado, actualizado, bot_pausado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
@@ -197,6 +198,9 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
       for (const t of await sinResponder(canal, usuario, id)) if (tipoSuelto(cfg, t)) estado = procesar(estado, t, cfg).estado;
     }
   }
+  // Una respuesta larga que llega al instante delata al bot: el cliente ve "escribiendo…" mientras la armamos
+  if (canal === "whatsapp" && waId) aparte.push(escribiendo(waId));
+  const desde = Date.now();
 
   // Ya anotado: Walter puede haberle cambiado el día en Pedidos, y el bot tiene que decir el que quedó
   if (estado?.step === "done" && estado.d.cuando) {
@@ -242,6 +246,17 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   const r0 = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);
   // En WhatsApp el nombre sale del perfil: no hace falta preguntarlo
   const r = conPerfil(r0, nombreDePerfil(nombrePerfil), cfg);
+  // La misma pregunta otra vez sin que la charla avance: la segunda la dice con otras palabras (redactar),
+  // a la tercera no insiste y le avisa al equipo
+  const igual = !!estado && r.estado.step === estado.step && JSON.stringify(r.estado.d) === JSON.stringify(estado.d) &&
+    !r.consulta && !r.pedido && !r.derivar && estado.step !== "done";
+  r.estado.rep = igual ? (estado!.rep ?? 0) + 1 : 0;
+  if (r.estado.rep >= 2) {
+    const ult = r.respuestas[r.respuestas.length - 1];
+    if (ult) ult.text += "\n\nPara que no des vueltas, igual le aviso a alguien del equipo y te escribe por acá.";
+    r.derivar = true;
+    r.estado.rep = 0;
+  }
   await db.from("walter_conversaciones").upsert({
     canal, usuario, estado: r.estado, actualizado: new Date().toISOString(), bot_pausado: false,
     ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
@@ -272,7 +287,49 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     if (!resp) await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
   }
   // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
-  await enviar(canal, usuario, await redactar(clave, texto, juntar(r.respuestas), charla));
+  const salen = await redactar(clave, texto, juntar(r.respuestas), charla);
+  await new Promise((ok) => setTimeout(ok, Math.max(0, demora(salen[0]?.text ?? "") - (Date.now() - desde))));
+  await enviar(canal, usuario, salen);
+  // Primera charla con este cliente: después del saludo, la nota de voz que grabó Walter
+  if (!estado && canal === "whatsapp") await mandarBienvenida(cfg, usuario).catch((e) => console.error("bienvenida", e));
+}
+
+const BIENVENIDA = "[Audio de bienvenida]";
+
+// Una sola vez por cliente. Sale como nota de voz si es ogg; en la charla queda el texto, sin el archivo,
+// para que limpiarMedios no lo borre del bucket.
+async function mandarBienvenida(cfg: Config, usuario: string) {
+  const path = (cfg as Config & { audioBienvenida?: string }).audioBienvenida;
+  if (!path) return;
+  const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true })
+    .eq("canal", "whatsapp").eq("usuario", usuario).eq("texto", BIENVENIDA);
+  if (count) return;
+  const { data: archivo, error } = await db.storage.from(BUCKET).download(path);
+  if (error || !archivo) return console.error("bienvenida bajar", error?.message);
+  const tipo = archivo.type || (path.endsWith(".ogg") ? "audio/ogg" : "audio/mpeg");
+  const phone = await secreto("WA_PHONE_ID"), token = await secreto("WA_TOKEN");
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", tipo);
+  form.append("file", archivo, path.split("/").pop()!);
+  const sub = await fetch(`${GRAPH}/${phone}/media`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+  const sj = await sub.json().catch(() => ({}));
+  if (!sub.ok || !sj.id) return console.error("bienvenida subir", sub.status, JSON.stringify(sj));
+  const { error: motivo, id: waId } = await graphEnviar(`${phone}/messages`, token, {
+    messaging_product: "whatsapp", to: usuario, type: "audio", audio: { id: sj.id, ...(tipo === "audio/ogg" ? { voice: true } : {}) },
+  });
+  if (motivo) return console.error("bienvenida mandar", motivo);
+  await log("whatsapp", usuario, "sale", BIENVENIDA, "bot", { tipo: "audio", path: null }, { id: waId });
+}
+
+// Lo que tardaría una persona en escribirlo: 1,5 s más un poco por letra, hasta 6 s
+const demora = (texto: string) => Math.min(6000, 1500 + texto.length * 20);
+
+// Marca el mensaje como leído y muestra "escribiendo…" hasta que sale la respuesta (o 25 s)
+async function escribiendo(waId: string) {
+  const motivo = await graphError(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
+    { messaging_product: "whatsapp", status: "read", message_id: waId, typing_indicator: { type: "text" } });
+  if (motivo) console.error("escribiendo", motivo);
 }
 
 // Cuánto espera el bot por si el cliente manda otro mensaje enseguida
@@ -318,7 +375,9 @@ async function charlaReciente(canal: Canal, usuario: string, hastaId: number): P
 }
 
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
-  for (const r of respuestas) {
+  for (const [i, r] of respuestas.entries()) {
+    // El segundo mensaje no llega pegado al primero
+    if (i) await new Promise((ok) => setTimeout(ok, Math.min(3000, demora(r.text) / 2)));
     const id = await log(canal, usuario, "sale", r.text, "bot");
     const opts = (r.options ?? []).slice(0, canal === "whatsapp" ? 10 : 13);
     if (canal === "whatsapp") {
@@ -675,6 +734,7 @@ async function panel(req: Request): Promise<Response> {
       return respuesta({ ok: true });
     }
     if (b.accion === "perfil_guardar") return await panelPerfilGuardar(b);
+    if (b.accion === "bienvenida") return await panelBienvenida(b.audio);
     return respuesta({ error: "Acción desconocida" }, 400);
   } catch (e) {
     console.error("panel", b.accion, e);
@@ -910,6 +970,30 @@ async function panelBorrarPedidos(ids: unknown) {
   const { data, error } = await db.from("walter_pedidos").delete().in("id", lista).select("id");
   if (error) throw error;
   return respuesta({ ok: true, borrados: (data ?? []).map((x) => x.id) });
+}
+
+// La nota de voz que el bot manda en la primera charla con cada cliente (Precios y ajustes › Audio de bienvenida).
+// audio null la quita. Queda en el bucket y su ruta en walter_config.data.audioBienvenida.
+async function panelBienvenida(audio: unknown) {
+  const { data: fila, error: e1 } = await db.from("walter_config").select("data").eq("id", 1).single();
+  if (e1) throw e1;
+  const data = { ...(fila.data as Record<string, unknown>) };
+  const vieja = typeof data.audioBienvenida === "string" ? data.audioBienvenida : null;
+  let path: string | null = null;
+  if (audio !== null) {
+    const m = typeof audio === "string" ? audio.match(SALIDA.audio.tipos) : null;
+    if (!m) return respuesta({ error: `El audio tiene que ser ${SALIDA.audio.formato}.` }, 400);
+    const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    if (bytes.length > SALIDA.audio.max * 1024 * 1024) return respuesta({ error: `El audio pesa demasiado (hasta ${SALIDA.audio.max} MB).` }, 400);
+    path = `bienvenida/${Date.now()}.${EXT_SALIDA[m[1]]}`;
+    const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: m[1] });
+    if (error) throw error;
+    data.audioBienvenida = path;
+  } else delete data.audioBienvenida;
+  const { error: e2 } = await db.from("walter_config").update({ data, actualizado: new Date().toISOString() }).eq("id", 1);
+  if (e2) throw e2;
+  if (vieja && vieja !== path) await db.storage.from(BUCKET).remove([vieja]);
+  return respuesta({ ok: true, path });
 }
 
 // ---------- Perfil de WhatsApp del bot: lo que ve el cliente al tocar el nombre ----------

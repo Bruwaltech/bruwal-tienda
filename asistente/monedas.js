@@ -2094,6 +2094,7 @@ const panelMonedas = (() => {
   }
 
   function pintarPrecios() {
+    pintarBienvenida();
     // Si Walter está escribiendo, un "Actualizar" no le pisa lo que tipeó.
     if (preciosEditados) return;
     document.querySelectorAll('#mFormPrecios [data-cfg]').forEach((el) => {
@@ -2106,6 +2107,90 @@ const panelMonedas = (() => {
     $('mPreciosEstado').textContent = cfgActualizado
       ? 'Último cambio: ' + fechaHora(cfgActualizado)
       : '';
+  }
+
+  // Audio de bienvenida: se graba acá con el mismo motor que los audios de las charlas y lo guarda walter-bot
+  let bienvenida = null;
+  const MAX_BIENVENIDA = 60;
+
+  async function pintarBienvenida() {
+    const path = cfg.audioBienvenida || '';
+    const oir = $('mBienvenidaOir');
+    $('mBienvenidaQuitar').classList.toggle('hidden', !path || !!bienvenida);
+    oir.classList.toggle('hidden', !path);
+    if (!bienvenida) $('mBienvenidaGrabar').textContent = path ? 'Grabar otro' : 'Grabar audio';
+    if (!path || oir.dataset.path === path) return;
+    oir.dataset.path = path;
+    const r = await llamarBot({ accion: 'medios', paths: [path] });
+    if (r.urls && r.urls[path] && oir.dataset.path === path) oir.src = r.urls[path];
+  }
+
+  async function grabarBienvenida() {
+    if (bienvenida) return terminarBienvenida();
+    if (!puedeGrabar()) return toast('Este navegador no puede grabar audio.');
+    // Como en las charlas: el contexto se crea en el mismo toque, si no Safari lo deja mudo
+    const ctx = new Ctx();
+    ctx.resume();
+    let stream;
+    try {
+      stream = await abrirMic();
+    } catch (err) {
+      ctx.close();
+      return toast('No se pudo usar el micrófono. Fijate que el navegador tenga permiso para usarlo en esta página.');
+    }
+    let motor;
+    try {
+      motor = await empezarMotor(stream, ctx);
+    } catch (err) {
+      return toast('No se pudo grabar en este navegador.');
+    }
+    const b = { motor, inicio: Date.now() };
+    bienvenida = b;
+    $('mBienvenidaGrabar').textContent = 'Terminar y guardar';
+    $('mBienvenidaQuitar').classList.add('hidden');
+    b.reloj = setInterval(() => {
+      const s = Math.floor((Date.now() - b.inicio) / 1000);
+      $('mBienvenidaEstado').textContent = 'Grabando… ' + s + ' s';
+      if (s >= MAX_BIENVENIDA) terminarBienvenida();
+    }, 250);
+  }
+
+  async function terminarBienvenida() {
+    const b = bienvenida;
+    if (!b) return;
+    bienvenida = null;
+    clearInterval(b.reloj);
+    clearTimeout(cerrarMic.reloj);
+    cerrarMic.reloj = setTimeout(cerrarMic, MIC_ABIERTO);
+    const boton = $('mBienvenidaGrabar');
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+    const corto = Date.now() - b.inicio < 1500;
+    const archivo = corto ? (b.motor.cancelar(), null) : await b.motor.terminar().catch(() => null);
+    let error = corto ? 'Muy corto: grabá unos segundos.' : !archivo ? 'No se pudo grabar. Probá de nuevo.' : null;
+    if (!error) {
+      const audio = await new Promise((ok) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(fr.result);
+        fr.readAsDataURL(archivo);
+      });
+      const r = await llamarBot({ accion: 'bienvenida', audio });
+      if (r.error) error = r.error;
+      else cfg.audioBienvenida = r.path;
+    }
+    boton.disabled = false;
+    $('mBienvenidaEstado').textContent = error ? '' : 'Guardado: le llega a cada cliente nuevo.';
+    if (error) toast(error);
+    pintarBienvenida();
+  }
+
+  async function quitarBienvenida() {
+    if (!confirm('¿Quitar el audio de bienvenida? Los clientes nuevos ya no lo van a recibir.')) return;
+    const r = await llamarBot({ accion: 'bienvenida', audio: null });
+    if (r.error) return toast(r.error);
+    delete cfg.audioBienvenida;
+    $('mBienvenidaEstado').textContent = '';
+    pintarBienvenida();
   }
 
   async function guardarPrecios(e) {
@@ -2320,6 +2405,8 @@ const panelMonedas = (() => {
     $('mAgregarRecorrido').addEventListener('click', agregarRecorrido);
     $('mRecorridos').addEventListener('click', quitarRecorrido);
     $('mFormPrecios').addEventListener('submit', guardarPrecios);
+    $('mBienvenidaGrabar').addEventListener('click', grabarBienvenida);
+    $('mBienvenidaQuitar').addEventListener('click', quitarBienvenida);
 
     $('mPerfilArchivo').addEventListener('change', elegirFoto);
     $('mGuardarPerfil').addEventListener('click', guardarPerfil);

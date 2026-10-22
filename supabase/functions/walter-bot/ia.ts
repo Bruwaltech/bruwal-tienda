@@ -130,7 +130,9 @@ Reglas:
 - No cambies palabras que no entendés del mensaje del cliente ni las repitas si suenan raras (los audios pasados a texto traen errores).
 - Cuando hay opciones, el cliente las ve como botones abajo del mensaje: no hace falta enumerarlas, pero si nombrás una, con el mismo nombre. Lo que está entre comillas va tal cual, con comillas.
 - Como mucho un emoji por mensaje. Nada de "estimado" ni "le informamos".
-- Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó.`;
+- Corto, como en un chat: una a tres frases por mensaje. Las listas de precios y el resumen del pedido van como vienen.
+- Variá cómo arrancás: no empieces siempre con "¡Buenísimo!", "¡Dale!" o "¡Genial!", y muchas veces no hace falta ninguna exclamación.
+- Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó. Si el bot ya hizo esta misma pregunta, hacela con otras palabras y más corta.`;
 
 // Los datos que la respuesta reescrita tiene que conservar sí o sí: montos, números y textos entre comillas
 const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[^"]+"/g) ?? []).map((x) => x.replace(/\$\s/, "$"));
