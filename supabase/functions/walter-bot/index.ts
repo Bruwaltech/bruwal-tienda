@@ -9,7 +9,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { conPerfil, type Config, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
@@ -75,7 +75,15 @@ Deno.serve(async (req) => {
   // 3) Walter desde el panel: lleva la sesión del usuario, no la firma de Meta
   if (url.searchParams.get("tarea") === "panel") {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-    return panel(req);
+    const r = await panel(req);
+    // Lo que queda corriendo después de contestar (pasar a texto el audio de Walter)
+    if (aparte.length) {
+      const resto = Promise.allSettled(aparte.splice(0));
+      const rt = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
+      if (rt) rt.waitUntil(resto);
+      else await resto;
+    }
+    return r;
   }
 
   // 4) Mensajes entrantes
@@ -174,7 +182,8 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   if (id && pendiente) libre = true;
   else if (id) {
     // "Hola tengo": la frase sigue en el próximo mensaje, se espera un poco más
-    await new Promise((r) => setTimeout(r, pareceCortado(texto) ? ESPERA_CORTADO : ESPERA_SEGUIDOS));
+    // Si va tocando los tipos de la lista uno atrás de otro, también: se contestan todos juntos
+    await new Promise((r) => setTimeout(r, pareceCortado(texto) ? ESPERA_CORTADO : tipoSuelto(cfg, texto) ? ESPERA_OPCION : ESPERA_SEGUIDOS));
     const { data: nuevos } = await db.from("walter_mensajes").select("texto")
       .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gt("id", id);
     // Un "hola" o una foto sin texto que llegan después no contestan esto: en ese caso contesta este
@@ -183,6 +192,10 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     if (await sinRespuesta(canal, usuario, id)) libre = true;
     // "¿Estás?" mientras el bot contesta (o recién contestó) lo anterior: no hace falta otra respuesta
     if (esPing(texto) && await escribioRecien(canal, usuario, id)) return;
+    // Los tipos que tocó antes de este (sin respuesta todavía) se anotan en orden, para pedirle las cantidades de todos
+    if (estado && tipoSuelto(cfg, texto)) {
+      for (const t of await sinResponder(canal, usuario, id)) if (tipoSuelto(cfg, t)) estado = procesar(estado, t, cfg).estado;
+    }
   }
 
   // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
@@ -238,6 +251,7 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
 // Cuánto espera el bot por si el cliente manda otro mensaje enseguida
 const ESPERA_SEGUIDOS = 5000;
 const ESPERA_CORTADO = 15000;
+const ESPERA_OPCION = 10000;
 
 // Mensajes del cliente de los últimos 2 minutos, antes del actual, que el bot todavía no contestó
 async function sinRespuesta(canal: Canal, usuario: string, hastaId: number): Promise<number> {
@@ -250,6 +264,17 @@ async function sinRespuesta(canal: Canal, usuario: string, hastaId: number): Pro
   return count ?? 0;
 }
 
+// Los textos que mandó el cliente en los últimos 2 minutos, antes del actual y después de la última respuesta, en orden
+async function sinResponder(canal: Canal, usuario: string, hastaId: number): Promise<string[]> {
+  const { data: ult } = await db.from("walter_mensajes").select("id").eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "sale").lt("id", hastaId).order("id", { ascending: false }).limit(1).maybeSingle();
+  let q = db.from("walter_mensajes").select("texto").eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra")
+    .lt("id", hastaId).gte("creado", new Date(Date.now() - 120e3).toISOString()).order("id");
+  if (ult) q = q.gt("id", ult.id);
+  const { data } = await q;
+  return (data ?? []).map((m) => String(m.texto));
+}
+
 // El cliente ya había escrito algo en los 2 minutos antes de este mensaje
 async function escribioRecien(canal: Canal, usuario: string, hastaId: number): Promise<boolean> {
   const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("canal", canal).eq("usuario", usuario)
@@ -260,9 +285,9 @@ async function escribioRecien(canal: Canal, usuario: string, hastaId: number): P
 // Los últimos mensajes antes del actual, del más viejo al más nuevo
 async function charlaReciente(canal: Canal, usuario: string, hastaId: number): Promise<string> {
   const { data } = await db.from("walter_mensajes").select("direccion, autor, texto").eq("canal", canal).eq("usuario", usuario)
-    .lt("id", hastaId).gte("creado", new Date(Date.now() - 2 * 86400e3).toISOString()).order("id", { ascending: false }).limit(8);
+    .lt("id", hastaId).gte("creado", new Date(Date.now() - 2 * 86400e3).toISOString()).order("id", { ascending: false }).limit(14);
   return (data ?? []).reverse()
-    .map((m) => `${m.direccion === "entra" ? "Cliente" : m.autor === "walter" ? "Walter" : "Bot"}: ${String(m.texto).slice(0, 300)}`).join("\n");
+    .map((m) => `${m.direccion === "entra" ? "Cliente" : m.autor === "walter" ? "Walter" : "Bot"}: ${String(m.texto).slice(0, 500)}`).join("\n");
 }
 
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
@@ -508,7 +533,27 @@ async function enviarAvisos() {
       }
     }
   }
+  await avisarPorVencer().catch((e) => console.error("avisar por vencer", e));
   return enviados + await avisarDia(hoy, manana);
+}
+
+// A las 20 horas del último mensaje de un cliente que espera respuesta, le avisamos a Walter: a las 24
+// WhatsApp ya no deja escribirle libre y solo queda el saludo aprobado. Corre cada 15 minutos.
+async function avisarPorVencer() {
+  const desde = Date.now() - 20 * 3600e3 - 15 * 60e3, hasta = Date.now() - 20 * 3600e3;
+  const { data: convs } = await db.from("walter_conversaciones").select("canal, usuario, nombre_perfil")
+    .eq("canal", "whatsapp").gte("actualizado", new Date(Date.now() - 2 * 86400e3).toISOString());
+  for (const c of convs ?? []) {
+    const { data: ult } = await db.from("walter_mensajes").select("direccion, creado, texto").eq("canal", c.canal).eq("usuario", c.usuario)
+      .order("id", { ascending: false }).limit(1).maybeSingle();
+    const t = ult ? new Date(ult.creado).getTime() : 0;
+    if (!ult || ult.direccion !== "entra" || t < desde || t >= hasta) continue;
+    // Un 👍 o un "gracias" no espera respuesta
+    if (/^(|ok|oka|okey|dale|gracias|muchas gracias|listo|joya|perfecto|genial|buenisimo|de nada|chau)$/.test(norm(String(ult.texto)).replace(/[.,!]/g, "").trim())) continue;
+    const vence = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false })
+      .format(new Date(t + VENTANA));
+    await avisarWalter(c.canal as Canal, c.usuario, `Te escribió hace 20 horas y espera respuesta. Contestale antes de las ${vence}: después WhatsApp solo deja mandarle el saludo.`, c.nombre_perfil ?? undefined);
+  }
 }
 
 // Apenas Walter le pone día y turno a un pedido, se lo decimos al cliente. Solo si la charla sigue
@@ -549,6 +594,10 @@ const CORS = {
 const respuesta = (cuerpo: Record<string, unknown>, status = 200) => Response.json(cuerpo, { status, headers: CORS });
 
 // El texto de la plantilla primer_contacto tal como se cargó en Meta (para que el panel muestre lo que le llegó)
+// Para retomar una charla que ya venía: no le vuelve a preguntar qué tiene. Plantilla retomar_charla, con
+// {{1}} el nombre; mientras Meta no la apruebe, sale primer_contacto.
+const SALUDO_RETOMAR = "¡Hola {{1}}! Te escribimos de Punto Metales para seguir con lo que venías hablando con nosotros. " +
+  "Respondé este mensaje y lo seguimos por acá.";
 const SALUDO_CONTACTO = "¡Hola {{1}}! Te escribimos de Punto Metales: compramos monedas, llaves, cobre y bronce, " +
   "y pasamos a retirar por tu zona. ¿Tenés algo para vender? Respondé este mensaje y te pasamos el precio.";
 
@@ -680,7 +729,11 @@ async function panelEnviarMedio(canal: string, usuario: string, tipo: "imagen" |
   const path = `${usuario}/${Date.now()}-walter.${ext}`;
   const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: m[1] });
   if (error) console.error("media salida guardar", error.message);
-  await log(canal, usuario, "sale", texto || ETIQUETA[tipo], "walter", { tipo, path: error ? null : path }, { id: waId, ctx: cita });
+  const id = await log(canal, usuario, "sale", texto || ETIQUETA[tipo], "walter", { tipo, path: error ? null : path }, { id: waId, ctx: cita });
+  // Lo que dijo Walter en el audio queda como texto, para que el bot sepa qué se habló si después sigue él
+  if (tipo === "audio" && id) {
+    aparte.push(transcribir(bytes, m[1], ext).then((dicho) => dicho ? db.from("walter_mensajes").update({ texto: dicho }).eq("id", id) : null));
+  }
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
   return respuesta({ ok: true });
@@ -795,18 +848,26 @@ async function panelRetomar(canal: string, usuario: string) {
   // Un saludo por día: si ya salió y el cliente no contestó, otro no suma (y Meta cobra cada uno)
   const { data: ult } = await db.from("walter_mensajes").select("texto, creado").eq("canal", canal).eq("usuario", usuario)
     .order("id", { ascending: false }).limit(1).maybeSingle();
-  const saludoDe = SALUDO_CONTACTO.split("{{1}}")[1];
-  if (ult && String(ult.texto).endsWith(saludoDe) && Date.now() - new Date(ult.creado).getTime() < VENTANA) {
+  const yaSaludo = [SALUDO_CONTACTO, SALUDO_RETOMAR].some((x) => String(ult?.texto ?? "").endsWith(x.split("{{1}}")[1]));
+  if (ult && yaSaludo && Date.now() - new Date(ult.creado).getTime() < VENTANA) {
     return respuesta({ error: "Ya le mandaste el saludo hoy. Cuando conteste vas a poder escribirle." }, 409);
   }
   const nombre = (nombreDePerfil(conv.nombre_perfil ?? "") ?? "").split(" ")[0] || "de nuevo";
-  const { error: motivo, id: waId } = await graphEnviar(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"), {
+  const phone = await secreto("WA_PHONE_ID"), token = await secreto("WA_TOKEN");
+  const plantilla = (name: string) => graphEnviar(`${phone}/messages`, token, {
     messaging_product: "whatsapp", to: usuario, type: "template",
-    template: { name: (await secreto("WA_TEMPLATE_CONTACTO")) || "primer_contacto", language: { code: "es_AR" },
-      components: [{ type: "body", parameters: [{ type: "text", text: nombre }] }] },
+    template: { name, language: { code: "es_AR" }, components: [{ type: "body", parameters: [{ type: "text", text: nombre }] }] },
   });
+  // Primero la de retomar; si Meta todavía no la tiene aprobada, el saludo de siempre
+  let texto = SALUDO_RETOMAR;
+  let { error: motivo, id: waId } = await plantilla((await secreto("WA_TEMPLATE_RETOMAR")) || "retomar_charla");
+  if (motivo) {
+    console.log("retomar_charla no salió, va primer_contacto:", motivo);
+    texto = SALUDO_CONTACTO;
+    ({ error: motivo, id: waId } = await plantilla((await secreto("WA_TEMPLATE_CONTACTO")) || "primer_contacto"));
+  }
   if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
-  await log(canal, usuario, "sale", SALUDO_CONTACTO.replace("{{1}}", nombre), "walter", undefined, { id: waId });
+  await log(canal, usuario, "sale", texto.replace("{{1}}", nombre), "walter", undefined, { id: waId });
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
   return respuesta({ ok: true });

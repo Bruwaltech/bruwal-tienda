@@ -24,6 +24,8 @@ export type Datos = {
   loc?: string; mat?: "Monedas" | "Cobre" | "Bronce"; modo?: "kg" | "u"; tipo?: string; cant?: number;
   // Las monedas de otros tipos que ya sumó al pedido; la que está cotizando ahora va en modo, tipo y cant
   items?: Linea[];
+  // Los tipos que eligió de la lista uno atrás de otro, todavía sin cantidad ("25 plateada", "$1", "$10")
+  pend?: string[];
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
 };
 // Pistas: lo que la IA entendió de un mensaje escrito libremente y todavía no se usó
@@ -172,6 +174,8 @@ export function lineas(d: Datos): Linea[] {
   return todas;
 }
 const varias = (d: Datos) => lineas(d).length > 1;
+// Los tipos que eligió y todavía no tienen cantidad
+const pendientes = (d: Datos) => (d.pend ?? []).filter((t) => !lineas(d).some((l) => l.tipo === t));
 // "300 monedas de $10 y 2 kg de monedas"; con una sola línea, como siempre
 const queTxt = (d: Datos) => (varias(d) ? enLista(lineas(d).map((l) => lineaTxt({ mat: "Monedas", ...l }))) : lineaTxt(d));
 // "a, b y c"
@@ -210,6 +214,7 @@ export function hechos(c: Config): string {
     precios(c),
     // Walter compra las monedas por unidad; el kilo es solo para las mezcladas o las que no quieren contar
     tiposDe(c).length ? `Las monedas las compramos por unidad. Solo si están mezcladas o no las quieren contar, por kilo a ${fmt(c.monedaKg)}.` : "",
+    tiposDe(c).length ? `Solo compramos estas monedas: ${tiposDe(c).map((t) => t.n).join(", ")}. Si tiene de otras, que las separe: esas no las compramos.` : "",
     "En un mismo pedido se pueden juntar monedas de varios tipos y llaves: se pasa la lista (por ejemplo 50 de $1 y 20 de 50 centavos) y se suma todo.",
     `Pasamos a buscar (a domicilio o en un punto de encuentro) en: ${LOCALIDADES.map((x) => x.n).join(", ")}.`,
     c.minRetiro ? `Pasamos a buscar desde ${kgf(c.minRetiro)}; con menos, lo traen al depósito.` : "",
@@ -243,13 +248,21 @@ function pregunta(e: Estado, c: Config): Respuesta {
     case "cat": return { text: "¿Qué tenés para vender?", options: ["Monedas", "Cobre", "Bronce"] };
     case "unit": return { text: "¿Las tenés contadas o pesadas?", options: ["Por kilo", "Por unidad"] };
     case "tipo":
+      if (pendientes(d).length) {
+        const ps = pendientes(d);
+        const mon = ps.filter((x) => !esLlave(x));
+        const que = (mon.length ? "monedas de " + enLista(mon) : "") + (mon.length < ps.length ? (mon.length ? " y llaves" : "llaves") : "");
+        return { text: `Anotado: tenés ${que}. Pasame cuántas tenés de cada una, más o menos. Por ejemplo: ${enLista(ps.slice(0, 2).map((x, i) => (i ? "20" : "50") + " de " + x))}. Si las tenés que contar, tranqui, me las pasás cuando puedas.` };
+      }
       if (d.items?.length) return { text: "¿Cuáles son las otras y cuántas tenés?", options: tiposDe(c).map((t) => t.n) };
       // Una pregunta abierta: con la lista de una ("50 de $1 y 20 de 50 centavos") se cotiza todo junto
       return {
         text: `Contame qué monedas tenés y cuántas de cada una, más o menos. Por ejemplo: ${ejemploLista(c)}. Las pagamos por unidad, cada tipo a su precio.`,
         options: tiposDe(c).map((t) => t.n),
       };
-    case "mas": return { text: "¿Tenés de algún otro tipo? Lo sumo al mismo pedido.", options: [OTRO_TIPO, NADA_MAS] };
+    case "mas":
+      if (pendientes(d).length) return { text: `¿Y cuántas tenés de ${enLista(pendientes(d).map((x) => (esLlave(x) ? "llaves" : "las de " + x)))}?`, options: [NADA_MAS] };
+      return { text: "¿Tenés de algún otro tipo? Lo sumo al mismo pedido.", options: [OTRO_TIPO, NADA_MAS] };
     case "qty":
       if (d.mat === "Monedas") {
         if (d.modo !== "u") return { text: "¿Cuántos kilos tenés, aproximadamente?" };
@@ -285,6 +298,13 @@ function ejemploLista(c: Config) {
   if (ts.some((t) => esLlave(t.n))) ej.push("10 llaves");
   return enLista(ej.length ? ej : ["200 de " + (ts[0]?.n ?? "$10")]);
 }
+
+/** Tocó un tipo de la lista (o lo escribió solo): "25 centavos plateada", "$10". */
+export const tipoSuelto = (c: Config, s: string) => tiposDe(c).find((t) => norm(t.n) === norm(s).replace(/[.,]/g, " ").replace(/\s+/g, " ").trim())?.n ?? null;
+
+/** "Las tengo que contar, después te paso": todavía no tiene las cantidades. */
+const DESPUES = /(las?|los) tengo que (contar|pesar)|tengo que contar|(las|los) cuento y|cuando (las |los )?(tenga|cuente|pese)|despues te (las |los )?(paso|aviso|digo|mando)|te (las |los )?paso (despues|mas tarde|luego)|mas tarde te|ahora no (se|las tengo)|no las conte|todavia no las conte/;
+export const esParaDespues = (s: string) => DESPUES.test(norm(s));
 
 /** "¿Estás?", "hola??", "?": quiere saber si hay alguien del otro lado. */
 export const esPing = (s: string) => /\?/.test(s) &&
@@ -352,6 +372,19 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     if (parseNum(t) === null) return out({ text: precios(c, d.mat === "Monedas" && !/cobre|bronce/.test(n)) }, pregunta(e, c));
   }
 
+  // Va tocando los tipos de la lista uno atrás de otro: los anotamos todos y le pedimos las cantidades juntas
+  const suelto = d.mat === "Monedas" ? tipoSuelto(c, t) : null;
+  if (suelto && (e.step === "qty" && d.modo === "u" && d.tipo && d.tipo !== suelto || e.step === "tipo" && pendientes(d).length)) {
+    d.pend = [...new Set([...pendientes(d), ...(e.step === "qty" && d.tipo ? [d.tipo] : []), suelto])];
+    if (e.step === "qty") { delete d.tipo; delete d.modo; delete d.cant; }
+    e.step = "tipo";
+    return out(pregunta(e, c));
+  }
+  // "Las tengo que contar": sin volver a preguntar lo mismo
+  if (["tipo", "qty", "mas"].includes(e.step) && esParaDespues(t) && parseNum(t) === null) {
+    return out({ text: "¡Dale, sin apuro! Cuando las tengas, pasame cuántas tenés de cada una y te hago la cuenta." });
+  }
+
   switch (e.step) {
     case "out":
       if (!findLoc(t)) return out(pregunta(e, c));
@@ -368,7 +401,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         });
       }
       d.loc = l; e.step = "cat";
-      return out({ text: `¡Genial, en ${l} trabajamos! ¿Qué querés vender?`, options: ["Monedas", "Cobre", "Bronce"] });
+      return out({ text: `¡Genial, en ${l} trabajamos! ¿Qué tenés para vender?`, options: ["Monedas", "Cobre", "Bronce"] });
     }
     case "cat": {
       // Solo llaves; con llaves y monedas va a la pregunta abierta de los tipos
@@ -529,8 +562,9 @@ export function conPerfil(r: Resultado, nombre: string | null, c: Config): Resul
 }
 
 // Lo que la IA entendió de un mensaje. otraLoc: nombró una localidad que no está en la lista.
+// viaja: vive lejos pero va a estar en una localidad de la lista ("soy de Rafaela y el finde voy a Beltrán")
 export type Lectura = Pistas & {
-  otraLoc?: boolean;
+  otraLoc?: boolean; viaja?: boolean;
   intencion?: "precios" | "depositos" | "humano" | "otro" | "prohibido" | "no_vende" | "consulta";
 };
 
@@ -579,8 +613,10 @@ const esPregunta = (s: string) => /[?¿]/.test(s) &&
   !/(precio|cuanto pagan|cotizacion|a cuanto|horario|deposito|donde estan|hablar|humano|persona)/.test(norm(s));
 
 // La IA saca datos también de la charla reciente: cuentan solo los que el bot todavía no tenía
+// "Tengo de todo tipo" mientras ya van por kilo no es un dato nuevo
 const traeDatos = (l: Lectura, e: Estado | null) =>
-  !!l.cant || !!l.dir || !!l.items?.length || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k]);
+  !!l.cant || !!l.dir || !!l.items?.length || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k] &&
+    !(k === "tipo" && l.tipo === MEZCLADAS && e?.d.modo === "kg"));
 
 const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, string>> =
   { precios: "precios", depositos: "deposito", humano: "hablar con Walter" };
@@ -616,6 +652,10 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   // sin avanzar con lo que procesar entendería de las palabras sueltas
   if (l?.intencion === "consulta" && !traeDatos(l, estado) && estado && !["name", "addr"].includes(estado.step)) {
     const e: Estado = { step: estado.step, d: { ...estado.d }, ...(estado.p ? { p: estado.p } : {}) };
+    // "¿Las cuento o las peso?" mientras le pedíamos kilos: la respuesta es contarlas, así que la pregunta que sigue es cuántas de cada una
+    if (e.step === "qty" && e.d.mat === "Monedas" && e.d.modo === "kg" && tiposDe(c).length && /(cont|cuent|pes|conviene|unidad)/.test(norm(texto))) {
+      e.step = "tipo"; delete e.d.modo;
+    }
     return { estado: e, respuestas: [pregunta(e, c)], consulta: true };
   }
   // "¿Y cuánto valdrían las que tengo?": la cuenta de lo suyo, no la lista de precios
@@ -674,7 +714,14 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     r = procesar(r.estado, a.texto, c);
   }
   respuestas.push(...r.respuestas);
-  if (prefijo && respuestas.length && !respuestas.some((x) => x.text.startsWith("¡Genial, en "))) {
+  // Vive lejos pero viene a una localidad donde trabajamos: sin decir que su ciudad queda cerca
+  if (l?.viaja && r.estado.d.loc) {
+    if (prefijo) prefijo = `Donde vivís no llegamos, pero en ${r.estado.d.loc} sí trabajamos. `;
+    for (const [i, x] of respuestas.entries()) {
+      respuestas[i] = { ...x, text: x.text.replace(`¡Genial, en ${r.estado.d.loc} trabajamos!`, `Donde vivís no llegamos, pero en ${r.estado.d.loc} sí trabajamos.`) };
+    }
+  }
+  if (prefijo && respuestas.length && !respuestas.some((x) => x.text.startsWith("¡Genial, en ") || x.text.startsWith("Donde vivís"))) {
     respuestas[0] = { ...respuestas[0], text: prefijo + respuestas[0].text };
   }
 
@@ -683,7 +730,9 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   for (const k of Object.keys(p) as (keyof Pistas)[]) if (k !== "varias" && r.estado.d[k] !== undefined) delete p[k];
   const estadoFinal: Estado = { step: r.estado.step, d: r.estado.d };
   if (Object.keys(p).length) estadoFinal.p = p;
-  return { ...r, estado: estadoFinal, respuestas };
+  // Preguntó algo y además pasó datos: se avanza con los datos y también se le contesta la pregunta
+  const consulta = l?.intencion === "consulta" && !r.derivar && !r.pedido && !["name", "addr"].includes(estado?.step ?? "") ? { consulta: true } : {};
+  return { ...r, ...consulta, estado: estadoFinal, respuestas };
 }
 
 function pistasDe(l: Lectura, c: Config, texto = ""): Pistas {

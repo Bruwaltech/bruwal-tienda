@@ -21,6 +21,7 @@ function esquema(c: Config) {
     type: "object",
     properties: {
       localidad: nulo({ type: "string", enum: [...LOCALIDADES.map((l) => l.n), "Otra"] }),
+      viaja: nulo({ type: "boolean" }),
       material: nulo({ type: "string", enum: ["Monedas", "Cobre", "Bronce"] }),
       modo: nulo({ type: "string", enum: ["kg", "u"] }),
       tipo: nulo({ type: "string", enum: tipos }),
@@ -33,7 +34,7 @@ function esquema(c: Config) {
       direccion: nulo({ type: "string" }),
       intencion: nulo({ type: "string", enum: ["precios", "depositos", "humano", "otro", "prohibido", "no_vende", "consulta"] }),
     },
-    required: ["localidad", "material", "modo", "tipo", "cantidad", "monedas", "entrega", "direccion", "intencion"],
+    required: ["localidad", "viaja", "material", "modo", "tipo", "cantidad", "monedas", "entrega", "direccion", "intencion"],
     additionalProperties: false,
   };
 }
@@ -43,7 +44,8 @@ function sistema(c: Config) {
   return `Leés mensajes de WhatsApp que clientes le mandan a Punto Metales, un negocio de la zona de Rosario (Argentina) que compra monedas, llaves, cobre y bronce. Tu tarea es solo extraer datos del mensaje; otro sistema contesta.
 
 Campos (null si el mensaje no lo dice claramente; no adivines):
-- localidad: una de la lista si el cliente nombra una (aceptá apodos, abreviaturas y errores de tipeo: "Gdor Baigorria" es Baigorria, "Pto San Martín" es Puerto General San Martín). Los barrios y zonas de Rosario (zona norte, zona sur, zona oeste, centro, macrocentro, Fisherton, Alberdi, Echesortu, Arroyito, La Florida) cuentan como Rosario. "Otra" si nombra un lugar que no está en la lista.
+- localidad: una de la lista si el cliente nombra una (aceptá apodos, abreviaturas y errores de tipeo: "Gdor Baigorria" es Baigorria, "Pto San Martín" es Puerto General San Martín). Los barrios y zonas de Rosario (zona norte, zona sur, zona oeste, centro, macrocentro, Fisherton, Alberdi, Echesortu, Arroyito, La Florida) cuentan como Rosario. "Otra" si nombra un lugar que no está en la lista. Si vive en un lugar que no está en la lista pero va a estar en uno que sí (viaja, va de visita, pasa por ahí), la localidad es la de la lista.
+- viaja: true en ese caso (vive lejos y va a estar en una localidad de la lista); si no, null.
 - material: Monedas, Cobre o Bronce. Las llaves cuentan como Monedas, con tipo de llave.
 - modo: "kg" si habla de peso (kilos, bolsa de X kg), "u" si habla de cantidad de unidades contadas.
 - tipo: el tipo de moneda si lo dice. Tipos: ${tipos}. "${MEZCLADAS}" si son de varias clases.
@@ -92,6 +94,7 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
     const l: Lectura = {};
     if (j.localidad === "Otra") l.otraLoc = true;
     else if (j.localidad) l.loc = j.localidad;
+    if (j.viaja === true && j.localidad && j.localidad !== "Otra") l.viaja = true;
     if (j.material) l.mat = j.material;
     if (j.modo) l.modo = j.modo;
     if (j.tipo) l.tipo = j.tipo;
@@ -120,6 +123,8 @@ Reglas:
 - Una respuesta tuya por cada respuesta del sistema, en el mismo orden.
 - Los datos van exactos: montos, precios, kilos, cantidades, direcciones, horarios, nombres y localidades, con el mismo formato ($75.000, 7,5 kg). No agregues números.
 - No inventes datos, promesas ni condiciones. Si el sistema hace una pregunta, la tuya también la hace al final.
+- No agregues nada que el sistema no diga: ni distancias, ni si un lugar queda cerca o lejos, ni lugares, días u horarios para encontrarse. Si el cliente propone algo (un lugar, un día), no lo aceptes ni lo confirmes: eso lo arregla Walter. Podés decir que lo tenés en cuenta, nada más.
+- No cambies palabras que no entendés del mensaje del cliente ni las repitas si suenan raras (los audios pasados a texto traen errores).
 - Cuando hay opciones, el cliente las ve como botones abajo del mensaje: no hace falta enumerarlas, pero si nombrás una, con el mismo nombre. Lo que está entre comillas va tal cual, con comillas.
 - Como mucho un emoji por mensaje. Nada de "estimado" ni "le informamos".
 - Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó.`;
