@@ -270,7 +270,7 @@ function pregunta(e: Estado, c: Config): Respuesta {
       }
       return { text: `¿Cuántos kilos de ${d.mat?.toLowerCase()} tenés en total?` };
     case "mod":
-      if (soloDeposito(d, c)) return { text: "¿Te queda cómodo acercarlo a uno de los depósitos, en San Lorenzo o en Pueblo Andino?", options: ["Llevo al depósito", "Hablar con Walter"] };
+      if (soloDeposito(d, c)) return { text: "¿Te queda cómodo acercarlo a uno de los depósitos, en San Lorenzo o en Pueblo Andino?", options: ["Llevo al depósito", "Hablar con alguien"] };
       // La dirección escrita ya elige el retiro a domicilio: un mensaje menos que tocar el botón y después escribirla
       return {
         text: `¿Cómo lo hacemos? Si querés que lo pasemos a buscar, escribime la dirección en ${d.loc} (calle y número). Si no, elegí una opción.`,
@@ -282,7 +282,7 @@ function pregunta(e: Estado, c: Config): Respuesta {
         ? `¿Qué lugar de ${d.loc} te queda cómodo para encontrarnos? (plaza, estación de servicio, esquina)`
         : `¿Cuál es la dirección en ${d.loc}?`,
     };
-    case "out": return { text: "¿Querés probar con otra localidad?", options: ["Otra localidad", "Hablar con Walter"] };
+    case "out": return { text: "¿Querés probar con otra localidad?", options: ["Otra localidad", "Hablar con alguien"] };
     default: return { text: "¿Querés cotizar algo más?", options: ["Empezar de nuevo"] };
   }
 }
@@ -360,7 +360,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   // "Hola Walter" es un saludo: deriva solo si pide hablar con él
   const pideWalter = /(hablar|humano|persona)/.test(n) || /\b(con|a|pasame|llamame|llame) walter\b/.test(n);
   if (pideWalter && e.step !== "name" && e.step !== "addr") {
-    return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
+    return { ...out({ text: "Listo, le aviso a alguien del equipo y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
   }
   if (/(horario|deposito|donde estan)/.test(n) && e.step !== "addr" && e.step !== "mod") return out({ text: depositos(c) }, pregunta(e, c));
   if (/(precio|cuanto pagan|cotizacion|a cuanto)/.test(n)) {
@@ -404,7 +404,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         return out({
           text: `Por ahora retiramos en Rosario y alrededores: ${LOCALIDADES.map((x) => x.n).join(", ")}.\n` +
             `Si te queda cerca, también podés acercarte a nuestro depósito:\n\n${depositos(c)}`,
-          options: ["Otra localidad", "Hablar con Walter"],
+          options: ["Otra localidad", "Hablar con alguien"],
         });
       }
       d.loc = l; e.step = "cat";
@@ -466,7 +466,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         // Con las opciones para salir, si no sabe cuánto tiene o quiere preguntar otra cosa
         return out({ text: d.modo === "u"
           ? `Pasame un número aproximado de ${esLlave(d.tipo) ? "llaves" : "monedas"}, por ejemplo 2500.`
-          : "Pasame los kilos con un número, por ejemplo 12 o 7,5.", options: ["Hablar con Walter", "Empezar de nuevo"] });
+          : "Pasame los kilos con un número, por ejemplo 12 o 7,5.", options: ["Hablar con alguien", "Empezar de nuevo"] });
       }
       return cantidad(e, q, c);
     }
@@ -516,9 +516,21 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       d.dir = t.slice(0, 120);
       return anotar(e, c);
     }
+    case "done": {
+      // Ya anotado, pide día u horario ("¿podés buscarlo hoy 14:04?"): eso lo coordina el equipo
+      if (esCoordinar(t)) {
+        return { ...out({ text: "Lo tengo en cuenta. Se lo paso a quien arma los recorridos y te confirmamos por acá el día y el horario. 🙌" }), derivar: true };
+      }
+      if (/^(no|nop|nada|gracias|listo|ok|okey|dale|eso es todo|por ahora no)\b/.test(n)) return out({ text: "¡Dale! Cualquier cosa, escribinos por acá." });
+      return out(pregunta(e, c));
+    }
     default: return out(pregunta(e, c));
   }
 }
+
+/** Pide o propone un día u horario para el retiro. */
+export const esCoordinar = (s: string) =>
+  /\b(hoy|manana|pasado|lunes|martes|miercoles|jueves|viernes|sabado|domingo|hora|horario|cuando|vienen|venis|pasan|pasas|buscar|buscarlo|buscarlas|buscarlos|retiran|retiras|estoy|estare)\b|\d{1,2}[:.]\d{2}|\d{1,2} ?hs\b/.test(norm(s));
 
 // En "200 de 50" o "de 50 tengo 200", la cantidad es el número que no forma parte del nombre del tipo
 function cantidadConTipo(t: string, tipo: string): number | null {
@@ -543,7 +555,7 @@ function anotar(e: Estado, c: Config): Resultado {
     respuestas: [{
       // Con la dirección a la vista, para que el cliente la corrija si la escribió mal
       text: `¡Listo, ${d.nombre}! Quedó anotado:\n• ${queTxt(d)}\n• ${d.ret}: ${d.dir}, ${d.loc}\n• Estimado: ${fmt(p.monto)}\n\n` +
-        `Walter arma los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.` +
+        `Armamos los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.` +
         (p.prioridad ? "\n\nComo es una buena cantidad, te ponemos entre los primeros del recorrido." : ""),
       options: ["Empezar de nuevo"],
     }],
@@ -626,7 +638,7 @@ const traeDatos = (l: Lectura, e: Estado | null) =>
     !(k === "tipo" && l.tipo === MEZCLADAS && e?.d.modo === "kg"));
 
 const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, string>> =
-  { precios: "precios", depositos: "deposito", humano: "hablar con Walter" };
+  { precios: "precios", depositos: "deposito", humano: "hablar con alguien" };
 
 /**
  * Como procesar, con lo que la IA entendió del mensaje: contesta de una las preguntas que el
@@ -639,6 +651,8 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   if (l?.intencion === "prohibido" || (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr")) {
     return rechazar(estado, c, true, texto);
   }
+  // Ya anotado, pide día u horario: lo contesta procesar (lo coordina el equipo), sin cotizar de nuevo
+  if (estado?.step === "done" && esCoordinar(texto) && !(l?.mat || l?.tipo || l?.items?.length)) return procesar(estado, texto, c);
   // "¿Estás?": lo contesta procesar, sin que la IA lo lea como una consulta
   if (estado && esPing(texto) && !["name", "addr"].includes(estado.step)) {
     const r = procesar(estado, texto, c);
@@ -729,7 +743,9 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     }
   }
   if (prefijo && respuestas.length && !respuestas.some((x) => x.text.startsWith("¡Genial, en ") || x.text.startsWith("Donde vivís"))) {
-    respuestas[0] = { ...respuestas[0], text: prefijo + respuestas[0].text };
+    // En el primer mensaje, después del saludo
+    const i = !estado && respuestas.length > 1 && respuestas[0].text === c.saludo ? 1 : 0;
+    respuestas[i] = { ...respuestas[i], text: prefijo + respuestas[i].text };
   }
 
   // Lo que ya quedó anotado no hace falta guardarlo como pista
