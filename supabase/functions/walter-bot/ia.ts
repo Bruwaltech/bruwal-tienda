@@ -59,6 +59,8 @@ Te paso también la charla reciente. Si en mensajes anteriores del cliente hay d
 }
 
 let cliente: Anthropic | null = null;
+// Con la charla reciente en el pedido, Haiku a veces pasa los 6 segundos: con 12 casi siempre llega
+const nuevoCliente = (apiKey: string) => new Anthropic({ apiKey, timeout: 12000, maxRetries: 0 });
 
 // Para contar lo que se usa de la IA (pestaña Uso del panel): index.ts lo guarda en walter_uso
 let alUsar: ((entrada: number, salida: number) => void) | null = null;
@@ -71,7 +73,7 @@ const anotar = (res: { usage?: { input_tokens?: number; output_tokens?: number }
 export async function leer(apiKey: string, texto: string, estado: Estado | null, c: Config, charla = ""): Promise<Lectura | null> {
   if (!apiKey) return null;
   // El bot espera la lectura antes de contestar: si tarda, sigue sin ella
-  cliente ??= new Anthropic({ apiKey, timeout: 6000, maxRetries: 0 });
+  cliente ??= nuevoCliente(apiKey);
   const contexto = estado
     ? `Ya sabemos: ${JSON.stringify(estado.d)}. El bot le acaba de preguntar ${PREGUNTAS[estado.step] ?? "si quiere algo más"}.`
     : "Es el primer mensaje de la charla.";
@@ -138,7 +140,7 @@ const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[
  */
 export async function redactar(apiKey: string, cliente_dijo: string, rs: { text: string; options?: string[] }[], charla = "") {
   if (!apiKey || !rs.length) return rs;
-  cliente ??= new Anthropic({ apiKey, timeout: 6000, maxRetries: 0 });
+  cliente ??= nuevoCliente(apiKey);
   try {
     const res = await cliente.messages.create({
       model: MODELO,
@@ -195,7 +197,7 @@ Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo
 /** Respuesta a una pregunta del cliente, con los números sacados de hechos; null si no se pudo o si inventó un número. */
 export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = ""): Promise<string | null> {
   if (!apiKey) return null;
-  cliente ??= new Anthropic({ apiKey, timeout: 6000, maxRetries: 0 });
+  cliente ??= nuevoCliente(apiKey);
   try {
     const res = await cliente.messages.create({
       model: MODELO,
