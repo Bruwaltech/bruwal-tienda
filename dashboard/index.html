@@ -5,6 +5,19 @@
 <script src="/seguimiento.js"></script>
 <script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+/* iPhone: Safari agranda la pantalla solo cuando se toca un campo con letra
+   chica (o cuando el panel enfoca uno al abrir), y no la vuelve a achicar.
+   maximum-scale=1 frena ese zoom automatico; en iOS el pellizco para hacer
+   zoom a mano sigue andando. Solo en iOS: en Android ese mismo valor
+   bloquearia el pellizco. */
+(function () {
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var vp = document.querySelector('meta[name=viewport]');
+  if (ios && vp) vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0');
+})();
+</script>
 <title>BRUWALTECH v3.0 — Panel de Control</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
@@ -86,6 +99,9 @@ body {
 
 html {
   overflow-x: hidden;
+  /* Safari agranda la letra por su cuenta al girar el iPhone a horizontal. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 @keyframes fadeIn {
@@ -1188,9 +1204,47 @@ input[type="checkbox"].switch:disabled { opacity: 0.5; cursor: not-allowed; }
     background: linear-gradient(to right, transparent, var(--surface));
     pointer-events: none;
   }
-  .wrap-tabs { padding-right: 30px; }
+  .wrap-tabs { padding-left: 8px; padding-right: 30px; margin-right: 76px; }
+  .app-tabs::after { right: 76px; }
   .tab-texto-largo { display: none; }
   .tab-texto-corto { display: inline; }
+}
+
+/* Botón "Menú" de la barra de solapas: solo en el celular. */
+.tabs-todas-btn {
+  display: none;
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 76px;
+  align-items: center; justify-content: center; gap: 6px;
+  background: var(--surface);
+  border: none; border-left: 1px solid var(--line);
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  color: var(--navy);
+  cursor: pointer;
+}
+.tabs-todas-btn[aria-expanded="true"] { background: #EAF4FD; }
+.tabs-todas-menu {
+  position: absolute; left: 0; right: 0; top: 100%;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  padding: 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 12px 24px -12px rgba(21,41,77,.35);
+  max-height: calc(100dvh - 120px); overflow-y: auto;
+}
+.tabs-todas-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  min-height: 62px; padding: 8px 4px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.2;
+  color: var(--text-dark); text-align: center; cursor: pointer;
+}
+.tabs-todas-item i { font-size: 17px; color: var(--celeste); }
+.tabs-todas-item.active { border-color: var(--celeste); background: #EAF4FD; color: var(--navy); }
+.tabs-todas-item .tab-texto-largo { display: none; }
+.tabs-todas-item .tab-texto-corto { display: inline; }
+@media (max-width: 700px) {
+  .tabs-todas-btn { display: flex; }
 }
 
 .app-tab {
@@ -2127,7 +2181,65 @@ tr:last-child td { border-bottom: none; }
       <button class="app-tab" id="tabAfiliados"><i class="fa-solid fa-handshake"></i> Afiliados</button>
       <button class="app-tab hidden" id="tabEnviosFlex"><i class="fa-solid fa-truck-fast"></i> Envíos Flex</button>
     </div>
+    <!-- Solo en el celular (ver .tabs-todas-btn): en vertical entran tres
+         solapas de trece, y Walter tenía que girar el teléfono para ver el
+         resto. Este botón abre todas juntas en una grilla. -->
+    <button type="button" class="tabs-todas-btn" id="tabsTodasBtn" aria-expanded="false" aria-controls="tabsTodasMenu" aria-label="Ver todas las secciones">
+      <i class="fa-solid fa-bars"></i> <span>Menú</span>
+    </button>
+    <div class="tabs-todas-menu hidden" id="tabsTodasMenu" role="menu"></div>
   </div>
+  <script>
+  (function () {
+    var barra = document.querySelector('.app-tabs');
+    var fila = barra.querySelector('.wrap-tabs');
+    var btn = document.getElementById('tabsTodasBtn');
+    var menu = document.getElementById('tabsTodasMenu');
+
+    function cerrar() {
+      menu.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    // Se arma cada vez que se abre: qué solapas se ven depende del plan y
+    // del rubro (Agenda, Envíos Flex...), y eso cambia después de cargar.
+    function abrir() {
+      menu.innerHTML = '';
+      fila.querySelectorAll('.app-tab').forEach(function (tab) {
+        if (tab.classList.contains('hidden')) return;
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('role', 'menuitem');
+        item.className = 'tabs-todas-item' + (tab.classList.contains('active') ? ' active' : '');
+        item.innerHTML = tab.innerHTML;
+        item.addEventListener('click', function () { cerrar(); tab.click(); });
+        menu.appendChild(item);
+      });
+      menu.classList.remove('hidden');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (menu.classList.contains('hidden')) abrir(); else cerrar();
+    });
+    document.addEventListener('click', function (e) {
+      if (!menu.classList.contains('hidden') && !menu.contains(e.target)) cerrar();
+    });
+
+    // La solapa elegida queda a la vista en la fila. Si no, al elegir
+    // "Gastos" desde el menú la fila seguía mostrando Dashboard y no había
+    // forma de saber dónde estabas.
+    fila.addEventListener('click', function () {
+      setTimeout(function () {
+        var activa = fila.querySelector('.app-tab.active');
+        if (!activa) return;
+        var izq = activa.offsetLeft - (fila.clientWidth - activa.offsetWidth) / 2;
+        fila.scrollTo({ left: Math.max(0, izq), behavior: 'smooth' });
+      }, 0);
+    });
+  })();
+  </script>
 
   <main>
     <!-- DASHBOARD -->
