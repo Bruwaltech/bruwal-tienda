@@ -16,7 +16,12 @@ export type Config = {
   saludo: string;
   // manual: Walter atiende todas las charlas desde el panel y el bot no contesta ninguna
   modo?: "auto" | "manual";
+  // Los días y horarios en que Walter pasa por cada localidad (Precios y ajustes › Recorridos)
+  recorridos?: Recorrido[];
 };
+
+// dia: 0 domingo … 6 sábado. horario: como lo escribe Walter ("14 a 18 hs").
+export type Recorrido = { dia: number; turno: "Mañana" | "Tarde"; horario?: string; locs: string[] };
 
 // Una línea de monedas del pedido: un tipo contado, o mezcladas por kilo (sin tipo)
 export type Linea = { modo: "kg" | "u"; tipo?: string; cant: number };
@@ -24,16 +29,24 @@ export type Datos = {
   loc?: string; mat?: "Monedas" | "Cobre" | "Bronce"; modo?: "kg" | "u"; tipo?: string; cant?: number;
   // Las monedas de otros tipos que ya sumó al pedido; la que está cotizando ahora va en modo, tipo y cant
   items?: Linea[];
+  // Los tipos que eligió de la lista uno atrás de otro, todavía sin cantidad ("25 plateada", "$1", "$10")
+  pend?: string[];
   ret?: "Retiro a domicilio" | "Punto de encuentro" | "Depósito"; nombre?: string; dir?: string;
+  // Cuándo quedó anotado el retiro, por el recorrido ("el martes 27 a la tarde (14 a 18 hs)")
+  cuando?: string;
 };
 // Pistas: lo que la IA entendió de un mensaje escrito libremente y todavía no se usó
-export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret" | "dir">>;
+// items: varias clases de monedas con su cantidad en un mismo mensaje ("145 de 1, 58 de 50, 348 de 10")
+// varias: nombró llaves y monedas juntas, sin cantidades ("tengo monedas y llaves"): se pregunta por todo de una
+export type Pistas = Partial<Pick<Datos, "loc" | "mat" | "modo" | "tipo" | "cant" | "ret" | "dir" | "items">> & { varias?: boolean };
 export type Estado = { step: string; d: Datos; p?: Pistas };
 export type Respuesta = { text: string; options?: string[] };
 export type Pedido = Required<Pick<Datos, "loc" | "mat" | "modo" | "cant" | "ret" | "nombre">> & {
   tipo: string | null; dir: string | null; monto: number; tarifa: string; prioridad: boolean;
   // Con varios tipos de moneda: cada línea con su precio y su total (walter_pedidos.items, schema/70)
   items: (Linea & { precio: number; total: number })[] | null;
+  // El día y el turno del recorrido que pasa por su localidad; null si no hay recorrido cargado
+  dia?: string | null; turno?: "Mañana" | "Tarde" | null;
 };
 // consulta: el cliente hizo una pregunta que hay que contestar antes de seguir (la contesta la IA con hechos())
 export type Resultado = { estado: Estado; respuestas: Respuesta[]; pedido?: Pedido; derivar?: boolean; consulta?: boolean };
@@ -170,6 +183,8 @@ export function lineas(d: Datos): Linea[] {
   return todas;
 }
 const varias = (d: Datos) => lineas(d).length > 1;
+// Los tipos que eligió y todavía no tienen cantidad
+const pendientes = (d: Datos) => (d.pend ?? []).filter((t) => !lineas(d).some((l) => l.tipo === t));
 // "300 monedas de $10 y 2 kg de monedas"; con una sola línea, como siempre
 const queTxt = (d: Datos) => (varias(d) ? enLista(lineas(d).map((l) => lineaTxt({ mat: "Monedas", ...l }))) : lineaTxt(d));
 // "a, b y c"
@@ -199,7 +214,7 @@ const soloDeposito = (d: Datos, c: Config) => {
 function minTxt(d: Datos, c: Config) {
   const kg = d.modo === "u" && !varias(d) ? tipoPorNombre(c, d.tipo)?.kg : undefined;
   const eq = kg && d.tipo ? ` (unas ${Math.ceil(c.minRetiro! * kg).toLocaleString("es-AR")} ${nombreTipo(d.tipo)})` : "";
-  return `Pasamos a buscar desde ${kgf(c.minRetiro!)}${eq}. Con menos, lo podés traer a uno de nuestros depósitos.`;
+  return `Para esa cantidad no llegamos a pasar a buscarlo: retiramos desde ${kgf(c.minRetiro!)}${eq}.`;
 }
 
 /** Lo que el bot sabe del negocio, para que la IA conteste preguntas sin inventar. */
@@ -208,12 +223,14 @@ export function hechos(c: Config): string {
     precios(c),
     // Walter compra las monedas por unidad; el kilo es solo para las mezcladas o las que no quieren contar
     tiposDe(c).length ? `Las monedas las compramos por unidad. Solo si están mezcladas o no las quieren contar, por kilo a ${fmt(c.monedaKg)}.` : "",
-    "En un mismo pedido se pueden juntar monedas de varios tipos: el bot pregunta por cada tipo y suma.",
+    tiposDe(c).length ? `Solo compramos estas monedas: ${tiposDe(c).map((t) => t.n).join(", ")}. Si tiene de otras, que las separe: esas no las compramos.` : "",
+    "En un mismo pedido se pueden juntar monedas de varios tipos y llaves: se pasa la lista (por ejemplo 50 de $1 y 20 de 50 centavos) y se suma todo.",
     `Pasamos a buscar (a domicilio o en un punto de encuentro) en: ${LOCALIDADES.map((x) => x.n).join(", ")}.`,
     c.minRetiro ? `Pasamos a buscar desde ${kgf(c.minRetiro)}; con menos, lo traen al depósito.` : "",
     `Desde ${c.umbralMay} kg de cobre o bronce pagamos precio mayorista.`,
     "El monto final se confirma al pesar o contar en el momento del retiro.",
     "No compramos medidores, placas de cementerio, cables telefónicos ni piezas con numeración.",
+    recorridosTxt(c),
     depositos(c),
   ].filter(Boolean).join("\n");
 }
@@ -222,12 +239,13 @@ function depositos(c: Config) {
   return `📍 Depósito San Lorenzo: ${c.depSL}\n${c.depSLh}\n\n📍 Depósito Pueblo Andino: ${c.depPA}\n${c.depPAh}`;
 }
 // Las monedas, por unidad: el precio por kilo se dice solo si el cliente las tiene pesadas o mezcladas
-function precios(c: Config) {
+function precios(c: Config, soloMonedas = false) {
   const tipos = tiposDe(c);
   const monedas = tipos.length
     ? `• Monedas, cada una:\n` +
       tipos.map((t) => `   – ${esLlave(t.n) ? "Llaves" : "De " + t.n}: ${fmt(t.u)}`).join("\n") + "\n"
     : `• Monedas: ${fmt(c.monedaKg)} el kilo o ${fmt(c.monedaU ?? 0)} por unidad\n`;
+  if (soloMonedas && tipos.length) return `Precios de hoy:\n${monedas.trimEnd()}`;
   return `Precios de hoy:\n${monedas}` +
     `• Cobre: ${fmt(c.cobreMin)}/kg (desde ${c.umbralMay} kg: ${fmt(c.cobreMay)}/kg)\n` +
     `• Bronce: ${fmt(c.bronceMin)}/kg (desde ${c.umbralMay} kg: ${fmt(c.bronceMay)}/kg)`;
@@ -236,24 +254,37 @@ function precios(c: Config) {
 function pregunta(e: Estado, c: Config): Respuesta {
   const d = e.d;
   switch (e.step) {
-    case "loc": return { text: "¿De qué localidad nos escribís?" };
-    case "cat": return { text: "¿Qué querés vender?", options: ["Monedas", "Cobre", "Bronce"] };
+    case "loc": return { text: "¿De qué localidad nos escribís? Así me fijo si pasamos por ahí." };
+    case "cat": return { text: "¿Qué tenés para vender?", options: ["Monedas", "Cobre", "Bronce"] };
     case "unit": return { text: "¿Las tenés contadas o pesadas?", options: ["Por kilo", "Por unidad"] };
     case "tipo":
-      if (d.items?.length) return { text: "¿De qué tipo son las otras?", options: tiposDe(c).map((t) => t.n) };
-      return { text: "¿De qué monedas son? Las pagamos por unidad, cada tipo a su precio.", options: tiposDe(c).map((t) => t.n) };
-    case "mas": return { text: "¿Tenés monedas de otro tipo? Las sumo al mismo pedido.", options: [OTRO_TIPO, NADA_MAS] };
+      if (pendientes(d).length) {
+        const ps = pendientes(d);
+        const mon = ps.filter((x) => !esLlave(x));
+        const que = (mon.length ? "monedas de " + enLista(mon) : "") + (mon.length < ps.length ? (mon.length ? " y llaves" : "llaves") : "");
+        return { text: `Anotado: tenés ${que}. Pasame cuántas tenés de cada una, más o menos. Por ejemplo: ${enLista(ps.slice(0, 2).map((x, i) => (i ? "20" : "50") + " de " + x))}. Si las tenés que contar, tranqui, me las pasás cuando puedas.` };
+      }
+      if (d.items?.length) return { text: "¿Cuáles son las otras y cuántas tenés?", options: tiposDe(c).map((t) => t.n) };
+      // Una pregunta abierta: con la lista de una ("50 de $1 y 20 de 50 centavos") se cotiza todo junto
+      return {
+        text: `Contame qué monedas tenés y cuántas de cada una, más o menos. Por ejemplo: ${ejemploLista(c)}. Las pagamos por unidad, cada tipo a su precio.`,
+        options: tiposDe(c).map((t) => t.n),
+      };
+    case "mas":
+      if (pendientes(d).length) return { text: `¿Y cuántas tenés de ${enLista(pendientes(d).map((x) => (esLlave(x) ? "llaves" : "las de " + x)))}?`, options: [NADA_MAS] };
+      return { text: "¿Tenés de algún otro tipo? Lo sumo al mismo pedido.", options: [OTRO_TIPO, NADA_MAS] };
     case "qty":
       if (d.mat === "Monedas") {
         if (d.modo !== "u") return { text: "¿Cuántos kilos tenés, aproximadamente?" };
-        return { text: `¿Cuántas ${d.tipo ? nombreTipo(d.tipo) : "monedas"} son, más o menos?` };
+        return { text: `¿Y cuántas ${d.tipo ? nombreTipo(d.tipo) : "monedas"} tenés, más o menos? Con un número aproximado alcanza.` };
       }
       return { text: `¿Cuántos kilos de ${d.mat?.toLowerCase()} tenés en total?` };
     case "mod":
-      if (soloDeposito(d, c)) return { text: "¿Lo traés al depósito?", options: ["Llevo al depósito", "Hablar con Walter"] };
+      if (soloDeposito(d, c)) return { text: "¿Te queda cómodo acercarlo a uno de los depósitos, en San Lorenzo o en Pueblo Andino?", options: ["Llevo al depósito", "Hablar con alguien"] };
       // La dirección escrita ya elige el retiro a domicilio: un mensaje menos que tocar el botón y después escribirla
       return {
-        text: `¿Cómo lo hacemos? Si querés que lo pasemos a buscar, escribime la dirección en ${d.loc} (calle y número). Si no, elegí una opción.`,
+        text: (pasaTxt(c, d.loc) ? `Por ${d.loc} pasamos ${pasaTxt(c, d.loc)}. ` : "") +
+          `¿Cómo lo hacemos? Si querés que lo pasemos a buscar, escribime la dirección en ${d.loc} (calle y número). Si no, elegí una opción.`,
         options: ["Punto de encuentro", "Llevo al depósito"],
       };
     case "name": return { text: "¿A nombre de quién lo anotamos?" };
@@ -262,7 +293,7 @@ function pregunta(e: Estado, c: Config): Respuesta {
         ? `¿Qué lugar de ${d.loc} te queda cómodo para encontrarnos? (plaza, estación de servicio, esquina)`
         : `¿Cuál es la dirección en ${d.loc}?`,
     };
-    case "out": return { text: "¿Querés probar con otra localidad?", options: ["Otra localidad", "Hablar con Walter"] };
+    case "out": return { text: "¿Querés probar con otra localidad?", options: ["Otra localidad", "Hablar con alguien"] };
     default: return { text: "¿Querés cotizar algo más?", options: ["Empezar de nuevo"] };
   }
 }
@@ -270,6 +301,30 @@ function pregunta(e: Estado, c: Config): Respuesta {
 const SALUDO = "(hola|holis|buenas|buen dia|buenos dias|buenas tardes|buenas noches|que tal|como estas|como va)";
 /** "Hola", "Hola buen día", "Buenas, qué tal": nada más que un saludo. */
 export const esSaludo = (s: string) => new RegExp(`^${SALUDO}( ${SALUDO})*$`).test(norm(s).replace(/[.,]/g, " ").replace(/\s+/g, " ").trim());
+
+// "50 de $1, 20 de 50 centavos y 10 llaves", con los tipos que haya cargados
+function ejemploLista(c: Config) {
+  const ts = tiposDe(c);
+  const ej = [["$1", "50 de $1"], ["50 centavos", "20 de 50 centavos"]].filter(([n]) => ts.some((t) => t.n === n)).map(([, x]) => x);
+  if (ts.some((t) => esLlave(t.n))) ej.push("10 llaves");
+  return enLista(ej.length ? ej : ["200 de " + (ts[0]?.n ?? "$10")]);
+}
+
+/** Tocó un tipo de la lista (o lo escribió solo): "25 centavos plateada", "$10". */
+export const tipoSuelto = (c: Config, s: string) => tiposDe(c).find((t) => norm(t.n) === norm(s).replace(/[.,]/g, " ").replace(/\s+/g, " ").trim())?.n ?? null;
+
+/** "Las tengo que contar, después te paso": todavía no tiene las cantidades. */
+const DESPUES = /(las?|los) tengo que (contar|pesar)|tengo que contar|(las|los) cuento y|cuando (las |los )?(tenga|cuente|pese)|despues te (las |los )?(paso|aviso|digo|mando)|te (las |los )?paso (despues|mas tarde|luego)|mas tarde te|ahora no (se|las tengo)|no las conte|todavia no las conte/;
+export const esParaDespues = (s: string) => DESPUES.test(norm(s));
+
+/** "¿Estás?", "hola??", "?": quiere saber si hay alguien del otro lado. */
+export const esPing = (s: string) => /\?/.test(s) &&
+  /^(|estas|estan|esta|hola+|holis|hay alguien|alguien|me lees|me leen|me leiste|seguis ahi|sigues ahi|seguis|che|ey|eh|alo|y|y entonces|entonces)$/
+    .test(norm(s).replace(/[.,]/g, " ").replace(/\s+/g, " ").trim());
+
+/** "Hola tengo", "son de": el cliente cortó la frase y seguro manda otro mensaje enseguida. */
+export const pareceCortado = (s: string) =>
+  /\b(tengo|de|y|con|unas?|unos?|son|hay|las|los|el|la|tambien|ademas|mas|como|mira|te cuento)$/.test(norm(s).replace(/[.,]+$/, ""));
 
 export function nuevoEstado(): Estado { return { step: "loc", d: {} }; }
 
@@ -307,6 +362,8 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   const n = norm(t);
   const out = (...r: Respuesta[]): Resultado => ({ estado: e, respuestas: r });
 
+  // "¿Estás?": sí, y le recordamos en qué estábamos
+  if (esPing(t) && e.step !== "name" && e.step !== "addr") return out({ text: "¡Sí, acá estoy!" }, pregunta(e, c));
   // Un saludo suelto a mitad de la charla (volvió, o se perdió) arranca de nuevo
   const saludo = esSaludo(t) && e.step !== "name" && e.step !== "addr";
   if (saludo || /(empezar de nuevo|reiniciar)/.test(n)) return procesar(null, "", c);
@@ -314,7 +371,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
   // "Hola Walter" es un saludo: deriva solo si pide hablar con él
   const pideWalter = /(hablar|humano|persona)/.test(n) || /\b(con|a|pasame|llamame|llame) walter\b/.test(n);
   if (pideWalter && e.step !== "name" && e.step !== "addr") {
-    return { ...out({ text: "Listo, le aviso a Walter y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
+    return { ...out({ text: "Listo, le aviso a alguien del equipo y te escribe por acá apenas pueda. 🙌" }, pregunta(e, c)), derivar: true };
   }
   if (/(horario|deposito|donde estan)/.test(n) && e.step !== "addr" && e.step !== "mod") return out({ text: depositos(c) }, pregunta(e, c));
   if (/(precio|cuanto pagan|cotizacion|a cuanto)/.test(n)) {
@@ -323,7 +380,27 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     if (tp) {
       return out({ text: `${esLlave(tp.n) ? "Las llaves" : "Las de " + tp.n} las pagamos ${fmt(tp.u)} cada una.` }, pregunta(e, c));
     }
-    if (parseNum(t) === null) return out({ text: precios(c) }, pregunta(e, c));
+    if (parseNum(t) === null) return out({ text: precios(c, d.mat === "Monedas" && !/cobre|bronce/.test(n)) }, pregunta(e, c));
+  }
+
+  // Va tocando los tipos de la lista uno atrás de otro: los anotamos todos y le pedimos las cantidades juntas
+  const suelto = d.mat === "Monedas" ? tipoSuelto(c, t) : null;
+  if (suelto && (e.step === "qty" && d.modo === "u" && d.tipo && d.tipo !== suelto || e.step === "tipo" && pendientes(d).length)) {
+    d.pend = [...new Set([...pendientes(d), ...(e.step === "qty" && d.tipo ? [d.tipo] : []), suelto])];
+    if (e.step === "qty") { delete d.tipo; delete d.modo; delete d.cant; }
+    e.step = "tipo";
+    return out(pregunta(e, c));
+  }
+  // "Las tengo que contar": sin volver a preguntar lo mismo
+  if (["tipo", "qty", "mas"].includes(e.step) && esParaDespues(t) && parseNum(t) === null) {
+    return out({ text: "¡Dale, sin apuro! Cuando las tengas, pasame cuántas tenés de cada una y te hago la cuenta." });
+  }
+
+  // Ya cotizado, corrige la cantidad o la localidad ("soy de Totoras, tengo unas 300 llaves"): se rehace la cuenta
+  if (e.step === "mod" && d.mat === "Monedas") {
+    const tipo = findTipo(c, t);
+    const q = tipo && tipo !== MEZCLADAS ? cantidadConTipo(t, tipo) : null;
+    if (q) return corregir(e, tipo!, q, findLoc(t), c);
   }
 
   switch (e.step) {
@@ -338,19 +415,20 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         return out({
           text: `Por ahora retiramos en Rosario y alrededores: ${LOCALIDADES.map((x) => x.n).join(", ")}.\n` +
             `Si te queda cerca, también podés acercarte a nuestro depósito:\n\n${depositos(c)}`,
-          options: ["Otra localidad", "Hablar con Walter"],
+          options: ["Otra localidad", "Hablar con alguien"],
         });
       }
       d.loc = l; e.step = "cat";
-      return out({ text: `¡Genial, en ${l} trabajamos! ¿Qué querés vender?`, options: ["Monedas", "Cobre", "Bronce"] });
+      return out({ text: `¡Genial, en ${l} trabajamos! ¿Qué tenés para vender?`, options: ["Monedas", "Cobre", "Bronce"] });
     }
     case "cat": {
-      const llave = /llave/.test(n) ? tiposDe(c).find((x) => esLlave(x.n)) : undefined;
+      // Solo llaves; con llaves y monedas va a la pregunta abierta de los tipos
+      const llave = /llave/.test(n) && !/moneda/.test(n) ? tiposDe(c).find((x) => esLlave(x.n)) : undefined;
       if (llave) {
         d.mat = "Monedas"; d.modo = "u"; d.tipo = llave.n; e.step = "qty";
         return out(pregunta(e, c));
       }
-      const mat = /moneda/.test(n) ? "Monedas" : /cobre/.test(n) ? "Cobre" : /bronce/.test(n) ? "Bronce" : null;
+      const mat = /moneda|llave/.test(n) ? "Monedas" : /cobre/.test(n) ? "Cobre" : /bronce/.test(n) ? "Bronce" : null;
       if (!mat) {
         const llaves = tiposDe(c).some((x) => esLlave(x.n)) ? "llaves, " : "";
         return out({ text: `Compramos monedas, ${llaves}cobre y bronce. ¿Cuál de esos tenés?`, options: ["Monedas", "Cobre", "Bronce"] });
@@ -387,7 +465,9 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         return out({ text: `Por kilo pagamos ${fmt(c.monedaKg)}.` }, pregunta(e, c));
       }
       d.modo = "u"; d.tipo = tipo;
-      return out(pregunta(e, c));
+      // "300 de 10": ya trae la cantidad
+      const q = cantidadConTipo(t, tipo);
+      return q ? cantidad(e, q, c) : out(pregunta(e, c));
     }
     case "qty": {
       // Contaba monedas de un tipo pero dice kilos ("tengo como 3 kilos"): van por kilo
@@ -397,7 +477,7 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
         // Con las opciones para salir, si no sabe cuánto tiene o quiere preguntar otra cosa
         return out({ text: d.modo === "u"
           ? `Pasame un número aproximado de ${esLlave(d.tipo) ? "llaves" : "monedas"}, por ejemplo 2500.`
-          : "Pasame los kilos con un número, por ejemplo 12 o 7,5.", options: ["Hablar con Walter", "Empezar de nuevo"] });
+          : "Pasame los kilos con un número, por ejemplo 12 o 7,5.", options: ["Hablar con alguien", "Empezar de nuevo"] });
       }
       return cantidad(e, q, c);
     }
@@ -447,9 +527,75 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       d.dir = t.slice(0, 120);
       return anotar(e, c);
     }
+    case "done": {
+      // Ya anotado, pide día u horario ("¿podés buscarlo hoy 14:04?"): eso lo coordina el equipo
+      if (esCoordinar(t)) {
+        return { ...out({ text: d.cuando
+          ? `Te tenemos anotado para ${d.cuando}. Lo que me decís se lo paso a quien arma los recorridos y, si hay que cambiarlo, te confirmamos por acá. 🙌`
+          : "Lo tengo en cuenta. Se lo paso a quien arma los recorridos y te confirmamos por acá el día y el horario. 🙌" }), derivar: true };
+      }
+      if (/^(no|nop|nada|gracias|listo|ok|okey|dale|eso es todo|por ahora no)\b/.test(n)) return out({ text: "¡Dale! Cualquier cosa, escribinos por acá." });
+      return out(pregunta(e, c));
+    }
     default: return out(pregunta(e, c));
   }
 }
+
+// ---------- Recorridos: qué días y en qué horario pasamos por cada localidad ----------
+const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const PLURAL = ["domingos", "lunes", "martes", "miércoles", "jueves", "viernes", "sábados"];
+const recorridosDe = (c: Config) => (c.recorridos ?? []).filter((r) => r && r.dia >= 0 && r.dia <= 6 && (r.turno === "Mañana" || r.turno === "Tarde") && r.locs?.length);
+const unRecorrido = (r: Recorrido) => `los ${PLURAL[r.dia]} a la ${r.turno.toLowerCase()}` + (r.horario ? ` (${r.horario})` : "");
+
+/** "los martes a la tarde (14 a 18 hs) y los jueves a la mañana", o "" si no hay recorrido para esa localidad. */
+export function pasaTxt(c: Config, loc?: string): string {
+  return enLista(recorridosDe(c).filter((r) => loc && r.locs.includes(loc)).sort((a, b) => a.dia - b.dia).map(unRecorrido));
+}
+
+function recorridosTxt(c: Config): string {
+  const rs = recorridosDe(c);
+  if (!rs.length) return "";
+  return "Recorridos para pasar a buscar:\n" + rs.map((r) => `• ${enLista(r.locs)}: ${unRecorrido(r)}`).join("\n");
+}
+
+// Fecha de Argentina (YYYY-MM-DD) de hoy más n días
+function fechaAR(n: number, ahora = new Date()): string {
+  const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(ahora);
+  const f = new Date(hoy + "T12:00:00Z");
+  f.setUTCDate(f.getUTCDate() + n);
+  return f.toISOString().slice(0, 10);
+}
+const diaSemana = (iso: string) => new Date(iso + "T12:00:00Z").getUTCDay();
+// "martes 27"
+const fechaTxt = (iso: string) => `${DIAS[diaSemana(iso)]} ${Number(iso.slice(8, 10))}`;
+
+/** El próximo recorrido que pasa por la localidad, desde mañana: día (YYYY-MM-DD), turno y horario. */
+export function proximoRetiro(c: Config, loc: string, ahora = new Date()): { dia: string; turno: "Mañana" | "Tarde"; horario?: string } | null {
+  const rs = recorridosDe(c).filter((r) => r.locs.includes(loc));
+  if (!rs.length) return null;
+  for (let i = 1; i <= 7; i++) {
+    const dia = fechaAR(i, ahora);
+    const r = rs.filter((x) => x.dia === diaSemana(dia)).sort((a, b) => (a.turno === "Mañana" ? -1 : 1) - (b.turno === "Mañana" ? -1 : 1))[0];
+    if (r) return { dia, turno: r.turno, ...(r.horario ? { horario: r.horario } : {}) };
+  }
+  return null;
+}
+
+/** El horario del recorrido de ese día y turno para la localidad, para el recordatorio. */
+export function horarioDe(c: Config, loc: string, dia: string, turno: string): string | null {
+  return recorridosDe(c).find((r) => r.locs.includes(loc) && r.dia === diaSemana(dia) && r.turno === turno)?.horario ?? null;
+}
+
+/** Cuándo pasamos, como se lo decimos al cliente: "hoy a la tarde (15 a 18 hs)", "el jueves 29 a la mañana". */
+export function cuandoDe(c: Config, loc: string, dia: string, turno: string, ahora = new Date()): string {
+  const hs = horarioDe(c, loc, dia, turno);
+  const d = dia === fechaAR(0, ahora) ? "hoy" : dia === fechaAR(1, ahora) ? "mañana" : `el ${fechaTxt(dia)}`;
+  return `${d} a la ${turno.toLowerCase()}` + (hs ? ` (${hs})` : "");
+}
+
+/** Pide o propone un día u horario para el retiro. */
+export const esCoordinar = (s: string) =>
+  /\b(hoy|manana|pasado|lunes|martes|miercoles|jueves|viernes|sabado|domingo|hora|horario|cuando|vienen|venis|pasan|pasas|buscar|buscarlo|buscarlas|buscarlos|retiran|retiras|estoy|estare)\b|\d{1,2}[:.]\d{2}|\d{1,2} ?hs\b/.test(norm(s));
 
 // En "200 de 50" o "de 50 tengo 200", la cantidad es el número que no forma parte del nombre del tipo
 function cantidadConTipo(t: string, tipo: string): number | null {
@@ -469,12 +615,20 @@ function anotar(e: Estado, c: Config): Resultado {
   const d = e.d;
   e.step = "done";
   const p = armarPedido(d, c, d.dir!);
+  // Con recorrido cargado para su localidad, queda anotado para el próximo; si no, el día lo pone Walter
+  const r = proximoRetiro(c, d.loc!);
+  if (r) {
+    p.dia = r.dia; p.turno = r.turno;
+    d.cuando = cuandoDe(c, d.loc!, r.dia, r.turno);
+  }
   return {
     estado: e,
     respuestas: [{
       // Con la dirección a la vista, para que el cliente la corrija si la escribió mal
       text: `¡Listo, ${d.nombre}! Quedó anotado:\n• ${queTxt(d)}\n• ${d.ret}: ${d.dir}, ${d.loc}\n• Estimado: ${fmt(p.monto)}\n\n` +
-        `Walter arma los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.` +
+        (d.cuando
+          ? `Pasamos ${d.cuando}. Antes te mandamos un recordatorio por acá para confirmar.`
+          : `Armamos los recorridos y te avisamos por acá el día y si pasamos a la mañana o a la tarde.`) +
         (p.prioridad ? "\n\nComo es una buena cantidad, te ponemos entre los primeros del recorrido." : ""),
       options: ["Empezar de nuevo"],
     }],
@@ -500,8 +654,9 @@ export function conPerfil(r: Resultado, nombre: string | null, c: Config): Resul
 }
 
 // Lo que la IA entendió de un mensaje. otraLoc: nombró una localidad que no está en la lista.
+// viaja: vive lejos pero va a estar en una localidad de la lista ("soy de Rafaela y el finde voy a Beltrán")
 export type Lectura = Pistas & {
-  otraLoc?: boolean;
+  otraLoc?: boolean; viaja?: boolean;
   intencion?: "precios" | "depositos" | "humano" | "otro" | "prohibido" | "no_vende" | "consulta";
 };
 
@@ -511,6 +666,8 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
   switch (e.step) {
     case "loc": case "out": return p.loc ? { texto: p.loc, campo: "loc" } : null;
     case "cat":
+      // Llaves y monedas: la pregunta abierta por los tipos, sin quedarse solo con las llaves
+      if (p.varias) { delete p.tipo; delete p.varias; return { texto: "monedas y llaves", campo: "mat" }; }
       if (esLlave(p.tipo)) return { texto: "llaves", campo: "tipo" };
       // Pesadas: directo a los kilos, sin pasar por la lista de tipos
       if (p.mat === "Monedas" && (p.modo === "kg" || p.tipo === MEZCLADAS)) return { texto: "monedas por kilo", campo: "mat" };
@@ -548,11 +705,13 @@ const esPregunta = (s: string) => /[?¿]/.test(s) &&
   !/(precio|cuanto pagan|cotizacion|a cuanto|horario|deposito|donde estan|hablar|humano|persona)/.test(norm(s));
 
 // La IA saca datos también de la charla reciente: cuentan solo los que el bot todavía no tenía
+// "Tengo de todo tipo" mientras ya van por kilo no es un dato nuevo
 const traeDatos = (l: Lectura, e: Estado | null) =>
-  !!l.cant || !!l.dir || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k]);
+  !!l.cant || !!l.dir || !!l.items?.length || (["loc", "mat", "tipo"] as const).some((k) => l[k] && l[k] !== e?.d[k] &&
+    !(k === "tipo" && l.tipo === MEZCLADAS && e?.d.modo === "kg"));
 
 const PALABRA_INTENCION: Partial<Record<NonNullable<Lectura["intencion"]>, string>> =
-  { precios: "precios", depositos: "deposito", humano: "hablar con Walter" };
+  { precios: "precios", depositos: "deposito", humano: "hablar con alguien" };
 
 /**
  * Como procesar, con lo que la IA entendió del mensaje: contesta de una las preguntas que el
@@ -564,6 +723,16 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   // Lo que no compramos corta ahí, sin cotizar con lo que haya entendido la IA
   if (l?.intencion === "prohibido" || (esProhibido(texto) && estado?.step !== "name" && estado?.step !== "addr")) {
     return rechazar(estado, c, true, texto);
+  }
+  // Ya anotado, la IA vuelve a sacar la lista de la charla reciente aunque el mensaje no diga nada nuevo
+  // ("Soy de Rosario"): sin esto se cotizaba y se anotaba todo otra vez
+  if (estado?.step === "done" && l && !/moneda|llave|cobre|bronce|\d/.test(norm(texto))) l = l.intencion ? { intencion: l.intencion } : null;
+  // Ya anotado, pide día u horario: lo contesta procesar (lo coordina el equipo), sin cotizar de nuevo
+  if (estado?.step === "done" && esCoordinar(texto) && !(l?.mat || l?.tipo || l?.items?.length)) return procesar(estado, texto, c);
+  // "¿Estás?": lo contesta procesar, sin que la IA lo lea como una consulta
+  if (estado && esPing(texto) && !["name", "addr"].includes(estado.step)) {
+    const r = procesar(estado, texto, c);
+    return estado.p ? { ...r, estado: { ...r.estado, p: estado.p } } : r;
   }
   // No quiere vender ("gracias, no quiero nada"): se despide sin volver a preguntar
   // En "¿tenés de otro tipo?", un "no, gracias" cierra las monedas y sigue con el pedido
@@ -580,7 +749,16 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   // sin avanzar con lo que procesar entendería de las palabras sueltas
   if (l?.intencion === "consulta" && !traeDatos(l, estado) && estado && !["name", "addr"].includes(estado.step)) {
     const e: Estado = { step: estado.step, d: { ...estado.d }, ...(estado.p ? { p: estado.p } : {}) };
+    // "¿Las cuento o las peso?" mientras le pedíamos kilos: la respuesta es contarlas, así que la pregunta que sigue es cuántas de cada una
+    if (e.step === "qty" && e.d.mat === "Monedas" && e.d.modo === "kg" && tiposDe(c).length && /(cont|cuent|pes|conviene|unidad)/.test(norm(texto))) {
+      e.step = "tipo"; delete e.d.modo;
+    }
     return { estado: e, respuestas: [pregunta(e, c)], consulta: true };
+  }
+  // "¿Y cuánto valdrían las que tengo?": la cuenta de lo suyo, no la lista de precios
+  if (estado && tieneCotizado(estado.d) && preguntaPorLoSuyo(texto) && !(l && traeDatos(l, estado)) && !["name", "addr"].includes(estado.step)) {
+    const e: Estado = { step: estado.step, d: { ...estado.d }, ...(estado.p ? { p: estado.p } : {}) };
+    return { estado: e, respuestas: [{ text: resumen(e.d, c) }, pregunta(e, c)] };
   }
   // Si arranca con una pregunta, primero el saludo
   if (l?.intencion === "consulta" && !estado) return { ...procesar(null, "", c), consulta: true };
@@ -604,7 +782,7 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
 
   // Empezar de nuevo descarta las pistas viejas
   const reinicio = !!estado && r.estado.step === "loc" && !Object.keys(r.estado.d).length;
-  const p: Pistas = { ...(reinicio ? {} : estado?.p), ...(l ? pistasDe(l, c) : {}) };
+  const p: Pistas = { ...(reinicio ? {} : estado?.p), ...(l ? pistasDe(l, c, texto) : {}) };
 
   // Si no nombró ningún lugar, en vez de "por ahora no retiramos ahí" le volvemos a preguntar
   if (l && estado?.step === "loc" && r.estado.step === "out" && !l.otraLoc && !p.loc && !l.intencion) {
@@ -614,6 +792,15 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
   const respuestas: Respuesta[] = [];
   let prefijo = "";
   for (let i = 0; i < 8 && !r.derivar && !r.pedido; i++) {
+    // Mandó la lista de monedas: se cotiza toda junta y sigue con cómo lo entrega
+    if (p.items?.length && ["cat", "unit", "tipo", "qty"].includes(r.estado.step) && (r.estado.step === "cat" || r.estado.d.mat === "Monedas")) {
+      const items = p.items;
+      delete p.items; delete p.mat; delete p.modo; delete p.tipo; delete p.cant;
+      if (r.estado.step === "cat" && !prefijo && r.estado.d.loc && r.estado.d.loc !== estado?.d.loc) prefijo = `¡Genial, en ${r.estado.d.loc} trabajamos! `;
+      respuestas.push(...r.respuestas.slice(0, -1));
+      r = conLista(r.estado, items, c);
+      continue;
+    }
     const a = respuestaDesde(r.estado, p, c);
     if (!a) break;
     delete p[a.campo];
@@ -624,19 +811,33 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     r = procesar(r.estado, a.texto, c);
   }
   respuestas.push(...r.respuestas);
-  if (prefijo && respuestas.length && !respuestas.some((x) => x.text.startsWith("¡Genial, en "))) {
-    respuestas[0] = { ...respuestas[0], text: prefijo + respuestas[0].text };
+  // Vive lejos pero viene a una localidad donde trabajamos: sin decir que su ciudad queda cerca
+  if (l?.viaja && r.estado.d.loc) {
+    if (prefijo) prefijo = `Donde vivís no llegamos, pero en ${r.estado.d.loc} sí trabajamos. `;
+    for (const [i, x] of respuestas.entries()) {
+      respuestas[i] = { ...x, text: x.text.replace(`¡Genial, en ${r.estado.d.loc} trabajamos!`, `Donde vivís no llegamos, pero en ${r.estado.d.loc} sí trabajamos.`) };
+    }
+  }
+  if (prefijo && respuestas.length && !respuestas.some((x) => x.text.startsWith("¡Genial, en ") || x.text.startsWith("Donde vivís"))) {
+    // En el primer mensaje, después del saludo
+    const i = !estado && respuestas.length > 1 && respuestas[0].text === c.saludo ? 1 : 0;
+    respuestas[i] = { ...respuestas[i], text: prefijo + respuestas[i].text };
   }
 
   // Lo que ya quedó anotado no hace falta guardarlo como pista
-  for (const k of Object.keys(p) as (keyof Pistas)[]) if (r.estado.d[k] !== undefined) delete p[k];
+  if (!["loc", "out", "cat"].includes(r.estado.step)) delete p.varias;
+  for (const k of Object.keys(p) as (keyof Pistas)[]) if (k !== "varias" && r.estado.d[k] !== undefined) delete p[k];
   const estadoFinal: Estado = { step: r.estado.step, d: r.estado.d };
   if (Object.keys(p).length) estadoFinal.p = p;
-  return { ...r, estado: estadoFinal, respuestas };
+  // Preguntó algo y además pasó datos: se avanza con los datos y también se le contesta la pregunta
+  const consulta = l?.intencion === "consulta" && !r.derivar && !r.pedido && !["name", "addr"].includes(estado?.step ?? "") ? { consulta: true } : {};
+  return { ...r, ...consulta, estado: estadoFinal, respuestas };
 }
 
-function pistasDe(l: Lectura, c: Config): Pistas {
+function pistasDe(l: Lectura, c: Config, texto = ""): Pistas {
   const p: Pistas = {};
+  const n = norm(texto);
+  if (/llave/.test(n) && /moneda/.test(n) && !l.cant && !l.items?.length) p.varias = true;
   if (l.loc && LOCALIDADES.some((x) => x.n === l.loc)) p.loc = l.loc;
   if (l.mat === "Monedas" || l.mat === "Cobre" || l.mat === "Bronce") p.mat = l.mat;
   if (l.modo === "kg" || l.modo === "u") p.modo = l.modo;
@@ -644,7 +845,54 @@ function pistasDe(l: Lectura, c: Config): Pistas {
   if (typeof l.cant === "number" && l.cant > 0) p.cant = l.cant;
   if (l.ret === "Retiro a domicilio" || l.ret === "Punto de encuentro" || l.ret === "Depósito") p.ret = l.ret;
   if (typeof l.dir === "string" && l.dir.trim()) p.dir = l.dir.trim().slice(0, 120);
+  const items = (l.items ?? []).flatMap((x): Linea[] => {
+    if (!(typeof x?.cant === "number" && x.cant > 0)) return [];
+    if (x.tipo === MEZCLADAS || x.modo === "kg") return [{ modo: "kg", cant: x.cant }];
+    return tipoPorNombre(c, x.tipo) ? [{ modo: "u", tipo: x.tipo, cant: x.cant }] : [];
+  });
+  // Una sola clase ya la cubren tipo y cant; la lista sirve desde dos
+  if (items.length > 1) p.items = items;
   return p;
+}
+
+const tieneCotizado = (d: Datos) => !!d.mat && d.cant != null && !!d.modo;
+// Pregunta cuánto le pagan por lo que ya contó (no por un tipo ni la lista de precios)
+const preguntaPorLoSuyo = (s: string) => {
+  const n = norm(s);
+  return /\b(cuanto|cuanta|total)\b/.test(n) && /\b(vale|valen|valdria|valdrian|seria|serian|sale|salen|saldria|me dan|me das|me pagan|me pagarian|es todo|da|dan)\b/.test(n) &&
+    /\b(tengo|mias|mios|mis|eso|esas|esos|estas|estos|todo|entonces|en total|total|lo que)\b/.test(n) && !/\bcada\b/.test(n);
+};
+
+// Lo que lleva cotizado: cada clase con su total y la suma
+function detalleTxt(d: Datos, c: Config) {
+  return lineas(d).map((l) => {
+    const r = cotizar(c, "Monedas", l.modo, l.cant, l.tipo);
+    return `• ${lineaTxt({ mat: "Monedas", ...l })}: ${fmt(r.total)} (` + (l.modo === "u" ? `${fmt(r.precio)} cada una` : `${fmt(r.precio)} el kilo`) + ")";
+  }).join("\n");
+}
+function resumen(d: Datos, c: Config) {
+  if (d.mat !== "Monedas") return `Por ${lineaTxt(d)} te pagamos ${fmt(totalDe(d, c))}.`;
+  if (!varias(d)) {
+    const r = cotizar(c, "Monedas", d.modo!, d.cant!, d.tipo);
+    return `Por ${lineaTxt(d)} te pagamos ${fmt(r.total)} (` + (d.modo === "u" ? `${fmt(r.precio)} cada una` : `${fmt(r.precio)} el kilo`) + ").";
+  }
+  return `Por lo que me pasaste te pagamos:\n${detalleTxt(d, c)}\nTotal: ${fmt(totalDe(d, c))}.`;
+}
+
+/** Cotiza la lista de monedas que mandó junta: cada clase con su total, la suma, y la pregunta de cómo lo entrega. */
+function conLista(e: Estado, items: Linea[], c: Config): Resultado {
+  const d: Datos = { ...e.d, mat: "Monedas" };
+  const ult = items[items.length - 1];
+  d.items = [...(d.items ?? []), ...items.slice(0, -1)];
+  d.modo = ult.modo; d.cant = ult.cant;
+  if (ult.tipo) d.tipo = ult.tipo; else delete d.tipo;
+  const detalle = detalleTxt(d, c);
+  const r = cerrarMonedas({ step: "mas", d }, c);
+  // La suma va con el detalle; de cerrarMonedas queda lo que se confirma al retirar y la pregunta
+  const fin = r.respuestas[0].text.replace(/^En total:[^\n]*\n/, "");
+  return { ...r, respuestas: [
+    { text: `Por lo que me pasaste te pagamos:\n${detalle}\nTotal: ${fmt(totalDe(d, c))}.\n${fin}` }, ...r.respuestas.slice(1),
+  ] };
 }
 
 function cantidad(e: Estado, q: number, c: Config): Resultado {
@@ -661,6 +909,19 @@ function cantidad(e: Estado, q: number, c: Config): Resultado {
   e.step = "mod";
   const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al pesar en el momento del retiro.";
   return { estado: e, respuestas: [{ text: text + "\n" + fin }, pregunta(e, c)] };
+}
+
+// Cambia la cantidad de un tipo que ya estaba (o lo suma) y, si nombró otra localidad, también esa
+function corregir(e: Estado, tipo: string, q: number, loc: string | null, c: Config): Resultado {
+  const d = e.d;
+  d.items = lineas(d).filter((l) => l.tipo !== tipo);
+  d.modo = "u"; d.tipo = tipo; d.cant = q;
+  if (!d.items.length) delete d.items;
+  if (loc) d.loc = loc;
+  delete d.ret; delete d.dir;
+  e.step = "mod";
+  const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al contarlas o pesarlas en el momento del retiro.";
+  return { estado: e, respuestas: [{ text: `Listo, lo corrijo. ${resumen(d, c)}\n${fin}` }, pregunta(e, c)] };
 }
 
 // No tiene más monedas: con varios tipos, el total de todo, y sigue con cómo lo entrega

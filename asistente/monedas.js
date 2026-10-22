@@ -2030,6 +2030,69 @@ const panelMonedas = (() => {
     return { lista };
   }
 
+  // Recorridos: qué día de la semana, en qué turno y horario pasa por cada
+  // localidad. walter-bot le dice al cliente cuándo pasamos y anota el pedido
+  // para el próximo recorrido de su localidad.
+  const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const NUM_DIA = { Lunes: 1, Martes: 2, 'Miércoles': 3, Jueves: 4, Viernes: 5, 'Sábado': 6, Domingo: 0 };
+
+  function htmlRecorrido(r) {
+    const v = (x) => (x == null ? '' : escapar(x).replace(/"/g, '&quot;'));
+    const locs = r.locs || [];
+    return '<div class="recorrido">' +
+      '<div class="recorrido-fila">' +
+        '<select data-r="dia" aria-label="Día">' + DIAS_SEMANA.map((d) =>
+          '<option value="' + NUM_DIA[d] + '"' + (r.dia === NUM_DIA[d] ? ' selected' : '') + '>' + d + '</option>').join('') + '</select>' +
+        '<select data-r="turno" aria-label="Turno">' + ['Mañana', 'Tarde'].map((t) =>
+          '<option' + (r.turno === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>' +
+        '<input data-r="horario" type="text" aria-label="Horario" placeholder="ej. 14 a 18 hs" maxlength="40" value="' + v(r.horario) + '">' +
+        '<button type="button" class="btn btn-suave quitar-recorrido" aria-label="Quitar este recorrido" title="Quitar">×</button>' +
+      '</div>' +
+      '<div class="recorrido-locs">' + Object.keys(LOCALIDADES).map((l) =>
+        '<label class="chip-loc"><input type="checkbox" value="' + v(l) + '"' + (locs.includes(l) ? ' checked' : '') + '>' + escapar(l) + '</label>').join('') +
+      '</div>' +
+    '</div>';
+  }
+
+  function pintarRecorridos(lista) {
+    $('mRecorridos').innerHTML = lista.length ? lista.map(htmlRecorrido).join('')
+      : '<div class="dato-secundario sin-recorridos">Todavía no cargaste recorridos: el bot dice que le avisamos el día.</div>';
+  }
+
+  function agregarRecorrido() {
+    $('mRecorridos').querySelector('.sin-recorridos')?.remove();
+    $('mRecorridos').insertAdjacentHTML('beforeend', htmlRecorrido({ dia: 1, turno: 'Mañana' }));
+    $('mRecorridos').lastElementChild.querySelector('select').focus();
+    marcarPreciosEditados();
+  }
+
+  function quitarRecorrido(e) {
+    const boton = e.target.closest('.quitar-recorrido');
+    if (!boton) return;
+    boton.closest('.recorrido').remove();
+    if (!$('mRecorridos').querySelector('.recorrido')) pintarRecorridos([]);
+    marcarPreciosEditados();
+  }
+
+  function leerRecorridos() {
+    const lista = [];
+    for (const fila of document.querySelectorAll('#mRecorridos .recorrido')) {
+      const dia = Number(fila.querySelector('[data-r="dia"]').value);
+      const turno = fila.querySelector('[data-r="turno"]').value;
+      const horario = fila.querySelector('[data-r="horario"]').value.trim();
+      const locs = [...fila.querySelectorAll('.recorrido-locs input:checked')].map((x) => x.value);
+      const nombre = DIAS_SEMANA.find((d) => NUM_DIA[d] === dia) + ' a la ' + turno.toLowerCase();
+      if (!locs.length) return { error: 'Elegí al menos una localidad para el recorrido del ' + nombre + '.', campo: fila.querySelector('select') };
+      if (lista.some((r) => r.dia === dia && r.turno === turno)) {
+        return { error: 'El recorrido del ' + nombre + ' está dos veces: juntá las localidades en uno.', campo: fila.querySelector('select') };
+      }
+      const r = { dia, turno, locs };
+      if (horario) r.horario = horario;
+      lista.push(r);
+    }
+    return { lista };
+  }
+
   function pintarPrecios() {
     // Si Walter está escribiendo, un "Actualizar" no le pisa lo que tipeó.
     if (preciosEditados) return;
@@ -2038,6 +2101,7 @@ const panelMonedas = (() => {
       el.value = v == null ? ('cero' in el.dataset ? 0 : '') : v;
     });
     pintarTipos(cfg.monedas || []);
+    pintarRecorridos(cfg.recorridos || []);
     ocultar($('mPreciosError'));
     $('mPreciosEstado').textContent = cfgActualizado
       ? 'Último cambio: ' + fechaHora(cfgActualizado)
@@ -2091,6 +2155,15 @@ const panelMonedas = (() => {
       return ver($('mPreciosError'));
     }
     nuevo.monedas = tipos.lista;
+
+    const recorridos = leerRecorridos();
+    if (recorridos.error) {
+      $('mPreciosError').textContent = recorridos.error;
+      if (recorridos.campo) recorridos.campo.focus();
+      return ver($('mPreciosError'));
+    }
+    if (recorridos.lista.length) nuevo.recorridos = recorridos.lista;
+    else delete nuevo.recorridos;
 
     const boton = $('mGuardarPrecios');
     boton.disabled = true;
@@ -2244,6 +2317,8 @@ const panelMonedas = (() => {
     $('mFormPrecios').addEventListener('input', marcarPreciosEditados);
     $('mAgregarTipo').addEventListener('click', agregarTipo);
     $('mTiposMoneda').addEventListener('click', quitarTipo);
+    $('mAgregarRecorrido').addEventListener('click', agregarRecorrido);
+    $('mRecorridos').addEventListener('click', quitarRecorrido);
     $('mFormPrecios').addEventListener('submit', guardarPrecios);
 
     $('mPerfilArchivo').addEventListener('change', elegirFoto);
