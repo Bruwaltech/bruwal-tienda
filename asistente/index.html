@@ -1089,9 +1089,12 @@ const almacenamientoSesion = {
   }
 };
 
+// Clave propia: con la de siempre, Bruwal Chat y Bruwaltech (mismo dominio) compartían una sola sesión,
+// y entrar o salir en una pestaña cerraba la otra
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: almacenamientoSesion,
+    storageKey: 'bruwal-chat',
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
@@ -1192,7 +1195,7 @@ $('btnOlvide').addEventListener('click', async () => {
 });
 
 $('btnSalir').addEventListener('click', async () => {
-  await sb.auth.signOut();
+  await sb.auth.signOut({ scope: 'local' });
   window.location.reload();
 });
 
@@ -1222,7 +1225,7 @@ async function entrar() {
       '<b>Tu usuario todavía no está vinculado a ningún negocio.</b><br>' +
       '<span style="font-size:13px;">Escribinos y lo habilitamos.</span>';
     ver($('avisoLogin'));
-    await sb.auth.signOut();
+    await sb.auth.signOut({ scope: 'local' });
     return;
   }
 
