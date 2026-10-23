@@ -2099,6 +2099,9 @@ tr:last-child td { border-bottom: none; }
     </div>
   </header>
 
+  <!-- Sin internet / ventas esperando para subir (ver "SIN INTERNET" en el script) -->
+  <div id="avisoSinConexion" class="hidden" style="background:#FEF3C7;border-bottom:1px solid #FCD34D;color:#92400E;padding:10px 16px;font-size:13.5px;line-height:1.5;text-align:center;"></div>
+
   <div class="store-link-bar hidden" id="storeLinkBar">
     <span>🛒 Tu tienda pública:</span>
     <a id="storeLinkAnchor" href="#" target="_blank" style="font-weight:600;"></a>
@@ -10473,6 +10476,11 @@ function mostrarErrorDeRegistro(error, boton, textoBoton) {
 // LOGOUT
 byId('logoutBtn').addEventListener('click', async () => {
   await sb.auth.signOut();
+  // La copia para abrir sin internet es de esta cuenta: en un aparato
+  // compartido no tiene que quedar. Las ventas sin subir SI quedan: son
+  // plata cobrada y suben cuando alguien vuelva a entrar a esa tienda.
+  try { localStorage.removeItem(COPIA_LOCAL); } catch (e) {}
+  arrancoSinConexion = false;
   currentUser = null;
   hide(byId('appView'));
   show(byId('authView'));
@@ -10508,8 +10516,13 @@ function generarSlug(nombre) {
 }
 
 async function onLoggedIn() {
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
+  const { data: { user }, error: errorUsuario } = await sb.auth.getUser();
+  if (!user) {
+    // Hay sesion pero no internet para validarla: si este aparato tiene la
+    // copia, se abre con eso y la caja sigue vendiendo.
+    if (errorUsuario && esFallaDeRedSesion(errorUsuario)) await arrancarSinConexion();
+    return;
+  }
 
   currentUser = user;
 
@@ -10528,6 +10541,8 @@ async function onLoggedIn() {
 
     // Si la consulta falla NO creamos nada: ante la duda, preferimos no
     // duplicar. Duplicar rompe; no crear solo obliga a reintentar.
+    // Si falla por internet y hay copia en el aparato, se arranca con eso.
+    if (errorTienda && esFallaDeRed(errorTienda) && await arrancarSinConexion(user.id)) return;
     if (errorTienda) throw errorTienda;
 
     misTiendas = tiendas || [];
@@ -12739,52 +12754,88 @@ async function arranqueDirectoAVentas() {
 async function refreshData() {
   if (!currentStore) return;
 
-  const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', currentStore.slug);
+  // Lo que se vendio sin internet sube ANTES de leer: asi lo que vuelve de
+  // la base ya trae esas ventas y el stock descontado.
+  await sincronizarVentasPendientes();
+
+  // Sin internet NO se pisa nada: antes cada refresco fallido dejaba la
+  // lista de productos y de pedidos vacia, y al minuto del corte la caja no
+  // tenia nada para vender. Se sigue con lo que ya estaba en pantalla.
+  const { data: prods, error: errProds } = await sb.from('store_products').select('*').eq('store_slug', currentStore.slug);
+  if (errProds && esFallaDeRed(errProds)) {
+    marcarSinConexion(true);
+    pintarConLoQueHay();
+    return;
+  }
+  marcarSinConexion(false);
+  // Si el panel habia arrancado con la copia del aparato, recien ahora se
+  // puede saber quien es el usuario de verdad.
+  if (arrancoSinConexion) {
+    arrancoSinConexion = false;
+    sb.auth.getUser().then(({ data }) => { if (data && data.user) currentUser = data.user; }).catch(() => {});
+  }
   products = prods || [];
+  await aplicarVentasPendientesAlStock();
 
-  const { data: ords } = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
-  guardarPedidos(ords);
+  // Si el corte llega a mitad de la lectura, cada tabla que falla se queda
+  // con lo que tenia (filasOLoQueHabia), en vez de quedar vacia.
+  const resOrds = await sb.from('orders').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  guardarPedidos(mezclarVentasPendientes(filasOLoQueHabia(resOrds, pedidosDeLaBase())));
 
-  const { data: reps } = await sb.from('store_reparaciones').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
-  reparaciones = reps || [];
+  const resReps = await sb.from('store_reparaciones').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  reparaciones = filasOLoQueHabia(resReps, reparaciones);
 
-  const { data: gts } = await sb.from('store_gastos').select('*').eq('store_slug', currentStore.slug).order('fecha', { ascending: false });
-  gastos = gts || [];
+  const resGts = await sb.from('store_gastos').select('*').eq('store_slug', currentStore.slug).order('fecha', { ascending: false });
+  gastos = filasOLoQueHabia(resGts, gastos);
 
   // Sin la migracion 60 vuelve con error y la solapa queda vacia.
-  const { data: afs } = await sb.from('store_afiliados').select('*').eq('store_slug', currentStore.slug).order('nombre');
-  afiliados = afs || [];
+  const resAfs = await sb.from('store_afiliados').select('*').eq('store_slug', currentStore.slug).order('nombre');
+  afiliados = filasOLoQueHabia(resAfs, afiliados);
 
-  const { data: pgs } = await sb.from('store_pagos').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
-  pagos = pgs || [];
+  const resPgs = await sb.from('store_pagos').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  pagos = mezclarPagosPendientes(filasOLoQueHabia(resPgs, pagos.filter(x => !x._sinSubir)));
 
-  const { data: movs } = await sb.from('store_movimientos_caja').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
-  movimientosCaja = movs || [];
+  const resMovs = await sb.from('store_movimientos_caja').select('*').eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
+  movimientosCaja = filasOLoQueHabia(resMovs, movimientosCaja);
 
   // Si todavía no se corrió la migración 40, estas dos vuelven con error y
   // quedan vacías: la solapa se ve sin datos en vez de romper el panel.
   // Las ventas de Mercado Libre las escribe el webhook con service role; acá
   // solo se leen. La política de RLS deja al dueño verlas, nada más.
-  const { data: mlOrds } = await sb.from('store_ml_ordenes').select('*')
+  const resMlOrds = await sb.from('store_ml_ordenes').select('*')
     .eq('store_slug', currentStore.slug).order('creado_en', { ascending: false }).limit(200);
-  mlOrdenes = mlOrds || [];
+  mlOrdenes = filasOLoQueHabia(resMlOrds, mlOrdenes);
 
-  const { data: mlVins } = await sb.from('store_ml_vinculos').select('*').eq('store_slug', currentStore.slug);
-  mlVinculosPrevios = mlVins || [];
+  const resMlVins = await sb.from('store_ml_vinculos').select('*').eq('store_slug', currentStore.slug);
+  mlVinculosPrevios = filasOLoQueHabia(resMlVins, mlVinculosPrevios);
   // Si la solapa de ML ya esta abierta (se toco antes de que terminara de
   // cargar, o quedo abierta y esto es el refresco de cada minuto), se vuelve
   // a pintar con lo que llego. Si no, quedaba en 0 hasta salir y volver.
   if (byId('mercadoLibreView').classList.contains('visible')) renderMercadoLibre();
 
-  const { data: emps } = await sb.from('store_empleados').select('*').eq('store_slug', currentStore.slug).order('nombre');
-  empleados = emps || [];
+  const resEmps = await sb.from('store_empleados').select('*').eq('store_slug', currentStore.slug).order('nombre');
+  empleados = filasOLoQueHabia(resEmps, empleados);
 
-  const { data: fchs } = await sb.from('store_fichadas').select('*').eq('store_slug', currentStore.slug).order('momento', { ascending: false });
+  const resFchs = await sb.from('store_fichadas').select('*').eq('store_slug', currentStore.slug).order('momento', { ascending: false });
   // Las que todavía no se pudieron subir viven en el aparato. Si no se
   // sumaran acá, cada refresco las haría desaparecer de la pantalla y el
   // empleado creería que su marca se perdió.
-  fichadas = mezclarFichadasPendientes(fchs || []);
+  if (!(resFchs.error && esFallaDeRed(resFchs.error))) fichadas = mezclarFichadasPendientes(resFchs.data || []);
 
+  pintarTodo();
+  await sincronizarFichadasPendientes();
+  renderEmpleados();
+  // Sin await: si pausa productos vuelve a llamar a refreshData, y la
+  // bandera de la sesion corta la vuelta.
+  aplicarProductosViejosAutomatico();
+  await renderAgendaDia();
+  guardarCopiaLocal();
+}
+
+// Todo lo que se pinta con los datos que ya estan en memoria. Lo usa el
+// refresco normal y tambien el arranque sin internet, que no puede leer la
+// base pero tiene la copia guardada en el aparato.
+function pintarTodo() {
   renderDashboard();
   // Los dos dependen de si la tienda tiene servicios cargados, así que van
   // antes de pintar la lista.
@@ -12799,7 +12850,6 @@ async function refreshData() {
   renderGastos();
   renderAfiliados();
   renderCaja();
-  await sincronizarFichadasPendientes();
   renderEmpleados();
   aplicarVisibilidadPorRubro();
   aplicarVisibilidadPorTurnos();
@@ -12808,10 +12858,384 @@ async function refreshData() {
   refrescarListaDeCategorias();
   pintarCampanita();
   pintarAvisoProductosViejos();
-  // Sin await: si pausa productos vuelve a llamar a refreshData, y la
-  // bandera de la sesion corta la vuelta.
-  aplicarProductosViejosAutomatico();
-  await renderAgendaDia();
+  pintarAvisoSinConexion();
+}
+
+// ===================== SIN INTERNET =====================
+// Si al local se le corta internet la caja tiene que seguir vendiendo
+// (Distribuidora y Empire, 23/10). Antes una venta sin conexion fallaba,
+// no se guardaba ni salia el ticket, y al minuto el refresco vaciaba la
+// lista de productos.
+//
+// Como funciona, igual que las fichadas (COLA_FICHADAS):
+//  - La venta se arma con un id hecho en el aparato y, si no hay
+//    conexion, se guarda en este aparato (COLA_VENTAS) con su hora real.
+//    El ticket sale igual y el stock se descuenta en pantalla.
+//  - Cuando vuelve internet sube sola, con el mismo id: si ya habia
+//    entrado y se perdio la respuesta, el 23505 lo confirma y no duplica.
+//  - Recien al subir se descuenta el stock en la base, leyendo el producto
+//    fresco: si otro aparato vendio del mismo producto mientras tanto, no
+//    se pisan.
+//  - En cada refresco bueno se guarda una copia de lo necesario para
+//    vender (COPIA_LOCAL). Si el panel se abre sin internet, arranca con
+//    esa copia en vez de quedar en la pantalla de ingreso.
+//
+// Lo que NO anda sin internet: cobrar con QR o link de Mercado Pago,
+// tomar un equipo en parte de pago, anular o mover una venta que todavia
+// no subio, y todo lo que no sea vender (cargar productos, gastos, etc.).
+
+const COLA_VENTAS = 'bruwal_ventas_pendientes';
+const COPIA_LOCAL = 'bruwal_copia_local';
+const TEXTO_VENTA_SIN_INTERNET =
+  '\n\n📡 Sin internet: quedó guardada en este aparato y se sube sola cuando vuelva la conexión.';
+
+let estadoSinConexion = false;    // el ultimo refresco no llego a la base
+let arrancoSinConexion = false;   // el panel se abrio con la copia local
+let sincronizandoVentas = false;
+
+function sinConexionAhora() {
+  return !navigator.onLine || estadoSinConexion;
+}
+
+function nuevoIdDeVenta() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  // Navegadores viejos: mismo formato (uuid v4) con getRandomValues.
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+}
+
+// El abono del fiado al momento de la venta, armado igual que siempre pero
+// con id propio, para que tambien pueda subir despues sin duplicarse.
+function pagoDeLaVenta(fila, monto, medioPago) {
+  if (!(monto > 0)) return null;
+  return {
+    id: nuevoIdDeVenta(),
+    order_id: fila.id,
+    store_slug: fila.store_slug,
+    customer_name: fila.customer_name,
+    monto,
+    medio_pago: medioPago || null,
+    nota: 'Pago al momento de la venta'
+  };
+}
+
+function colaVentas() {
+  try { return JSON.parse(localStorage.getItem(COLA_VENTAS) || '[]'); }
+  catch (e) { return []; }
+}
+
+function guardarColaVentas(cola) {
+  try { localStorage.setItem(COLA_VENTAS, JSON.stringify(cola)); return true; }
+  catch (e) { return false; }
+}
+
+function ventasPendientesDeLaTienda() {
+  return colaVentas().filter(v => v.orden && v.orden.store_slug === currentStore?.slug);
+}
+
+function actualizarVentaEnCola(venta) {
+  const cola = colaVentas();
+  const i = cola.findIndex(v => v.orden.id === venta.orden.id);
+  if (i >= 0) cola[i] = venta;
+  guardarColaVentas(cola);
+}
+
+function sacarVentaDeCola(id) {
+  guardarColaVentas(colaVentas().filter(v => v.orden.id !== id));
+}
+
+function esVentaSinSubir(id) {
+  return pedidosTodos.some(o => String(o.id) === String(id) && o._sinSubir);
+}
+
+function avisoVentaSinSubir() {
+  dialogoAviso('Esta venta se hizo sin internet y todavía no se subió.\n\n' +
+    'Vas a poder cambiarla cuando vuelva la conexión.');
+}
+
+// La venta no pudo llegar a la base: queda en el aparato. Devuelve lo mismo
+// que una venta normal, asi el ticket y el aviso salen igual.
+async function guardarVentaSinInternet(fila, pago, lineas) {
+  // El stock en pantalla. Si el vendedor no eligio un equipo puntual, el
+  // que se descuenta queda anotado para que al subir salga ese mismo.
+  for (let i = 0; i < lineas.length; i++) {
+    const imei = await aplicarStockDeItem(lineas[i], -1, true);
+    if (imei && !lineas[i].imei) {
+      lineas[i].imei = imei;
+      if (fila.items[i]) fila.items[i].imei = imei;
+    }
+  }
+
+  const cola = colaVentas();
+  cola.push({ orden: fila, pago, lineas, hechas: 0, subida: false, pagoSubido: !pago, error: null });
+  if (!guardarColaVentas(cola)) {
+    // Sin lugar en el aparato: es el unico caso en que la venta se pierde,
+    // y hay que decirlo en el momento, no descubrirlo a la noche.
+    dialogoAviso('Sin internet, y este aparato no tiene lugar para guardar la venta.\n\n' +
+      'Anotala en papel y cargala cuando vuelva la conexión.');
+    return false;
+  }
+
+  marcarSinConexion(true);
+  pintarConLoQueHay();
+  return { ok: true, ordenId: fila.id, sinInternet: true };
+}
+
+// Lo que todavia no subio se descuenta en la copia en memoria. Hace falta
+// cada vez que los productos se reemplazan (refresco o arranque sin
+// internet): si no, la caja mostraria stock que ya se vendio.
+async function aplicarVentasPendientesAlStock() {
+  for (const venta of ventasPendientesDeLaTienda()) {
+    for (let i = venta.hechas || 0; i < venta.lineas.length; i++) {
+      await aplicarStockDeItem(venta.lineas[i], -1, true);
+    }
+  }
+}
+
+function mezclarVentasPendientes(deLaBase) {
+  const lista = deLaBase || [];
+  const ids = new Set(lista.map(o => String(o.id)));
+  const pendientes = ventasPendientesDeLaTienda()
+    .filter(v => !ids.has(String(v.orden.id)))
+    .map(v => ({ ...v.orden, _sinSubir: true }))
+    .reverse();   // la mas nueva arriba, como viene de la base
+  return [...pendientes, ...lista];
+}
+
+function mezclarPagosPendientes(deLaBase) {
+  const lista = deLaBase || [];
+  const ids = new Set(lista.map(p => String(p.id)));
+  const pendientes = ventasPendientesDeLaTienda()
+    .filter(v => v.pago && !v.pagoSubido && !ids.has(String(v.pago.id)))
+    .map(v => ({ ...v.pago, created_at: v.orden.created_at, _sinSubir: true }));
+  return [...pendientes, ...lista];
+}
+
+function pedidosDeLaBase() {
+  return pedidosTodos.filter(o => !o._sinSubir);
+}
+
+// Si la tabla no se pudo leer por falta de conexion, se queda lo que habia.
+// Cualquier otro error (una migracion sin correr) sigue dejandola vacia,
+// como antes.
+function filasOLoQueHabia(res, anterior) {
+  if (res.error && esFallaDeRed(res.error)) return anterior || [];
+  return res.data || [];
+}
+
+function pintarConLoQueHay() {
+  guardarPedidos(mezclarVentasPendientes(pedidosDeLaBase()));
+  pagos = mezclarPagosPendientes(pagos.filter(p => !p._sinSubir));
+  pintarTodo();
+}
+
+function marcarSinConexion(sin) {
+  estadoSinConexion = !!sin;
+  pintarAvisoSinConexion();
+}
+
+function pintarAvisoSinConexion() {
+  const aviso = byId('avisoSinConexion');
+  if (!aviso) return;
+
+  const pendientes = currentStore ? ventasPendientesDeLaTienda() : [];
+  const n = pendientes.length;
+  const conError = pendientes.find(v => v.error);
+  const textoN = n + (n === 1 ? ' venta' : ' ventas');
+
+  let html = '';
+  if (sinConexionAhora()) {
+    const copia = arrancoSinConexion ? leerCopiaLocal() : null;
+    html = '📡 <strong>Sin internet.</strong> Podés seguir vendiendo: las ventas quedan guardadas en este aparato ' +
+      'y se suben solas cuando vuelva la conexión.' +
+      (n ? ' <strong>' + textoN + ' esperando para subir.</strong>' : '') +
+      (copia ? ' Productos y precios de las ' + horaAR(copia.guardada, { hour: '2-digit', minute: '2-digit', hour12: false }) + '.' : '');
+  } else if (conError) {
+    html = '⚠️ <strong>Una venta hecha sin internet no se pudo subir:</strong> ' + escapeHtml(conError.error) +
+      ' Sigue guardada en este aparato y se vuelve a intentar sola. Si no se arregla, escribinos.';
+  } else if (n) {
+    html = '⏳ Subiendo <strong>' + textoN + '</strong> hechas sin internet…';
+  }
+
+  aviso.innerHTML = html;
+  aviso.classList.toggle('hidden', !html);
+}
+
+// Sube, en orden, cada venta guardada en el aparato. Cada paso queda
+// anotado en la cola apenas se hace: si se vuelve a cortar a mitad de
+// camino, la proxima vez sigue desde ahi sin repetir nada.
+async function sincronizarVentasPendientes() {
+  if (sincronizandoVentas || !currentStore || !navigator.onLine) return;
+  if (!ventasPendientesDeLaTienda().length) return;
+
+  sincronizandoVentas = true;
+  try {
+    for (const venta of ventasPendientesDeLaTienda()) {
+      if (await subirVentaPendiente(venta) === 'sin-red') break;
+    }
+  } finally {
+    sincronizandoVentas = false;
+  }
+  pintarAvisoSinConexion();
+}
+
+async function subirVentaPendiente(venta) {
+  const fallo = (error) => {
+    if (esFallaDeRed(error)) return 'sin-red';
+    // Un rechazo de verdad (permisos, plan vencido). No se descarta: es
+    // plata vendida. Queda a la vista y se reintenta en cada refresco.
+    venta.error = humano(error);
+    actualizarVentaEnCola(venta);
+    return 'error';
+  };
+
+  if (!venta.subida) {
+    const { error } = await sb.from('orders').insert([venta.orden]);
+    // 23505: ya habia entrado y lo que se perdio fue la respuesta.
+    if (error && error.code !== '23505') return fallo(error);
+    venta.subida = true;
+    venta.error = null;
+    actualizarVentaEnCola(venta);
+  }
+
+  if (!venta.pagoSubido) {
+    const { error } = await sb.from('store_pagos').insert([venta.pago]);
+    if (error && error.code !== '23505') return fallo(error);
+    venta.pagoSubido = true;
+    actualizarVentaEnCola(venta);
+  }
+
+  while ((venta.hechas || 0) < venta.lineas.length) {
+    const l = venta.lineas[venta.hechas || 0];
+
+    // El producto (y sus insumos) se leen recien ahora: la copia en memoria
+    // ya tiene descontada esta venta y quizas no tiene lo que vendio otro
+    // aparato. Descontar sobre eso pisaria el stock real.
+    const { data: prod, error } = await sb.from('store_products').select('*').eq('id', l.product_id).maybeSingle();
+    if (error) return fallo(error);
+    if (prod) {
+      const ids = (Array.isArray(prod.insumos) ? prod.insumos : []).map(i => i.producto_id).filter(Boolean);
+      let insumos = [];
+      if (ids.length) {
+        const r = await sb.from('store_products').select('*').in('id', ids);
+        if (r.error) return fallo(r.error);
+        insumos = r.data || [];
+      }
+      for (const fresco of [prod, ...insumos]) {
+        const i = products.findIndex(x => String(x.id) === String(fresco.id));
+        if (i >= 0) products[i] = fresco; else products.push(fresco);
+      }
+    }
+
+    await aplicarStockDeItem(l, -1);
+    const detalle = 'Vendido a ' + venta.orden.customer_name;
+    if (l.imeiProducto) await registrarEventoImei(l.imeiProducto, 'venta', detalle, l.importe);
+    else if (l.imei) await registrarEventoImei(l.imei, 'venta', detalle, l.importe);
+
+    venta.hechas = (venta.hechas || 0) + 1;
+    actualizarVentaEnCola(venta);
+  }
+
+  sacarVentaDeCola(venta.orden.id);
+  return 'ok';
+}
+
+// ---- Copia en el aparato para abrir el panel sin internet ----
+// Lo justo para vender y cerrar la caja: la tienda, los productos, y los
+// pedidos y pagos recientes o con deuda (el fiado). Nada de esto es nuevo
+// para el aparato: ya estaba en pantalla.
+function guardarCopiaLocal() {
+  if (!currentStore || !currentUser) return;
+  const desde = Date.now() - 3 * 24 * 60 * 60 * 1000;
+  const reciente = (f) => f && new Date(f).getTime() >= desde;
+
+  const pedidos = pedidosDeLaBase().filter(o => reciente(o.created_at) || Number(o.saldo_pendiente) > 0);
+  const idsPedidos = new Set(pedidos.map(o => String(o.id)));
+  const copia = {
+    userId: currentUser.id,
+    guardada: Date.now(),
+    store: currentStore,
+    products,
+    pedidos,
+    pagos: pagos.filter(p => !p._sinSubir && (reciente(p.created_at) || idsPedidos.has(String(p.order_id)))),
+    movimientos: movimientosCaja.filter(m => reciente(m.created_at)),
+    empleados
+  };
+
+  try { localStorage.setItem(COPIA_LOCAL, JSON.stringify(copia)); }
+  catch (e) {
+    // Sin lugar: al menos lo que hace falta para vender.
+    try { localStorage.setItem(COPIA_LOCAL, JSON.stringify({ ...copia, pedidos: [], pagos: [], movimientos: [] })); }
+    catch (e2) { console.warn('No entra la copia local del panel:', e2); }
+  }
+}
+
+function leerCopiaLocal() {
+  try { return JSON.parse(localStorage.getItem(COPIA_LOCAL) || 'null'); }
+  catch (e) { return null; }
+}
+
+// Los errores de la sesion no son de Postgres: el que importa es el que
+// dice que no hubo conexion para validarla.
+function esFallaDeRedSesion(error) {
+  if (!navigator.onLine) return true;
+  if (!error) return false;
+  if (error.name === 'AuthRetryableFetchError') return true;
+  return /fetch|network|load failed/i.test(String(error.message || ''));
+}
+
+// Hay copia y una sesion guardada (no se cerro sesion en este aparato).
+function hayCopiaParaArrancar() {
+  const clave = 'sb-' + new URL(SUPABASE_URL).hostname.split('.')[0] + '-auth-token';
+  return !!(leerCopiaLocal() && almacenamientoSesion.getItem(clave));
+}
+
+// Abre el panel con la copia del aparato. userId: si se sabe quien entro,
+// la copia tiene que ser suya.
+async function arrancarSinConexion(userId) {
+  const copia = leerCopiaLocal();
+  if (!copia || !copia.store || (userId && copia.userId !== userId)) return false;
+
+  currentUser = currentUser || { id: copia.userId };
+  currentStore = copia.store;
+  if (!misTiendas.length) misTiendas = [copia.store];
+  products = copia.products || [];
+  await aplicarVentasPendientesAlStock();
+  guardarPedidos(mezclarVentasPendientes(copia.pedidos || []));
+  pagos = mezclarPagosPendientes(copia.pagos || []);
+  movimientosCaja = copia.movimientos || [];
+  empleados = copia.empleados || [];
+  fichadas = mezclarFichadasPendientes([]);
+  arrancoSinConexion = true;
+  estadoSinConexion = true;
+
+  byId('userBusiness').innerHTML = '<b>' + escapeHtml(currentStore.business_name) + '</b>';
+  renderTrialBar();
+  hide(byId('authView'));
+  show(byId('appView'));
+  document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
+  byId('dashboardView').classList.add('visible');
+  document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
+  if (byId('tabDashboard')) byId('tabDashboard').classList.add('active');
+
+  pintarTodo();
+  await arranqueDirectoAVentas();
+  return true;
+}
+
+// Volvio internet: se sube lo pendiente y se refresca, sin esperar al
+// refresco de cada minuto.
+async function alVolverInternet() {
+  if (!currentStore || refrescando) return;
+  refrescando = true;
+  try {
+    await refreshData();
+    ultimoRefresco = Date.now();
+  } catch (e) { /* se reintenta en el proximo refresco */ }
+  refrescando = false;
 }
 
 // ===================== CAMPANITA DE NOVEDADES =====================
@@ -16040,6 +16464,7 @@ function bloquePagoComanda(o) {
 
 async function marcarPagadoComanda(id, pagado) {
   if (!puedeOperar()) return;
+  if (esVentaSinSubir(id)) { avisoVentaSinSubir(); return; }
   const { error } = await sb.from('orders').update({ pagado }).eq('id', id);
   if (error) {
     dialogoAviso('No se pudo guardar el pago:\n\n' + humano(error));
@@ -16120,6 +16545,7 @@ function renderComandas() {
 
 async function moverComanda(id, de, a) {
   if (!puedeOperar()) return;
+  if (esVentaSinSubir(id)) { avisoVentaSinSubir(); return; }
   if (!hayColumnaEtapa()) {
     dialogoAviso('Para mover las comandas falta correr schema/56-comandas.sql en Supabase.');
     return;
@@ -16164,7 +16590,7 @@ async function refrescarComandas() {
   const { data, error } = await sb.from('orders').select('*')
     .eq('store_slug', currentStore.slug).order('created_at', { ascending: false });
   if (error || !data) return;
-  guardarPedidos(data);
+  guardarPedidos(mezclarVentasPendientes(data));
   renderOrders();
 }
 
@@ -16196,7 +16622,10 @@ setInterval(() => {
 // Vive acá adentro y no en registrarVenta a propósito: así lo aplican
 // TODOS los caminos que mueven stock (venta de mostrador, confirmar un
 // pedido de la tienda online, y la vuelta al anular) sin duplicar lógica.
-async function aplicarInsumosDeItem(item, signo) {
+// soloEnPantalla: venta sin internet. Se descuenta en la copia que esta en
+// memoria para que la caja muestre el stock real; la base se toca recien
+// cuando la venta sube (sincronizarVentasPendientes).
+async function aplicarInsumosDeItem(item, signo, soloEnPantalla = false) {
   const p = products.find(x => String(x.id) === String(item.product_id));
   const insumos = Array.isArray(p?.insumos) ? p.insumos : [];
   if (!insumos.length) return;
@@ -16214,16 +16643,17 @@ async function aplicarInsumosDeItem(item, signo) {
     // signo -1 (venta) descuenta; +1 (anulación) devuelve. redondearMedida
     // evita el arrastre de decimales al gastar de a 0,5.
     const nuevo = Math.max(0, redondearMedida(Number(insumo.stock || 0) + signo * consumo));
-    await sb.from('store_products').update({ stock: nuevo }).eq('id', insumo.id);
+    if (!soloEnPantalla) await sb.from('store_products').update({ stock: nuevo }).eq('id', insumo.id);
+    insumo.stock = nuevo;
   }
 }
 
-async function aplicarStockDeItem(item, signo) {
+async function aplicarStockDeItem(item, signo, soloEnPantalla = false) {
   const p = products.find(x => String(x.id) === String(item.product_id));
 
   // Los insumos se descuentan aunque el ítem sea un servicio (que no tiene
   // stock propio) — de hecho ese es el caso principal.
-  await aplicarInsumosDeItem(item, signo);
+  await aplicarInsumosDeItem(item, signo, soloEnPantalla);
 
   if (!p || !esProductoFisico(p)) return null;   // producto borrado o servicio: nada más que ajustar
 
@@ -16258,7 +16688,7 @@ async function aplicarStockDeItem(item, signo) {
     }
 
     const stockTotal = variantes.reduce((s, x) => s + Number(x.stock || 0), 0);
-    await sb.from('store_products').update({ variantes, stock: stockTotal }).eq('id', p.id);
+    if (!soloEnPantalla) await sb.from('store_products').update({ variantes, stock: stockTotal }).eq('id', p.id);
     p.variantes = variantes;
     p.stock = stockTotal;
     return imeiAfectado;
@@ -16268,7 +16698,7 @@ async function aplicarStockDeItem(item, signo) {
   // repetidas veces (50 - 12,3 - 12,3 ... termina en 37.699999999999996 y ese
   // número se escribiría tal cual en la base).
   const nuevoStock = Math.max(0, redondearMedida(Number(p.stock || 0) + signo * qty));
-  await sb.from('store_products').update({ stock: nuevoStock }).eq('id', p.id);
+  if (!soloEnPantalla) await sb.from('store_products').update({ stock: nuevoStock }).eq('id', p.id);
   p.stock = nuevoStock;
   return null;
 }
@@ -16279,6 +16709,7 @@ async function aplicarStockDeItem(item, signo) {
 // Anular primero, así el stock no se pierde sin darse cuenta.
 async function eliminarPedido(id) {
   if (!puedeOperar()) return;
+  if (esVentaSinSubir(id)) { avisoVentaSinSubir(); return; }
 
   const pedido = pedidosTodos.find(o => String(o.id) === String(id));
   if (!pedido) return;
@@ -16303,6 +16734,7 @@ async function eliminarPedido(id) {
 async function cambiarEstadoPedido(id, nuevo, extra = {}) {
   const pedido = pedidosTodos.find(o => String(o.id) === String(id));
   if (!pedido) return;
+  if (pedido._sinSubir) { avisoVentaSinSubir(); return; }
 
   const anterior = estadoPedido(pedido);
 
@@ -21003,7 +21435,9 @@ function renderSalesHistory() {
     const items = (Array.isArray(o.items) ? o.items.map(it => (it.qty || 1) + 'x ' + nombreDelItem(it)).join(', ') : '');
     const date = fechaAR(o.created_at, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
     return '<tr style="' + (i % 2 === 0 ? 'background:rgba(245,245,245,0.5);' : '') + '">' +
-      '<td style="font-size:12px;">' + date + '</td>' +
+      '<td style="font-size:12px;">' + date +
+        (o._sinSubir ? '<div style="color:#92400E;font-weight:600;" title="Se hizo sin internet. Se sube sola cuando vuelva la conexión.">⏳ Sin subir</div>' : '') +
+      '</td>' +
       '<td>' + escapeHtml(items) + '</td>' +
       '<td style="text-align:center;color:var(--celeste);">N/A</td>' +
       '<td style="text-align:right;color:var(--navy);font-weight:600;">' + money(o.total) + '</td>' +
@@ -21026,6 +21460,7 @@ function renderSalesHistory() {
 // si no, el error de carga se convierte en un error de inventario.
 async function anularVenta(id) {
   if (!puedeOperar()) return;
+  if (esVentaSinSubir(id)) { avisoVentaSinSubir(); return; }
 
   const venta = orders.find(o => String(o.id) === String(id));
   if (!venta) return;
@@ -21914,7 +22349,8 @@ async function confirmarVentaCarrito() {
   dialogoAviso('✓ Venta registrada: ' + resumen.lineas.length + ' producto' + (resumen.lineas.length === 1 ? '' : 's') +
         ' = ' + money(resumen.total) +
         (resumen.ajustes.length ? '\n\n' + resumen.ajustes.map(textoAjustePorciones).join('\n') : '') +
-        (resumen.combos.length ? '\n\n' + resumen.combos.map(textoCombo).join('\n') : ''));
+        (resumen.combos.length ? '\n\n' + resumen.combos.map(textoCombo).join('\n') : '') +
+        (ok.sinInternet ? TEXTO_VENTA_SIN_INTERNET : ''));
 
   if (byId('barcodeTicket')?.checked) {
     imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
@@ -21977,7 +22413,10 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
     return it;
   });
 
-  const { data, error } = await sb.from('orders').insert([{
+  // El id lo arma el aparato: si la venta queda guardada sin internet,
+  // sube despues con el mismo id y no se puede duplicar.
+  const fila = {
+    id: nuevoIdDeVenta(),
     store_slug: currentStore.slug,
     customer_name: nombre,
     customer_phone: String(telefono || '').trim() || 'scanner',
@@ -21989,7 +22428,17 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
     vendedor: vendedor || null,
     medio_pago: medioPago || null,
     created_at: new Date().toISOString()
-  }]).select('id');
+  };
+
+  const res = sinConexionAhora() ? null : await sb.from('orders').insert([fila]).select('id');
+  if (!res || (res.error && esFallaDeRed(res.error))) {
+    return guardarVentaSinInternet(fila, pagoDeLaVenta(fila, fiado ? abonaAhora : 0, medioPago),
+      resumen.lineas.map(l => ({
+        product_id: l.product.id, qty: l.qty, variante: l.variante, imei: l.imei || null,
+        imeiProducto: l.product.imei || null, importe: l.importe
+      })));
+  }
+  const { data, error } = res;
 
   if (error) {
     dialogoAviso('Error al registrar la venta:\n\n' + humano(error));
@@ -22309,7 +22758,8 @@ async function confirmBarcodeVenta() {
   const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta, precioUnitario: precioCobrado, agregados, precioLista, promo });
   if (ok) {
     guardarNombreVendedor(vendedor);
-    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioCobrado * qty);
+    let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioCobrado * qty) +
+      (ok.sinInternet ? TEXTO_VENTA_SIN_INTERNET : '');
     if (ok.tradeIn) {
       mensaje += ok.equipoTomadoOk
         ? '\n\n📦 El equipo que tomaste en parte de pago ya está cargado en Productos.'
@@ -22511,7 +22961,17 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     ? ' (' + Object.entries(variante).map(([k, v]) => k + ': ' + v).join(', ') + ')'
     : '');
 
-  const { data, error } = await sb.from('orders').insert([{
+  // Tomar un equipo es cargar un producto nuevo y su historial: sin
+  // internet no hay donde. Es raro en el mostrador; se hace al volver.
+  if (tradeIn && sinConexionAhora()) {
+    dialogoAviso('Sin internet no se puede tomar un equipo en parte de pago.\n\n' +
+      'Registrá la venta sin el equipo, o esperá a que vuelva la conexión.');
+    return false;
+  }
+
+  // Mismo criterio que registrarVentaCarrito: el id sale del aparato.
+  const fila = {
+    id: nuevoIdDeVenta(),
     store_slug: currentStore.slug,
     customer_name: nombre,
     // Sin telefono cargado se sigue guardando 'scanner', el centinela que ya
@@ -22527,7 +22987,17 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     vendedor: vendedor || null,
     medio_pago: medioPago || null,
     created_at: new Date().toISOString()
-  }]).select('id');
+  };
+
+  const res = sinConexionAhora() ? null : await sb.from('orders').insert([fila]).select('id');
+  if (!res || (res.error && esFallaDeRed(res.error))) {
+    // Si se corto justo con un equipo tomado, la venta queda igual y el
+    // equipo se carga a mano (el aviso de equipoTomadoOk = false lo dice).
+    const guardada = await guardarVentaSinInternet(fila, pagoDeLaVenta(fila, fiado ? abonaAhora : 0, medioPago),
+      [{ product_id: product.id, qty, variante, imei: imeiElegido || null, imeiProducto: product.imei || null, importe: total }]);
+    return guardada && { ...guardada, tradeIn: !!tradeIn, equipoTomadoOk: tradeIn ? false : null, equipoTomadoId: null };
+  }
+  const { data, error } = res;
 
   if (error) {
     dialogoAviso('Error al registrar la venta:\n\n' + humano(error));
@@ -26489,7 +26959,10 @@ byId('empleadoTarjetaNfcBtn').addEventListener('click', (e) =>
 window.addEventListener('online', async () => {
   await sincronizarFichadasPendientes();
   renderAvisoPendientes();
+  // Las ventas hechas sin internet, y sacar el cartel de "sin internet".
+  await alVolverInternet();
 });
+window.addEventListener('offline', () => marcarSinConexion(true));
 
 byId('abrirRelojBtn').addEventListener('click', abrirReloj);
 byId('copiarLinkRelojBtn').addEventListener('click', copiarLinkDelReloj);
@@ -28272,7 +28745,20 @@ async function init() {
       return;
     }
 
-    const { data: { session } } = await sb.auth.getSession();
+    // Sin internet y con la sesion vencida, getSession() se queda
+    // reintentando renovarla casi medio minuto antes de rendirse. La caja no
+    // puede esperar eso: si en unos segundos no contesto y este aparato
+    // tiene la copia para vender, se abre con la copia.
+    const pedidoSesion = sb.auth.getSession();
+    const respuestaSesion = (hayCopiaParaArrancar() && sinConexionAhora())
+      ? null
+      : await Promise.race([pedidoSesion, new Promise(r => setTimeout(() => r(null), 4000))]);
+    if (!respuestaSesion && hayCopiaParaArrancar() && await arrancarSinConexion()) {
+      hideLoadingScreen();
+      clearTimeout(timeoutId);
+      return;
+    }
+    const { data: { session }, error: errorSesion } = respuestaSesion || await pedidoSesion;
 
     setTimeout(() => hideLoadingScreen(), 800);
 
@@ -28282,6 +28768,10 @@ async function init() {
       mostrarFormularioDeNuevaClave();
     } else if (session) {
       await onLoggedIn();
+    } else if (errorSesion && esFallaDeRedSesion(errorSesion) && await arrancarSinConexion()) {
+      // La sesion vencio mientras no habia internet y no se pudo renovar.
+      // Con la copia del aparato se sigue vendiendo; al volver la conexion
+      // se renueva sola.
     } else {
       if (byId('loginEmail')) byId('loginEmail').focus();
     }
