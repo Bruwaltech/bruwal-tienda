@@ -1507,7 +1507,7 @@ tr:last-child td { border-bottom: none; }
    arriba de cualquier otro, sea cual sea el que lo llamó. */
 #pinCostosModal { z-index: 200; }
 /* Se abren encima de Configuración o de Productos. */
-#ticketModal, #gondolaModal { z-index: 190; }
+#ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal { z-index: 190; }
 .tk-opciones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:4px 14px; margin:4px 0 14px; }
 .tk-opciones label { display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; padding:4px 0; }
 .tk-opciones input { margin:0; width:auto; cursor:pointer; }
@@ -2240,6 +2240,11 @@ tr:last-child td { border-bottom: none; }
 
     <!-- PRODUCTOS -->
     <div id="productosView" class="hidden">
+      <!-- Distribuidora: productos que hace meses que nadie actualiza. -->
+      <div id="avisoProductosViejos" class="hidden" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FEF3E2;color:#8A5200;padding:11px 14px;border-radius:9px;font-size:13.5px;line-height:1.5;margin-bottom:12px;">
+        <span id="avisoProductosViejosTexto" style="flex:1;min-width:200px;"></span>
+        <button type="button" class="btn" id="avisoProductosViejosBtn" style="width:auto;padding:7px 13px;font-size:13px;">Revisar</button>
+      </div>
       <div class="toolbar">
         <!-- En un negocio de servicios se muestran los dos; en el resto, solo
              el primero con el texto largo (ver aplicarBotonesDeCarga). -->
@@ -2249,6 +2254,7 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="mlPublicacionesBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-store"></i> Mercado Libre</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
+        <button class="btn-action campo-distribuidora hidden" id="listasPreciosBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-clock-rotate-left"></i> Listas de precios</button>
         <button class="btn-action campo-distribuidora hidden" id="cartelesGondolaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-rectangle-ad"></i> Carteles de oferta</button>
         <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI <span class="lock-pro hidden" id="lockImei">🔒</span></button>
         <button class="btn-action" id="facturaIaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-invoice"></i> Cargar por factura (IA) <span class="lock-pro hidden" id="lockFacturaIa">🔒</span></button>
@@ -2635,6 +2641,12 @@ tr:last-child td { border-bottom: none; }
         <div style="flex:1;"></div>
         <button type="button" id="cierreCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">🧾 Cierre de caja</button>
         <button type="button" id="nuevoMovimientoCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Movimiento manual</button>
+      </div>
+
+      <!-- Distribuidora sin PIN: la caja queda abierta para cualquiera que use el panel. -->
+      <div id="avisoCajaSinClave" class="hidden" style="background:#FEF3E2;color:#8A5200;padding:11px 14px;border-radius:9px;font-size:13px;line-height:1.55;margin-bottom:12px;">
+        🔒 Para que tus empleados no puedan cargar ni borrar movimientos de caja ni anular ventas,
+        poné un PIN en <b>Configuración → PIN para ver costos y proveedores</b>. Con el PIN puesto, la caja lo pide cada vez.
       </div>
 
       <div class="stats-row">
@@ -3985,6 +3997,15 @@ tr:last-child td { border-bottom: none; }
         <input type="text" id="importarCategoriaFija" placeholder="Ej: Almacén">
       </div>
 
+      <!-- Distribuidora: cada importación queda en "Listas de precios" con este nombre. -->
+      <div class="field campo-distribuidora hidden">
+        <label>Nombre de esta lista</label>
+        <input type="text" id="importarNombreLista" maxlength="80" placeholder="Ej: Arcor octubre">
+        <p style="color:var(--text-mute);font-size:12px;margin:5px 0 0;line-height:1.5;">
+          Queda guardada en <b>Listas de precios</b> con el detalle de cada producto que cambió. El nombre lo podés cambiar después.
+        </p>
+      </div>
+
       <div class="field">
         <label>Los que ya tengo cargados</label>
         <select id="importarRepetidos">
@@ -4314,7 +4335,7 @@ tr:last-child td { border-bottom: none; }
   <div class="modal" style="max-width:340px;">
     <button class="modal-close" id="closePinCostosModal">✕</button>
     <h3 style="font-size:17px;">🔒 Información protegida</h3>
-    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;">Ingresá el PIN para ver esta información.</p>
+    <p id="pinCostosMensaje" style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;">Ingresá el PIN para ver esta información.</p>
     <div class="field">
       <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinCostosInput"
              placeholder="••••" style="font-size:26px;letter-spacing:12px;text-align:center;padding:12px;">
@@ -4867,6 +4888,64 @@ tr:last-child td { border-bottom: none; }
     </div>
     <div id="gondolaLista" style="max-height:42vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;margin-bottom:14px;"></div>
     <button type="button" id="gondolaImprimirBtn" class="btn btn-primary" style="width:100%;">🖨️ Imprimir carteles</button>
+  </div>
+</div>
+
+<!-- MODAL LISTAS DE PRECIOS (distribuidora) -->
+<div class="modal-overlay hidden" id="listasPreciosModal">
+  <div class="modal" style="max-width:720px;">
+    <button class="modal-close" id="cerrarListasPreciosModal">✕</button>
+    <h3>📋 Listas de precios</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.5;">
+      Cada vez que actualizás productos queda acá: las listas que subís por Excel y los cambios a mano de cada día.
+      Tocá una para ver qué productos cambiaron. El nombre lo cambiás con ✏️.
+    </p>
+    <div id="listasPreciosContenido"></div>
+  </div>
+</div>
+
+<!-- MODAL PRODUCTOS SIN ACTUALIZAR (distribuidora) -->
+<div class="modal-overlay hidden" id="productosViejosModal">
+  <div class="modal" style="max-width:680px;">
+    <button class="modal-close" id="cerrarProductosViejosModal">✕</button>
+    <h3>⏳ Productos sin actualizar</h3>
+    <p id="productosViejosIntro" style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.5;"></p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+      <button type="button" class="btn-ghost" id="viejosTodos" style="padding:6px 10px;font-size:12.5px;">Todos</button>
+      <button type="button" class="btn-ghost" id="viejosNinguno" style="padding:6px 10px;font-size:12.5px;">Ninguno</button>
+      <span id="viejosContador" style="font-size:12.5px;color:var(--text-mute);"></span>
+    </div>
+    <div id="productosViejosLista" style="max-height:40vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+      <button type="button" id="viejosRevisadoBtn" class="btn" style="flex:1;min-width:140px;background:var(--bg);color:var(--navy);">✓ Ya lo revisé</button>
+      <button type="button" id="viejosPausarBtn" class="btn" style="flex:1;min-width:140px;background:var(--bg);color:var(--navy);">⏸ Pausar</button>
+      <button type="button" id="viejosBorrarBtn" class="btn" style="flex:1;min-width:140px;background:#fff;color:var(--danger);border:1px solid var(--danger);">🗑 Borrar</button>
+    </div>
+    <div style="border-top:1px solid var(--line);padding-top:14px;">
+      <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:12px;">
+        <div class="field" style="margin:0;">
+          <label>Avisar a los</label>
+          <select id="viejosMeses" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+            <option value="3">3 meses</option>
+            <option value="6">6 meses</option>
+            <option value="9">9 meses</option>
+            <option value="12">12 meses</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0;">
+          <label>Y después</label>
+          <select id="viejosAccion" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+            <option value="avisar">Solo avisarme</option>
+            <option value="pausar">Pausarlos solos (dejan de verse en la tienda)</option>
+          </select>
+        </div>
+      </div>
+      <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+        Cuenta desde la última vez que cambió el precio, la oferta o el costo; una venta no cuenta.
+        Pausar se deshace en un toque; borrar no, por eso se hace a mano desde acá.
+      </small>
+      <button type="button" id="viejosGuardarBtn" class="btn btn-primary" style="width:100%;margin-top:12px;">Guardar</button>
+    </div>
   </div>
 </div>
 
@@ -6635,6 +6714,19 @@ async function hashPin(pin) {
 }
 
 function hayPinConfigurado() { return !!currentStore?.pin_costos; }
+
+// ---- Caja con clave (distribuidora) ----
+// En una distribuidora el que cobra suele ser un empleado. Con el PIN
+// puesto, cargar o borrar un movimiento de caja y anular una venta piden
+// el PIN CADA VEZ, aunque la caja ya se haya abierto con el PIN un rato
+// antes: si no, el dueño la abre a la mañana y queda abierta para todos
+// el resto del dia. El resto de las tiendas siguen como siempre.
+function cajaConClave() { return rubroEsDistribuidora() && hayPinConfigurado(); }
+
+function conClaveDeCaja(accion) {
+  if (!cajaConClave()) return accion();
+  abrirPinCostosModal(accion, 'Los movimientos de caja los autoriza el dueño. Ingresá el PIN.');
+}
 function requiereDesbloqueoCostos() { return hayPinConfigurado() && !costosDesbloqueados; }
 
 // La huella es un atajo LOCAL a ese dispositivo puntual (Windows Hello/Touch
@@ -6691,8 +6783,9 @@ async function intentarHuella() {
 // desbloquea (mostrar la vista de Gastos, refrescar la tabla de
 // reparaciones, etc.) — así una sola función de modal sirve para todos los
 // puntos donde se pide el PIN.
-async function abrirPinCostosModal(alDesbloquear) {
+async function abrirPinCostosModal(alDesbloquear, mensaje) {
   alDesbloquearCostos = alDesbloquear;
+  byId('pinCostosMensaje').textContent = mensaje || 'Ingresá el PIN para ver esta información.';
   byId('pinCostosInput').value = '';
   hide(byId('pinCostosError'));
   const conHuella = localStorage.getItem(claveHuellaLS()) && await huellaDisponible();
@@ -12714,6 +12807,10 @@ async function refreshData() {
   aplicarVisibilidadPorPlan();
   refrescarListaDeCategorias();
   pintarCampanita();
+  pintarAvisoProductosViejos();
+  // Sin await: si pausa productos vuelve a llamar a refreshData, y la
+  // bandera de la sesion corta la vuelta.
+  aplicarProductosViejosAutomatico();
   await renderAgendaDia();
 }
 
@@ -17013,6 +17110,7 @@ let mapeoImportacion = {};
 let nombreImportacionPorDescarte = false;
 let filasImportacionValidas = [];
 let filasImportacionActualizar = [];
+let archivoImportacion = '';
 
 function mapeoAutomaticoImportacion(tabla) {
   const mapa = {};
@@ -17060,6 +17158,8 @@ function limpiarImportacionExcel() {
   mapeoImportacion = {};
   nombreImportacionPorDescarte = false;
   byId('importarExcelInput').value = '';
+  if (byId('importarNombreLista')) byId('importarNombreLista').value = '';
+  archivoImportacion = '';
   byId('importarExcelResumen').textContent = '';
   byId('importarExcelPreview').innerHTML = '';
   byId('importarMapeo').innerHTML = '';
@@ -17513,6 +17613,18 @@ async function confirmarImportacionExcel() {
   boton.textContent = textoOriginal;
 
   const interno = destinoImportacion() === 'interno';
+
+  // Distribuidora: la lista queda registrada con su nombre y lo que cambio.
+  if (rubroEsDistribuidora()) {
+    const cambios = filasImportacionActualizar.map(a => ({ id: a.id, nombre: a.nombre, detalle: a.detalle }))
+      .concat(filasImportacionValidas.map(r => ({ id: null, nombre: r.name, detalle: ['producto nuevo', 'precio ' + money(r.price)] })));
+    await registrarListaDePrecios({
+      nombre: (byId('importarNombreLista').value || '').trim() || (archivoImportacion || 'Lista') + ' ' + fechaAR(new Date()).slice(0, 5),
+      origen: 'excel',
+      archivo: archivoImportacion || null,
+      cambios
+    });
+  }
   limpiarImportacionExcel();
   hide(byId('importarExcelModal'));
   await refreshData();
@@ -18979,6 +19091,303 @@ byId('gondolaTodos').addEventListener('click', () => {
 byId('gondolaNinguno').addEventListener('click', () => { gondolaElegidos.clear(); renderListaGondola(); });
 byId('gondolaImprimirBtn').addEventListener('click', imprimirCartelesGondola);
 
+// ---- Listas de precios (distribuidora) ----
+// Cada actualizacion de productos deja un registro con nombre: una lista
+// de Excel es un registro, y los cambios a mano de un mismo dia se juntan
+// en uno ("Cambios a mano 23/10"). Vive en store_listas_precios
+// (schema/81). Si la tabla no existe todavia, la actualizacion sigue
+// igual: el registro es un extra, no puede frenar la carga de precios.
+let listasPrecios = [];
+let listaPrecioAbierta = null;
+
+async function registrarListaDePrecios(lista) {
+  if (!lista.cambios || !lista.cambios.length) return;
+  const { error } = await sb.from('store_listas_precios').insert([{
+    store_slug: currentStore.slug,
+    nombre: String(lista.nombre).slice(0, 80),
+    origen: lista.origen,
+    archivo: lista.archivo || null,
+    dia: lista.dia || null,
+    cambios: lista.cambios,
+    cantidad: lista.cambios.length
+  }]);
+  if (error) console.warn('No se pudo guardar la lista de precios:', humano(error));
+}
+
+// Que cambio en el formulario de un producto, en el mismo idioma que la
+// importacion ("precio $1.000 → $1.200").
+function detalleCambioAMano(antes, despues) {
+  const num = (x) => (x === null || x === undefined || x === '' ? null : Number(x));
+  const plata = (x) => (num(x) === null ? '—' : money(x));
+  const detalle = [];
+  if (num(antes.price) !== num(despues.price)) detalle.push('precio ' + plata(antes.price) + ' → ' + plata(despues.price));
+  if (num(antes.precio_oferta) !== num(despues.precio_oferta)) {
+    detalle.push(num(despues.precio_oferta) ? 'oferta ' + plata(antes.precio_oferta) + ' → ' + plata(despues.precio_oferta) : 'sin oferta');
+  }
+  if ('costo' in despues && num(antes.costo) !== num(despues.costo)) detalle.push('costo ' + plata(antes.costo) + ' → ' + plata(despues.costo));
+  if (num(antes.stock) !== num(despues.stock) && !despues.tiene_variantes) detalle.push('stock ' + (num(antes.stock) || 0) + ' → ' + (num(despues.stock) || 0));
+  if (String(antes.name || '') !== String(despues.name || '')) detalle.push('nombre "' + antes.name + '" → "' + despues.name + '"');
+  return detalle;
+}
+
+async function anotarCambioAMano(antes, despues) {
+  if (!antes || !despues) return;
+  const detalle = detalleCambioAMano(antes, { ...antes, ...despues });
+  if (!detalle.length) return;
+  const hoy = fechaLocalISO();
+  const item = { id: antes.id, nombre: despues.name || antes.name, detalle, hora: horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', hour12: false }) };
+
+  const { data: existentes, error } = await sb.from('store_listas_precios').select('*')
+    .eq('store_slug', currentStore.slug).eq('origen', 'manual').eq('dia', hoy).limit(1);
+  if (error) { console.warn('No se pudo anotar el cambio:', humano(error)); return; }
+  const delDia = existentes && existentes[0];
+  if (!delDia) {
+    await registrarListaDePrecios({ nombre: 'Cambios a mano ' + fechaAR(new Date()).slice(0, 5), origen: 'manual', dia: hoy, cambios: [item] });
+    return;
+  }
+  const cambios = (Array.isArray(delDia.cambios) ? delDia.cambios : []).concat([item]);
+  await sb.from('store_listas_precios').update({ cambios, cantidad: cambios.length }).eq('id', delDia.id);
+}
+
+async function abrirListasPrecios() {
+  listaPrecioAbierta = null;
+  byId('listasPreciosContenido').innerHTML = '<div style="padding:14px;color:var(--text-mute);font-size:13.5px;">Cargando…</div>';
+  show(byId('listasPreciosModal'));
+  const { data, error } = await sb.from('store_listas_precios').select('*')
+    .eq('store_slug', currentStore.slug).order('created_at', { ascending: false }).limit(200);
+  if (error) {
+    byId('listasPreciosContenido').innerHTML = '<div style="padding:14px;color:var(--danger);font-size:13.5px;line-height:1.5;">' +
+      'No se pudieron traer las listas: ' + escapeHtml(humano(error)) +
+      '<br>(Si dice que falta la tabla, correr schema/81-listas-y-productos-viejos.sql en Supabase.)</div>';
+    return;
+  }
+  listasPrecios = data || [];
+  renderListasPrecios();
+}
+
+function renderListasPrecios() {
+  const cont = byId('listasPreciosContenido');
+  if (listaPrecioAbierta) {
+    const l = listasPrecios.find(x => x.id === listaPrecioAbierta);
+    if (!l) { listaPrecioAbierta = null; renderListasPrecios(); return; }
+    const cambios = Array.isArray(l.cambios) ? l.cambios : [];
+    cont.innerHTML =
+      '<button type="button" class="btn-ghost" data-volver-listas style="padding:6px 10px;font-size:12.5px;margin-bottom:10px;">← Todas las listas</button>' +
+      '<div style="font-weight:700;font-size:16px;color:var(--navy);">' + escapeHtml(l.nombre) + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-mute);margin-bottom:10px;">' +
+        fechaAR(comoFecha(l.created_at)) + ' · ' + cambios.length + ' producto' + (cambios.length === 1 ? '' : 's') +
+        (l.archivo ? ' · archivo ' + escapeHtml(l.archivo) : '') + '</div>' +
+      '<div style="max-height:52vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;">' +
+      cambios.map(c =>
+        '<div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:13.5px;">' +
+          '<b>' + escapeHtml(c.nombre || '') + '</b>' + (c.hora ? ' <span style="color:var(--text-mute);font-size:12px;">' + escapeHtml(c.hora) + '</span>' : '') +
+          '<div style="font-size:12.5px;color:var(--text-mute);">' + escapeHtml((c.detalle || []).join(' · ')) + '</div>' +
+        '</div>').join('') +
+      '</div>';
+    cont.querySelector('[data-volver-listas]').addEventListener('click', () => { listaPrecioAbierta = null; renderListasPrecios(); });
+    return;
+  }
+  if (!listasPrecios.length) {
+    cont.innerHTML = '<div style="padding:16px;font-size:13.5px;color:var(--text-mute);line-height:1.55;border:1px dashed var(--line);border-radius:9px;">' +
+      'Todavía no hay listas. Cuando subas una lista por <b>Importar Excel</b> o cambies un precio a mano, queda acá.</div>';
+    return;
+  }
+  cont.innerHTML = '<div style="border:1px solid var(--line);border-radius:9px;max-height:56vh;overflow-y:auto;">' +
+    listasPrecios.map(l =>
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);">' +
+        '<button type="button" data-abrir-lista="' + escapeHtml(l.id) + '" style="flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;cursor:pointer;font-family:inherit;">' +
+          '<div style="font-weight:700;font-size:14px;color:var(--navy);">' + (l.origen === 'manual' ? '✍️ ' : '📄 ') + escapeHtml(l.nombre) + '</div>' +
+          '<div style="font-size:12px;color:var(--text-mute);">' + fechaAR(comoFecha(l.created_at)) + ' · ' +
+            Number(l.cantidad || 0) + ' producto' + (Number(l.cantidad) === 1 ? '' : 's') + '</div>' +
+        '</button>' +
+        '<button type="button" class="icon-btn" data-renombrar-lista="' + escapeHtml(l.id) + '" title="Cambiar el nombre">✏️</button>' +
+      '</div>').join('') + '</div>';
+  cont.querySelectorAll('[data-abrir-lista]').forEach(b => b.addEventListener('click', () => {
+    listaPrecioAbierta = b.dataset.abrirLista; renderListasPrecios();
+  }));
+  cont.querySelectorAll('[data-renombrar-lista]').forEach(b => b.addEventListener('click', () => renombrarListaPrecios(b.dataset.renombrarLista)));
+}
+
+async function renombrarListaPrecios(id) {
+  const l = listasPrecios.find(x => x.id === id);
+  if (!l) return;
+  const nombre = await dialogoPedir('Nombre de la lista', l.nombre);
+  if (nombre === null) return;
+  const limpio = String(nombre).trim().slice(0, 80);
+  if (!limpio) { dialogoAviso('Poné un nombre.'); return; }
+  const { error } = await sb.from('store_listas_precios').update({ nombre: limpio }).eq('id', id);
+  if (error) { dialogoAviso('No se pudo cambiar el nombre:\n\n' + humano(error)); return; }
+  l.nombre = limpio;
+  renderListasPrecios();
+}
+
+byId('listasPreciosBtn').addEventListener('click', abrirListasPrecios);
+byId('cerrarListasPreciosModal').addEventListener('click', () => hide(byId('listasPreciosModal')));
+
+// ---- Productos sin actualizar (distribuidora) ----
+// Un producto que hace meses que nadie le toca el precio en una
+// distribuidora es casi seguro un precio viejo o algo que ya no se trae.
+// Se avisa en Productos y desde ahi se pausa, se borra o se marca como
+// revisado. Lo automatico llega hasta PAUSAR (se deshace en un toque);
+// borrar solo no existe a proposito, porque no tiene vuelta atras.
+let viejosElegidos = new Set();
+
+function configProductosViejos() {
+  const c = (currentStore && currentStore.productos_viejos) || {};
+  return { meses: [3, 6, 9, 12].includes(Number(c.meses)) ? Number(c.meses) : 6, accion: c.accion === 'pausar' ? 'pausar' : 'avisar' };
+}
+
+// La ultima vez que se toco el precio. Sin la migracion 81 cae a
+// updated_at (que tambien se mueve con las ventas) y despues al alta.
+function ultimaActualizacionPrecio(p) {
+  return comoFecha(p.precio_actualizado_at || p.updated_at || p.created_at);
+}
+
+function productosSinActualizar() {
+  const { meses } = configProductosViejos();
+  const limite = new Date();
+  limite.setMonth(limite.getMonth() - meses);
+  return (products || []).filter(p => {
+    if (p.solo_interno || p.tipo === 'servicio') return false;
+    const f = ultimaActualizacionPrecio(p);
+    return f && !isNaN(f) && f < limite;
+  }).sort((a, b) => ultimaActualizacionPrecio(a) - ultimaActualizacionPrecio(b));
+}
+
+function mesesDesde(fecha) {
+  const d = new Date();
+  return Math.max(0, (d.getFullYear() - fecha.getFullYear()) * 12 + d.getMonth() - fecha.getMonth());
+}
+
+function pintarAvisoProductosViejos() {
+  const aviso = byId('avisoProductosViejos');
+  if (!aviso) return;
+  const pendientes = rubroEsDistribuidora() ? productosSinActualizar().filter(p => !p.pausado) : [];
+  aviso.classList.toggle('hidden', !pendientes.length);
+  if (!pendientes.length) return;
+  byId('avisoProductosViejosTexto').innerHTML = '⏳ <b>' + pendientes.length + ' producto' + (pendientes.length === 1 ? '' : 's') +
+    '</b> sin actualizar el precio hace más de ' + configProductosViejos().meses + ' meses.';
+}
+
+// Al entrar al panel: si la tienda eligio "pausarlos solos", se pausan los
+// vencidos y se avisa cuales, con la opcion de volver atras.
+let productosViejosRevisadosEnSesion = false;
+async function aplicarProductosViejosAutomatico() {
+  if (productosViejosRevisadosEnSesion || !rubroEsDistribuidora()) return;
+  productosViejosRevisadosEnSesion = true;
+  if (configProductosViejos().accion !== 'pausar' || estadoSuscripcion() === 'vencido') return;
+  const aPausar = productosSinActualizar().filter(p => !p.pausado);
+  if (!aPausar.length) return;
+  const ids = aPausar.map(p => p.id);
+  const { error } = await sb.from('store_products').update({ pausado: true }).in('id', ids);
+  if (error) { console.warn('No se pudieron pausar los productos viejos:', humano(error)); return; }
+  aPausar.forEach(p => { p.pausado = true; });
+  const deshacer = await dialogoConfirmar('⏸ ' + (ids.length === 1
+      ? 'Se pausó 1 producto que no se actualizaba'
+      : 'Se pausaron ' + ids.length + ' productos que no se actualizaban') +
+    ' hace más de ' + configProductosViejos().meses + ' meses:\n\n' +
+    aPausar.slice(0, 12).map(p => '• ' + p.name).join('\n') + (aPausar.length > 12 ? '\n… y ' + (aPausar.length - 12) + ' más' : '') +
+    '\n\nYa no se ven en tu tienda. ¿Querés volver a mostrarlos?');
+  if (deshacer) {
+    await sb.from('store_products').update({ pausado: false }).in('id', ids);
+    aPausar.forEach(p => { p.pausado = false; });
+  }
+  await refreshData();
+}
+
+function abrirProductosViejos() {
+  const cfg = configProductosViejos();
+  byId('viejosMeses').value = String(cfg.meses);
+  byId('viejosAccion').value = cfg.accion;
+  viejosElegidos = new Set(productosSinActualizar().map(p => String(p.id)));
+  renderProductosViejos();
+  show(byId('productosViejosModal'));
+}
+
+function renderProductosViejos() {
+  const lista = productosSinActualizar();
+  const cfg = configProductosViejos();
+  byId('productosViejosIntro').innerHTML = lista.length
+    ? 'Estos productos no cambiaron de precio en los últimos <b>' + cfg.meses + ' meses</b>. Tildá los que quieras y elegí qué hacer.'
+    : 'No hay productos con el precio sin actualizar hace más de <b>' + cfg.meses + ' meses</b>. 👌';
+  byId('productosViejosLista').innerHTML = lista.map(p => {
+    const f = ultimaActualizacionPrecio(p);
+    return '<label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer;">' +
+      '<input type="checkbox" data-viejo="' + escapeHtml(String(p.id)) + '"' + (viejosElegidos.has(String(p.id)) ? ' checked' : '') + ' style="margin:0;width:auto;">' +
+      '<span style="flex:1;min-width:0;"><b style="font-size:13.5px;">' + escapeHtml(p.name) + '</b>' + (p.pausado ? ' <span style="font-size:11px;color:#8A5200;">⏸ pausado</span>' : '') +
+        '<span style="display:block;font-size:12px;color:var(--text-mute);">Último cambio de precio: ' + fechaAR(f) + ' (hace ' + mesesDesde(f) + ' meses)</span></span>' +
+      '<b style="color:var(--navy);white-space:nowrap;">' + money(p.price) + '</b>' +
+    '</label>';
+  }).join('');
+  byId('productosViejosLista').classList.toggle('hidden', !lista.length);
+  byId('productosViejosLista').querySelectorAll('[data-viejo]').forEach(c => c.addEventListener('change', () => {
+    if (c.checked) viejosElegidos.add(c.dataset.viejo); else viejosElegidos.delete(c.dataset.viejo);
+    contarViejos();
+  }));
+  contarViejos();
+}
+
+function contarViejos() {
+  byId('viejosContador').textContent = viejosElegidos.size ? viejosElegidos.size + ' elegido' + (viejosElegidos.size === 1 ? '' : 's') : '';
+}
+
+function idsViejosElegidos() {
+  const visibles = new Set(productosSinActualizar().map(p => String(p.id)));
+  return Array.from(viejosElegidos).filter(id => visibles.has(id));
+}
+
+async function accionProductosViejos(accion) {
+  if (!puedeOperar()) return;
+  const ids = idsViejosElegidos();
+  if (!ids.length) { dialogoAviso('Tildá al menos un producto.'); return; }
+  const n = ids.length + ' producto' + (ids.length === 1 ? '' : 's');
+  let error;
+  if (accion === 'borrar') {
+    if (!await dialogoConfirmar('¿Borrar ' + n + '?\n\nSe borran del todo, con su stock y sus fotos. No se puede deshacer.\n\nSi solo querés que no se vean, usá Pausar.')) return;
+    ({ error } = await sb.from('store_products').delete().in('id', ids));
+  } else if (accion === 'pausar') {
+    ({ error } = await sb.from('store_products').update({ pausado: true }).in('id', ids));
+  } else {
+    // "Ya lo revise": el precio esta bien, se cuenta de nuevo desde hoy.
+    ({ error } = await sb.from('store_products').update({ precio_actualizado_at: new Date().toISOString() }).in('id', ids));
+    if (error && /precio_actualizado_at/.test(error.message || '')) {
+      dialogoAviso('Para esto falta correr schema/81-listas-y-productos-viejos.sql en Supabase.');
+      return;
+    }
+  }
+  if (error) { dialogoAviso('No se pudo:\n\n' + humano(error)); return; }
+  viejosElegidos.clear();
+  await refreshData();
+  renderProductosViejos();
+  dialogoAviso('✓ Listo: ' + n + (accion === 'borrar' ? ' borrados.' : accion === 'pausar' ? ' pausados.' : ' marcados como revisados.'));
+}
+
+async function guardarConfigProductosViejos() {
+  if (!puedeOperar()) return;
+  const productos_viejos = { meses: Number(byId('viejosMeses').value) || 6, accion: byId('viejosAccion').value === 'pausar' ? 'pausar' : 'avisar' };
+  const { error } = await sb.from('store_profiles').update({ productos_viejos }).eq('slug', currentStore.slug);
+  if (error) {
+    dialogoAviso('No se pudo guardar:\n\n' + humano(error) + '\n\n(Si dice que falta la columna, correr schema/81-listas-y-productos-viejos.sql en Supabase.)');
+    return;
+  }
+  currentStore.productos_viejos = productos_viejos;
+  viejosElegidos = new Set(productosSinActualizar().map(p => String(p.id)));
+  renderProductosViejos();
+  pintarAvisoProductosViejos();
+  dialogoAviso(productos_viejos.accion === 'pausar'
+    ? '✓ Guardado. Cuando un producto pase ' + productos_viejos.meses + ' meses sin actualizar, se pausa solo al entrar al panel y te avisamos cuáles.'
+    : '✓ Guardado. Te avisamos en Productos cuando uno pase ' + productos_viejos.meses + ' meses sin actualizar.');
+}
+
+byId('avisoProductosViejosBtn').addEventListener('click', abrirProductosViejos);
+byId('cerrarProductosViejosModal').addEventListener('click', () => hide(byId('productosViejosModal')));
+byId('viejosTodos').addEventListener('click', () => { productosSinActualizar().forEach(p => viejosElegidos.add(String(p.id))); renderProductosViejos(); });
+byId('viejosNinguno').addEventListener('click', () => { viejosElegidos.clear(); renderProductosViejos(); });
+byId('viejosRevisadoBtn').addEventListener('click', () => accionProductosViejos('revisado'));
+byId('viejosPausarBtn').addEventListener('click', () => accionProductosViejos('pausar'));
+byId('viejosBorrarBtn').addEventListener('click', () => accionProductosViejos('borrar'));
+byId('viejosGuardarBtn').addEventListener('click', guardarConfigProductosViejos);
+
 // Reimprimir el ticket de una venta ya hecha. Se arma con lo que quedo
 // GUARDADO en la orden, no con el producto de hoy: si despues cambio el
 // precio o el nombre, el comprobante tiene que seguir diciendo lo que se
@@ -19892,7 +20301,7 @@ function renderCaja() {
   }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin movimientos este día</td></tr>';
 
   cuerpo.querySelectorAll('[data-eliminar-mov-caja]').forEach(b =>
-    b.addEventListener('click', () => eliminarMovimientoCaja(b.getAttribute('data-eliminar-mov-caja'))));
+    b.addEventListener('click', () => conClaveDeCaja(() => eliminarMovimientoCaja(b.getAttribute('data-eliminar-mov-caja')))));
 }
 
 byId('cajaFecha').addEventListener('change', renderCaja);
@@ -19904,6 +20313,10 @@ byId('cajaHoyBtn').addEventListener('click', () => {
 
 byId('nuevoMovimientoCajaBtn').addEventListener('click', () => {
   if (!puedeOperar()) return;
+  conClaveDeCaja(abrirMovimientoCaja);
+});
+
+function abrirMovimientoCaja() {
   byId('movCajaTipo').value = 'ingreso';
   byId('movCajaConcepto').value = '';
   byId('movCajaMonto').value = 0;
@@ -19911,7 +20324,7 @@ byId('nuevoMovimientoCajaBtn').addEventListener('click', () => {
   byId('movCajaFecha').value = byId('cajaFecha').value || fechaLocalISO();
   byId('movCajaNotas').value = '';
   show(byId('movimientoCajaModal'));
-});
+}
 byId('closeMovimientoCajaModal').addEventListener('click', () => hide(byId('movimientoCajaModal')));
 
 async function guardarMovimientoCaja() {
@@ -20602,7 +21015,7 @@ function renderSalesHistory() {
   }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin ventas</td></tr>';
 
   el.querySelectorAll('[data-borrar-venta]').forEach(b => {
-    b.addEventListener('click', () => anularVenta(b.dataset.borrarVenta));
+    b.addEventListener('click', () => conClaveDeCaja(() => anularVenta(b.dataset.borrarVenta)));
   });
   el.querySelectorAll('[data-ticket-venta]').forEach(b => {
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketVenta));
@@ -24519,6 +24932,11 @@ byId('productForm').addEventListener('submit', async (e) => {
   // Se hace despues de guardar porque un producto nuevo recien acá tiene id.
   await guardarUsadoEnServicios(id || dataGuardado?.[0]?.id);
 
+  // Distribuidora: el cambio queda en "Listas de precios" (cambios a mano del dia).
+  if (id && rubroEsDistribuidora()) {
+    await anotarCambioAMano(products.find(p => String(p.id) === String(id)), payload);
+  }
+
   if (payload.imei) {
     await registrarEventoImei(payload.imei, 'ingreso', payload.name + ' — ' + money(payload.price));
   }
@@ -25408,12 +25826,14 @@ function mostrarVistaCaja() {
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('cajaView').classList.add('visible');
   if (!byId('cajaFecha').value) byId('cajaFecha').value = fechaLocalISO();
+  byId('avisoCajaSinClave').classList.toggle('hidden', !(rubroEsDistribuidora() && !hayPinConfigurado()));
   renderCaja();
 }
 
 byId('tabCaja').addEventListener('click', () => {
   if (!tienePlanPro()) { ofrecerUpgradePro('Caja'); return; }
-  if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaCaja); return; }
+  // En distribuidora se pide cada vez que se entra, no una vez por sesion.
+  if (requiereDesbloqueoCostos() || cajaConClave()) { abrirPinCostosModal(mostrarVistaCaja); return; }
   mostrarVistaCaja();
 });
 
@@ -26527,7 +26947,13 @@ byId('importarExcelBtn').addEventListener('click', () => {
 byId('closeImportarExcelModal').addEventListener('click', () => hide(byId('importarExcelModal')));
 byId('descargarPlantillaBtn').addEventListener('click', descargarPlantillaImportacion);
 byId('importarExcelInput').addEventListener('change', (e) => {
-  if (e.target.files[0]) procesarArchivoImportacion(e.target.files[0]);
+  if (e.target.files[0]) {
+    archivoImportacion = e.target.files[0].name;
+    // Nombre sugerido: el del archivo sin la extension y la fecha de hoy.
+    byId('importarNombreLista').value = archivoImportacion.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() +
+      ' ' + fechaAR(new Date()).slice(0, 5);
+    procesarArchivoImportacion(e.target.files[0]);
+  }
 });
 byId('importarHojaSelect').addEventListener('change', elegirHojaImportacion);
 byId('importarBloqueSelect').addEventListener('change', elegirBloqueImportacion);
