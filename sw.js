@@ -70,12 +70,22 @@ self.addEventListener('push', (e) => {
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     data: { url: d.url || '/chat' }
-  }));
+  }).then(numeroEnIcono));
 });
+
+// El número sobre el ícono de la app instalada: una por charla con avisos sin abrir.
+// Con el panel abierto lo pone el panel (charlas que esperan respuesta).
+function numeroEnIcono() {
+  if (!self.navigator.setAppBadge) return;
+  return self.registration.getNotifications().then((ns) =>
+    ns.length ? self.navigator.setAppBadge(ns.length) : self.navigator.clearAppBadge()
+  ).catch(() => {});
+}
 
 // Tocar el aviso abre la charla: en el panel si ya estaba abierto, si no en una ventana nueva
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
+  numeroEnIcono();
   const url = new URL((e.notification.data && e.notification.data.url) || '/chat', self.location.origin).href;
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((ventanas) => {
     const panel = ventanas.find((v) => new URL(v.url).pathname === '/chat');

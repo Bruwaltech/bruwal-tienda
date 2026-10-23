@@ -238,6 +238,11 @@ tbody tr:hover { background: #F8FBFF; }
   color: var(--text-mute); cursor: pointer; margin-left: auto; padding: 0 4px;
 }
 .ficha-cuerpo { padding: 18px 20px 30px; }
+.volver-ficha { display: none; background: none; border: none; color: var(--celeste); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; padding: 4px 10px 4px 0; }
+@media (max-width: 640px) {
+  .volver-ficha { display: block; }
+  #mCerrarFicha { display: none; }
+}
 .bloque { margin-bottom: 22px; }
 .bloque > h4 {
   font-size: 12px; text-transform: uppercase; letter-spacing: .4px;
@@ -400,6 +405,12 @@ tbody tr:hover { background: #F8FBFF; }
   outline: none; border-color: var(--celeste);
 }
 .aviso-pedido { margin-top: 7px; font-size: 13px; color: var(--text-mute); }
+.btn-mover { display: inline-block; width: auto; margin-top: 6px; padding: 5px 10px; font-size: 13px; }
+.foto-elegida { display: grid; gap: 8px; margin-bottom: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.foto-elegida img { max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 8px; justify-self: start; }
+.foto-elegida input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 15px; }
+.foto-elegida-botones { display: flex; gap: 8px; justify-content: flex-end; }
+.foto-elegida-botones .btn { width: auto; }
 
 .chip-alerta { background: #FEE2E2; color: #991B1B; }
 .chip-prioridad { background: var(--navy); color: #fff; }
@@ -950,6 +961,8 @@ tbody tr:hover { background: #F8FBFF; }
 <div class="telon hidden" id="mTelon">
   <div class="ficha">
     <div class="ficha-cabecera">
+      <!-- En el celular, "‹ Chats" arriba a la izquierda como en WhatsApp (y el gesto de atrás) -->
+      <button class="volver-ficha" id="mVolverFicha" aria-label="Volver a las charlas">&lsaquo; Chats</button>
       <div>
         <h3 id="mFichaNombre"></h3>
         <div class="dato-secundario" id="mFichaCanal"></div>
@@ -979,6 +992,15 @@ tbody tr:hover { background: #F8FBFF; }
             <button type="button" class="btn btn-suave" id="mAudioCancelar">Cancelar</button>
             <button type="button" class="btn btn-suave" id="mAudioPausa">Pausar</button>
             <button type="button" class="btn btn-ok" id="mAudioEnviar">Enviar audio</button>
+          </div>
+          <!-- La foto elegida, para escribirle el texto abajo antes de mandarla, como en WhatsApp -->
+          <div class="foto-elegida hidden" id="mFotoPrevia">
+            <img id="mFotoPreviaImg" alt="Foto elegida">
+            <input type="text" id="mFotoPie" aria-label="Texto de la foto" placeholder="Escribí un texto para la foto (opcional)" maxlength="1024">
+            <div class="foto-elegida-botones">
+              <button type="button" class="btn btn-suave" id="mFotoCancelar">Cancelar</button>
+              <button type="button" class="btn btn-ok" id="mFotoEnviar">Enviar foto</button>
+            </div>
           </div>
           <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente… (Enter envía, Shift+Enter baja de renglón)" maxlength="4000"></textarea>
           <div class="responder-pie">
@@ -1046,7 +1068,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261022c"></script>
+<script src="/asistente/monedas.js?v=20261023a"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
