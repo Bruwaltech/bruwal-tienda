@@ -1506,6 +1506,11 @@ tr:last-child td { border-bottom: none; }
    HTML y no de cuál se abrió después. El de PIN siempre tiene que quedar
    arriba de cualquier otro, sea cual sea el que lo llamó. */
 #pinCostosModal { z-index: 200; }
+/* Se abren encima de Configuración o de Productos. */
+#ticketModal, #gondolaModal { z-index: 190; }
+.tk-opciones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:4px 14px; margin:4px 0 14px; }
+.tk-opciones label { display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; padding:4px 0; }
+.tk-opciones input { margin:0; width:auto; cursor:pointer; }
 
 .modal {
   background: var(--surface);
@@ -2244,6 +2249,7 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="mlPublicacionesBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-store"></i> Mercado Libre</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
+        <button class="btn-action campo-distribuidora hidden" id="cartelesGondolaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-rectangle-ad"></i> Carteles de oferta</button>
         <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI <span class="lock-pro hidden" id="lockImei">🔒</span></button>
         <button class="btn-action" id="facturaIaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-invoice"></i> Cargar por factura (IA) <span class="lock-pro hidden" id="lockFacturaIa">🔒</span></button>
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔍 O escanea código...">
@@ -2490,10 +2496,13 @@ tr:last-child td { border-bottom: none; }
                 <span id="entregaAviso" style="font-size:12.5px;color:var(--text-mute);"></span>
               </div>
 
-              <label id="filaTicket" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
-                <input type="checkbox" id="barcodeTicket" style="margin:0;width:auto;cursor:pointer;">
-                🧾 Imprimir ticket al confirmar
-              </label>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+                <label id="filaTicket" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);cursor:pointer;">
+                  <input type="checkbox" id="barcodeTicket" style="margin:0;width:auto;cursor:pointer;">
+                  🧾 Imprimir ticket al confirmar
+                </label>
+                <button type="button" class="btn-ghost" data-abrir-diseno-ticket style="padding:4px 10px;font-size:12px;">✏️ Diseño del ticket</button>
+              </div>
 
               <label id="filaTradeIn" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="barcodeTradeIn" style="margin:0;width:auto;cursor:pointer;">
@@ -3463,6 +3472,17 @@ tr:last-child td { border-bottom: none; }
             Cuando te suba el precio de una, el costo del combo se actualiza solo — no hay que
             volver a tocarlo. Y cada vez que vendas el combo, se descuenta el stock de lo que lleva.
           </small>
+          <!-- Solo distribuidora: el combo se cobra solo cuando pasan sus partes por la caja. -->
+          <div id="campoComboEnCaja" class="hidden" style="margin-top:12px;padding:11px 12px;background:var(--bg);border-radius:9px;">
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600;">
+              <input type="checkbox" role="switch" class="switch" id="pComboEnCaja">
+              Armarlo solo en la caja
+            </label>
+            <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+              Cuando pasen por Ventas todos los productos de este combo, se cobra el precio del combo
+              sin que el cajero tenga que buscarlo. Sale en el ticket con lo que ahorró el cliente.
+            </small>
+          </div>
           <small id="insumosAyudaPlato" class="hidden" style="display:block;margin-top:7px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Cada vez que vendas este plato se descuenta solo. Ej: una muzzarella se lleva <strong>0,2</strong> kg de queso
             y <strong>0,1</strong> de salsa. Cargá el queso como producto de <strong>uso interno</strong> y marcalo
@@ -4743,6 +4763,113 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL DISEÑO DEL TICKET -->
+<!-- Lo que el vendedor quiere que diga su ticket. Hasta acá el ticket era
+     fijo en el código y no habia forma de sacarle o agregarle nada. -->
+<div class="modal-overlay hidden" id="ticketModal">
+  <div class="modal" style="max-width:860px;">
+    <button class="modal-close" id="cerrarTicketModal">✕</button>
+    <h3>🧾 Diseño del ticket</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 16px;line-height:1.5;">
+      Elegí qué sale en el ticket que le das al cliente. A la derecha ves cómo queda.
+    </p>
+    <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;">
+      <div style="flex:1 1 330px;min-width:0;">
+        <div class="field">
+          <label>Nombre arriba de todo <span style="font-weight:400;color:var(--text-mute);">(vacío = el de tu negocio)</span></label>
+          <input type="text" id="tkTitulo" maxlength="60" placeholder="Ej: Distribuidora El Sol">
+        </div>
+        <div class="field">
+          <label>Texto del encabezado <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <textarea id="tkEncabezado" rows="3" maxlength="400" placeholder="Ej: CUIT 20-12345678-9&#10;IVA Responsable Inscripto&#10;Lun a Sáb de 8 a 18" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;"></textarea>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:4px;">Qué sale</div>
+        <div class="tk-opciones">
+          <label><input type="checkbox" data-tk="mostrarLogo"> Logo del negocio</label>
+          <label><input type="checkbox" data-tk="mostrarDescripcion"> Descripción</label>
+          <label><input type="checkbox" data-tk="mostrarDireccion"> Dirección</label>
+          <label><input type="checkbox" data-tk="mostrarTelefono"> Teléfono</label>
+          <label><input type="checkbox" data-tk="mostrarNumero"> Número de ticket</label>
+          <label><input type="checkbox" data-tk="mostrarCliente"> Nombre del cliente</label>
+          <label><input type="checkbox" data-tk="mostrarUnitario"> Precio por unidad</label>
+          <label><input type="checkbox" data-tk="mostrarPromos"> Ofertas, combos y lo que ahorró</label>
+          <label><input type="checkbox" data-tk="mostrarPago"> Medio de pago</label>
+          <label><input type="checkbox" data-tk="mostrarAlias"> Alias (si paga por transferencia)</label>
+          <label><input type="checkbox" data-tk="mostrarVendedor"> Quién atendió</label>
+          <label><input type="checkbox" data-tk="mostrarWeb"> Link de tu tienda</label>
+        </div>
+        <div class="field">
+          <label>Mensaje del pie <span style="font-weight:400;color:var(--text-mute);">(vacío = sin mensaje)</span></label>
+          <textarea id="tkPie" rows="2" maxlength="300" placeholder="Ej: ¡Gracias por su compra! Cambios dentro de los 7 días con este ticket." style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;"></textarea>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="field" style="margin:0;">
+            <label>Ancho del papel</label>
+            <select id="tkAncho" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+              <option value="58">58 mm (el más común)</option>
+              <option value="80">80 mm</option>
+            </select>
+          </div>
+          <div class="field" style="margin:0;">
+            <label>Tamaño de letra</label>
+            <select id="tkLetra" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+              <option value="chica">Chica</option>
+              <option value="normal">Normal</option>
+              <option value="grande">Grande</option>
+            </select>
+          </div>
+        </div>
+        <small style="display:block;margin-top:10px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+          Si la venta es fiada, el ticket siempre dice cuánto queda debiendo: es el comprobante del cliente.
+        </small>
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+          <button type="button" id="guardarTicketBtn" class="btn btn-primary" style="flex:1;min-width:150px;">Guardar diseño</button>
+          <button type="button" id="probarTicketBtn" class="btn" style="width:auto;background:var(--bg);color:var(--navy);">🖨️ Imprimir prueba</button>
+          <button type="button" id="restaurarTicketBtn" class="btn-ghost" style="width:auto;">Volver al original</button>
+        </div>
+      </div>
+      <div style="flex:0 0 auto;margin:0 auto;">
+        <div style="font-size:12px;font-weight:700;color:var(--text-mute);text-transform:uppercase;margin-bottom:6px;text-align:center;">Vista previa</div>
+        <div style="background:#e9edf2;border-radius:10px;padding:12px;">
+          <iframe id="tkVistaPrevia" title="Vista previa del ticket" style="display:block;width:260px;height:520px;border:0;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.12);"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CARTELES DE GÓNDOLA (distribuidora) -->
+<div class="modal-overlay hidden" id="gondolaModal">
+  <div class="modal" style="max-width:640px;">
+    <button class="modal-close" id="cerrarGondolaModal">✕</button>
+    <h3>🏷️ Carteles de oferta para la góndola</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.5;">
+      Están tus productos con oferta y tus combos. Tildá los que querés imprimir.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div class="field" style="margin:0;">
+        <label>Tamaño</label>
+        <select id="gondolaFormato" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+          <option value="a4-4">Hoja A4, 4 carteles grandes</option>
+          <option value="a4-8">Hoja A4, 8 carteles chicos</option>
+          <option value="termica">Impresora de tickets (58 mm)</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;">
+        <label>Válido hasta <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+        <input type="date" id="gondolaHasta">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+      <input type="text" id="gondolaBuscar" placeholder="Buscar..." style="flex:1;min-width:140px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;">
+      <button type="button" class="btn-ghost" id="gondolaTodos" style="padding:6px 10px;font-size:12.5px;">Todos</button>
+      <button type="button" class="btn-ghost" id="gondolaNinguno" style="padding:6px 10px;font-size:12.5px;">Ninguno</button>
+    </div>
+    <div id="gondolaLista" style="max-height:42vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;margin-bottom:14px;"></div>
+    <button type="button" id="gondolaImprimirBtn" class="btn btn-primary" style="width:100%;">🖨️ Imprimir carteles</button>
+  </div>
+</div>
+
 <!-- MODAL PLANES -->
 <div class="modal-overlay hidden" id="planesModal">
   <div class="modal" style="max-width:1000px;">
@@ -4890,6 +5017,7 @@ tr:last-child td { border-bottom: none; }
             <option value="comida">Comida</option>
             <option value="bebidas">Bebidas / cafetería</option>
             <option value="vape">Vape / cigarrillo electrónico</option>
+            <option value="distribuidora">Distribuidora / almacén mayorista</option>
             <option value="otro">Otro (sin categoría especial)</option>
           </select>
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
@@ -5009,6 +5137,13 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="cfg-corte" data-seccion="Pedidos y pagos"></div>
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label>Ticket de venta</label>
+          <button type="button" class="btn" data-abrir-diseno-ticket style="width:auto;background:var(--bg);color:var(--navy);">🧾 Diseño del ticket</button>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            El nombre, el CUIT, el mensaje del pie, qué datos salen y el ancho del papel.
+          </small>
+        </div>
         <div class="field" id="campoConfigTurnos" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" role="switch" class="switch" id="turnosActivo">
@@ -5935,6 +6070,15 @@ function precioVentaEnPantalla() {
          sumaDeAgregados(agregadosElegidosVenta());
 }
 
+// Lo mismo sin la oferta: el "antes" del ticket. Con los agregados sumados,
+// para que la resta contra lo cobrado sea solo lo que se desconto.
+function precioListaVentaEnPantalla() {
+  if (!currentBarcodeProduct) return 0;
+  const unidad = unidadesDisponiblesVenta().find(u => u.imei === imeiSeleccionadoVenta);
+  return precioDeListaMostrador(currentBarcodeProduct, varianteSeleccionadaVenta, unidad) +
+         sumaDeAgregados(agregadosElegidosVenta());
+}
+
 // El renglon de precio de la pantalla de venta: lo que se cobra y, con
 // oferta, cuanto valia antes. Mira la variante y el equipo elegidos, asi
 // el "antes" es el de ESA variante y no el del producto.
@@ -6034,10 +6178,131 @@ function aplicarPrecioMayorista(lineas) {
   });
 }
 
-// Mayorista primero y despues el armado de porciones: es la cuenta de toda
-// la pantalla de venta, el carrito y el registro.
+// Mayorista primero, despues el armado de porciones y al final los combos:
+// es la cuenta de toda la pantalla de venta, el carrito y el registro.
 function resumirLineasVenta(lineas) {
-  return aplicarArmadoDePorciones(aplicarPrecioMayorista(lineas));
+  return aplicarCombosEnCaja(aplicarArmadoDePorciones(aplicarPrecioMayorista(lineas)));
+}
+
+// ---- Combos que se arman solos en la caja (distribuidora) ----
+// Un combo es un producto que dice de que esta hecho (insumos). Si el
+// vendedor le prendio "Armarlo solo en la caja", cuando pasan por la caja
+// todas sus partes se cobra el precio del combo: el cajero pasa la
+// Fernet y las dos Coca y no tiene que acordarse de que existe el combo.
+//
+// Las lineas no se reemplazan: cada parte sigue siendo su renglon (asi se
+// descuenta el stock de lo que se llevo y las estadisticas ven lo que se
+// vendio) y el descuento se reparte entre ellas, igual que el armado de
+// pizzas. Solo se arma si le conviene al cliente.
+function combosDeCaja() {
+  if (!rubroEsDistribuidora()) return [];
+  return (products || []).filter(p =>
+    p.combo_en_caja && !p.pausado && precioVigente(p) > 0 &&
+    Array.isArray(p.insumos) && p.insumos.length &&
+    p.insumos.every(i => Number(i.cantidad) > 0 && Number.isInteger(Number(i.cantidad))));
+}
+
+function aplicarCombosEnCaja(r) {
+  const combos = combosDeCaja();
+  r.combos = [];
+  if (!combos.length) return r;
+
+  // Que se puede usar para armar: unidades enteras, sin talle, sin
+  // agregados, sin equipo puntual y sin otro descuento ya aplicado.
+  const libres = {};      // product_id -> unidades libres
+  const precio = {};      // product_id -> lo que se cobra cada una
+  r.lineas.forEach(l => {
+    if (l.variante || l.imei || (l.opciones && l.opciones.length) || l.mayorista) return;
+    if (seVendePorMedida(l.product) || !Number.isInteger(Number(l.qty))) return;
+    if (Number(l.precioCobrado) !== Number(l.precioUnitario)) return;
+    const id = String(l.product.id);
+    libres[id] = (libres[id] || 0) + Number(l.qty);
+    if (precio[id] == null) precio[id] = Number(l.precioCobrado);
+  });
+  if (!Object.keys(libres).length) return r;
+
+  const valorPartes = (c) => c.insumos.reduce((s, i) => s + (precio[String(i.producto_id)] || 0) * Number(i.cantidad), 0);
+  const entra = (c) => c.insumos.every(i => precio[String(i.producto_id)] != null);
+
+  // El que mas ahorra primero: si dos combos se pisan, gana el que le
+  // conviene mas al cliente.
+  const candidatos = combos.filter(entra)
+    .map(c => ({ c, ahorro: valorPartes(c) - precioVigente(c) }))
+    .filter(x => x.ahorro > 0.5)
+    .sort((a, b) => b.ahorro - a.ahorro);
+
+  const consumido = {};   // product_id -> unidades que se fueron a combos
+  const descuentoPorProducto = {};
+  const combosPorProducto = {};   // product_id -> nombres de los combos que lo usaron
+  candidatos.forEach(({ c }) => {
+    const veces = Math.min(...c.insumos.map(i => Math.floor((libres[String(i.producto_id)] || 0) / Number(i.cantidad))));
+    if (!(veces > 0)) return;
+    const lista = valorPartes(c);
+    const cobrado = precioVigente(c);
+    // En pesos enteros: un ticket con $9.456,52 por una Fernet no se
+    // entiende. La ultima parte absorbe el redondeo.
+    const descuentoTotal = Math.round((lista - cobrado) * veces);
+    let repartido = 0;
+    c.insumos.forEach((i, k) => {
+      const id = String(i.producto_id);
+      const unidades = Number(i.cantidad) * veces;
+      libres[id] -= unidades;
+      consumido[id] = (consumido[id] || 0) + unidades;
+      // La parte del descuento de esta pieza, en proporcion a lo que vale.
+      const parte = k === c.insumos.length - 1
+        ? descuentoTotal - repartido
+        : Math.round(descuentoTotal * (precio[id] * Number(i.cantidad)) / lista);
+      repartido += parte;
+      descuentoPorProducto[id] = (descuentoPorProducto[id] || 0) + parte;
+      (combosPorProducto[id] = combosPorProducto[id] || []).push(c.name);
+    });
+    r.combos.push({
+      nombre: c.name, veces, lista: lista * veces, precio: cobrado * veces,
+      partes: c.insumos.map(i => {
+        const prod = (products || []).find(x => String(x.id) === String(i.producto_id));
+        return Number(i.cantidad) + ' ' + (prod ? prod.name : '?');
+      })
+    });
+  });
+  if (!r.combos.length) return r;
+
+  // El descuento de cada producto se reparte entre sus lineas libres, en
+  // el orden en que se pasaron. La ultima absorbe el redondeo.
+  Object.keys(descuentoPorProducto).forEach(id => {
+    let pendiente = descuentoPorProducto[id];
+    let unidadesPendientes = consumido[id];
+    const lineas = r.lineas.filter(l => String(l.product.id) === id && !l.variante && !l.imei &&
+      !(l.opciones && l.opciones.length) && !l.mayorista && Number(l.precioCobrado) === Number(l.precioUnitario));
+    lineas.forEach((l, k) => {
+      if (!(unidadesPendientes > 0) || !(pendiente > 0)) return;
+      const usa = Math.min(Number(l.qty), unidadesPendientes);
+      const desc = (k === lineas.length - 1 || usa === unidadesPendientes)
+        ? pendiente
+        : Math.round(pendiente * usa / unidadesPendientes);
+      unidadesPendientes -= usa;
+      pendiente -= desc;
+      l.importe = Math.round((l.importe - desc) * 100) / 100;
+      l.precioCobrado = Math.round((l.importe / Number(l.qty)) * 100) / 100;
+      l.combo = combosPorProducto[id].filter((n, j, a) => a.indexOf(n) === j).join(', ');
+    });
+  });
+
+  r.total = Math.round(r.lineas.reduce((s, l) => s + l.importe, 0) * 100) / 100;
+  return r;
+}
+
+function textoCombo(c) {
+  return '🎁 Combo ' + c.nombre + (c.veces > 1 ? ' x' + c.veces : '') + ': ' + c.partes.join(' + ') +
+         ' (ahorra ' + money(c.lista - c.precio) + ')';
+}
+
+// Lo que se le desconto a una linea y por que, para el ticket y la orden.
+function textoPromoDeLinea(l) {
+  const motivos = [];
+  if (l.combo) motivos.push('Combo ' + l.combo);
+  if (l.mayorista) motivos.push('Precio por cantidad');
+  else if (hayOferta(l.product) && Number(l.precioLista) > Number(l.precioUnitario)) motivos.push('Oferta ' + porcentajeOff(l.product) + '% OFF');
+  return motivos.join(' + ');
 }
 
 function textoMayorista(l) {
@@ -6720,6 +6985,7 @@ const CATEGORIAS_SUGERIDAS = {
 const CATEGORIAS_GENERICAS = ['Destacados', 'Ofertas', 'Novedades', 'Más vendidos'];
 const CATEGORIAS_VAPE = ['Descartables', 'Pods', 'Líquidos', 'Resistencias', 'Accesorios'];
 const CATEGORIAS_BEBIDAS = ['Cafés', 'Tragos', 'Cervezas', 'Sin alcohol', 'Para picar', 'Promos'];
+const CATEGORIAS_DISTRIBUIDORA = ['Almacén', 'Bebidas', 'Galletitas', 'Golosinas', 'Lácteos', 'Limpieza', 'Perfumería', 'Combos'];
 
 // Rubro (el mismo que decide variantes y agregados) -> lista de categorias.
 // Asi las sugerencias nunca contradicen al resto del formulario.
@@ -6729,7 +6995,8 @@ const CATEGORIAS_POR_RUBRO = {
   servicios:    CATEGORIAS_SUGERIDAS.peluqueria.lista,
   comida:       CATEGORIAS_SUGERIDAS.comida.lista,
   bebidas:      CATEGORIAS_BEBIDAS,
-  vape:         CATEGORIAS_VAPE
+  vape:         CATEGORIAS_VAPE,
+  distribuidora: CATEGORIAS_DISTRIBUIDORA
 };
 
 // Rubros que ofrecemos como autocompletado al crear o configurar la tienda.
@@ -7893,6 +8160,8 @@ function rubroPuedeVenderPorMedida() {
 
   // Veto duro: en estos rubros no se fracciona nada.
   if (cat === 'electronica' || cat === 'indumentaria' || cat === 'servicios') return false;
+  // Una distribuidora de almacen vende fiambre, yerba suelta o legumbres por kilo.
+  if (cat === 'distribuidora') return true;
 
   // El insumo de una cocina si se fracciona: la horma de queso entra en
   // kilos y cada pizza se lleva 200 gramos. Lo que no se fracciona en
@@ -7968,6 +8237,7 @@ function alCambiarTipoProducto() {
   const esCombo = !esServicio && !plato;
   if (byId('insumosAyudaServicio')) byId('insumosAyudaServicio').classList.toggle('hidden', plato || esCombo);
   if (byId('insumosAyudaPlato')) byId('insumosAyudaPlato').classList.toggle('hidden', !plato);
+  if (byId('campoComboEnCaja')) byId('campoComboEnCaja').classList.toggle('hidden', !(esCombo && rubroEsDistribuidora()));
   // Un servicio no se mide en metros ni en kilos.
   //
   // Se le pasa la unidad que tiene el formulario en este momento, no nada:
@@ -8286,6 +8556,13 @@ function esGastronomia() {
 
 function rubroEsComida() {
   return categoriaDeRubro() === 'comida';
+}
+
+// Distribuidora de almacen. Solo se elige a mano (Configuracion o el alta):
+// "almacen" en el nombre ya es kiosco, y un kiosco no quiere combos que se
+// arman solos ni la caja con clave en cada movimiento.
+function rubroEsDistribuidora() {
+  return categoriaDeRubro() === 'distribuidora';
 }
 
 function rubroEsElectronica() {
@@ -9918,6 +10195,8 @@ const RUBROS_REGISTRO = [
     ayuda: 'Vas a poder sumarle opciones a cada pedido (con hielo, con limón).' },
   { valor: 'vape',         icono: '💨', texto: 'Vape / cigarrillo electrónico',
     ayuda: 'Vas a poder cargar los sabores de cada vape, con stock y precio propio para cada uno.' },
+  { valor: 'distribuidora', icono: '📦', texto: 'Distribuidora / almacén',
+    ayuda: 'Vas a tener combos que se arman solos en la caja, carteles de oferta para la góndola, registro de cada lista de precios que subís y caja con clave.' },
   { valor: 'otro',         icono: '🏪', texto: 'Otro rubro',
     ayuda: 'Kiosco, ferretería, forrajería, librería... Tenés todo lo básico y podés vender por metro o por kilo.' }
 ];
@@ -13630,6 +13909,11 @@ function aplicarVisibilidadPorRubro() {
   // tienda de ropa no la usa.
   const campoDemora = byId('campoConfigDemora');
   if (campoDemora) campoDemora.classList.toggle('hidden', !esGastronomia());
+
+  // Lo exclusivo de distribuidora: combos en la caja, carteles de gondola,
+  // listas de precios con nombre y la caja con clave.
+  const esDistribuidora = rubroEsDistribuidora();
+  document.querySelectorAll('.campo-distribuidora').forEach(el => el.classList.toggle('hidden', !esDistribuidora));
 
   // Los turnos son de una peluqueria o un consultorio: en una pizzeria el
   // cliente pide y espera, no reserva un horario. Ofrecerlo ahi ademas
@@ -18103,24 +18387,37 @@ function estilosTicket58() {
   // Ocupa 56mm de los 58 del rollo. A 17px entran ~20 caracteres por
   // renglon: los nombres largos se parten en dos, que es lo mismo que hace
   // el ticket que ya usan.
-  return '@page { size: 58mm auto; margin: 1mm; }' +
-    'body{font-family:"Courier New","DejaVu Sans Mono",monospace;color:#000;margin:0;padding:0;width:56mm;font-size:17px;line-height:1.55;font-weight:700;}' +
-    '.tk-negocio{text-align:center;font-size:24px;font-weight:800;text-transform:uppercase;line-height:1.15;margin-bottom:3px;}' +
-    '.tk-sub{text-align:center;font-size:15px;line-height:1.35;text-transform:uppercase;}' +
+  // El ancho del rollo y el tamaño de letra salen del diseño del ticket
+  // (Configuración → Diseño del ticket). Sin tocar nada queda igual que
+  // siempre: 58mm y letra normal.
+  const cfg = configTicket();
+  const ancho = cfg.ancho === 80 ? 80 : 58;
+  const escala = cfg.letra === 'chica' ? 0.85 : cfg.letra === 'grande' ? 1.15 : 1;
+  const px = (n) => (Math.round(n * escala * 10) / 10) + 'px';
+  return '@page { size: ' + ancho + 'mm auto; margin: 1mm; }' +
+    'body{font-family:"Courier New","DejaVu Sans Mono",monospace;color:#000;margin:0;padding:0;width:' + (ancho - 2) + 'mm;font-size:' + px(17) + ';line-height:1.55;font-weight:700;}' +
+    '.tk-negocio{text-align:center;font-size:' + px(24) + ';font-weight:800;text-transform:uppercase;line-height:1.15;margin-bottom:3px;}' +
+    '.tk-logo{display:block;margin:0 auto 4px;max-width:60%;max-height:22mm;filter:grayscale(1);}' +
+    '.tk-sub{text-align:center;font-size:' + px(15) + ';line-height:1.35;text-transform:uppercase;}' +
+    '.tk-libre{text-align:center;font-size:' + px(14) + ';line-height:1.35;white-space:pre-line;word-wrap:break-word;}' +
     '.tk-sep{border-top:2px dashed #000;margin:8px 0;}' +
     '.tk-fila{display:flex;justify-content:space-between;gap:6px;}' +
     '.tk-fila span:last-child{white-space:nowrap;}' +
     '.tk-item{margin-bottom:9px;}' +
-    '.tk-item .det{padding-left:12px;font-size:15px;}' +
-    '.tk-entrega{text-align:center;font-size:22px;font-weight:800;border:2px solid #000;padding:5px 2px;margin:7px 0;}' +
+    '.tk-item .det{padding-left:12px;font-size:' + px(15) + ';}' +
+    // La oferta o el combo debajo del producto: es lo que el cliente busca
+    // en el ticket para ver que se le cobro el precio del cartel.
+    '.tk-item .promo{padding-left:12px;font-size:' + px(14) + ';}' +
+    '.tk-ahorro{text-align:center;font-size:' + px(16) + ';border:2px dashed #000;padding:3px 2px;margin:7px 0;}' +
+    '.tk-entrega{text-align:center;font-size:' + px(22) + ';font-weight:800;border:2px solid #000;padding:5px 2px;margin:7px 0;}' +
     // Las aclaraciones del cliente. Caja con borde y letra grande por el
     // mismo motivo que ENTREGA: en una cocina el ticket se lee de reojo y
     // una linea mas de texto chico pasa de largo. Un "sin cebolla" que no
     // se ve es un plato que vuelve.
-    '.tk-nota{border:2px solid #000;padding:5px 6px;margin:7px 0;font-size:18px;font-weight:800;line-height:1.3;word-wrap:break-word;}' +
-    '.tk-nota span{display:block;font-size:13px;font-weight:700;margin-bottom:2px;}' +
-    '.tk-total{display:flex;justify-content:space-between;font-size:25px;font-weight:800;margin:8px 0;}' +
-    '.tk-pie{text-align:center;font-size:13.5px;margin-top:9px;}' +
+    '.tk-nota{border:2px solid #000;padding:5px 6px;margin:7px 0;font-size:' + px(18) + ';font-weight:800;line-height:1.3;word-wrap:break-word;}' +
+    '.tk-nota span{display:block;font-size:' + px(13) + ';font-weight:700;margin-bottom:2px;}' +
+    '.tk-total{display:flex;justify-content:space-between;font-size:' + px(25) + ';font-weight:800;margin:8px 0;}' +
+    '.tk-pie{text-align:center;font-size:' + px(13.5) + ';margin-top:9px;white-space:pre-line;}' +
     '@media print{ .no-print{display:none;} }';
 }
 
@@ -18318,19 +18615,58 @@ function numeroDeTicket(ordenId) {
   return ordenId ? String(ordenId).replace(/-/g, '').slice(-6).toUpperCase() : null;
 }
 
+// ---- Diseño del ticket ----
+// Lo que el vendedor elige en Configuración → Diseño del ticket. Se guarda
+// en store_profiles.ticket (schema/80-distribuidora.sql). Los valores por
+// defecto son el ticket de siempre: una tienda que nunca lo tocó imprime
+// exactamente lo mismo que antes.
+const TICKET_POR_DEFECTO = {
+  titulo: '',            // vacío = el nombre del negocio
+  encabezado: '',        // texto libre debajo del nombre: CUIT, condición de IVA, horario...
+  mostrarLogo: false,
+  mostrarDescripcion: true,
+  mostrarDireccion: true,
+  mostrarTelefono: true,
+  mostrarNumero: true,
+  mostrarCliente: true,
+  mostrarUnitario: true,
+  mostrarPromos: true,   // ofertas, combos y precio por cantidad, con lo que ahorró
+  mostrarPago: true,
+  mostrarAlias: true,
+  mostrarVendedor: true,
+  pie: '¡Gracias por su compra!',
+  mostrarWeb: true,
+  ancho: 58,             // 58 | 80 (mm del rollo)
+  letra: 'normal'        // 'chica' | 'normal' | 'grande'
+};
+
+// La del formulario mientras se edita (para la vista previa), si no la guardada.
+let ticketEnEdicion = null;
+
+function configTicket() {
+  const guardado = (currentStore && currentStore.ticket && typeof currentStore.ticket === 'object') ? currentStore.ticket : {};
+  return { ...TICKET_POR_DEFECTO, ...guardado, ...(ticketEnEdicion || {}) };
+}
+
 // El armado del ticket vive aca y no adentro de la venta porque lo usan dos
 // caminos: la venta recien hecha y la reimpresion desde el historial. Si el
 // layout se toca, se toca una sola vez.
 //
-// d = { numero, fecha, cliente, items:[{texto, detalle, importe, unitario}],
-//       total, medioPago, vendedor, pagoAhora, debe }
+// d = { numero, fecha, cliente, items:[{texto, detalle, importe, unitario, promo}],
+//       total, ahorro, medioPago, vendedor, pagoAhora, debe }
 function armarTicketHtml(d) {
+  const cfg = configTicket();
   const ahora = d.fecha || new Date();
-  const numero = d.numero;
+  const numero = cfg.mostrarNumero ? d.numero : null;
   const total = Number(d.total || 0);
+  const ahorro = cfg.mostrarPromos ? Number(d.ahorro || 0) : 0;
+  const titulo = String(cfg.titulo || '').trim() || currentStore?.business_name || 'Tienda';
 
-  return '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
-    (currentStore?.description ? '<div class="tk-sub">' + escapeHtml(currentStore.description) + '</div>' : '') +
+  return (cfg.mostrarLogo && currentStore?.image_url
+      ? '<img class="tk-logo" src="' + escapeHtml(currentStore.image_url) + '" alt="">'
+      : '') +
+    '<div class="tk-negocio">' + escapeHtml(titulo) + '</div>' +
+    (cfg.mostrarDescripcion && currentStore?.description ? '<div class="tk-sub">' + escapeHtml(currentStore.description) + '</div>' : '') +
     // Direccion y telefono: es lo que tiene el ticket que ya usan en el
     // mostrador, y es por donde el cliente vuelve a pedir.
     //
@@ -18338,16 +18674,19 @@ function armarTicketHtml(d) {
     // mapa ("Av. San Martin 2194, San Lorenzo, Santa Fe, Argentina") y en
     // 58mm eso se comia tres renglones; el cliente que tiene el ticket en
     // la mano ya sabe en que ciudad esta.
-    (currentStore?.location
+    (cfg.mostrarDireccion && currentStore?.location
       ? '<div class="tk-sub">' + escapeHtml(String(currentStore.location).split(',')[0].trim()) + '</div>'
       : '') +
-    (currentStore?.phone ? '<div class="tk-sub">' + escapeHtml(currentStore.phone) + '</div>' : '') +
+    (cfg.mostrarTelefono && currentStore?.phone ? '<div class="tk-sub">' + escapeHtml(currentStore.phone) + '</div>' : '') +
+    // Lo que el vendedor escribio a mano: CUIT, "IVA Responsable Inscripto",
+    // horario, "No válido como factura". Respeta los renglones.
+    (String(cfg.encabezado || '').trim() ? '<div class="tk-libre">' + escapeHtml(String(cfg.encabezado).trim()) + '</div>' : '') +
     '<div class="tk-sep"></div>' +
     // Fecha y hora del LOCAL, no del aparato desde el que se imprime.
     '<div class="tk-fila"><span>' + fechaAR(ahora) + '</span><span>' +
       horaAR(ahora, { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span></div>' +
     (numero ? '<div class="tk-fila"><span>Ticket</span><span>#' + numero + '</span></div>' : '') +
-    (d.cliente ? '<div class="tk-fila"><span>Cliente</span><span>' + escapeHtml(d.cliente) + '</span></div>' : '') +
+    (cfg.mostrarCliente && d.cliente ? '<div class="tk-fila"><span>Cliente</span><span>' + escapeHtml(d.cliente) + '</span></div>' : '') +
     // Recuadrada y grande: en el mostrador es el dato que se busca de un
     // vistazo entre varios tickets pinchados.
     (d.horaEntrega ? '<div class="tk-entrega">ENTREGA ' + escapeHtml(d.horaEntrega) + '</div>' : '') +
@@ -18363,26 +18702,282 @@ function armarTicketHtml(d) {
       '<div class="tk-item">' +
         '<div class="tk-fila"><span>' + it.texto + '</span><span>' + it.importe + '</span></div>' +
         (it.detalle || '') +
-        (it.unitario ? '<div class="det">' + it.unitario + '</div>' : '') +
+        (cfg.mostrarUnitario && it.unitario ? '<div class="det">' + it.unitario + '</div>' : '') +
+        (cfg.mostrarPromos && it.promo ? it.promo : '') +
       '</div>').join('') +
 
     '<div class="tk-sep"></div>' +
+    (ahorro > 0 ? '<div class="tk-ahorro">AHORRASTE ' + money(ahorro) + '</div>' : '') +
     '<div class="tk-total"><span>TOTAL</span><span>' + money(total) + '</span></div>' +
-    (d.medioPago ? '<div class="tk-fila"><span>Pago</span><span>' + escapeHtml(d.medioPago) + '</span></div>' : '') +
-    (d.medioPago && MEDIOS_CON_ALIAS.includes(d.medioPago) && datosTransferencia() && datosTransferencia().alias
+    (cfg.mostrarPago && d.medioPago ? '<div class="tk-fila"><span>Pago</span><span>' + escapeHtml(d.medioPago) + '</span></div>' : '') +
+    (cfg.mostrarAlias && d.medioPago && MEDIOS_CON_ALIAS.includes(d.medioPago) && datosTransferencia() && datosTransferencia().alias
       ? '<div class="tk-fila"><span>Alias</span><span>' + escapeHtml(datosTransferencia().alias) + '</span></div>'
       : '') +
     // En una venta a fiado el ticket tiene que decir cuanto queda debiendo:
-    // es el comprobante que se lleva el cliente.
+    // es el comprobante que se lleva el cliente. No se puede apagar.
     (Number(d.debe) > 0
-      ? '<div class="tk-fila"><span>Pag\u00f3 ahora</span><span>' + money(d.pagoAhora || 0) + '</span></div>' +
+      ? '<div class="tk-fila"><span>Pagó ahora</span><span>' + money(d.pagoAhora || 0) + '</span></div>' +
         '<div class="tk-fila"><span><b>Debe</b></span><span><b>' + money(d.debe) + '</b></span></div>'
       : '') +
-    (d.vendedor ? '<div class="tk-fila"><span>Atendi\u00f3</span><span>' + escapeHtml(d.vendedor) + '</span></div>' : '') +
+    (cfg.mostrarVendedor && d.vendedor ? '<div class="tk-fila"><span>Atendió</span><span>' + escapeHtml(d.vendedor) + '</span></div>' : '') +
     '<div class="tk-sep"></div>' +
-    '<div class="tk-pie">\u00a1Gracias por su compra!</div>' +
-    (currentStore?.slug ? '<div class="tk-pie">bruwaltech.com.ar/' + escapeHtml(currentStore.slug) + '</div>' : '');
+    (String(cfg.pie || '').trim() ? '<div class="tk-pie">' + escapeHtml(String(cfg.pie).trim()) + '</div>' : '') +
+    (cfg.mostrarWeb && currentStore?.slug ? '<div class="tk-pie">bruwaltech.com.ar/' + escapeHtml(currentStore.slug) + '</div>' : '');
 }
+
+// La promo de un renglon del ticket, ya en HTML. lista y cobrado son
+// importes del renglon entero (no unitarios).
+function promoTicketHtml(texto, lista, cobrado) {
+  const ahorro = Math.round((Number(lista) - Number(cobrado)) * 100) / 100;
+  if (!texto || !(ahorro > 0)) return '';
+  return '<div class="promo">* ' + escapeHtml(texto) + '</div>' +
+    '<div class="promo">  antes ' + money(lista) + ' (-' + money(ahorro) + ')</div>';
+}
+
+// ---- Pantalla "Diseño del ticket" ----
+function ticketDelFormulario() {
+  const t = {
+    titulo: byId('tkTitulo').value.trim(),
+    encabezado: byId('tkEncabezado').value.replace(/\s+$/, ''),
+    pie: byId('tkPie').value.replace(/\s+$/, ''),
+    ancho: Number(byId('tkAncho').value) === 80 ? 80 : 58,
+    letra: byId('tkLetra').value || 'normal'
+  };
+  document.querySelectorAll('#ticketModal [data-tk]').forEach(c => { t[c.dataset.tk] = c.checked; });
+  return t;
+}
+
+function pintarFormularioTicket(cfg) {
+  byId('tkTitulo').value = cfg.titulo || '';
+  byId('tkEncabezado').value = cfg.encabezado || '';
+  byId('tkPie').value = cfg.pie || '';
+  byId('tkAncho').value = String(cfg.ancho === 80 ? 80 : 58);
+  byId('tkLetra').value = cfg.letra || 'normal';
+  document.querySelectorAll('#ticketModal [data-tk]').forEach(c => { c.checked = !!cfg[c.dataset.tk]; });
+}
+
+// Una venta inventada, con oferta y combo, para ver todo lo que puede salir.
+function ticketDeEjemplo() {
+  return armarTicketHtml({
+    numero: 'A1B2C3',
+    fecha: new Date(),
+    cliente: 'Almacén Don José',
+    items: [
+      { texto: '2 x Yerba 1kg', detalle: '', importe: money(5400), unitario: money(2700) + ' c/u',
+        promo: promoTicketHtml('Oferta 10% OFF', 6000, 5400) },
+      { texto: '1 x Fernet 750ml', detalle: '', importe: money(9500), unitario: '',
+        promo: promoTicketHtml('Combo Fernet con Coca', 10500, 9500) },
+      { texto: '2 x Coca 2,25L', detalle: '', importe: money(5000), unitario: money(2800) + ' c/u',
+        promo: promoTicketHtml('Combo Fernet con Coca', 5600, 5000) },
+      { texto: '12 x Galletitas surtidas', detalle: '', importe: money(10800), unitario: money(900) + ' c/u', promo: '' }
+    ],
+    total: 30700,
+    ahorro: 2200,
+    medioPago: 'Efectivo',
+    vendedor: 'Lucía'
+  });
+}
+
+function pintarVistaPreviaTicket() {
+  ticketEnEdicion = ticketDelFormulario();
+  const marco = byId('tkVistaPrevia');
+  const ancho = ticketEnEdicion.ancho === 80 ? 80 : 58;
+  // El papel a escala de pantalla: 58mm se ven de ~230px.
+  marco.style.width = Math.round(ancho * 4.1) + 'px';
+  marco.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><style>' + estilosTicket58() +
+    'body{margin:6px auto;}</style></head><body>' + ticketDeEjemplo() + '</body></html>';
+  ticketEnEdicion = null;
+}
+
+function abrirDisenoTicket() {
+  pintarFormularioTicket(configTicket());
+  show(byId('ticketModal'));
+  pintarVistaPreviaTicket();
+}
+
+async function guardarDisenoTicket() {
+  if (!puedeOperar() || !currentStore) return;
+  const ticket = ticketDelFormulario();
+  const { error } = await sb.from('store_profiles').update({ ticket }).eq('slug', currentStore.slug);
+  if (error) {
+    dialogoAviso('No se pudo guardar el diseño del ticket:\n\n' + humano(error) +
+      '\n\n(Si dice que falta la columna, correr schema/80-distribuidora.sql en Supabase.)');
+    return;
+  }
+  currentStore.ticket = ticket;
+  hide(byId('ticketModal'));
+  dialogoAviso('✓ Diseño del ticket guardado. Los próximos tickets salen así.');
+}
+
+document.querySelectorAll('[data-abrir-diseno-ticket]').forEach(b => b.addEventListener('click', abrirDisenoTicket));
+byId('cerrarTicketModal').addEventListener('click', () => hide(byId('ticketModal')));
+byId('ticketModal').addEventListener('input', pintarVistaPreviaTicket);
+byId('ticketModal').addEventListener('change', pintarVistaPreviaTicket);
+byId('guardarTicketBtn').addEventListener('click', guardarDisenoTicket);
+byId('restaurarTicketBtn').addEventListener('click', () => {
+  pintarFormularioTicket(TICKET_POR_DEFECTO);
+  pintarVistaPreviaTicket();
+});
+byId('probarTicketBtn').addEventListener('click', () => {
+  // La prueba sale con lo que esta en pantalla, sin guardar: para ver en el
+  // papel de verdad si entra antes de decidir.
+  ticketEnEdicion = ticketDelFormulario();
+  try { abrirVentanaTicket('Ticket de prueba', ticketDeEjemplo(), true); }
+  finally { setTimeout(() => { ticketEnEdicion = null; }, 0); }
+});
+
+// ---- Carteles de oferta para la gondola (distribuidora) ----
+// Lo que se pega en el estante: el precio de oferta bien grande, el de
+// antes tachado y, en un combo, de que esta hecho. Salen los productos con
+// oferta y los combos que se arman solos en la caja.
+let gondolaElegidos = new Set();
+
+function productosParaGondola() {
+  return (products || []).filter(p => !p.solo_interno && !p.pausado &&
+      (hayOferta(p) || (p.combo_en_caja && Array.isArray(p.insumos) && p.insumos.length && precioVigente(p) > 0)))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'es'));
+}
+
+// Lo que costarian las partes del combo por separado (con sus ofertas).
+function valorPartesCombo(p) {
+  return (Array.isArray(p.insumos) ? p.insumos : []).reduce((s, i) => {
+    const parte = (products || []).find(x => String(x.id) === String(i.producto_id));
+    return s + (parte ? precioVigente(parte) * Number(i.cantidad || 0) : 0);
+  }, 0);
+}
+
+function partesComboTexto(p) {
+  return (Array.isArray(p.insumos) ? p.insumos : []).map(i => {
+    const parte = (products || []).find(x => String(x.id) === String(i.producto_id));
+    return (Number(i.cantidad) > 1 ? Number(i.cantidad) + ' ' : '') + (parte ? parte.name : '?');
+  }).join(' + ');
+}
+
+function abrirCartelesGondola() {
+  const lista = productosParaGondola();
+  gondolaElegidos = new Set(lista.map(p => String(p.id)));
+  byId('gondolaBuscar').value = '';
+  renderListaGondola();
+  show(byId('gondolaModal'));
+}
+
+function renderListaGondola() {
+  const filtro = normalizarTexto(byId('gondolaBuscar').value || '');
+  const lista = productosParaGondola().filter(p => !filtro || normalizarTexto(p.name).includes(filtro));
+  const cont = byId('gondolaLista');
+  if (!productosParaGondola().length) {
+    cont.innerHTML = '<div style="padding:16px;font-size:13.5px;color:var(--text-mute);line-height:1.55;">' +
+      'Todavía no tenés productos con oferta ni combos.<br>Poné una oferta desde el botón 🏷️ de cada producto, ' +
+      'o armá un combo (un producto con sus partes cargadas) y prendele <b>Armarlo solo en la caja</b>.</div>';
+    return;
+  }
+  cont.innerHTML = lista.map(p => {
+    const combo = !hayOferta(p);
+    const detalle = combo
+      ? 'Combo · ' + escapeHtml(partesComboTexto(p))
+      : 'Antes ' + money(p.price) + ' · ' + porcentajeOff(p) + '% OFF';
+    return '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;">' +
+      '<input type="checkbox" data-gondola="' + escapeHtml(String(p.id)) + '"' + (gondolaElegidos.has(String(p.id)) ? ' checked' : '') + ' style="margin:0;width:auto;">' +
+      '<span style="flex:1;min-width:0;"><b style="font-size:13.5px;">' + escapeHtml(p.name) + '</b>' +
+        '<span style="display:block;font-size:12px;color:var(--text-mute);">' + detalle + '</span></span>' +
+      '<b style="color:var(--navy);white-space:nowrap;">' + money(precioVigente(p)) + '</b>' +
+    '</label>';
+  }).join('') || '<div style="padding:14px;font-size:13px;color:var(--text-mute);">Nada coincide con la búsqueda.</div>';
+  cont.querySelectorAll('[data-gondola]').forEach(c => c.addEventListener('change', () => {
+    if (c.checked) gondolaElegidos.add(c.dataset.gondola); else gondolaElegidos.delete(c.dataset.gondola);
+  }));
+}
+
+function cartelGondolaHtml(p, hasta) {
+  const combo = !hayOferta(p);
+  const precio = precioVigente(p);
+  const antes = combo ? valorPartesCombo(p) : Number(p.price);
+  const ahorro = antes - precio;
+  return '<div class="cartel">' +
+    '<div class="faja">' + (combo ? 'COMBO' : 'OFERTA') + '</div>' +
+    '<div class="nombre">' + escapeHtml(p.name) + '</div>' +
+    (combo ? '<div class="partes">' + escapeHtml(partesComboTexto(p)) + '</div>' : '') +
+    (ahorro > 0.5 ? '<div class="antes">' + (combo ? 'Por separado ' : 'Antes ') + '<s>' + money(antes) + '</s>' +
+      (combo ? '' : ' <b>-' + porcentajeOff(p) + '%</b>') + '</div>' : '') +
+    '<div class="precio">' + money(precio) + '<span>' + escapeHtml(sufijoPrecioPorMedida(p)) + '</span></div>' +
+    (ahorro > 0.5 ? '<div class="ahorro">Ahorrás ' + money(ahorro) + '</div>' : '') +
+    '<div class="pie">' + (hasta ? 'Válido hasta el ' + escapeHtml(hasta) + ' · ' : '') + escapeHtml(currentStore?.business_name || '') + '</div>' +
+  '</div>';
+}
+
+function estilosCartelesGondola(formato) {
+  const base = 'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#000;}' +
+    '.cartel{box-sizing:border-box;border:2px dashed #000;text-align:center;display:flex;flex-direction:column;justify-content:center;overflow:hidden;page-break-inside:avoid;break-inside:avoid;}' +
+    '.faja{background:#000;color:#fff;font-weight:900;letter-spacing:3px;}' +
+    '.nombre{font-weight:800;line-height:1.1;}' +
+    '.partes{line-height:1.2;}' +
+    '.antes s{font-weight:700;}' +
+    '.precio{font-weight:900;line-height:1;letter-spacing:-1px;}' +
+    '.precio span{font-size:.35em;letter-spacing:0;}' +
+    '.ahorro{font-weight:800;}' +
+    '.pie{color:#333;}';
+  if (formato === 'termica') {
+    return '@page{size:58mm auto;margin:1mm;}' + base +
+      'body{width:56mm;}' +
+      '.cartel{width:56mm;padding:3mm 2mm;margin-bottom:4mm;page-break-after:always;}' +
+      '.faja{font-size:18px;padding:2px 0;margin-bottom:2mm;}' +
+      '.nombre{font-size:18px;}.partes{font-size:12px;margin-top:1mm;}' +
+      '.antes{font-size:13px;margin-top:2mm;}.precio{font-size:38px;margin:2mm 0;}' +
+      '.ahorro{font-size:14px;}.pie{font-size:10px;margin-top:2mm;}';
+  }
+  const ocho = formato === 'a4-8';
+  return '@page{size:A4;margin:8mm;}' + base +
+    '.hoja{display:grid;grid-template-columns:1fr 1fr;gap:4mm;}' +
+    '.cartel{height:' + (ocho ? '68mm' : '137mm') + ';padding:' + (ocho ? '3mm' : '6mm') + ';}' +
+    '.faja{font-size:' + (ocho ? '18px' : '30px') + ';padding:' + (ocho ? '2px' : '6px') + ' 0;margin:0 auto ' + (ocho ? '2mm' : '5mm') + ';width:100%;}' +
+    '.nombre{font-size:' + (ocho ? '19px' : '32px') + ';}' +
+    '.partes{font-size:' + (ocho ? '12px' : '18px') + ';margin-top:2mm;}' +
+    '.antes{font-size:' + (ocho ? '14px' : '22px') + ';margin-top:' + (ocho ? '2mm' : '5mm') + ';}' +
+    '.precio{font-size:' + (ocho ? '46px' : '88px') + ';margin:' + (ocho ? '2mm' : '5mm') + ' 0;}' +
+    '.ahorro{font-size:' + (ocho ? '14px' : '24px') + ';}' +
+    '.pie{font-size:' + (ocho ? '10px' : '13px') + ';margin-top:' + (ocho ? '2mm' : '5mm') + ';}';
+}
+
+function imprimirCartelesGondola() {
+  const elegidos = productosParaGondola().filter(p => gondolaElegidos.has(String(p.id)));
+  if (!elegidos.length) { dialogoAviso('Tildá al menos un producto.'); return; }
+  const formato = byId('gondolaFormato').value;
+  const fecha = byId('gondolaHasta').value;
+  const hasta = fecha ? fecha.slice(8, 10) + '/' + fecha.slice(5, 7) : '';
+  const cuerpo = formato === 'termica'
+    ? elegidos.map(p => cartelGondolaHtml(p, hasta)).join('')
+    : '<div class="hoja">' + elegidos.map(p => cartelGondolaHtml(p, hasta)).join('') + '</div>';
+
+  // Mismo truco que el ticket: un iframe oculto, sin ventana emergente que
+  // el navegador pueda bloquear.
+  const viejo = document.getElementById('marcoGondola');
+  if (viejo) viejo.remove();
+  const marco = document.createElement('iframe');
+  marco.id = 'marcoGondola';
+  marco.setAttribute('aria-hidden', 'true');
+  marco.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  document.body.appendChild(marco);
+  const doc = marco.contentWindow.document;
+  doc.open();
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Carteles de oferta</title><style>' +
+    estilosCartelesGondola(formato) + '</style></head><body>' + cuerpo + '</body></html>');
+  doc.close();
+  setTimeout(() => {
+    if (!marco.isConnected) return;
+    try { marco.contentWindow.focus(); marco.contentWindow.print(); }
+    catch (e) { dialogoAviso('No se pudo abrir la impresión:\n\n' + (e && humano(e) ? humano(e) : e)); }
+  }, 350);
+}
+
+byId('cartelesGondolaBtn').addEventListener('click', abrirCartelesGondola);
+byId('cerrarGondolaModal').addEventListener('click', () => hide(byId('gondolaModal')));
+byId('gondolaBuscar').addEventListener('input', renderListaGondola);
+byId('gondolaTodos').addEventListener('click', () => {
+  productosParaGondola().forEach(p => gondolaElegidos.add(String(p.id)));
+  renderListaGondola();
+});
+byId('gondolaNinguno').addEventListener('click', () => { gondolaElegidos.clear(); renderListaGondola(); });
+byId('gondolaImprimirBtn').addEventListener('click', imprimirCartelesGondola);
 
 // Reimprimir el ticket de una venta ya hecha. Se arma con lo que quedo
 // GUARDADO en la orden, no con el producto de hoy: si despues cambio el
@@ -18394,9 +18989,13 @@ function imprimirTicketDeOrden(id) {
   const o = lista.find(x => String(x.id) === String(id));
   if (!o) { dialogoAviso('No se encontr\u00f3 esa venta.'); return; }
 
+  let ahorro = 0;
   const items = (Array.isArray(o.items) ? o.items : []).map(it => {
     const qty = Number(it.qty || 1);
     const precio = Number(it.price || 0);
+    const promo = (it.promo && Number(it.precio_lista) > precio)
+      ? promoTicketHtml(it.promo, Number(it.precio_lista) * qty, precio * qty) : '';
+    if (promo) ahorro += (Number(it.precio_lista) - precio) * qty;
     // Los pedidos viejos de la tienda se guardaron sin precio por linea.
     // Imprimir "$0" ahi es peor que no imprimir nada: parece regalado. El
     // TOTAL de la orden sigue siendo correcto y es lo que se cobra.
@@ -18404,7 +19003,8 @@ function imprimirTicketDeOrden(id) {
       texto: qty.toLocaleString('es-AR') + ' x ' + escapeHtml(nombreDelItem(it)),
       detalle: detalleDeItemTicket(it),
       importe: precio > 0 ? money(precio * qty) : '',
-      unitario: (precio > 0 && qty !== 1) ? money(precio) + ' c/u' : ''
+      unitario: (precio > 0 && qty !== 1) ? money(precio) + ' c/u' : '',
+      promo
     };
   });
 
@@ -18416,6 +19016,7 @@ function imprimirTicketDeOrden(id) {
     cliente: (o.customer_name && o.customer_name !== 'scanner') ? o.customer_name : '',
     items,
     total: Number(o.total || 0),
+    ahorro,
     horaEntrega: horaEntregaTexto(o.hora_entrega),
     medioPago: o.medio_pago || '',
     vendedor: o.vendedor || '',
@@ -18456,6 +19057,8 @@ function detalleDeItemTicket(it) {
 function imprimirTicketVenta(v) {
   const total = Number(v.precioUnitario) * Number(v.qty);
   const numero = numeroDeTicket(v.ordenId);
+  const lista = Number(v.precioLista || v.precioUnitario) * Number(v.qty);
+  const promo = promoTicketHtml(v.promo, lista, total);
 
   const html = armarTicketHtml({
     numero,
@@ -18468,9 +19071,11 @@ function imprimirTicketVenta(v) {
              ' x ' + escapeHtml(v.producto.name),
       detalle: detalleVarianteTicket(v.variante) + detalleAgregadosTicket(v.agregados),
       importe: money(total),
-      unitario: Number(v.qty) !== 1 ? money(v.precioUnitario) + ' c/u' : ''
+      unitario: Number(v.qty) !== 1 ? money(v.precioUnitario) + ' c/u' : '',
+      promo
     }],
     total,
+    ahorro: promo ? lista - total : 0,
     horaEntrega: v.horaEntrega || '',
     medioPago: v.medioPago,
     vendedor: v.vendedor,
@@ -20596,7 +21201,8 @@ function lineaVentaEnPantalla() {
     variante: conVariantes ? { ...varianteSeleccionadaVenta } : null,
     imei: imeiSeleccionadoVenta,
     opciones: agregadosElegidosVenta(),
-    precioUnitario: precioVentaEnPantalla()
+    precioUnitario: precioVentaEnPantalla(),
+    precioLista: precioListaVentaEnPantalla()
   };
 }
 
@@ -20650,7 +21256,7 @@ function validarLineaVentaEnPantalla() {
     }
   }
 
-  return { product: p, qty, variante, imei: imeiSeleccionadoVenta, opciones: agregadosElegidosVenta(), precioUnitario: precioVentaEnPantalla() };
+  return { product: p, qty, variante, imei: imeiSeleccionadoVenta, opciones: agregadosElegidosVenta(), precioUnitario: precioVentaEnPantalla(), precioLista: precioListaVentaEnPantalla() };
 }
 
 // ---- Armado de porciones ----
@@ -20781,6 +21387,7 @@ function renderCarritoVenta() {
       '</div>').join('') +
     r.ajustes.map(a => '<div style="font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;">' + escapeHtml(textoAjustePorciones(a)) + '</div>').join('') +
     r.lineas.filter(l => l.mayorista).map(l => '<div style="font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;">' + escapeHtml(textoMayorista(l)) + '</div>').join('') +
+    (r.combos || []).map(c => '<div style="font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;">' + escapeHtml(textoCombo(c)) + '</div>').join('') +
     '<div style="font-size:12.5px;color:var(--text-mute);margin-top:8px;">Buscá el próximo producto arriba, o completá los datos y tocá <b>Registrar venta</b>.</div>';
   caja.classList.remove('hidden');
 
@@ -20797,7 +21404,8 @@ function pintarTotalConCarrito() {
     // del pedido ya se lee en el carrito.
     const enPantalla = currentBarcodeProduct ? r.lineas.slice(carritoVenta.length) : [];
     const textos = r.ajustes.map(textoAjustePorciones)
-      .concat(enPantalla.filter(l => l.mayorista).map(textoMayorista));
+      .concat(enPantalla.filter(l => l.mayorista).map(textoMayorista))
+      .concat((r.combos || []).map(textoCombo));
     nota.innerHTML = textos.map(escapeHtml).join('<br>');
     nota.classList.toggle('hidden', !textos.length);
   }
@@ -20892,7 +21500,8 @@ async function confirmarVentaCarrito() {
   guardarNombreVendedor(vendedor);
   dialogoAviso('✓ Venta registrada: ' + resumen.lineas.length + ' producto' + (resumen.lineas.length === 1 ? '' : 's') +
         ' = ' + money(resumen.total) +
-        (resumen.ajustes.length ? '\n\n' + resumen.ajustes.map(textoAjustePorciones).join('\n') : ''));
+        (resumen.ajustes.length ? '\n\n' + resumen.ajustes.map(textoAjustePorciones).join('\n') : '') +
+        (resumen.combos.length ? '\n\n' + resumen.combos.map(textoCombo).join('\n') : ''));
 
   if (byId('barcodeTicket')?.checked) {
     imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
@@ -20944,6 +21553,13 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
     if (l.mayorista) it.precio_lista = Number(l.mayorista.lista) + sumaDeAgregados(l.opciones);
     // El precio de lista queda anotado cuando se cobro armado como pizza.
     if (l.precioCobrado !== Number(l.precioUnitario)) it.precio_lista = Number(l.precioUnitario);
+    // Oferta, combo o precio por cantidad: el precio sin descuento y el
+    // motivo, para que el ticket reimpreso diga lo mismo que el original.
+    const promo = textoPromoDeLinea(l);
+    if (promo && Number(l.precioLista) > Number(l.precioCobrado)) {
+      it.precio_lista = Number(l.precioLista);
+      it.promo = promo;
+    }
     if (l.imei) it.imei = l.imei;
     return it;
   });
@@ -21001,24 +21617,34 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
 
 function imprimirTicketPedidoMostrador(resumen, v) {
   const numero = numeroDeTicket(v.ordenId);
+  let ahorro = 0;
   const items = resumen.lineas.map(l => {
-    const lista = Number(l.precioUnitario) * Number(l.qty);
+    // Con combo el renglon ya viene con su parte del descuento; con pizza
+    // armada se muestra de lista y el armado va en un renglon aparte.
+    const importe = l.combo ? l.importe : Number(l.precioUnitario) * Number(l.qty);
+    const lista = Number(l.precioLista || l.precioUnitario) * Number(l.qty);
+    const promo = promoTicketHtml(textoPromoDeLinea(l), lista, importe);
+    if (promo) ahorro += lista - importe;
     return {
       texto: (seVendePorMedida(l.product) ? formatearCantidad(l.qty, l.product) : Number(l.qty).toLocaleString('es-AR')) +
              ' x ' + escapeHtml(l.product.name),
       detalle: detalleVarianteTicket(l.variante) + detalleAgregadosTicket(l.opciones),
-      importe: money(lista),
-      unitario: Number(l.qty) !== 1 ? money(l.precioUnitario) + ' c/u' : ''
+      importe: money(importe),
+      unitario: Number(l.qty) !== 1 ? money(l.precioUnitario) + ' c/u' : '',
+      promo
     };
   });
   // El armado va como renglon aparte: el cliente ve el precio de lista y
   // cuanto se le desconto por llevarlo como pizza.
-  resumen.ajustes.forEach(a => items.push({
-    texto: 'Armado: ' + escapeHtml(a.porciones + ' porc. = ' + a.texto),
-    detalle: '',
-    importe: '-' + money(a.lista - a.armado),
-    unitario: ''
-  }));
+  resumen.ajustes.forEach(a => {
+    ahorro += a.lista - a.armado;
+    items.push({
+      texto: 'Armado: ' + escapeHtml(a.porciones + ' porc. = ' + a.texto),
+      detalle: '',
+      importe: '-' + money(a.lista - a.armado),
+      unitario: ''
+    });
+  });
 
   const html = armarTicketHtml({
     numero,
@@ -21026,6 +21652,7 @@ function imprimirTicketPedidoMostrador(resumen, v) {
     cliente: v.cliente,
     items,
     total: resumen.total,
+    ahorro,
     horaEntrega: v.horaEntrega || '',
     medioPago: v.medioPago,
     vendedor: v.vendedor,
@@ -21136,7 +21763,10 @@ async function confirmBarcodeVenta() {
   // Pedido de varios productos, o porciones que se cobran como pizza: va
   // por el camino del carrito. La venta de un solo producto sigue igual.
   const lineaSola = lineaVentaEnPantalla();
-  if (carritoVenta.length || (lineaSola && aplicarArmadoDePorciones([lineaSola]).ajustes.length)) {
+  // Lo mismo si con lo que hay en pantalla se arma un combo (un pack de 6
+  // que se pasa como 6 unidades sueltas).
+  if (carritoVenta.length || (lineaSola && aplicarArmadoDePorciones([lineaSola]).ajustes.length) ||
+      (lineaSola && resumirLineasVenta([lineaSola]).combos.length)) {
     return confirmarVentaCarrito();
   }
   // El precio que se ve en pantalla es el que se cobra: el del equipo
@@ -21145,6 +21775,8 @@ async function confirmBarcodeVenta() {
   const cobrada = lineaSola ? resumirLineasVenta([lineaSola]).lineas[0] : null;
   const precioCobrado = cobrada ? Number(cobrada.precioCobrado) : precioVentaEnPantalla();
   const agregados = cobrada ? (cobrada.opciones || []) : [];
+  const precioLista = cobrada ? Number(cobrada.precioLista || precioCobrado) : precioCobrado;
+  const promo = cobrada ? textoPromoDeLinea(cobrada) : '';
 
   const qty = cantidadVendida();
 
@@ -21261,7 +21893,7 @@ async function confirmBarcodeVenta() {
     return;
   }
 
-  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta, precioUnitario: precioCobrado, agregados });
+  const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta, precioUnitario: precioCobrado, agregados, precioLista, promo });
   if (ok) {
     guardarNombreVendedor(vendedor);
     let mensaje = '✓ Venta registrada: ' + product.name + ' x' + qty + ' = ' + money(precioCobrado * qty);
@@ -21280,6 +21912,8 @@ async function confirmBarcodeVenta() {
         producto: product,
         qty,
         precioUnitario: precioCobrado,
+        precioLista,
+        promo,
         variante,
         agregados,
         cliente,
@@ -21444,6 +22078,12 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     : precioDeVentaMostrador(product, variante);
   const total = precioUnitario * qty;
   const opcionesItem = agregados.length ? { opciones: agregados.map(o => o.nombre) } : {};
+  // Con oferta o precio por cantidad queda anotado el precio sin descuento,
+  // asi el ticket reimpreso muestra lo mismo que el original.
+  if (opciones && opciones.promo && Number(opciones.precioLista) > precioUnitario) {
+    opcionesItem.precio_lista = Number(opciones.precioLista);
+    opcionesItem.promo = opciones.promo;
+  }
   const nombre = (nombreCliente || '').trim() ||
                  ('Venta mostrador ' + horaAR(Date.now(), { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
   // El total de la venta sigue siendo el precio de lista (así se calculan
@@ -21974,6 +22614,7 @@ function abrirFormularioNuevo(tipo) {
     aplicarVentaPorMedida();
     aplicarVentaPorMedidaVisibilidad();
     insumosEnEdicion = [];
+    if (byId('pComboEnCaja')) byId('pComboEnCaja').checked = false;
     renderInsumos();
     usadoEnEnEdicion = [];
     if (byId('pServicioInterno')) byId('pServicioInterno').checked = false;
@@ -23838,6 +24479,11 @@ byId('productForm').addEventListener('submit', async (e) => {
   // ID interno para la etiqueta ("P-0123") — igual que el número de
   // reparación: correlativo por tienda, se calcula solo al crear y nunca se
   // reasigna al editar.
+  // Solo se manda en distribuidora: en el resto de las tiendas la columna
+  // puede no existir todavia (schema/80) y romperia el guardado.
+  if (rubroEsDistribuidora()) {
+    payload.combo_en_caja = !!byId('pComboEnCaja')?.checked && insumosEnEdicion.length > 0 && !byId('pDestinoInterno')?.checked;
+  }
   if (!id) payload.numero = Math.max(0, ...products.map(p => Number(p.numero) || 0)) + 1;
 
   // fotosEnEdicion siempre refleja el estado completo que se quiere guardar:
@@ -24000,6 +24646,7 @@ async function editProduct(id) {
   // Después de fijar dataset.id: renderInsumos lo usa para no ofrecer el
   // propio servicio como insumo de sí mismo.
   insumosEnEdicion = Array.isArray(p.insumos) ? p.insumos.map(i => ({ ...i })) : [];
+  if (byId('pComboEnCaja')) byId('pComboEnCaja').checked = !!p.combo_en_caja;
   renderInsumos();
   iniciarWizard(false);
   if (byId('productModal')) show(byId('productModal'));
