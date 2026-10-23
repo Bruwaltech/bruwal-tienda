@@ -18165,6 +18165,9 @@ function abrirVentanaTicket(titulo, contenidoHtml, autoImprimir) {
     // El respiro es para que el navegador termine de aplicar los estilos:
     // imprimiendo en el mismo tick, el ticket salia sin formato.
     setTimeout(() => {
+      // Si en el medio se pidió otro ticket, este marco ya se sacó y el
+      // nuevo es el que imprime: sin esto salía "No se pudo abrir la impresión".
+      if (!marco.isConnected || !marco.contentWindow) return;
       try {
         marco.contentWindow.focus();
         marco.contentWindow.print();
