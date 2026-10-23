@@ -184,6 +184,14 @@ const panelMonedas = (() => {
     if (respuestas.some((x) => x.status === 401)) {
       const { error: errSesion } = await sb.auth.refreshSession();
       if (!errSesion) respuestas = await traerDatos();
+      // Si la renovación falló porque la sesión ya no existe (ej. "Refresh
+      // Token Already Used"), cada vuelta seguía consultando sin usuario y
+      // mostraba "permission denied". Se recarga para que pida entrar.
+      else if (!(await sb.auth.getSession()).data.session) {
+        cargando = false;
+        location.reload();
+        return false;
+      }
     }
     cargando = false;
     const [rc, rp, rch, rr] = respuestas;
