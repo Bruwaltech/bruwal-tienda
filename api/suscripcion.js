@@ -1089,10 +1089,12 @@ module.exports = async (req, res) => {
       }
 
       // Las tiendas que podrian ser la duenia: las que todavia no tienen
-      // plan pago. La mas nueva primero, que es casi siempre la que acaba
-      // de pagar.
+      // plan pago, y las que tienen uno puesto a mano sin suscripcion
+      // (Empire, 23/10: se le dejo Pro abierto mientras pagaba, y por eso
+      // no aparecia para atarle el pago). La mas nueva primero, que es casi
+      // siempre la que acaba de pagar.
       const esperando = await sb('/rest/v1/store_profiles' +
-        '?plan=not.in.(basic,pro,cortesia)' +
+        '?or=(plan.not.in.(basic,pro,cortesia),and(plan.in.(basic,pro),mp_preapproval_id.is.null))' +
         '&select=slug,business_name,plan,created_at&order=created_at.desc&limit=30');
       candidatas = (esperando || []).map((t) => ({
         slug: t.slug, negocio: t.business_name || t.slug, plan: t.plan, desde: t.created_at
