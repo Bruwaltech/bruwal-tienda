@@ -38,12 +38,10 @@ alter table public.store_listas_precios enable row level security;
 
 drop policy if exists listas_precios_propias on public.store_listas_precios;
 create policy listas_precios_propias on public.store_listas_precios for all
-  using (exists (
-    select 1 from public.store_profiles sp
-    where sp.slug = store_listas_precios.store_slug and sp.user_id = auth.uid()))
-  with check (exists (
-    select 1 from public.store_profiles sp
-    where sp.slug = store_listas_precios.store_slug and sp.user_id = auth.uid()));
+  using (store_slug in (
+    select sp.slug from public.store_profiles sp where sp.user_id = auth.uid()))
+  with check (store_slug in (
+    select sp.slug from public.store_profiles sp where sp.user_id = auth.uid()));
 
 
 alter table public.store_products
