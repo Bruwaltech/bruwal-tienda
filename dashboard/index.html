@@ -10099,14 +10099,26 @@ function mostrarErrorDeRegistro(error, boton, textoBoton) {
 }
 
 // LOGOUT
-byId('logoutBtn').addEventListener('click', async () => {
-  await sb.auth.signOut();
+function mostrarIngreso() {
   currentUser = null;
   hide(byId('appView'));
   show(byId('authView'));
   byId('loginForm').reset();
   hide(byId('ayudaBotBtn'));
   hide(byId('ayudaBotPanel'));
+}
+
+byId('logoutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  mostrarIngreso();
+});
+
+// Si la sesión se pierde sola (la renovación falla, por ejemplo con
+// "Refresh Token Not Found"), el panel seguía abierto y el refresco de
+// cada minuto consultaba sin usuario: pedidos y caja volvían vacíos.
+// Se vuelve a la pantalla de ingreso, como al tocar Salir.
+sb.auth.onAuthStateChange((evento) => {
+  if (evento === 'SIGNED_OUT' && currentUser) mostrarIngreso();
 });
 
 // COPY STORE LINK
@@ -12615,7 +12627,7 @@ function hayModalAbierto() {
 }
 
 async function refrescoAutomatico() {
-  if (!currentStore || refrescando) return;
+  if (!currentStore || !currentUser || refrescando) return;   // sin sesión no hay nada que traer
   if (document.hidden) return;      // pestaña en segundo plano: no gastamos consultas
   if (hayModalAbierto()) return;
 
