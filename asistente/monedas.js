@@ -1228,6 +1228,7 @@ const panelMonedas = (() => {
   const OPUS = 'https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/';
   const LAMEJS = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
   const TOQUE = 400; // ms: soltar antes es un toque, no mantener apretado
+  const PERMISO = 800; // ms: si el micrófono tarda más en abrir, el navegador preguntó por el permiso
   const MIC_ABIERTO = 2 * 60 * 1000; // después del último audio, el micrófono queda abierto este rato
   let grabacion = null;
   // El micrófono queda abierto mientras la charla está abierta (y un rato después del último audio):
@@ -1267,9 +1268,21 @@ const panelMonedas = (() => {
     return workerOpus;
   }
 
+  const micVivo = () => !!(mic && mic.getAudioTracks().some((t) => t.readyState === 'live'));
+
+  // ¿El navegador va a preguntar por el micrófono? Sin la API de permisos (Safari viejo) no se sabe: null
+  async function micSinPermiso() {
+    try {
+      const p = await navigator.permissions.query({ name: 'microphone' });
+      return p.state !== 'granted';
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function abrirMic() {
     clearTimeout(cerrarMic.reloj);
-    if (mic && mic.getAudioTracks().some((t) => t.readyState === 'live')) return mic;
+    if (micVivo()) return mic;
     mic = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     });
@@ -1378,12 +1391,22 @@ const panelMonedas = (() => {
     }, 250);
 
     let stream;
+    const yaAbierto = micVivo();
+    const preguntara = yaAbierto ? false : await micSinPermiso();
+    const t0 = Date.now();
     try {
       stream = await abrirMic();
     } catch (err) {
       ctx.close();
       if (grabacion === g) limpiarGrabacion(g);
       return errorFicha('No se pudo usar el micrófono. Fijate que el navegador tenga permiso para usarlo en esta página.');
+    }
+    // Si el navegador preguntó por el micrófono, el dedo se levantó para tocar "Permitir" y el soltar se
+    // pierde: quedaba grabando hasta otro toque. Como en WhatsApp, ese toque solo da el permiso.
+    if (!yaAbierto && (preguntara || (preguntara === null && Date.now() - t0 > PERMISO))) {
+      ctx.close();
+      if (grabacion === g) limpiarGrabacion(g);
+      return toast('Listo, ya tenés el micrófono. Mantené apretado para grabar y soltá para mandar.');
     }
     try {
       g.motor = await empezarMotor(stream, ctx);
@@ -2019,7 +2042,71 @@ const panelMonedas = (() => {
     return { lista };
   }
 
+  // Recorridos: qué día de la semana, en qué turno y horario pasa por cada
+  // localidad. walter-bot le dice al cliente cuándo pasamos y anota el pedido
+  // para el próximo recorrido de su localidad.
+  const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const NUM_DIA = { Lunes: 1, Martes: 2, 'Miércoles': 3, Jueves: 4, Viernes: 5, 'Sábado': 6, Domingo: 0 };
+
+  function htmlRecorrido(r) {
+    const v = (x) => (x == null ? '' : escapar(x).replace(/"/g, '&quot;'));
+    const locs = r.locs || [];
+    return '<div class="recorrido">' +
+      '<div class="recorrido-fila">' +
+        '<select data-r="dia" aria-label="Día">' + DIAS_SEMANA.map((d) =>
+          '<option value="' + NUM_DIA[d] + '"' + (r.dia === NUM_DIA[d] ? ' selected' : '') + '>' + d + '</option>').join('') + '</select>' +
+        '<select data-r="turno" aria-label="Turno">' + ['Mañana', 'Tarde'].map((t) =>
+          '<option' + (r.turno === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>' +
+        '<input data-r="horario" type="text" aria-label="Horario" placeholder="ej. 14 a 18 hs" maxlength="40" value="' + v(r.horario) + '">' +
+        '<button type="button" class="btn btn-suave quitar-recorrido" aria-label="Quitar este recorrido" title="Quitar">×</button>' +
+      '</div>' +
+      '<div class="recorrido-locs">' + Object.keys(LOCALIDADES).map((l) =>
+        '<label class="chip-loc"><input type="checkbox" value="' + v(l) + '"' + (locs.includes(l) ? ' checked' : '') + '>' + escapar(l) + '</label>').join('') +
+      '</div>' +
+    '</div>';
+  }
+
+  function pintarRecorridos(lista) {
+    $('mRecorridos').innerHTML = lista.length ? lista.map(htmlRecorrido).join('')
+      : '<div class="dato-secundario sin-recorridos">Todavía no cargaste recorridos: el bot dice que le avisamos el día.</div>';
+  }
+
+  function agregarRecorrido() {
+    $('mRecorridos').querySelector('.sin-recorridos')?.remove();
+    $('mRecorridos').insertAdjacentHTML('beforeend', htmlRecorrido({ dia: 1, turno: 'Mañana' }));
+    $('mRecorridos').lastElementChild.querySelector('select').focus();
+    marcarPreciosEditados();
+  }
+
+  function quitarRecorrido(e) {
+    const boton = e.target.closest('.quitar-recorrido');
+    if (!boton) return;
+    boton.closest('.recorrido').remove();
+    if (!$('mRecorridos').querySelector('.recorrido')) pintarRecorridos([]);
+    marcarPreciosEditados();
+  }
+
+  function leerRecorridos() {
+    const lista = [];
+    for (const fila of document.querySelectorAll('#mRecorridos .recorrido')) {
+      const dia = Number(fila.querySelector('[data-r="dia"]').value);
+      const turno = fila.querySelector('[data-r="turno"]').value;
+      const horario = fila.querySelector('[data-r="horario"]').value.trim();
+      const locs = [...fila.querySelectorAll('.recorrido-locs input:checked')].map((x) => x.value);
+      const nombre = DIAS_SEMANA.find((d) => NUM_DIA[d] === dia) + ' a la ' + turno.toLowerCase();
+      if (!locs.length) return { error: 'Elegí al menos una localidad para el recorrido del ' + nombre + '.', campo: fila.querySelector('select') };
+      if (lista.some((r) => r.dia === dia && r.turno === turno)) {
+        return { error: 'El recorrido del ' + nombre + ' está dos veces: juntá las localidades en uno.', campo: fila.querySelector('select') };
+      }
+      const r = { dia, turno, locs };
+      if (horario) r.horario = horario;
+      lista.push(r);
+    }
+    return { lista };
+  }
+
   function pintarPrecios() {
+    pintarBienvenida();
     // Si Walter está escribiendo, un "Actualizar" no le pisa lo que tipeó.
     if (preciosEditados) return;
     document.querySelectorAll('#mFormPrecios [data-cfg]').forEach((el) => {
@@ -2027,10 +2114,95 @@ const panelMonedas = (() => {
       el.value = v == null ? ('cero' in el.dataset ? 0 : '') : v;
     });
     pintarTipos(cfg.monedas || []);
+    pintarRecorridos(cfg.recorridos || []);
     ocultar($('mPreciosError'));
     $('mPreciosEstado').textContent = cfgActualizado
       ? 'Último cambio: ' + fechaHora(cfgActualizado)
       : '';
+  }
+
+  // Audio de bienvenida: se graba acá con el mismo motor que los audios de las charlas y lo guarda walter-bot
+  let bienvenida = null;
+  const MAX_BIENVENIDA = 60;
+
+  async function pintarBienvenida() {
+    const path = cfg.audioBienvenida || '';
+    const oir = $('mBienvenidaOir');
+    $('mBienvenidaQuitar').classList.toggle('hidden', !path || !!bienvenida);
+    oir.classList.toggle('hidden', !path);
+    if (!bienvenida) $('mBienvenidaGrabar').textContent = path ? 'Grabar otro' : 'Grabar audio';
+    if (!path || oir.dataset.path === path) return;
+    oir.dataset.path = path;
+    const r = await llamarBot({ accion: 'medios', paths: [path] });
+    if (r.urls && r.urls[path] && oir.dataset.path === path) oir.src = r.urls[path];
+  }
+
+  async function grabarBienvenida() {
+    if (bienvenida) return terminarBienvenida();
+    if (!puedeGrabar()) return toast('Este navegador no puede grabar audio.');
+    // Como en las charlas: el contexto se crea en el mismo toque, si no Safari lo deja mudo
+    const ctx = new Ctx();
+    ctx.resume();
+    let stream;
+    try {
+      stream = await abrirMic();
+    } catch (err) {
+      ctx.close();
+      return toast('No se pudo usar el micrófono. Fijate que el navegador tenga permiso para usarlo en esta página.');
+    }
+    let motor;
+    try {
+      motor = await empezarMotor(stream, ctx);
+    } catch (err) {
+      return toast('No se pudo grabar en este navegador.');
+    }
+    const b = { motor, inicio: Date.now() };
+    bienvenida = b;
+    $('mBienvenidaGrabar').textContent = 'Terminar y guardar';
+    $('mBienvenidaQuitar').classList.add('hidden');
+    b.reloj = setInterval(() => {
+      const s = Math.floor((Date.now() - b.inicio) / 1000);
+      $('mBienvenidaEstado').textContent = 'Grabando… ' + s + ' s';
+      if (s >= MAX_BIENVENIDA) terminarBienvenida();
+    }, 250);
+  }
+
+  async function terminarBienvenida() {
+    const b = bienvenida;
+    if (!b) return;
+    bienvenida = null;
+    clearInterval(b.reloj);
+    clearTimeout(cerrarMic.reloj);
+    cerrarMic.reloj = setTimeout(cerrarMic, MIC_ABIERTO);
+    const boton = $('mBienvenidaGrabar');
+    boton.disabled = true;
+    boton.textContent = 'Guardando…';
+    const corto = Date.now() - b.inicio < 1500;
+    const archivo = corto ? (b.motor.cancelar(), null) : await b.motor.terminar().catch(() => null);
+    let error = corto ? 'Muy corto: grabá unos segundos.' : !archivo ? 'No se pudo grabar. Probá de nuevo.' : null;
+    if (!error) {
+      const audio = await new Promise((ok) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(fr.result);
+        fr.readAsDataURL(archivo);
+      });
+      const r = await llamarBot({ accion: 'bienvenida', audio });
+      if (r.error) error = r.error;
+      else cfg.audioBienvenida = r.path;
+    }
+    boton.disabled = false;
+    $('mBienvenidaEstado').textContent = error ? '' : 'Guardado: le llega a cada cliente nuevo.';
+    if (error) toast(error);
+    pintarBienvenida();
+  }
+
+  async function quitarBienvenida() {
+    if (!confirm('¿Quitar el audio de bienvenida? Los clientes nuevos ya no lo van a recibir.')) return;
+    const r = await llamarBot({ accion: 'bienvenida', audio: null });
+    if (r.error) return toast(r.error);
+    delete cfg.audioBienvenida;
+    $('mBienvenidaEstado').textContent = '';
+    pintarBienvenida();
   }
 
   async function guardarPrecios(e) {
@@ -2080,6 +2252,15 @@ const panelMonedas = (() => {
       return ver($('mPreciosError'));
     }
     nuevo.monedas = tipos.lista;
+
+    const recorridos = leerRecorridos();
+    if (recorridos.error) {
+      $('mPreciosError').textContent = recorridos.error;
+      if (recorridos.campo) recorridos.campo.focus();
+      return ver($('mPreciosError'));
+    }
+    if (recorridos.lista.length) nuevo.recorridos = recorridos.lista;
+    else delete nuevo.recorridos;
 
     const boton = $('mGuardarPrecios');
     boton.disabled = true;
@@ -2233,7 +2414,11 @@ const panelMonedas = (() => {
     $('mFormPrecios').addEventListener('input', marcarPreciosEditados);
     $('mAgregarTipo').addEventListener('click', agregarTipo);
     $('mTiposMoneda').addEventListener('click', quitarTipo);
+    $('mAgregarRecorrido').addEventListener('click', agregarRecorrido);
+    $('mRecorridos').addEventListener('click', quitarRecorrido);
     $('mFormPrecios').addEventListener('submit', guardarPrecios);
+    $('mBienvenidaGrabar').addEventListener('click', grabarBienvenida);
+    $('mBienvenidaQuitar').addEventListener('click', quitarBienvenida);
 
     $('mPerfilArchivo').addEventListener('change', elegirFoto);
     $('mGuardarPerfil').addEventListener('click', guardarPerfil);

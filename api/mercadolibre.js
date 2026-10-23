@@ -18,6 +18,10 @@
 //   publicaciones -> las publicaciones activas de la cuenta, con su stock
 //   publicidad    -> campañas de Product Ads y sus métricas, si la cuenta
 //                    las tiene habilitadas
+//   flex_envios   -> envíos Flex de los últimos 14 días (solo tiendas con
+//                    features.envios_flex)
+//   flex_buscar_vendedores -> vendedores de ML del corredor que publican
+//                    un rubro, para el CRM de Envíos Flex (mismo flag)
 // Y una por GET, que es la que abre Mercado Libre al volver:
 //   callback     -> /api/ml-callback?code=...&state=...
 
@@ -1386,6 +1390,242 @@ async function accionGuardarOpiniones(slug) {
   };
 }
 
+// ---------- Envíos Flex ----------
+//
+// Los envíos Flex recientes de la tienda, para la pestaña Envíos Flex.
+//
+// Cómo se reconoce un envío Flex: en el recurso /shipments el tipo de
+// logística es "self_service" (doc de Mercado Envíos 2, "Logistic type":
+// "Mercado Envíos Flex (self_service): Only in MLA, MLB, MLC, MCO y MLU").
+// Envíos Turbo también viene como self_service (doc de Envíos Turbo), y
+// para nosotros es lo mismo: lo entrega el vendedor.
+// Sin X-Format-New el campo es `logistic_type`; con él, `logistic.type`. Se
+// leen los dos por si ML cambia el formato por defecto.
+//
+// No hay búsqueda de envíos por tipo, así que se parte de las órdenes
+// recientes (las mismas 50 de ventas_faltantes) y se pide cada envío. Los
+// costos se piden solo para los que son Flex: es una llamada más por envío.
+const FLEX_DIAS = 14;
+const FLEX_MAXIMOS = 40;
+const FLEX_EN_PARALELO = 8;
+
+const { flexHabilitado, esFlex, filaDeEnvio, guardarFilas, zonaDeCiudad, sinTildes: sinTildesMl } = require('./_flex');
+
+async function enTandas(lista, cuantos, fn) {
+  const salida = [];
+  for (let i = 0; i < lista.length; i += cuantos) {
+    const tanda = await Promise.all(lista.slice(i, i + cuantos).map((x) => fn(x).catch(() => null)));
+    salida.push(...tanda);
+  }
+  return salida;
+}
+
+async function accionFlexEnvios(slug) {
+  // El flag se mira acá también: la pestaña no aparece sin él, pero el
+  // endpoint es público para cualquier tienda logueada.
+  if (!(await flexHabilitado(slug))) return { ok: false, motivo: 'Envíos Flex no está habilitado para esta tienda.' };
+
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+
+  const token = await tokenDeTienda(slug);
+  const traidas = await ordenesRecientesDeMl(cuenta, token);
+  if (!traidas.ok) return { conectado: true, ok: false, motivo: 'No se pudieron leer las ventas de Mercado Libre.' };
+
+  const desde = Date.now() - FLEX_DIAS * 24 * 60 * 60 * 1000;
+  // Varias órdenes de un carrito comparten el mismo envío: va uno solo.
+  const porEnvio = new Map();
+  traidas.ordenes.forEach((o) => {
+    const envioId = o.shipping && o.shipping.id;
+    const fecha = new Date(o.date_created || o.date_closed || 0).getTime();
+    if (!envioId || fecha < desde || porEnvio.has(String(envioId))) return;
+    porEnvio.set(String(envioId), o);
+  });
+  const ids = [...porEnvio.keys()].slice(0, FLEX_MAXIMOS);
+
+  const envios = await enTandas(ids, FLEX_EN_PARALELO, (id) => pedirAMl('/shipments/' + encodeURIComponent(id), token));
+
+  const flex = [];
+  envios.forEach((s, i) => {
+    if (!s || !esFlex(s)) return;
+    if (!s.id) s.id = ids[i];
+    flex.push({ envio: s, orden: porEnvio.get(ids[i]) });
+  });
+
+  // Lo que ML dice del costo del envío para el vendedor y el comprador. La
+  // bonificación de Flex se acredita en Mercado Pago, y la doc no dice en
+  // qué campo de /costs aparece: se devuelve lo que haya y el panel lo
+  // muestra como "según ML", para contrastar con Mercado Pago.
+  const costos = await enTandas(flex, FLEX_EN_PARALELO,
+    (e) => pedirAMl('/shipments/' + encodeURIComponent(e.envio.id) + '/costs', token));
+  const filas = flex.map((e, i) => filaDeEnvio(slug, e.envio, e.orden, costos[i]));
+
+  // Se guardan en flex_envios: esto rellena lo que el aviso de ML no haya
+  // traído (un aviso perdido, o envíos de antes de suscribir el tópico).
+  // Si la tabla todavía no existe (falta schema/77), se devuelven igual.
+  let guardados = true;
+  try {
+    await guardarFilas(filas);
+  } catch (err) {
+    guardados = false;
+    console.warn('flex_envios: no se pudieron guardar', String(err.message || err));
+  }
+
+  return {
+    conectado: true,
+    ok: true,
+    dias: FLEX_DIAS,
+    revisados: ids.length,
+    recortado: porEnvio.size > ids.length,
+    guardados: guardados,
+    envios: filas
+  };
+}
+
+// ---- Buscar vendedores para la mensajería ----
+//
+// Busca en Mercado Libre publicaciones de un rubro cuyos vendedores estén
+// en el corredor, y devuelve los vendedores (no las publicaciones): son los
+// prospectos del CRM de Envíos Flex.
+//
+// No usa /sites/MLA/search: ML se la niega a las aplicaciones comunes
+// (responde 403 "forbidden"). Va por el catálogo, que sí está abierto:
+// /products/search da los productos del rubro y /products/{id}/items las
+// publicaciones que compiten en cada uno, con el vendedor y su dirección.
+// Quedan afuera los que no publican en catálogo, pero en los rubros que se
+// venden mucho son casi todos.
+//
+// Se corta en PROSPECTOS_PRODUCTOS productos y PROSPECTOS_MAXIMOS
+// vendedores por la misma razón que PAGINAS_MAXIMAS: el tope de tiempo.
+const PROVINCIA_CORREDOR = 'santa fe';
+const PROSPECTOS_PRODUCTOS = 15;
+const PROSPECTOS_MAXIMOS = 40;
+// ML corta con "local_rate_limited" si se le pide mucho junto: de a pocos,
+// y si igual corta, se espera y se reintenta.
+const PROSPECTOS_EN_PARALELO = 3;
+const PROSPECTOS_REINTENTOS = 2;
+
+const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
+async function pedirAMlConEspera(ruta, token) {
+  for (let intento = 0; ; intento++) {
+    try {
+      return await pedirAMl(ruta, token);
+    } catch (err) {
+      const limitado = /rate.?limit|too many/i.test(String(err.message || err));
+      if (!limitado || intento >= PROSPECTOS_REINTENTOS) throw err;
+      await esperar(1500 * (intento + 1));
+    }
+  }
+}
+
+// Flex en una publicación: o la logística es self_service, o el envío trae
+// la etiqueta self_service_in (Flex prendido además de Mercado Envíos).
+function publicacionConFlex(item) {
+  const envio = (item && item.shipping) || {};
+  return envio.logistic_type === 'self_service' || (envio.tags || []).includes('self_service_in');
+}
+
+// Hay San Lorenzo en Corrientes y en Salta: además de la ciudad se mira la
+// provincia, salvo que ML no la mande.
+function zonaDePublicacion(item) {
+  const direccion = (item && (item.seller_address || item.address)) || {};
+  const ciudad = (direccion.city && direccion.city.name) || direccion.city_name || '';
+  const provincia = (direccion.state && direccion.state.name) || direccion.state_name || '';
+  if (provincia && sinTildesMl(provincia) !== PROVINCIA_CORREDOR) return { ciudad: ciudad, zona: null };
+  const zona = zonaDeCiudad(ciudad);
+  return { ciudad: ciudad, zona: zona && zona !== 'otra' ? zona : null };
+}
+
+async function accionBuscarVendedores(slug, texto) {
+  if (!(await flexHabilitado(slug))) return { ok: false, motivo: 'Envíos Flex no está habilitado para esta tienda.' };
+  const q = String(texto || '').trim().slice(0, 80);
+  if (!q) return { ok: false, motivo: 'Escribí qué buscar, por ejemplo "suplementos".' };
+
+  const cuenta = await cuentaDeTienda(slug);
+  if (!cuenta) return { conectado: false };
+  const token = await tokenDeTienda(slug);
+
+  const productos = await pedirAMlConEspera('/products/search?site_id=MLA&status=active&q=' + encodeURIComponent(q) +
+    '&limit=' + PROSPECTOS_PRODUCTOS, token);
+  const lista = ((productos && productos.results) || []).filter((p) => p && p.id).slice(0, PROSPECTOS_PRODUCTOS);
+  const ids = lista.map((p) => p.id);
+  if (!ids.length) return { conectado: true, ok: true, q: q, vendedores: [], motivo: 'Mercado Libre no tiene productos de catálogo para "' + q + '". Probá con otra palabra.' };
+
+  const paginas = await enTandas(ids, PROSPECTOS_EN_PARALELO,
+    (id) => pedirAMlConEspera('/products/' + encodeURIComponent(id) + '/items?limit=100', token));
+  const fallidas = paginas.filter((p) => !p).length;
+
+  // Una fila por vendedor del corredor, con cuántas publicaciones del rubro
+  // tiene y cuántas con Flex. Se excluye la propia cuenta.
+  const porVendedor = new Map();
+  const vistas = new Set();
+  let revisadas = 0;
+  let sinDireccion = 0;
+  const provincias = new Map();
+  paginas.forEach((pagina, n) => ((pagina && pagina.results) || []).forEach((item) => {
+    const itemId = item.item_id || item.id;
+    const id = item.seller_id || (item.seller && item.seller.id);
+    if (!id || vistas.has(itemId)) return;
+    vistas.add(itemId);
+    revisadas += 1;
+    if (String(id) === String(cuenta.ml_user_id)) return;
+    const lugar = zonaDePublicacion(item);
+    if (!item.seller_address && !item.address) sinDireccion += 1;
+    const dir = item.seller_address || item.address || {};
+    const prov = (dir.state && dir.state.name) || dir.state_name;
+    if (prov) provincias.set(prov, (provincias.get(prov) || 0) + 1);
+    if (!lugar.zona) return;
+    const v = porVendedor.get(String(id)) || {
+      ml_seller_id: String(id), nick: '', ciudad: lugar.ciudad, zona: lugar.zona,
+      publicaciones: 0, con_flex: 0, ejemplo: null
+    };
+    v.publicaciones += 1;
+    if (publicacionConFlex(item)) v.con_flex += 1;
+    if (!v.ejemplo) v.ejemplo = { titulo: item.title || lista[n].name || '', link: 'https://articulo.mercadolibre.com.ar/' + String(itemId).replace(/^MLA/, 'MLA-') };
+    porVendedor.set(String(id), v);
+  }));
+
+  const todos = [...porVendedor.values()]
+    .sort((a, b) => b.con_flex - a.con_flex || b.publicaciones - a.publicaciones);
+  const vendedores = todos.slice(0, PROSPECTOS_MAXIMOS);
+
+  // El nombre, el link al perfil y la reputación salen de /users. Si falla
+  // para alguno, se muestra igual con lo que trajo la búsqueda.
+  const perfiles = await enTandas(vendedores, PROSPECTOS_EN_PARALELO,
+    (v) => pedirAMlConEspera('/users/' + encodeURIComponent(v.ml_seller_id), token));
+  vendedores.forEach((v, i) => {
+    const u = perfiles[i];
+    if (!u) return;
+    v.nick = u.nickname || v.nick;
+    v.perfil = u.permalink || '';
+    const rep = u.seller_reputation || {};
+    v.ventas = rep.transactions && rep.transactions.total != null ? rep.transactions.total : null;
+    v.lider = rep.power_seller_status || null;
+  });
+
+  return {
+    conectado: true,
+    ok: true,
+    q: q,
+    productos: ids.length,
+    revisadas: revisadas,
+    recortado: todos.length > vendedores.length,
+    vendedores: vendedores,
+    motivo: vendedores.length ? undefined : sinResultados(revisadas, ids.length, fallidas, sinDireccion, provincias)
+  };
+}
+
+// Por qué no apareció nadie, con números: así se sabe si es el rubro o
+// si ML no mandó lo necesario.
+function sinResultados(revisadas, productos, fallidas, sinDireccion, provincias) {
+  let texto = 'Se revisaron ' + revisadas + ' publicaciones de ' + productos + ' productos y ninguna es de un vendedor del corredor.';
+  if (fallidas) texto += ' ' + fallidas + ' productos no se pudieron leer.';
+  if (sinDireccion) texto += ' ' + sinDireccion + ' publicaciones vinieron sin dirección del vendedor.';
+  const santaFe = [...provincias.entries()].find(([n]) => sinTildesMl(n) === PROVINCIA_CORREDOR);
+  texto += santaFe ? ' En Santa Fe había ' + santaFe[1] + ', pero de otras ciudades.' : ' Ninguna era de Santa Fe.';
+  return texto + ' Probá con un producto más de barrio (ej.: "funda celular", "repuesto moto").';
+}
+
 async function accionEstado(slug) {
   const filas = await sb('/rest/v1/store_ml_cuenta?store_slug=eq.' + encodeURIComponent(slug) +
                          '&select=ml_user_id,nickname,conectado_en');
@@ -1510,6 +1750,10 @@ module.exports = async (req, res) => {
     if (accion === 'facturacion') return res.status(200).json(await accionFacturacion(tienda.slug));
     if (accion === 'calidad') return res.status(200).json(await accionCalidadPublicaciones(tienda.slug));
     if (accion === 'ventas_faltantes') return res.status(200).json(await accionVentasFaltantes(tienda.slug));
+    if (accion === 'flex_envios') return res.status(200).json(await accionFlexEnvios(tienda.slug));
+    if (accion === 'flex_buscar_vendedores') {
+      return res.status(200).json(await accionBuscarVendedores(tienda.slug, cuerpo.texto));
+    }
     if (accion === 'importar_venta') {
       const cuerpo = req.body || {};
       return res.status(200).json(await accionImportarVenta(tienda.slug, cuerpo.ml_order_id));

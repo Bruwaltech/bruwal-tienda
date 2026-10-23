@@ -51,6 +51,9 @@
     },
     "api/mercadopago.js": {
       "maxDuration": 30
+    },
+    "api/mercadolibre.js": {
+      "maxDuration": 30
     }
   },
   "crons": [

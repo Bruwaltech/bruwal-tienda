@@ -9,7 +9,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, procesar, procesarConLectura, type Respuesta } from "./bot.ts";
+import { conPerfil, type Config, cuandoDe, esCoordinar, horarioDe, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
@@ -75,7 +75,15 @@ Deno.serve(async (req) => {
   // 3) Walter desde el panel: lleva la sesión del usuario, no la firma de Meta
   if (url.searchParams.get("tarea") === "panel") {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-    return panel(req);
+    const r = await panel(req);
+    // Lo que queda corriendo después de contestar (pasar a texto el audio de Walter)
+    if (aparte.length) {
+      const resto = Promise.allSettled(aparte.splice(0));
+      const rt = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
+      if (rt) rt.waitUntil(resto);
+      else await resto;
+    }
+    return r;
   }
 
   // 4) Mensajes entrantes
@@ -141,7 +149,7 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
         .gte("creado", new Date(Date.now() - 60e3).toISOString());
       if (count) return;
     }
-    await responder(canal, usuario, texto, libre, id, nombrePerfil);
+    await responder(canal, usuario, texto, libre, id, nombrePerfil, false, wa?.id);
   } catch (e) {
     console.error("atender", canal, usuario, e);
   }
@@ -149,7 +157,8 @@ async function atender(canal: Canal, usuario: string, texto: string, libre: bool
 
 // La respuesta del bot al mensaje id (ya guardado). pendiente: Walter le devolvió la charla al bot y este
 // mensaje del cliente había quedado sin contestar mientras la atendía él.
-async function responder(canal: Canal, usuario: string, texto: string, libre: boolean, id: number | null, nombrePerfil?: string, pendiente = false) {
+// waId: el id de WhatsApp del mensaje, para mostrarle al cliente que estamos escribiendo
+async function responder(canal: Canal, usuario: string, texto: string, libre: boolean, id: number | null, nombrePerfil?: string, pendiente = false, waId?: string | null) {
   const [cfg, conv] = await Promise.all([
     config(),
     db.from("walter_conversaciones").select("estado, actualizado, bot_pausado").eq("canal", canal).eq("usuario", usuario).maybeSingle(),
@@ -173,27 +182,55 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   // último. Los anteriores sin respuesta van en la charla reciente, y la IA los lee aunque el último sea un botón.
   if (id && pendiente) libre = true;
   else if (id) {
-    await new Promise((r) => setTimeout(r, ESPERA_SEGUIDOS));
+    // "Hola tengo": la frase sigue en el próximo mensaje, se espera un poco más
+    // Si va tocando los tipos de la lista uno atrás de otro, también: se contestan todos juntos
+    await new Promise((r) => setTimeout(r, pareceCortado(texto) ? ESPERA_CORTADO : tipoSuelto(cfg, texto) ? ESPERA_OPCION : ESPERA_SEGUIDOS));
     const { data: nuevos } = await db.from("walter_mensajes").select("texto")
       .eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra").gt("id", id);
     // Un "hola" o una foto sin texto que llegan después no contestan esto: en ese caso contesta este
     const etiquetas: string[] = Object.values(ETIQUETA);
     if ((nuevos ?? []).some((m) => !esSaludo(String(m.texto)) && !etiquetas.includes(String(m.texto)))) return;
     if (await sinRespuesta(canal, usuario, id)) libre = true;
+    // "¿Estás?" mientras el bot contesta (o recién contestó) lo anterior: no hace falta otra respuesta
+    if (esPing(texto) && await escribioRecien(canal, usuario, id)) return;
+    // Los tipos que tocó antes de este (sin respuesta todavía) se anotan en orden, para pedirle las cantidades de todos
+    if (estado && tipoSuelto(cfg, texto)) {
+      for (const t of await sinResponder(canal, usuario, id)) if (tipoSuelto(cfg, t)) estado = procesar(estado, t, cfg).estado;
+    }
+  }
+  // Una respuesta larga que llega al instante delata al bot: el cliente ve "escribiendo…" mientras la armamos
+  if (canal === "whatsapp" && waId) aparte.push(escribiendo(waId));
+  const desde = Date.now();
+
+  // Ya anotado: Walter puede haberle cambiado el día en Pedidos, y el bot tiene que decir el que quedó
+  if (estado?.step === "done" && estado.d.cuando) {
+    const { data: ped } = await db.from("walter_pedidos").select("dia, turno, localidad").eq("canal", canal).eq("usuario", usuario)
+      .neq("estado", "cancelado").order("id", { ascending: false }).limit(1).maybeSingle();
+    estado = { ...estado, d: { ...estado.d } };
+    if (ped?.dia && ped.turno) estado.d.cuando = cuandoDe(cfg, ped.localidad, ped.dia, ped.turno);
+    else delete estado.d.cuando;
   }
 
   // Respuesta al aviso del día o al recordatorio de retiro (SÍ / NO)
   const n = norm(texto);
   // En "¿tenés de otro tipo?" el sí o el no es para el pedido que está armando
   if (/^(si|no|dale|ok|okey|perfecto|listo|joya|de una|confirmo)\b/.test(n) && estado?.step !== "mas") {
-    const { data: p } = await db.from("walter_pedidos").select("id").eq("canal", canal).eq("usuario", usuario)
-      .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
-      .order("dia", { ascending: false }).limit(1).maybeSingle();
-    if (p) {
+    const [{ data: p }, { data: ult }] = await Promise.all([
+      db.from("walter_pedidos").select("id, aviso_enviado").eq("canal", canal).eq("usuario", usuario)
+        .or("aviso_enviado.not.is.null,aviso_dia.eq.enviado").is("respuesta_aviso", null)
+        .order("dia", { ascending: false }).limit(1).maybeSingle(),
+      db.from("walter_mensajes").select("texto, creado").eq("canal", canal).eq("usuario", usuario).eq("direccion", "sale")
+        .order("id", { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    // Solo si lo último que le mandamos es el aviso o el recordatorio: un "no" a "¿querés cotizar algo más?" no es un "no puedo".
+    // El recordatorio sale como plantilla y no queda en la charla: cuenta si salió después del último mensaje.
+    const alAviso = !!p && (!ult || String(ult.texto).includes(AVISO_DIA) ||
+      (!!p.aviso_enviado && new Date(p.aviso_enviado).getTime() > new Date(ult.creado).getTime()));
+    if (p && alAviso) {
       const si = !n.startsWith("no");
       await db.from("walter_pedidos").update({ respuesta_aviso: si ? "confirmó" : "no puede" }).eq("id", p.id);
       return enviar(canal, usuario, [{
-        text: si ? "¡Gracias! Te esperamos. 👍" : "Gracias por avisar. Le paso a Walter para coordinar otro día.",
+        text: si ? "¡Gracias! Te esperamos. 👍" : "Gracias por avisar. Le aviso al equipo para coordinar otro día.",
       }]);
     }
   }
@@ -209,6 +246,17 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   const r0 = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);
   // En WhatsApp el nombre sale del perfil: no hace falta preguntarlo
   const r = conPerfil(r0, nombreDePerfil(nombrePerfil), cfg);
+  // La misma pregunta otra vez sin que la charla avance: la segunda la dice con otras palabras (redactar),
+  // a la tercera no insiste y le avisa al equipo
+  const igual = !!estado && r.estado.step === estado.step && JSON.stringify(r.estado.d) === JSON.stringify(estado.d) &&
+    !r.consulta && !r.pedido && !r.derivar && estado.step !== "done";
+  r.estado.rep = igual ? (estado!.rep ?? 0) + 1 : 0;
+  if (r.estado.rep >= 2) {
+    const ult = r.respuestas[r.respuestas.length - 1];
+    if (ult) ult.text += "\n\nPara que no des vueltas, igual le aviso a alguien del equipo y te escribe por acá.";
+    r.derivar = true;
+    r.estado.rep = 0;
+  }
   await db.from("walter_conversaciones").upsert({
     canal, usuario, estado: r.estado, actualizado: new Date().toISOString(), bot_pausado: false,
     ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
@@ -219,21 +267,75 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     await db.from("walter_pedidos").insert({
       canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, tipo: p.tipo, cantidad: p.cant,
       retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad, ...(p.items ? { items: p.items } : {}),
+      // Anotado en el recorrido de su localidad: el día ya se lo dijo el bot, no hace falta el aviso del día
+      ...(p.dia && p.turno ? { dia: p.dia, turno: p.turno, estado: "agendado", aviso_dia: "enviado" } : {}),
     });
+    // Antes de anotarlo dijo cuándo puede ("hoy estoy entre las 18 y 18:45"): el bot no lo acuerda, lo ve el equipo
+    if (id && [texto, ...await sinResponder(canal, usuario, id)].some(esCoordinar)) {
+      if (p.dia) {
+        const ult = r.respuestas[r.respuestas.length - 1];
+        ult.text += "\n\nLo que me dijiste de cuándo te queda bien se lo paso a quien arma los recorridos: si se puede otro día, te avisamos por acá.";
+      }
+      await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
+    }
   }
   // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no
   // puede contestarla con lo que sabe el negocio, le avisamos a Walter.
   if (r.consulta) {
     const resp = await contestar(clave, texto, hechos(cfg), charla);
-    r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma Walter, ya le aviso." });
+    r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma alguien del equipo, ya le aviso." });
     if (!resp) await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
   }
   // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
-  await enviar(canal, usuario, await redactar(clave, texto, juntar(r.respuestas), charla));
+  const salen = await redactar(clave, texto, juntar(r.respuestas), charla);
+  await new Promise((ok) => setTimeout(ok, Math.max(0, demora(salen[0]?.text ?? "") - (Date.now() - desde))));
+  await enviar(canal, usuario, salen);
+  // Primera charla con este cliente: después del saludo, la nota de voz que grabó Walter
+  if (!estado && canal === "whatsapp") await mandarBienvenida(cfg, usuario).catch((e) => console.error("bienvenida", e));
+}
+
+const BIENVENIDA = "[Audio de bienvenida]";
+
+// Una sola vez por cliente. Sale como nota de voz si es ogg; en la charla queda el texto, sin el archivo,
+// para que limpiarMedios no lo borre del bucket.
+async function mandarBienvenida(cfg: Config, usuario: string) {
+  const path = (cfg as Config & { audioBienvenida?: string }).audioBienvenida;
+  if (!path) return;
+  const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true })
+    .eq("canal", "whatsapp").eq("usuario", usuario).eq("texto", BIENVENIDA);
+  if (count) return;
+  const { data: archivo, error } = await db.storage.from(BUCKET).download(path);
+  if (error || !archivo) return console.error("bienvenida bajar", error?.message);
+  const tipo = archivo.type || (path.endsWith(".ogg") ? "audio/ogg" : "audio/mpeg");
+  const phone = await secreto("WA_PHONE_ID"), token = await secreto("WA_TOKEN");
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", tipo);
+  form.append("file", archivo, path.split("/").pop()!);
+  const sub = await fetch(`${GRAPH}/${phone}/media`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+  const sj = await sub.json().catch(() => ({}));
+  if (!sub.ok || !sj.id) return console.error("bienvenida subir", sub.status, JSON.stringify(sj));
+  const { error: motivo, id: waId } = await graphEnviar(`${phone}/messages`, token, {
+    messaging_product: "whatsapp", to: usuario, type: "audio", audio: { id: sj.id, ...(tipo === "audio/ogg" ? { voice: true } : {}) },
+  });
+  if (motivo) return console.error("bienvenida mandar", motivo);
+  await log("whatsapp", usuario, "sale", BIENVENIDA, "bot", { tipo: "audio", path: null }, { id: waId });
+}
+
+// Lo que tardaría una persona en escribirlo: 1,5 s más un poco por letra, hasta 6 s
+const demora = (texto: string) => Math.min(6000, 1500 + texto.length * 20);
+
+// Marca el mensaje como leído y muestra "escribiendo…" hasta que sale la respuesta (o 25 s)
+async function escribiendo(waId: string) {
+  const motivo = await graphError(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
+    { messaging_product: "whatsapp", status: "read", message_id: waId, typing_indicator: { type: "text" } });
+  if (motivo) console.error("escribiendo", motivo);
 }
 
 // Cuánto espera el bot por si el cliente manda otro mensaje enseguida
 const ESPERA_SEGUIDOS = 5000;
+const ESPERA_CORTADO = 15000;
+const ESPERA_OPCION = 10000;
 
 // Mensajes del cliente de los últimos 2 minutos, antes del actual, que el bot todavía no contestó
 async function sinRespuesta(canal: Canal, usuario: string, hastaId: number): Promise<number> {
@@ -246,16 +348,36 @@ async function sinRespuesta(canal: Canal, usuario: string, hastaId: number): Pro
   return count ?? 0;
 }
 
+// Los textos que mandó el cliente en los últimos 2 minutos, antes del actual y después de la última respuesta, en orden
+async function sinResponder(canal: Canal, usuario: string, hastaId: number): Promise<string[]> {
+  const { data: ult } = await db.from("walter_mensajes").select("id").eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "sale").lt("id", hastaId).order("id", { ascending: false }).limit(1).maybeSingle();
+  let q = db.from("walter_mensajes").select("texto").eq("canal", canal).eq("usuario", usuario).eq("direccion", "entra")
+    .lt("id", hastaId).gte("creado", new Date(Date.now() - 120e3).toISOString()).order("id");
+  if (ult) q = q.gt("id", ult.id);
+  const { data } = await q;
+  return (data ?? []).map((m) => String(m.texto));
+}
+
+// El cliente ya había escrito algo en los 2 minutos antes de este mensaje
+async function escribioRecien(canal: Canal, usuario: string, hastaId: number): Promise<boolean> {
+  const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "entra").lt("id", hastaId).gte("creado", new Date(Date.now() - 120e3).toISOString());
+  return (count ?? 0) > 0;
+}
+
 // Los últimos mensajes antes del actual, del más viejo al más nuevo
 async function charlaReciente(canal: Canal, usuario: string, hastaId: number): Promise<string> {
   const { data } = await db.from("walter_mensajes").select("direccion, autor, texto").eq("canal", canal).eq("usuario", usuario)
-    .lt("id", hastaId).gte("creado", new Date(Date.now() - 2 * 86400e3).toISOString()).order("id", { ascending: false }).limit(8);
+    .lt("id", hastaId).gte("creado", new Date(Date.now() - 2 * 86400e3).toISOString()).order("id", { ascending: false }).limit(14);
   return (data ?? []).reverse()
-    .map((m) => `${m.direccion === "entra" ? "Cliente" : m.autor === "walter" ? "Walter" : "Bot"}: ${String(m.texto).slice(0, 300)}`).join("\n");
+    .map((m) => `${m.direccion === "entra" ? "Cliente" : m.autor === "walter" ? "Equipo" : "Bot"}: ${String(m.texto).slice(0, 500)}`).join("\n");
 }
 
 async function enviar(canal: Canal, usuario: string, respuestas: Respuesta[]) {
-  for (const r of respuestas) {
+  for (const [i, r] of respuestas.entries()) {
+    // El segundo mensaje no llega pegado al primero
+    if (i) await new Promise((ok) => setTimeout(ok, Math.min(3000, demora(r.text) / 2)));
     const id = await log(canal, usuario, "sale", r.text, "bot");
     const opts = (r.options ?? []).slice(0, canal === "whatsapp" ? 10 : 13);
     if (canal === "whatsapp") {
@@ -328,10 +450,10 @@ const MEDIA: Record<string, MediaTipo> = { image: "imagen", audio: "audio", vide
 // El texto que queda en la charla (y que lee la IA) cuando no viene con epígrafe
 const ETIQUETA: Record<MediaTipo, string> = { imagen: "[Foto]", audio: "[Audio]", video: "[Video]", documento: "[Archivo]", sticker: "[Sticker]" };
 const RECIBIDO: Partial<Record<MediaTipo, string>> = {
-  imagen: "¡Gracias por la foto! Se la paso a Walter para que la vea y te contesta por acá.",
-  audio: "¡Gracias por el audio! Todavía no puedo escucharlos: se lo paso a Walter y te contesta por acá. Si preferís, escribime lo que necesitás y te cotizo ya.",
-  video: "¡Gracias por el video! Se lo paso a Walter para que lo vea y te contesta por acá.",
-  documento: "¡Gracias por el archivo! Se lo paso a Walter y te contesta por acá.",
+  imagen: "¡Gracias por la foto! Se la paso al equipo para que la vea y te contesta por acá.",
+  audio: "¡Gracias por el audio! Todavía no puedo escucharlos: se lo paso al equipo y te contesta por acá. Si preferís, escribime lo que necesitás y te cotizo ya.",
+  video: "¡Gracias por el video! Se lo paso al equipo para que lo vea y te contesta por acá.",
+  documento: "¡Gracias por el archivo! Se lo paso al equipo y te contesta por acá.",
 };
 const EXT: Record<string, string> = {
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a",
@@ -474,7 +596,8 @@ async function enviarAvisos() {
       const nombre = String(p.nombre).split(" ")[0];
       const que = /llave/i.test(p.tipo ?? "") ? "las llaves"
         : p.material === "Monedas" ? "las monedas" : "el " + String(p.material).toLowerCase();
-      const cuando = g.turno === "Mañana" ? "mañana a la mañana" : "hoy a la tarde";
+      const hs = horarioDe(cfg, p.localidad, p.dia, p.turno);
+      const cuando = (g.turno === "Mañana" ? "mañana a la mañana" : "hoy a la tarde") + (hs ? ` (${hs})` : "");
       let ok: boolean;
       if (p.canal === "whatsapp") {
         // Plantilla aprobada en Meta con 3 variables: {{1}} nombre, {{2}} cuándo, {{3}} qué
@@ -497,8 +620,30 @@ async function enviarAvisos() {
       }
     }
   }
+  await avisarPorVencer().catch((e) => console.error("avisar por vencer", e));
   return enviados + await avisarDia(hoy, manana);
 }
+
+// A las 20 horas del último mensaje de un cliente que espera respuesta, le avisamos a Walter: a las 24
+// WhatsApp ya no deja escribirle libre y solo queda el saludo aprobado. Corre cada 15 minutos.
+async function avisarPorVencer() {
+  const desde = Date.now() - 20 * 3600e3 - 15 * 60e3, hasta = Date.now() - 20 * 3600e3;
+  const { data: convs } = await db.from("walter_conversaciones").select("canal, usuario, nombre_perfil")
+    .eq("canal", "whatsapp").gte("actualizado", new Date(Date.now() - 2 * 86400e3).toISOString());
+  for (const c of convs ?? []) {
+    const { data: ult } = await db.from("walter_mensajes").select("direccion, creado, texto").eq("canal", c.canal).eq("usuario", c.usuario)
+      .order("id", { ascending: false }).limit(1).maybeSingle();
+    const t = ult ? new Date(ult.creado).getTime() : 0;
+    if (!ult || ult.direccion !== "entra" || t < desde || t >= hasta) continue;
+    // Un 👍 o un "gracias" no espera respuesta
+    if (/^(|ok|oka|okey|dale|gracias|muchas gracias|listo|joya|perfecto|genial|buenisimo|de nada|chau)$/.test(norm(String(ult.texto)).replace(/[.,!]/g, "").trim())) continue;
+    const vence = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false })
+      .format(new Date(t + VENTANA));
+    await avisarWalter(c.canal as Canal, c.usuario, `Te escribió hace 20 horas y espera respuesta. Contestale antes de las ${vence}: después WhatsApp solo deja mandarle el saludo.`, c.nombre_perfil ?? undefined);
+  }
+}
+
+const AVISO_DIA = "Ya tenemos día para pasar a buscar";
 
 // Apenas Walter le pone día y turno a un pedido, se lo decimos al cliente. Solo si la charla sigue
 // abierta: Meta deja escribir libre hasta 24 horas después del último mensaje del cliente. Si no,
@@ -519,7 +664,7 @@ async function avisarDia(hoy: string, manana: string) {
       const dia = p.dia === hoy ? "hoy" : p.dia === manana ? "mañana"
         : "el " + new Intl.DateTimeFormat("es-AR", { weekday: "long", day: "numeric", timeZone: "UTC" }).format(new Date(p.dia + "T12:00:00Z"));
       await enviar(p.canal, p.usuario, [{
-        text: `¡Hola ${nombre}! Ya tenemos día para pasar a buscar ${que}: ${dia} a la ${String(p.turno).toLowerCase()}. ¿Te queda bien?`,
+        text: `¡Hola ${nombre}! ${AVISO_DIA} ${que}: ${dia} a la ${String(p.turno).toLowerCase()}. ¿Te queda bien?`,
         options: ["Sí, me queda bien", "No puedo ese día"],
       }]);
       enviados++;
@@ -537,6 +682,10 @@ const CORS = {
 };
 const respuesta = (cuerpo: Record<string, unknown>, status = 200) => Response.json(cuerpo, { status, headers: CORS });
 
+// Para retomar una charla que ya venía: no le vuelve a preguntar qué tiene. Plantilla retomar_charla, con
+// {{1}} el nombre; mientras Meta no la apruebe, sale primer_contacto.
+const SALUDO_RETOMAR = "¡Hola {{1}}! Te escribimos de Punto Metales para seguir con lo que venías hablando con nosotros. " +
+  "Respondé este mensaje y lo seguimos por acá.";
 // El texto de la plantilla primer_contacto tal como se cargó en Meta (para que el panel muestre lo que le llegó)
 const SALUDO_CONTACTO = "¡Hola {{1}}! Te escribimos de Punto Metales: compramos monedas, llaves, cobre y bronce, " +
   "y pasamos a retirar por tu zona. ¿Tenés algo para vender? Respondé este mensaje y te pasamos el precio.";
@@ -585,6 +734,7 @@ async function panel(req: Request): Promise<Response> {
       return respuesta({ ok: true });
     }
     if (b.accion === "perfil_guardar") return await panelPerfilGuardar(b);
+    if (b.accion === "bienvenida") return await panelBienvenida(b.audio);
     return respuesta({ error: "Acción desconocida" }, 400);
   } catch (e) {
     console.error("panel", b.accion, e);
@@ -669,7 +819,11 @@ async function panelEnviarMedio(canal: string, usuario: string, tipo: "imagen" |
   const path = `${usuario}/${Date.now()}-walter.${ext}`;
   const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: m[1] });
   if (error) console.error("media salida guardar", error.message);
-  await log(canal, usuario, "sale", texto || ETIQUETA[tipo], "walter", { tipo, path: error ? null : path }, { id: waId, ctx: cita });
+  const id = await log(canal, usuario, "sale", texto || ETIQUETA[tipo], "walter", { tipo, path: error ? null : path }, { id: waId, ctx: cita });
+  // Lo que dijo Walter en el audio queda como texto, para que el bot sepa qué se habló si después sigue él
+  if (tipo === "audio" && id) {
+    aparte.push(transcribir(bytes, m[1], ext).then((dicho) => dicho ? db.from("walter_mensajes").update({ texto: dicho }).eq("id", id) : null));
+  }
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
   return respuesta({ ok: true });
@@ -784,18 +938,26 @@ async function panelRetomar(canal: string, usuario: string) {
   // Un saludo por día: si ya salió y el cliente no contestó, otro no suma (y Meta cobra cada uno)
   const { data: ult } = await db.from("walter_mensajes").select("texto, creado").eq("canal", canal).eq("usuario", usuario)
     .order("id", { ascending: false }).limit(1).maybeSingle();
-  const saludoDe = SALUDO_CONTACTO.split("{{1}}")[1];
-  if (ult && String(ult.texto).endsWith(saludoDe) && Date.now() - new Date(ult.creado).getTime() < VENTANA) {
+  const yaSaludo = [SALUDO_CONTACTO, SALUDO_RETOMAR].some((x) => String(ult?.texto ?? "").endsWith(x.split("{{1}}")[1]));
+  if (ult && yaSaludo && Date.now() - new Date(ult.creado).getTime() < VENTANA) {
     return respuesta({ error: "Ya le mandaste el saludo hoy. Cuando conteste vas a poder escribirle." }, 409);
   }
   const nombre = (nombreDePerfil(conv.nombre_perfil ?? "") ?? "").split(" ")[0] || "de nuevo";
-  const { error: motivo, id: waId } = await graphEnviar(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"), {
+  const phone = await secreto("WA_PHONE_ID"), token = await secreto("WA_TOKEN");
+  const plantilla = (name: string) => graphEnviar(`${phone}/messages`, token, {
     messaging_product: "whatsapp", to: usuario, type: "template",
-    template: { name: (await secreto("WA_TEMPLATE_CONTACTO")) || "primer_contacto", language: { code: "es_AR" },
-      components: [{ type: "body", parameters: [{ type: "text", text: nombre }] }] },
+    template: { name, language: { code: "es_AR" }, components: [{ type: "body", parameters: [{ type: "text", text: nombre }] }] },
   });
+  // Primero la de retomar; si Meta todavía no la tiene aprobada, el saludo de siempre
+  let texto = SALUDO_RETOMAR;
+  let { error: motivo, id: waId } = await plantilla((await secreto("WA_TEMPLATE_RETOMAR")) || "retomar_charla");
+  if (motivo) {
+    console.log("retomar_charla no salió, va primer_contacto:", motivo);
+    texto = SALUDO_CONTACTO;
+    ({ error: motivo, id: waId } = await plantilla((await secreto("WA_TEMPLATE_CONTACTO")) || "primer_contacto"));
+  }
   if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
-  await log(canal, usuario, "sale", SALUDO_CONTACTO.replace("{{1}}", nombre), "walter", undefined, { id: waId });
+  await log(canal, usuario, "sale", texto.replace("{{1}}", nombre), "walter", undefined, { id: waId });
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
   return respuesta({ ok: true });
@@ -808,6 +970,30 @@ async function panelBorrarPedidos(ids: unknown) {
   const { data, error } = await db.from("walter_pedidos").delete().in("id", lista).select("id");
   if (error) throw error;
   return respuesta({ ok: true, borrados: (data ?? []).map((x) => x.id) });
+}
+
+// La nota de voz que el bot manda en la primera charla con cada cliente (Precios y ajustes › Audio de bienvenida).
+// audio null la quita. Queda en el bucket y su ruta en walter_config.data.audioBienvenida.
+async function panelBienvenida(audio: unknown) {
+  const { data: fila, error: e1 } = await db.from("walter_config").select("data").eq("id", 1).single();
+  if (e1) throw e1;
+  const data = { ...(fila.data as Record<string, unknown>) };
+  const vieja = typeof data.audioBienvenida === "string" ? data.audioBienvenida : null;
+  let path: string | null = null;
+  if (audio !== null) {
+    const m = typeof audio === "string" ? audio.match(SALIDA.audio.tipos) : null;
+    if (!m) return respuesta({ error: `El audio tiene que ser ${SALIDA.audio.formato}.` }, 400);
+    const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    if (bytes.length > SALIDA.audio.max * 1024 * 1024) return respuesta({ error: `El audio pesa demasiado (hasta ${SALIDA.audio.max} MB).` }, 400);
+    path = `bienvenida/${Date.now()}.${EXT_SALIDA[m[1]]}`;
+    const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: m[1] });
+    if (error) throw error;
+    data.audioBienvenida = path;
+  } else delete data.audioBienvenida;
+  const { error: e2 } = await db.from("walter_config").update({ data, actualizado: new Date().toISOString() }).eq("id", 1);
+  if (e2) throw e2;
+  if (vieja && vieja !== path) await db.storage.from(BUCKET).remove([vieja]);
+  return respuesta({ ok: true, path });
 }
 
 // ---------- Perfil de WhatsApp del bot: lo que ve el cliente al tocar el nombre ----------

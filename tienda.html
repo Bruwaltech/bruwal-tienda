@@ -769,6 +769,12 @@
     <div class="mark">✓</div>
     <h2 id="exitoTitulo">¡Pedido enviado!</h2>
     <p id="exitoTexto" style="color:var(--text-mute);margin-top:10px;">La tienda te va a contactar para coordinar la entrega y el pago.</p>
+    <!-- Solo mientras el negocio no lo confirmo. Lo muestra el envio del
+         pedido si se pudo guardar con su codigo (token_cliente). -->
+    <div id="cancelarPedidoCaja" class="hidden" style="margin-top:14px;">
+      <button type="button" id="cancelarPedidoBtn" style="padding:9px 18px;background:#fff;color:#97201D;border:1.5px solid #E7B3B1;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;">Cancelar pedido</button>
+      <p id="cancelarPedidoTexto" style="color:var(--text-mute);font-size:13px;margin-top:8px;"></p>
+    </div>
     <button onclick="backToShop()" style="margin-top:20px;padding:12px 32px;background:var(--celeste);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:15px;">← Volver a la tienda</button>
   </div>
 </div>
@@ -789,6 +795,14 @@
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Cliente SIEMPRE anonimo para leer datos publicos de tiendas. La tienda, la
+// portada y el panel comparten dominio: con `sb`, un duenio logueado lee con
+// SU sesion, y desde la migracion 75 esa sesion solo ve su propio negocio.
+// Sin sesion guardada ni refresco: nunca manda el token de nadie.
+const sbPublico = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'bruwal-publico' }
+});
 
 function byId(id){ return document.getElementById(id); }
 
@@ -876,8 +890,18 @@ function escalonPorCantidad(p, unidades){
   return suben.length ? suben[suben.length - 1] : null;
 }
 
+// La oferta del producto sobre un precio propio (variante o equipo): la
+// oferta se carga a nivel producto, y sin esto un producto con tamaños o
+// talles mostraba "% OFF" y cobraba el precio entero. Mismo porcentaje.
+// Misma regla que conOferta() en el panel.
+function conOferta(p, precio){
+  const n = Number(precio);
+  if (!hayOferta(p) || !(n > 0)) return n;
+  return Math.round(n * Number(p.precio_oferta) / Number(p.price));
+}
+
 function precioDeVariante(p, v){
-  return (v && v.precio != null) ? Number(v.precio) : precioBase(p);
+  return (v && v.precio != null) ? conOferta(p, v.precio) : precioBase(p);
 }
 
 // Rango de precios entre todas las combinaciones — para la tarjeta, antes
@@ -896,7 +920,7 @@ function rangoPrecioVariantes(p){
     const unidades = Array.isArray(v.imeis) ? v.imeis : [];
     const vendibles = unidades.filter(u => u && u.listo !== false);
     if (vendibles.length) {
-      vendibles.forEach(u => precios.push(u.precio != null ? Number(u.precio) : dela));
+      vendibles.forEach(u => precios.push(u.precio != null ? conOferta(p, u.precio) : dela));
     } else {
       precios.push(dela);
     }
@@ -1141,7 +1165,12 @@ async function init(){
     return;
   }
 
-  const { data: store, error: storeError } = await sb.from('store_profiles').select('*').eq('slug', slug).maybeSingle();
+  // Columnas explicitas, nunca '*': costo, proveedor, IMEI, pin_costos y la
+  // suscripcion de MP no se habilitan para la llave publica (ver
+  // schema/73-columnas-publicas.sql). Columna nueva que la tienda necesite =
+  // sumarla aca Y en el grant de esa migracion.
+  const COLS_PERFIL_PUBLICO = 'id,user_id,slug,business_name,phone,created_at,website,instagram,location,description,image_url,email,lat,lng,mensaje_envio,plan,trial_ends_at,plan_updated_at,google_url,categorias,medios_pago,turnos,eslogan,portada_url,tema,hace_reparaciones,rubro_manual,plan_vence,costo_envio,horario_local,demora_texto,demora_minutos,ml_reputacion,transferencia,ofrece_envio,es_demo';
+  const { data: store, error: storeError } = await sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).eq('slug', slug).maybeSingle();
   if (storeError || !store){
     hide(byId('loadingState'));
     show(byId('notFoundState'));
@@ -1201,7 +1230,15 @@ async function init(){
   // WhatsApp/Instagram/lo que elija el cliente, sin copiar y pegar. En
   // compus (sin navigator.share) cae en copiar el link.
   byId('shareStoreBtn').addEventListener('click', async () => {
-    const url = window.location.href;
+    // Siempre la direccion corta (/slug), que es la que arma la vista previa
+    // con el logo del negocio. Si el cliente habia entrado por
+    // tienda.html?slug=... se compartia esa, y WhatsApp mostraba la imagen
+    // generica de BRUWAL en lugar del logo.
+    // El codigo de afiliado (?ref=) se conserva: el que comparte sigue
+    // recomendando.
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    const url = window.location.origin + '/' + encodeURIComponent(getSlugFromUrl()) +
+                (ref ? '?ref=' + encodeURIComponent(ref) : '');
     const titulo = store.business_name || 'Tienda online';
     if (navigator.share) {
       try {
@@ -1255,7 +1292,8 @@ async function init(){
   armarOpcionesDeCheckout(store);
   armarTurnos(store);
 
-  const { data: prods } = await sb.from('store_products').select('*').eq('store_slug', slug).order('name');
+  const COLS_PRODUCTO_PUBLICO = 'id,store_slug,name,description,price,image_url,category,stock,in_stock,ean,created_at,updated_at,imagenes,opciones,tipo,tiene_variantes,variante_campos,variantes:variantes_publicas,specs,solo_interno,moneda,precio_original,cotizacion,numero,estado_equipo,duracion_minutos,mostrar_precio,unidad_medida,unidad_nombre,pausado,precio_oferta,orden,categorias,ml_nota,ml_opiniones,ml_link,ml_es_catalogo,ml_opiniones_al,precios_por_cantidad';
+  const { data: prods } = await sbPublico.from('store_products').select(COLS_PRODUCTO_PUBLICO).eq('store_slug', slug).order('name');
   // solo_interno: repuestos y demás productos que el dueño usa desde el
   // panel (por ejemplo, en una reparación) pero que nunca deberían poder
   // comprarse acá. Se filtra ACÁ, antes de cualquier otra cosa, para que
@@ -3648,7 +3686,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   }
 
   const slug = getSlugFromUrl();
-  const { data: store } = await sb.from('store_profiles').select('phone,business_name,mensaje_envio,costo_envio')
+  const { data: store } = await sbPublico.from('store_profiles').select('phone,business_name,mensaje_envio,costo_envio')
     .eq('slug', slug).maybeSingle();
 
   if (store && store.phone){
@@ -3797,14 +3835,26 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       // la base rechaza esas columnas. Se reintenta sacando de a una: perder
       // la direccion o el afiliado en el panel es mucho menos grave que
       // perder el pedido.
+      // El codigo para que el cliente lo pueda cancelar desde la pantalla
+      // de "Pedido enviado" (schema/79-cancelar-pedido-cliente.sql). Va en
+      // el primer intento: sin esa migracion se cae al de siempre y el
+      // boton de cancelar no aparece.
+      const tokenCliente = nuevoTokenCliente();
+      pedidoParaCancelar = null;
+      const completo = { ...pedido, ...entregaDelPedido, ...afiliadoEnPedido };
       const intentos = [
-        { ...pedido, ...entregaDelPedido, ...afiliadoEnPedido },
+        { ...completo, token_cliente: tokenCliente },
+        completo,
         { ...pedido, ...entregaDelPedido },
         pedido
       ].filter((p, i, todos) => i === 0 || Object.keys(p).length < Object.keys(todos[i - 1]).length);
       for (const intento of intentos) {
         const { error: errPedido } = await sb.from('orders').insert(intento);
-        if (!errPedido) break;
+        if (!errPedido) {
+          pedidoParaCancelar = intento.token_cliente ? tokenCliente : null;
+          telefonoParaCancelar = store.phone;
+          break;
+        }
       }
     } catch (e) {
       console.warn('No se pudo registrar el pedido:', e);
@@ -3822,6 +3872,13 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
         'Te esperamos el ' + turnoTexto + '. Ese horario ya quedó bloqueado a tu nombre.';
     }
 
+    // Un turno no se cancela desde aca: el horario ya quedo tomado en la
+    // agenda y eso lo libera el negocio.
+    byId('cancelarPedidoTexto').textContent = '';
+    byId('cancelarPedidoBtn').disabled = false;
+    byId('cancelarPedidoBtn').classList.remove('hidden');
+    byId('cancelarPedidoCaja').classList.toggle('hidden', !pedidoParaCancelar || !!turnoTexto);
+
     hide(byId('checkoutModal'));
     hide(byId('storeView'));
     show(byId('successState'));
@@ -3834,7 +3891,56 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   byId('confirmOrderBtn').disabled = false;
 });
 
+// ---- Cancelar el pedido recien hecho ----
+// El codigo del ultimo pedido enviado desde este navegador. Solo vive en la
+// pantalla de "Pedido enviado": al volver a la tienda se olvida.
+let pedidoParaCancelar = null;
+let telefonoParaCancelar = '';
+
+function nuevoTokenCliente() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+}
+
+byId('cancelarPedidoBtn').addEventListener('click', async () => {
+  if (!pedidoParaCancelar) return;
+  if (!confirm('¿Cancelar el pedido? El negocio lo va a ver cancelado.')) return;
+  const btn = byId('cancelarPedidoBtn');
+  const texto = byId('cancelarPedidoTexto');
+  btn.disabled = true;
+  const { data, error } = await sbPublico.rpc('cancelar_pedido_cliente', { p_token: pedidoParaCancelar });
+  // Avisarle al negocio por el mismo WhatsApp donde llego el pedido.
+  const avisar = (mensaje) => telefonoParaCancelar
+    ? ' <a href="https://wa.me/' + numeroWhatsApp(telefonoParaCancelar) + '?text=' + encodeURIComponent(mensaje) +
+      '" target="_blank" rel="noopener" style="color:var(--celeste);font-weight:600;">Avisale por WhatsApp</a>'
+    : '';
+  if (error || !data || data === 'no_encontrado') {
+    btn.disabled = false;
+    texto.innerHTML = 'No pudimos cancelarlo desde acá.' + avisar('Hola! Quiero cancelar el pedido que acabo de hacer.');
+    return;
+  }
+  if (data === 'ya_confirmado') {
+    btn.classList.add('hidden');
+    texto.innerHTML = 'El negocio ya confirmó tu pedido, así que hay que cancelarlo hablando con ellos.' +
+      avisar('Hola! Quiero cancelar el pedido que acabo de hacer.');
+    return;
+  }
+  pedidoParaCancelar = null;
+  btn.classList.add('hidden');
+  byId('exitoTitulo').textContent = 'Pedido cancelado';
+  byId('exitoTexto').textContent = 'Tu pedido quedó cancelado.';
+  texto.innerHTML = 'Si ya le habías mandado el WhatsApp al negocio, avisale que lo cancelaste.' +
+    avisar('Hola! Cancelé el pedido que te mandé recién.');
+});
+
 function backToShop() {
+  pedidoParaCancelar = null;
+  byId('exitoTitulo').textContent = '¡Pedido enviado!';
+  byId('exitoTexto').textContent = 'La tienda te va a contactar para coordinar la entrega y el pago.';
   cart = {};
   hide(byId('successState'));
   show(byId('storeView'));
