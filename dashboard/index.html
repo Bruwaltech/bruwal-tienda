@@ -2103,7 +2103,7 @@ tr:last-child td { border-bottom: none; }
   <div id="avisoSinConexion" class="hidden" style="background:#FEF3C7;border-bottom:1px solid #FCD34D;color:#92400E;padding:10px 16px;font-size:13.5px;line-height:1.5;text-align:center;"></div>
 
   <div class="store-link-bar hidden" id="storeLinkBar">
-    <span>🛒 Tu tienda pública:</span>
+    <span id="storeLinkLabel">🛒 Tu tienda pública:</span>
     <a id="storeLinkAnchor" href="#" target="_blank" style="font-weight:600;"></a>
     <button class="btn-ghost" id="copyStoreLinkBtn" style="padding:5px 10px;font-size:12px;">Copiar link</button>
     <button class="btn-ghost" id="openConfigBtn" style="padding:5px 10px;font-size:12px;">⚙️ Configurar</button>
@@ -12855,6 +12855,7 @@ function pintarTodo() {
   aplicarVisibilidadPorTurnos();
   aplicarVisibilidadFlex();
   aplicarSeccionesOcultas();
+  aplicarTiendaOnlineCerrada();
   aplicarVisibilidadPorPlan();
   refrescarListaDeCategorias();
   pintarCampanita();
@@ -16061,7 +16062,7 @@ function renderProducts() {
       // Un producto de stock interno no esta en la tienda: el link llevaba
       // al catalogo y el cliente no lo encontraba. Va la imagen con el
       // nombre y el precio, sin link, y el cliente responde por WhatsApp.
-      const enLaTienda = !prod.solo_interno;
+      const enLaTienda = !prod.solo_interno && !tiendaOnlineCerrada();
       const link = enLaTienda
         ? window.location.origin + '/' + encodeURIComponent(currentStore.slug) + '?p=' + encodeURIComponent(prod.id)
         : '';
@@ -25432,7 +25433,7 @@ byId('productForm').addEventListener('submit', async (e) => {
         '+ Reponer',
         () => abrirReponerVariante(idGuardado)
       );
-    } else if (!payload.solo_interno && payload.tipo === 'producto' && !tieneVariantes) {
+    } else if (!payload.solo_interno && payload.tipo === 'producto' && !tieneVariantes && !tiendaOnlineCerrada()) {
       mostrarProximoPaso(
         '"' + payload.name + '" ya está publicado en tu tienda.',
         'Ver tienda',
@@ -27333,6 +27334,23 @@ function aplicarSeccionesOcultas() {
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
   }
+}
+
+// "tienda_online" en la misma lista: el negocio no vende por internet
+// (schema/83-tienda-online-cerrada.sql). El link público muestra un cartel
+// y la base no acepta pedidos de afuera; acá solo se deja de ofrecer el
+// link. Caja, productos y ventas siguen igual.
+function tiendaOnlineCerrada() {
+  return seccionOculta('tienda_online');
+}
+
+function aplicarTiendaOnlineCerrada() {
+  const cerrada = tiendaOnlineCerrada();
+  byId('storeLinkLabel').textContent = cerrada
+    ? '🛒 Tienda online desactivada: vendés solo en el local.'
+    : '🛒 Tu tienda pública:';
+  byId('storeLinkAnchor').classList.toggle('hidden', cerrada);
+  byId('copyStoreLinkBtn').classList.toggle('hidden', cerrada);
 }
 
 let flexMontadoEn = null;

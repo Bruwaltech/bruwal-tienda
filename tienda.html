@@ -559,6 +559,12 @@
   <p style="color:var(--text-mute);margin-top:10px;">Revisá el link, puede estar mal escrito.</p>
 </div>
 
+<div id="cerradaState" class="wrap hidden" style="padding-top:60px;text-align:center;">
+  <h2 id="cerradaNombre"></h2>
+  <p style="color:var(--text-mute);margin-top:10px;">Este negocio no toma pedidos por internet. Te esperamos en el local.</p>
+  <p id="cerradaUbicacion" class="hidden" style="color:var(--text-mute);margin-top:6px;"></p>
+</div>
+
 <div id="storeView" class="hidden">
   <header>
     <div class="wrap">
@@ -1115,6 +1121,24 @@ async function esDuenioDeLaTienda(store){
   } catch (e) { return false; }
 }
 
+// Tienda online cerrada (ver la carga de la tienda): solo el nombre y, si
+// lo cargó, dónde queda el local. Ni catálogo, ni carrito, ni WhatsApp de
+// pedidos, y que Google no la indexe.
+function mostrarTiendaCerrada(store){
+  hide(byId('loadingState'));
+  byId('cerradaNombre').textContent = store.business_name || store.slug;
+  document.title = store.business_name || 'Tienda';
+  if (store.location){
+    byId('cerradaUbicacion').textContent = '📍 ' + store.location;
+    show(byId('cerradaUbicacion'));
+  }
+  const robots = document.createElement('meta');
+  robots.name = 'robots';
+  robots.content = 'noindex';
+  document.head.appendChild(robots);
+  show(byId('cerradaState'));
+}
+
 async function cargarAfiliado(slug, store){
   if (await esDuenioDeLaTienda(store)) {
     try { localStorage.removeItem(claveAfiliado(slug)); } catch (e) { /* storage bloqueado */ }
@@ -1170,10 +1194,21 @@ async function init(){
   // schema/73-columnas-publicas.sql). Columna nueva que la tienda necesite =
   // sumarla aca Y en el grant de esa migracion.
   const COLS_PERFIL_PUBLICO = 'id,user_id,slug,business_name,phone,created_at,website,instagram,location,description,image_url,email,lat,lng,mensaje_envio,plan,trial_ends_at,plan_updated_at,google_url,categorias,medios_pago,turnos,eslogan,portada_url,tema,hace_reparaciones,rubro_manual,plan_vence,costo_envio,horario_local,demora_texto,demora_minutos,ml_reputacion,transferencia,ofrece_envio,es_demo';
-  const { data: store, error: storeError } = await sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).eq('slug', slug).maybeSingle();
+  // La tienda online puede estar cerrada a pedido del negocio (vende solo en
+  // el local, schema/83-tienda-online-cerrada.sql). Se pregunta junto con el
+  // perfil para no mostrar el catálogo ni un instante. Si la función todavía
+  // no existe en la base, la tienda sigue abierta como siempre.
+  const [{ data: store, error: storeError }, cierre] = await Promise.all([
+    sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).eq('slug', slug).maybeSingle(),
+    sbPublico.rpc('tienda_online_cerrada', { p_slug: slug }).then(r => r, () => ({ data: false }))
+  ]);
   if (storeError || !store){
     hide(byId('loadingState'));
     show(byId('notFoundState'));
+    return;
+  }
+  if (cierre && cierre.data === true){
+    mostrarTiendaCerrada(store);
     return;
   }
 
