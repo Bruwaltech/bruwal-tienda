@@ -1507,7 +1507,7 @@ tr:last-child td { border-bottom: none; }
    arriba de cualquier otro, sea cual sea el que lo llamó. */
 #pinCostosModal { z-index: 200; }
 /* Se abren encima de Configuración o de Productos. */
-#ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal { z-index: 190; }
+#ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal, #precioHistorialModal { z-index: 190; }
 .tk-opciones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:4px 14px; margin:4px 0 14px; }
 .tk-opciones label { display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; padding:4px 0; }
 .tk-opciones input { margin:0; width:auto; cursor:pointer; }
@@ -2257,6 +2257,7 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="exportarExcelBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-download"></i> Exportar Excel</button>
         <button class="btn-action" id="mlPublicacionesBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-store"></i> Mercado Libre</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
+        <button class="btn-action" id="precioHistorialBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-chart-line"></i> Cambios de precio</button>
         <button class="btn-action campo-distribuidora hidden" id="listasPreciosBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-clock-rotate-left"></i> Listas de precios</button>
         <button class="btn-action campo-distribuidora hidden" id="cartelesGondolaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-rectangle-ad"></i> Carteles de oferta</button>
         <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI <span class="lock-pro hidden" id="lockImei">🔒</span></button>
@@ -3361,6 +3362,7 @@ tr:last-child td { border-bottom: none; }
           </div>
           <small id="pPriceHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
           <small id="pMonedaAviso" class="hidden" style="display:block;margin-top:4px;color:var(--text-mute);font-size:11.5px;line-height:1.5;"></small>
+          <button type="button" id="pVerHistorialPrecio" class="hidden" style="margin-top:6px;background:none;border:0;padding:0;color:var(--celeste);cursor:pointer;font-size:12.5px;font-family:inherit;">🕓 Ver cambios de precio de este producto</button>
         </div>
         <div class="field" id="campoPrecioOferta">
           <label>🏷️ Precio en oferta <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
@@ -4894,6 +4896,35 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL HISTORIAL DE CAMBIOS DE PRECIO (todas las tiendas, schema/86) -->
+<div class="modal-overlay hidden" id="precioHistorialModal">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" id="cerrarPrecioHistorialModal">✕</button>
+    <h3>📈 Cambios de precio</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 12px;line-height:1.5;">
+      Cada vez que un producto sube o baja de precio (o le cambia la oferta o el costo) queda acá: cuánto estaba, cuánto quedó, cuándo, desde qué compu y de dónde vino el cambio. Las ventas no cuentan.
+    </p>
+    <div id="precioHistorialProducto" class="hidden" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13.5px;"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <input type="text" id="precioHistorialBuscar" placeholder="🔍 Buscar artículo" style="flex:1 1 180px;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font-size:13.5px;">
+      <select id="precioHistorialPeriodo" style="padding:9px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+        <option value="1">Hoy</option>
+        <option value="7" selected>Últimos 7 días</option>
+        <option value="30">Últimos 30 días</option>
+        <option value="90">Últimos 3 meses</option>
+        <option value="0">Todo</option>
+      </select>
+      <select id="precioHistorialCampo" style="padding:9px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+        <option value="">Precio, oferta y costo</option>
+        <option value="precio">Solo precio</option>
+        <option value="oferta">Solo oferta</option>
+        <option value="costo">Solo costo</option>
+      </select>
+    </div>
+    <div id="precioHistorialContenido"></div>
+  </div>
+</div>
+
 <!-- MODAL LISTAS DE PRECIOS (distribuidora) -->
 <div class="modal-overlay hidden" id="listasPreciosModal">
   <div class="modal" style="max-width:720px;">
@@ -5448,13 +5479,39 @@ const almacenamientoSesion = {
   }
 };
 
+// Historial de precios (schema/86): el trigger anota cada cambio de precio,
+// oferta o costo, y lee de estos dos encabezados de donde vino y desde que
+// compu. Solo van en las escrituras de store_products; el resto de los
+// pedidos sale igual que siempre. origenCambioPrecio lo cambian las
+// cargas masivas (Excel, cambio por %, Mercado Libre) mientras corren.
+let origenCambioPrecio = 'mano';
+async function conOrigenPrecio(origen, fn) {
+  const antes = origenCambioPrecio;
+  origenCambioPrecio = origen;
+  try { return await fn(); } finally { origenCambioPrecio = antes; }
+}
+function fetchConOrigenPrecio(url, opciones) {
+  const metodo = String((opciones && opciones.method) || 'GET').toUpperCase();
+  if (metodo === 'GET' || metodo === 'HEAD' || !String(url).includes('/rest/v1/store_products')) {
+    return window.fetch(url, opciones);
+  }
+  const headers = new Headers((opciones && opciones.headers) || {});
+  headers.set('x-bruwal-origen', origenCambioPrecio);
+  try {
+    const equipo = localStorage.getItem('bruwal_equipo_' + (currentStore?.slug || ''));
+    if (equipo) headers.set('x-bruwal-equipo', encodeURIComponent(equipo.slice(0, 40)));
+  } catch (e) {}
+  return window.fetch(url, { ...opciones, headers });
+}
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: almacenamientoSesion,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
-  }
+  },
+  global: { fetch: fetchConOrigenPrecio }
 });
 
 // Cliente SIEMPRE anonimo para leer datos publicos de tiendas. La tienda, la
@@ -15186,7 +15243,7 @@ async function ofrecerRepreciarProductos(moneda) {
                '¿Les actualizo el precio en pesos a ' + money(nueva) + ' por ' + moneda + '?' +
                (conCosto ? '\n\nEl costo en ' + moneda + ' no cambia: se recalcula lo que vale en pesos.' : ''))) return;
 
-  const r = await aplicarUnoPorUno(desactualizados, (p) => camposRepreciados(p, nueva, moneda));
+  const r = await conOrigenPrecio('dolar', () => aplicarUnoPorUno(desactualizados, (p) => camposRepreciados(p, nueva, moneda)));
   if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
   else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
   renderProducts();
@@ -15218,7 +15275,7 @@ async function ofrecerAjustarProductosEnPesos(anterior) {
                ' (' + (pct > 0 ? '+' : '') + String(pct).replace('.', ',') + '%).\n\n' +
                '¿Les ' + (pct > 0 ? 'subo' : 'bajo') + ' el precio en pesos en la misma proporción?')) return;
 
-  const r = await aplicarUnoPorUno(enPesos, (p) => camposAjustadosEnPesos(p, factor));
+  const r = await conOrigenPrecio('dolar', () => aplicarUnoPorUno(enPesos, (p) => camposAjustadosEnPesos(p, factor)));
   if (r.error) dialogoAviso('Se actualizaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error));
   else dialogoAviso('Listo: ' + r.hechos + (r.hechos === 1 ? ' producto actualizado.' : ' productos actualizados.'));
   renderProducts();
@@ -15724,14 +15781,14 @@ async function accionSeleccion(accion) {
 
     // Si el producto esta en oferta, la oferta se mueve con el precio: si no,
     // subir la lista un 20% agranda el descuento sin que nadie lo pida.
-    const r = await aplicarUnoPorUno(elegidos, (p) => {
+    const r = await conOrigenPrecio('masivo', () => aplicarUnoPorUno(elegidos, (p) => {
       const lista = Number(p.price) || 0;
       if (!lista) return null;
       const campos = { price: Math.round(lista * factor) };
       if (hayOferta(p)) campos.precio_oferta = Math.round(Number(p.precio_oferta) * factor);
       return campos;
-    });
-    if (r.error) { dialogoAviso('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
+    }));
+    if (r.error) { dialogoAviso('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + humano(r.error)); }
     else if (r.saltados) { dialogoAviso('Listo: ' + r.hechos + ' con precio nuevo.\n' + r.saltados + ' sin precio de lista cargado quedaron igual.'); }
     terminarAccionSeleccion();
     return;
@@ -15742,19 +15799,19 @@ async function accionSeleccion(accion) {
     if (pct === null) return;
     if (pct <= 0 || pct >= 100) { dialogoAviso('El descuento tiene que estar entre 1 y 99.'); return; }
 
-    const r = await aplicarUnoPorUno(elegidos, (p) => {
+    const r = await conOrigenPrecio('masivo', () => aplicarUnoPorUno(elegidos, (p) => {
       const lista = Number(p.price) || 0;
       if (!lista) return null;
       return { precio_oferta: Math.round(lista * (1 - pct / 100)) };
-    });
-    if (r.error) { dialogoAviso('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + r.humano(error)); }
+    }));
+    if (r.error) { dialogoAviso('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + humano(r.error)); }
     else if (r.saltados) { dialogoAviso('Listo: ' + r.hechos + ' en oferta.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
     terminarAccionSeleccion();
     return;
   }
 
   if (accion === 'sacar-oferta') {
-    const error = await actualizarEnLote(ids, { precio_oferta: null });
+    const error = await conOrigenPrecio('masivo', () => actualizarEnLote(ids, { precio_oferta: null }));
     if (error) dialogoAviso('No se pudo:\n\n' + humano(error));
     terminarAccionSeleccion();
     return;
@@ -19538,6 +19595,111 @@ byId('gondolaTodos').addEventListener('click', () => {
 });
 byId('gondolaNinguno').addEventListener('click', () => { gondolaElegidos.clear(); renderListaGondola(); });
 byId('gondolaImprimirBtn').addEventListener('click', imprimirCartelesGondola);
+
+// ---- Historial de cambios de precio (todas las tiendas) ----
+// Lo escribe un trigger en la base (schema/86) cada vez que cambia el
+// precio, la oferta o el costo de un producto, venga de donde venga. El
+// panel solo lo lee. Se abre desde Productos (todo) o desde el formulario
+// de un producto (solo ese).
+const ORIGEN_CAMBIO_PRECIO = {
+  mano: '✍️ A mano', excel: '📄 Lista Excel', masivo: '🧮 Cambio masivo', dolar: '💵 Dólar',
+  mercadolibre: '🛒 Mercado Libre', factura: '🧾 Factura', sistema: '⚙️ Sistema'
+};
+let precioHistorialProducto = null;   // {id, nombre} o null = todos
+let precioHistorialBuscarTimer = null;
+
+function abrirHistorialPrecios(producto) {
+  precioHistorialProducto = producto || null;
+  byId('precioHistorialBuscar').value = '';
+  byId('precioHistorialPeriodo').value = producto ? '0' : '7';
+  byId('precioHistorialBuscar').classList.toggle('hidden', !!producto);
+  const cab = byId('precioHistorialProducto');
+  if (producto) {
+    cab.innerHTML = '<b style="color:var(--navy);">' + escapeHtml(producto.nombre) + '</b>' +
+      '<button type="button" class="btn-ghost" id="precioHistorialVerTodos" style="padding:4px 9px;font-size:12px;">Ver todos los productos</button>';
+    show(cab);
+    byId('precioHistorialVerTodos').addEventListener('click', () => abrirHistorialPrecios(null));
+  } else {
+    hide(cab);
+  }
+  show(byId('precioHistorialModal'));
+  cargarHistorialPrecios();
+}
+
+async function cargarHistorialPrecios() {
+  const cont = byId('precioHistorialContenido');
+  cont.innerHTML = '<div style="padding:14px;color:var(--text-mute);font-size:13.5px;">Cargando…</div>';
+  let q = sb.from('store_precio_historial').select('*')
+    .eq('store_slug', currentStore.slug).order('created_at', { ascending: false }).limit(500);
+  const dias = Number(byId('precioHistorialPeriodo').value);
+  if (dias === 1) q = q.gte('created_at', new Date(fechaLocalISO() + 'T00:00:00-03:00').toISOString());
+  else if (dias > 0) q = q.gte('created_at', new Date(Date.now() - dias * 864e5).toISOString());
+  const campo = byId('precioHistorialCampo').value;
+  if (campo) q = q.eq('campo', campo);
+  if (precioHistorialProducto) q = q.eq('product_id', precioHistorialProducto.id);
+  const texto = byId('precioHistorialBuscar').value.trim().replace(/[%,()]/g, ' ');
+  if (texto && !precioHistorialProducto) q = q.ilike('producto', '%' + texto + '%');
+
+  const { data, error } = await q;
+  if (error) {
+    cont.innerHTML = '<div style="padding:14px;color:var(--danger);font-size:13.5px;line-height:1.5;">' +
+      'No se pudo traer el historial: ' + escapeHtml(humano(error)) +
+      '<br>(Si dice que falta la tabla, correr schema/86-historial-de-precios.sql en Supabase.)</div>';
+    return;
+  }
+  renderHistorialPrecios(data || []);
+}
+
+function renderHistorialPrecios(filas) {
+  const cont = byId('precioHistorialContenido');
+  if (!filas.length) {
+    cont.innerHTML = '<div style="padding:16px;font-size:13.5px;color:var(--text-mute);line-height:1.55;border:1px dashed var(--line);border-radius:9px;">' +
+      'No hay cambios de precio en este período.</div>';
+    return;
+  }
+  const productos = new Set(filas.map(f => f.product_id)).size;
+  const nombreCampo = { precio: 'Precio', oferta: 'Oferta', costo: 'Costo' };
+  const plata = (x) => (x === null || x === undefined ? 'sin cargar' : money(x));
+  const equipoDe = (f) => { try { return f.equipo ? decodeURIComponent(f.equipo) : ''; } catch (e) { return f.equipo; } };
+  cont.innerHTML =
+    '<div style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;">' + filas.length + (filas.length === 500 ? '+' : '') +
+      ' cambio' + (filas.length === 1 ? '' : 's') + ' · ' + productos + ' producto' + (productos === 1 ? '' : 's') + '</div>' +
+    '<div style="border:1px solid var(--line);border-radius:9px;max-height:52vh;overflow-y:auto;">' +
+    filas.map(f => {
+      const a = f.antes === null ? null : Number(f.antes), d = f.despues === null ? null : Number(f.despues);
+      let flecha = '';
+      if (a && d !== null) {
+        const pct = Math.round((d / a - 1) * 1000) / 10;
+        flecha = d > a
+          ? ' <span style="color:var(--danger);font-weight:700;">▲ ' + String(pct).replace('.', ',') + '%</span>'
+          : ' <span style="color:var(--success, #16a34a);font-weight:700;">▼ ' + String(Math.abs(pct)).replace('.', ',') + '%</span>';
+      }
+      const quien = [ORIGEN_CAMBIO_PRECIO[f.origen] || escapeHtml(f.origen), equipoDe(f) ? '💻 ' + escapeHtml(equipoDe(f)) : '', f.usuario ? escapeHtml(f.usuario) : '']
+        .filter(Boolean).join(' · ');
+      return '<div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:13.5px;">' +
+        '<div style="display:flex;gap:8px;justify-content:space-between;align-items:baseline;">' +
+          '<b style="min-width:0;overflow-wrap:anywhere;">' + escapeHtml(f.producto || '') + '</b>' +
+          '<span style="flex-shrink:0;color:var(--text-mute);font-size:12px;">' + fechaAR(f.created_at).slice(0, 5) + ' ' +
+            horaAR(f.created_at, { hour: '2-digit', minute: '2-digit', hour12: false }) + '</span>' +
+        '</div>' +
+        '<div>' + nombreCampo[f.campo] + ': ' + (f.campo === 'oferta' && d === null ? 'sacó la oferta (' + plata(a) + ')' : plata(a) + ' → <b>' + plata(d) + '</b>' + flecha) + '</div>' +
+        '<div style="font-size:12px;color:var(--text-mute);">' + quien + '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+}
+
+byId('precioHistorialBtn').addEventListener('click', () => abrirHistorialPrecios(null));
+byId('cerrarPrecioHistorialModal').addEventListener('click', () => hide(byId('precioHistorialModal')));
+byId('precioHistorialPeriodo').addEventListener('change', cargarHistorialPrecios);
+byId('precioHistorialCampo').addEventListener('change', cargarHistorialPrecios);
+byId('precioHistorialBuscar').addEventListener('input', () => {
+  clearTimeout(precioHistorialBuscarTimer);
+  precioHistorialBuscarTimer = setTimeout(cargarHistorialPrecios, 350);
+});
+byId('pVerHistorialPrecio').addEventListener('click', () => {
+  const p = products.find(x => String(x.id) === String(byId('pVerHistorialPrecio').dataset.id));
+  if (p) abrirHistorialPrecios({ id: p.id, nombre: p.name });
+});
 
 // ---- Listas de precios (distribuidora) ----
 // Cada actualizacion de productos deja un registro con nombre: una lista
@@ -23469,6 +23631,7 @@ function abrirFormularioNuevo(tipo) {
     if (!puedeOperar()) return;
     const esServicio = tipo === 'servicio';
     if (byId('modalTitle')) byId('modalTitle').textContent = esServicio ? 'Nuevo servicio' : 'Nuevo producto';
+    if (byId('pVerHistorialPrecio')) hide(byId('pVerHistorialPrecio'));
     if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = true;
     if (byId('pName')) byId('pName').value = '';
     if (byId('pDesc')) byId('pDesc').value = '';
@@ -24781,7 +24944,7 @@ byId('mlBeneficiosUpgradeBtn').addEventListener('click', () => {
   ofrecerUpgradePro('Mercado Libre');
 });
 byId('closeMlPublicacionesModal').addEventListener('click', () => hide(byId('mlPublicacionesModal')));
-byId('aplicarMlBtn').addEventListener('click', aplicarMlPublicaciones);
+byId('aplicarMlBtn').addEventListener('click', () => conOrigenPrecio('mercadolibre', aplicarMlPublicaciones));
 // Delegado: la lista se vuelve a dibujar en cada cambio.
 byId('mlLista').addEventListener('change', (e) => {
   const variante = e.target.closest('select[data-ml-variante]');
@@ -25467,6 +25630,7 @@ async function editProduct(id) {
   tipoDeEntrada = null;
 
   if (byId('modalTitle')) byId('modalTitle').textContent = 'Editar producto';
+  if (byId('pVerHistorialPrecio')) { byId('pVerHistorialPrecio').dataset.id = p.id; show(byId('pVerHistorialPrecio')); }
   if (byId('pMostrarPrecio')) byId('pMostrarPrecio').checked = p.mostrar_precio !== false;
   if (byId('pName')) byId('pName').value = p.name;
   if (byId('pDesc')) byId('pDesc').value = p.description || '';
@@ -27425,7 +27589,7 @@ byId('editarCotizacionUSD').addEventListener('click', () => editarCotizacionManu
 byId('editarCotizacionEUR').addEventListener('click', () => editarCotizacionManual('EUR'));
 byId('closeReparacionModal').addEventListener('click', () => hide(byId('reparacionModal')));
 byId('closeReponerVarianteModal').addEventListener('click', () => hide(byId('reponerVarianteModal')));
-byId('confirmarReponerVarianteBtn').addEventListener('click', confirmarReponerVariante);
+byId('confirmarReponerVarianteBtn').addEventListener('click', () => conOrigenPrecio('factura', confirmarReponerVariante));
 byId('closeEtiquetaVarianteModal').addEventListener('click', () => hide(byId('etiquetaVarianteModal')));
 
 byId('closePinCostosModal').addEventListener('click', () => { hide(byId('pinCostosModal')); alDesbloquearCostos = null; });
@@ -27525,7 +27689,7 @@ byId('importarCategoriaFija').addEventListener('input', () => {
 byId('importarRepetidos').addEventListener('change', () => {
   if (bloquesImportacion.length) previsualizarImportacion();
 });
-byId('confirmarImportacionBtn').addEventListener('click', confirmarImportacionExcel);
+byId('confirmarImportacionBtn').addEventListener('click', () => conOrigenPrecio('excel', confirmarImportacionExcel));
 
 // Se entra por Productos ("cargo el stock que llego") o por Gastos ("anoto
 // la factura que pague"). Es la misma pantalla: una compra al proveedor es
