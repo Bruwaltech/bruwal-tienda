@@ -3472,6 +3472,7 @@ tr:last-child td { border-bottom: none; }
           <label id="insumosLabel">¿Qué gasta del stock? <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <div id="insumosLista" style="display:flex;flex-direction:column;gap:7px;margin-bottom:9px;"></div>
           <div id="insumosControles" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <input type="search" id="insumoBuscar" placeholder="🔍 Buscar por nombre o código..." autocomplete="off" style="flex:1 1 100%;padding:9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;">
             <select id="insumoProducto" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;"></select>
             <input type="number" id="insumoCantidad" min="0" step="0.01" value="1" style="width:78px;padding:9px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
             <button type="button" id="agregarInsumoBtn" class="btn" style="width:auto;padding:9px 13px;font-size:12.5px;">+ Sumar</button>
@@ -9863,11 +9864,23 @@ function renderInsumos() {
   const candidatos = (products || []).filter(p =>
     esProductoFisico(p) && String(p.id) !== String(idEditando));
 
-  selector.innerHTML = candidatos.length
-    ? '<option value="">Elegí el insumo...</option>' + candidatos.map(p =>
-        '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(p.name) +
-        ' (' + formatearCantidad(p.stock, p) + ')</option>').join('')
-    : '<option value="">Todavía no cargaste productos para descontar</option>';
+  // La lupita: con muchos productos el desplegable no se termina nunca.
+  // Busca por nombre, codigo de barras o SKU; si escanea el codigo exacto
+  // ya queda elegido.
+  const q = normalizarTexto(byId('insumoBuscar')?.value).trim();
+  const exacto = q ? candidatos.find(p => normalizarTexto(p.ean).trim() === q || normalizarTexto(p.sku).trim() === q) : null;
+  const visibles = !q ? candidatos : exacto ? [exacto] : candidatos.filter(p =>
+    q.split(/\s+/).every(t => [p.name, p.ean, p.sku, p.marca, p.modelo].some(c => normalizarTexto(c).includes(t))));
+  const elegido = selector.value;
+
+  selector.innerHTML = !candidatos.length
+    ? '<option value="">Todavía no cargaste productos para descontar</option>'
+    : !visibles.length
+      ? '<option value="">Ningún producto coincide con la búsqueda</option>'
+      : (q ? '' : '<option value="">Elegí el insumo...</option>') + visibles.map(p =>
+          '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(p.name) +
+          ' (' + formatearCantidad(p.stock, p) + ')</option>').join('');
+  if (!q && visibles.some(p => String(p.id) === String(elegido))) selector.value = elegido;
 
   lista.innerHTML = insumosEnEdicion.length ? insumosEnEdicion.map((ins, i) => {
     const p = (products || []).find(x => String(x.id) === String(ins.producto_id));
@@ -10050,7 +10063,18 @@ if (byId('agregarInsumoBtn')) {
     else insumosEnEdicion.push({ producto_id: id, cantidad: redondearMedida(cantidad) });
 
     byId('insumoCantidad').value = '1';
+    if (byId('insumoBuscar')) byId('insumoBuscar').value = '';
     renderInsumos();
+  });
+}
+
+if (byId('insumoBuscar')) {
+  byId('insumoBuscar').addEventListener('input', () => renderInsumos());
+  // Enter (o la pistola de codigos, que manda Enter) suma lo que quedo elegido.
+  byId('insumoBuscar').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (byId('insumoProducto').value) byId('agregarInsumoBtn').click();
   });
 }
 
@@ -23513,6 +23537,7 @@ function abrirFormularioNuevo(tipo) {
     aplicarVentaPorMedida();
     aplicarVentaPorMedidaVisibilidad();
     insumosEnEdicion = [];
+    if (byId('insumoBuscar')) byId('insumoBuscar').value = '';
     if (byId('pComboEnCaja')) byId('pComboEnCaja').checked = false;
     renderInsumos();
     usadoEnEnEdicion = [];
@@ -25551,6 +25576,7 @@ async function editProduct(id) {
   // Después de fijar dataset.id: renderInsumos lo usa para no ofrecer el
   // propio servicio como insumo de sí mismo.
   insumosEnEdicion = Array.isArray(p.insumos) ? p.insumos.map(i => ({ ...i })) : [];
+  if (byId('insumoBuscar')) byId('insumoBuscar').value = '';
   if (byId('pComboEnCaja')) byId('pComboEnCaja').checked = !!p.combo_en_caja;
   renderInsumos();
   iniciarWizard(false);
