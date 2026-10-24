@@ -2487,7 +2487,7 @@ tr:last-child td { border-bottom: none; }
                 💼 Venta mayorista: precio por cantidad más bajo en todo
               </label>
 
-              <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
+              <label id="filaFiado" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="barcodeFiado" style="margin:0;width:auto;cursor:pointer;">
                 📓 Fiado — queda debiendo
               </label>
@@ -12854,6 +12854,7 @@ function pintarTodo() {
   aplicarVisibilidadPorRubro();
   aplicarVisibilidadPorTurnos();
   aplicarVisibilidadFlex();
+  aplicarSeccionesOcultas();
   aplicarVisibilidadPorPlan();
   refrescarListaDeCategorias();
   pintarCampanita();
@@ -13320,7 +13321,8 @@ function novedadesDelPanel() {
     });
   }
 
-  return avisos;
+  // Un aviso que lleva a una sección oculta no tiene adónde llevar.
+  return avisos.filter(a => !a.ir || !tabOculta(a.ir));
 }
 
 function pintarCampanita() {
@@ -24753,6 +24755,7 @@ byId('buscarVentasFaltantesBtn').addEventListener('click', buscarVentasFaltantes
 byId('verCalidadBtn').addEventListener('click', verCalidadPublicaciones);
 byId('verFacturacionBtn').addEventListener('click', verFacturacionMl);
 byId('tabMercadoLibre').addEventListener('click', () => {
+  if (seccionOculta('mercadolibre')) return;
   if (!tienePlanPro()) { abrirBeneficiosMl(true); return; }
   mostrarVistaMercadoLibre();
 });
@@ -26249,6 +26252,7 @@ byId('tabProductos').addEventListener('click', () => {
 });
 
 byId('tabPedidos').addEventListener('click', () => {
+  if (seccionOculta('pedidos')) return;
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   byId('tabPedidos').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
@@ -26308,6 +26312,7 @@ byId('tabCaja').addEventListener('click', () => {
 });
 
 byId('tabFiado').addEventListener('click', () => {
+  if (seccionOculta('fiado')) return;
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   byId('tabFiado').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
@@ -27262,6 +27267,7 @@ async function eliminarAfiliado(id) {
 }
 
 byId('tabAfiliados').addEventListener('click', () => {
+  if (seccionOculta('afiliados')) return;
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   byId('tabAfiliados').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
@@ -27284,6 +27290,49 @@ function aplicarVisibilidadFlex() {
   if (!tab) return;
   tab.classList.toggle('hidden', !tieneEnviosFlex());
   if (!tieneEnviosFlex() && tab.classList.contains('active')) byId('tabDashboard').click();
+}
+
+// ---- Secciones ocultas por tienda ----
+// Hay clientes a los que les sobran secciones (ej. una distribuidora sin
+// tienda online no usa Pedidos ni Afiliados). Se ocultan con
+// features.ocultar_secciones, ej. ["afiliados","mercadolibre","fiado","pedidos"].
+// Lo pone solo el administrador (features está protegido por el trigger
+// proteger_features). Solo se esconde la pestaña: los datos quedan como
+// estaban y al sacar la sección de la lista vuelve todo igual.
+const SECCIONES_OCULTABLES = {
+  pedidos: 'tabPedidos',
+  mercadolibre: 'tabMercadoLibre',
+  fiado: 'tabFiado',
+  afiliados: 'tabAfiliados'
+};
+
+function seccionOculta(nombre) {
+  const lista = currentStore && currentStore.features && currentStore.features.ocultar_secciones;
+  return Array.isArray(lista) && lista.includes(nombre);
+}
+
+function tabOculta(tabId) {
+  return Object.keys(SECCIONES_OCULTABLES).some(n => SECCIONES_OCULTABLES[n] === tabId && seccionOculta(n));
+}
+
+function aplicarSeccionesOcultas() {
+  Object.keys(SECCIONES_OCULTABLES).forEach(nombre => {
+    const tab = byId(SECCIONES_OCULTABLES[nombre]);
+    if (!tab) return;
+    const oculta = seccionOculta(nombre);
+    tab.classList.toggle('hidden', oculta);
+    if (oculta && tab.classList.contains('active')) byId('tabDashboard').click();
+  });
+
+  // Sin cuentas corrientes no se puede fiar en la caja: la deuda quedaría
+  // anotada en una sección que no ve.
+  const sinFiado = seccionOculta('fiado');
+  const filaFiado = byId('filaFiado');
+  if (filaFiado) filaFiado.classList.toggle('hidden', sinFiado);
+  if (sinFiado && byId('barcodeFiado').checked) {
+    byId('barcodeFiado').checked = false;
+    byId('campoFiadoMonto').classList.add('hidden');
+  }
 }
 
 let flexMontadoEn = null;
