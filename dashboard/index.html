@@ -1560,6 +1560,8 @@ tr:last-child td { border-bottom: none; }
    HTML y no de cuál se abrió después. El de PIN siempre tiene que quedar
    arriba de cualquier otro, sea cual sea el que lo llamó. */
 #pinCostosModal { z-index: 200; }
+/* El registro se abre desde Configuración: tiene que quedar arriba de ese modal. */
+#registroSeguridadModal { z-index: 150; }
 /* Se abren encima de Configuración o de Productos. */
 #ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal, #precioHistorialModal { z-index: 190; }
 .tk-opciones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:4px 14px; margin:4px 0 14px; }
@@ -2788,6 +2790,7 @@ tr:last-child td { border-bottom: none; }
         <input type="date" id="cajaFecha" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;">
         <button type="button" id="cajaHoyBtn" class="btn-ghost" style="width:auto;padding:8px 14px;font-size:13px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Hoy</button>
         <div style="flex:1;"></div>
+        <button type="button" data-ver-registro-seguridad class="btn hidden" id="cajaRegistroBtn" style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">📋 Registro</button>
         <button type="button" id="cierreCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);">🧾 Cierre de caja</button>
         <button type="button" id="nuevoMovimientoCajaBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">+ Movimiento manual</button>
       </div>
@@ -4480,6 +4483,27 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL REGISTRO DE SEGURIDAD: los intentos de acciones bloqueadas -->
+<div class="modal-overlay hidden" id="registroSeguridadModal">
+  <div class="modal" style="max-width:720px;">
+    <button class="modal-close" id="closeRegistroSeguridadModal">✕</button>
+    <h3>📋 Registro de acciones protegidas</h3>
+    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 12px;line-height:1.5;">
+      Quién intentó anular, borrar o cambiar algo protegido, desde qué compu y cómo terminó. Nadie puede borrar este registro.
+    </p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:10px;cursor:pointer;">
+      <input type="checkbox" id="registroSoloSospechosos" style="margin:0;width:auto;"> Solo PIN mal y cancelados
+    </label>
+    <div id="registroSeguridadResumen" style="font-size:13px;margin-bottom:10px;"></div>
+    <div style="max-height:60vh;overflow:auto;">
+      <table style="width:100%;font-size:13px;">
+        <thead><tr><th>Cuándo</th><th>Acción</th><th>Detalle</th><th>Compu</th><th>Resultado</th></tr></thead>
+        <tbody id="registroSeguridadBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL PIN DE COSTOS -->
 <div class="modal-overlay hidden" id="pinCostosModal">
   <div class="modal" style="max-width:340px;">
@@ -5423,6 +5447,27 @@ tr:last-child td { border-bottom: none; }
           <div id="huellaConfigBloque" class="hidden" style="margin-top:10px;">
             <button type="button" id="registrarHuellaBtn" class="btn" style="width:auto;background:var(--bg);color:var(--navy);">👆 Habilitar huella en este dispositivo</button>
             <div id="huellaEstado" style="font-size:12px;color:var(--text-mute);margin-top:6px;"></div>
+          </div>
+        </div>
+
+        <!-- Bloquear acciones sensibles: pide el PIN de arriba para todo lo
+             que permite hacer trampa en la caja. Ver bloqueoActivo(). -->
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" role="switch" class="switch" id="bloquearSensibles">
+            🛡️ Bloquear acciones sensibles
+          </label>
+          <small style="display:block;margin:6px 0 8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Pide el PIN (o la huella) cada vez que alguien quiere anular una venta, cargar o borrar un
+            movimiento de caja, editar o borrar un producto, cambiar precios, poner ofertas, sumar stock,
+            borrar gastos, editar el ticket o entrar a Configuración. Cada intento queda anotado en el
+            registro, con el nombre de la compu. Necesita el PIN de arriba.
+          </small>
+          <div id="bloqueoEstado" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="text" id="nombreEquipo" maxlength="30" placeholder="Nombre de esta compu (ej: Caja 1)" style="flex:1;min-width:160px;">
+            <button type="button" id="guardarNombreEquipoBtn" class="btn" style="width:auto;">Guardar nombre</button>
+            <button type="button" class="btn" data-ver-registro-seguridad style="width:auto;background:var(--bg);color:var(--navy);">📋 Ver registro</button>
           </div>
         </div>
 
@@ -6958,11 +7003,61 @@ function hayPinConfigurado() { return !!currentStore?.pin_costos; }
 // el PIN CADA VEZ, aunque la caja ya se haya abierto con el PIN un rato
 // antes: si no, el dueño la abre a la mañana y queda abierta para todos
 // el resto del dia. El resto de las tiendas siguen como siempre.
-function cajaConClave() { return rubroEsDistribuidora() && hayPinConfigurado(); }
+// Con "Bloquear acciones sensibles" prendido (Configuración) pasa lo mismo
+// en cualquier rubro.
+function cajaConClave() { return hayPinConfigurado() && (rubroEsDistribuidora() || bloqueoActivo()); }
 
-function conClaveDeCaja(accion) {
+function conClaveDeCaja(accion, que, detalle) {
   if (!cajaConClave()) return accion();
   abrirPinCostosModal(accion, 'Los movimientos de caja los autoriza el dueño. Ingresá el PIN.');
+  intentoPendiente = { que: que || 'Movimiento de caja', detalle: detalle || '' };
+}
+
+// ---- Bloquear acciones sensibles (Configuración) ----
+// El que cobra puede hacer trampa sin tocar la caja: bajar un precio,
+// sumar stock, borrar el producto que se llevó, cambiar el ticket. Con el
+// interruptor prendido, todo eso pide el PIN o la huella CADA VEZ, y cada
+// intento queda en el registro (schema/87-bloqueo-y-registro.sql), que
+// solo se puede agregar y leer. Sin PIN configurado no bloquea nada: no
+// hay con qué desbloquear.
+function bloqueoActivo() { return hayPinConfigurado() && !!currentStore?.bloquear_sensibles; }
+
+function conClaveSensible(que, detalle, accion) {
+  if (!bloqueoActivo()) return accion();
+  abrirPinCostosModal(accion, que + ': lo autoriza el dueño o el encargado. Ingresá el PIN.');
+  intentoPendiente = { que, detalle: detalle || '' };
+}
+
+function nombreDeProductoId(id) {
+  const p = products.find(x => String(x.id) === String(id));
+  return p ? p.name : '';
+}
+
+// La acción que espera el PIN, para anotarla en el registro según cómo
+// termine (autorizado, PIN mal, cancelado). null = el modal se abrió para
+// otra cosa (ver Gastos, costos) y no se anota.
+let intentoPendiente = null;
+
+// El nombre de ESTA compu ("Caja 1"), para saber desde dónde se intentó.
+// Vive en el aparato: tres compus con la misma cuenta son tres nombres.
+function claveNombreEquipoLS() { return 'bruwal_equipo_' + (currentStore?.slug || ''); }
+function nombreDeEsteEquipo() {
+  try { return localStorage.getItem(claveNombreEquipoLS()) || ''; } catch (e) { return ''; }
+}
+
+// Sin await en quien la llama: si falla (sin internet, falta correr la 84)
+// la acción sigue igual. El registro ayuda, no traba la caja.
+async function registrarIntento(que, detalle, resultado) {
+  if (!currentStore) return;
+  try {
+    await sb.from('store_registro_seguridad').insert([{
+      store_slug: currentStore.slug,
+      accion: que,
+      detalle: detalle || null,
+      resultado,
+      equipo: nombreDeEsteEquipo() || null
+    }]);
+  } catch (e) { /* sin internet: no se anota */ }
 }
 function requiereDesbloqueoCostos() { return hayPinConfigurado() && !costosDesbloqueados; }
 
@@ -7022,6 +7117,7 @@ async function intentarHuella() {
 // puntos donde se pide el PIN.
 async function abrirPinCostosModal(alDesbloquear, mensaje) {
   alDesbloquearCostos = alDesbloquear;
+  intentoPendiente = null;   // quien lo necesita lo pone después de llamar
   byId('pinCostosMensaje').textContent = mensaje || 'Ingresá el PIN para ver esta información.';
   byId('pinCostosInput').value = '';
   hide(byId('pinCostosError'));
@@ -7036,13 +7132,34 @@ async function verificarPinCostos() {
   if (!/^\d{4}$/.test(pin)) { mostrarErrorPinCostos('Escribí los 4 dígitos.'); return; }
 
   const hash = await hashPin(pin);
-  if (hash !== currentStore.pin_costos) { mostrarErrorPinCostos('PIN incorrecto.'); return; }
+  if (hash !== currentStore.pin_costos) {
+    // Con el bloqueo prendido, un PIN mal es justo lo que el dueño quiere
+    // ver, sea para la acción que sea.
+    if (intentoPendiente || bloqueoActivo()) {
+      registrarIntento(intentoPendiente?.que || 'Desbloquear datos protegidos', intentoPendiente?.detalle, 'pin_mal');
+    }
+    mostrarErrorPinCostos('PIN incorrecto.');
+    return;
+  }
 
+  pinCostosAutorizado();
+}
+
+function pinCostosAutorizado() {
   costosDesbloqueados = true;
   hide(byId('pinCostosModal'));
+  if (intentoPendiente) registrarIntento(intentoPendiente.que, intentoPendiente.detalle, 'autorizado');
+  intentoPendiente = null;
   const cb = alDesbloquearCostos;
   alDesbloquearCostos = null;
   if (cb) cb();
+}
+
+function cerrarPinCostosModal() {
+  hide(byId('pinCostosModal'));
+  if (intentoPendiente) registrarIntento(intentoPendiente.que, intentoPendiente.detalle, 'cancelado');
+  intentoPendiente = null;
+  alDesbloquearCostos = null;
 }
 
 function mostrarErrorPinCostos(msg) {
@@ -7055,11 +7172,7 @@ function mostrarErrorPinCostos(msg) {
 async function verificarHuellaCostos() {
   const ok = await intentarHuella();
   if (!ok) { mostrarErrorPinCostos('No se pudo verificar. Probá con el PIN.'); return; }
-  costosDesbloqueados = true;
-  hide(byId('pinCostosModal'));
-  const cb = alDesbloquearCostos;
-  alDesbloquearCostos = null;
-  if (cb) cb();
+  pinCostosAutorizado();
 }
 
 // ---- Proveedor de un producto (a quién se le compra) — mismo PIN ----
@@ -16012,7 +16125,14 @@ function terminarAccionSeleccion() {
 }
 
 document.querySelectorAll('#barraSeleccion [data-sel-accion]').forEach(b => {
-  b.addEventListener('click', () => accionSeleccion(b.dataset.selAccion));
+  b.addEventListener('click', () => {
+    const accion = b.dataset.selAccion;
+    // Mover de categoría o pausar no toca plata; precio, oferta y borrar sí.
+    const sensible = { precio: 'Cambiar precios en lote', oferta: 'Poner oferta en lote',
+      'sacar-oferta': 'Sacar oferta en lote', eliminar: 'Borrar productos en lote' }[accion];
+    if (!sensible) return accionSeleccion(accion);
+    conClaveSensible(sensible, productosSeleccionados().length + ' productos', () => accionSeleccion(accion));
+  });
 });
 byId('limpiarSeleccion').addEventListener('click', limpiarSeleccionProductos);
 
@@ -16263,23 +16383,32 @@ function renderProducts() {
     });
   }
 
-  byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editProduct(b.getAttribute('data-edit'))));
-  byId('productsBody').querySelectorAll('[data-oferta]').forEach(b => b.addEventListener('click', () => abrirOferta(b.getAttribute('data-oferta'))));
+  byId('productsBody').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
+    const id = b.getAttribute('data-edit');
+    conClaveSensible('Editar producto', nombreDeProductoId(id), () => editProduct(id));
+  }));
+  byId('productsBody').querySelectorAll('[data-oferta]').forEach(b => b.addEventListener('click', () => {
+    const id = b.getAttribute('data-oferta');
+    conClaveSensible('Poner oferta', nombreDeProductoId(id), () => abrirOferta(id));
+  }));
   const chip = byId('chipOfertas');
   if (chip) chip.addEventListener('click', () => {
     soloEnOferta = !soloEnOferta;
     seleccionProductos = new Set();   // cambia lo que se ve, se arranca limpio
     renderProducts();
   });
-  byId('productsBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(b.getAttribute('data-del'))));
+  byId('productsBody').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    const id = b.getAttribute('data-del');
+    conClaveSensible('Borrar producto', nombreDeProductoId(id), () => deleteProduct(id));
+  }));
   byId('productsBody').querySelectorAll('[data-pausar]').forEach(b => b.addEventListener('click', () => alternarPausado(b.getAttribute('data-pausar'))));
   // Con variantes hay que elegir talle/color antes de sumar stock; sin
   // variantes es directo, como siempre.
-  byId('productsBody').querySelectorAll('[data-reponer]').forEach(b => b.addEventListener('click', () => {
+  byId('productsBody').querySelectorAll('[data-reponer]').forEach(b => b.addEventListener('click', () => conClaveSensible('Sumar stock', nombreDeProductoId(b.getAttribute('data-reponer')), () => {
     const p = products.find(x => String(x.id) === String(b.getAttribute('data-reponer')));
     if (p && p.tiene_variantes) abrirReponerVariante(p.id);
     else reponerStock(b.getAttribute('data-reponer'));
-  }));
+  })));
   // Con variantes hay que elegir cuál combinación exacta se está
   // etiquetando (ej: "Buzo negro XL") antes de poder imprimir.
   // Armar la imagen tarda un segundo (hay que bajar la foto y dibujarla),
@@ -16561,7 +16690,10 @@ function renderOrders() {
       }
     }));
   cuerpo.querySelectorAll('[data-eliminar-pedido]').forEach(b =>
-    b.addEventListener('click', () => eliminarPedido(b.dataset.eliminarPedido)));
+    b.addEventListener('click', () => {
+      const o = orders.find(x => String(x.id) === String(b.dataset.eliminarPedido));
+      conClaveSensible('Borrar pedido', o ? (o.customer_name || 'Pedido') + ' ' + money(o.total) : '', () => eliminarPedido(b.dataset.eliminarPedido));
+    }));
   cuerpo.querySelectorAll('[data-ticket-pedido]').forEach(b =>
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketPedido)));
 
@@ -19590,7 +19722,11 @@ async function guardarDisenoTicket() {
   dialogoAviso('✓ Diseño del ticket guardado. Los próximos tickets salen así.');
 }
 
-document.querySelectorAll('[data-abrir-diseno-ticket]').forEach(b => b.addEventListener('click', abrirDisenoTicket));
+// Desde Configuración no se vuelve a pedir: para entrar ya se puso el PIN.
+document.querySelectorAll('[data-abrir-diseno-ticket]').forEach(b => b.addEventListener('click', () => {
+  if (!byId('configModal').classList.contains('hidden')) return abrirDisenoTicket();
+  conClaveSensible('Editar el diseño del ticket', '', abrirDisenoTicket);
+}));
 byId('cerrarTicketModal').addEventListener('click', () => hide(byId('ticketModal')));
 byId('ticketModal').addEventListener('input', pintarVistaPreviaTicket);
 byId('ticketModal').addEventListener('change', pintarVistaPreviaTicket);
@@ -21203,7 +21339,10 @@ function renderGastos() {
   cuerpo.querySelectorAll('[data-editar-gasto]').forEach(b =>
     b.addEventListener('click', () => abrirModalGasto(b.getAttribute('data-editar-gasto'))));
   cuerpo.querySelectorAll('[data-eliminar-gasto]').forEach(b =>
-    b.addEventListener('click', () => eliminarGasto(b.getAttribute('data-eliminar-gasto'))));
+    b.addEventListener('click', () => {
+      const g = gastos.find(x => String(x.id) === String(b.getAttribute('data-eliminar-gasto')));
+      conClaveSensible('Borrar gasto', g ? g.concepto + ' ' + money(g.monto) : '', () => eliminarGasto(b.getAttribute('data-eliminar-gasto')));
+    }));
 
   renderGastosChart();
 }
@@ -21466,7 +21605,11 @@ function renderCaja() {
   }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:20px;">Sin movimientos este día</td></tr>';
 
   cuerpo.querySelectorAll('[data-eliminar-mov-caja]').forEach(b =>
-    b.addEventListener('click', () => conClaveDeCaja(() => eliminarMovimientoCaja(b.getAttribute('data-eliminar-mov-caja')))));
+    b.addEventListener('click', () => {
+      const m = movimientosCaja.find(x => String(x.id) === String(b.getAttribute('data-eliminar-mov-caja')));
+      conClaveDeCaja(() => eliminarMovimientoCaja(b.getAttribute('data-eliminar-mov-caja')), 'Borrar movimiento de caja',
+        m ? m.concepto + ' ' + money(m.monto) : '');
+    }));
 }
 
 byId('cajaFecha').addEventListener('change', renderCaja);
@@ -21478,7 +21621,7 @@ byId('cajaHoyBtn').addEventListener('click', () => {
 
 byId('nuevoMovimientoCajaBtn').addEventListener('click', () => {
   if (!puedeOperar()) return;
-  conClaveDeCaja(abrirMovimientoCaja);
+  conClaveDeCaja(abrirMovimientoCaja, 'Nuevo movimiento de caja');
 });
 
 function abrirMovimientoCaja() {
@@ -22182,7 +22325,11 @@ function renderSalesHistory() {
   }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin ventas</td></tr>';
 
   el.querySelectorAll('[data-borrar-venta]').forEach(b => {
-    b.addEventListener('click', () => conClaveDeCaja(() => anularVenta(b.dataset.borrarVenta)));
+    b.addEventListener('click', () => {
+      const o = orders.find(x => String(x.id) === String(b.dataset.borrarVenta));
+      conClaveDeCaja(() => anularVenta(b.dataset.borrarVenta), 'Anular venta',
+        o ? (o.customer_name || 'Mostrador') + ' ' + money(o.total) : '');
+    });
   });
   el.querySelectorAll('[data-ticket-venta]').forEach(b => {
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketVenta));
@@ -25063,7 +25210,9 @@ byId('closePlanesModal').addEventListener('click', () => hide(byId('planesModal'
 byId('verPlanesBtn').addEventListener('click', abrirPlanes);
 byId('adherirmeBtn').addEventListener('click', abrirPlanes);
 
-byId('openConfigBtn').addEventListener('click', async () => {
+byId('openConfigBtn').addEventListener('click', () => conClaveSensible('Entrar a Configuración', '', abrirConfiguracion));
+
+async function abrirConfiguracion() {
   await cargarConfiguracion();
   armarSeccionesConfig();
   actualizarPreviewConfig();
@@ -25073,7 +25222,7 @@ byId('openConfigBtn').addEventListener('click', async () => {
   // cuando conteste el servidor.
   cargarEstadoMl();
   cargarEstadoMp();
-});
+}
 
 byId('conectarMlBtn').addEventListener('click', conectarMl);
 byId('conectarMpBtn').addEventListener('click', conectarMp);
@@ -27034,6 +27183,7 @@ function mostrarVistaCaja() {
   byId('cajaView').classList.add('visible');
   if (!byId('cajaFecha').value) byId('cajaFecha').value = fechaLocalISO();
   byId('avisoCajaSinClave').classList.toggle('hidden', !(rubroEsDistribuidora() && !hayPinConfigurado()));
+  byId('cajaRegistroBtn').classList.toggle('hidden', !bloqueoActivo());
   renderCaja();
 }
 
@@ -28154,7 +28304,7 @@ byId('closeReponerVarianteModal').addEventListener('click', () => hide(byId('rep
 byId('confirmarReponerVarianteBtn').addEventListener('click', () => conOrigenPrecio('factura', confirmarReponerVariante));
 byId('closeEtiquetaVarianteModal').addEventListener('click', () => hide(byId('etiquetaVarianteModal')));
 
-byId('closePinCostosModal').addEventListener('click', () => { hide(byId('pinCostosModal')); alDesbloquearCostos = null; });
+byId('closePinCostosModal').addEventListener('click', cerrarPinCostosModal);
 byId('pinCostosConfirmar').addEventListener('click', verificarPinCostos);
 byId('pinCostosHuella').addEventListener('click', verificarHuellaCostos);
 byId('pinCostosInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') verificarPinCostos(); });
@@ -29054,8 +29204,10 @@ async function cargarConfiguracion() {
     // El PIN puede haber cambiado desde otra sesión/dispositivo — se
     // refresca currentStore con lo que hay de verdad en la base.
     currentStore.pin_costos = store.pin_costos || null;
+    currentStore.bloquear_sensibles = !!store.bloquear_sensibles;
     byId('configPinNuevo').value = '';
     await actualizarEstadoPinCostos();
+    pintarEstadoBloqueo();
 
     quitarPortada = false;
     byId('configPortadaInput').value = '';
@@ -29127,6 +29279,120 @@ async function cargarConfiguracion() {
     }
   }
 }
+
+// ---- Bloquear acciones sensibles (Configuración) ----
+function pintarEstadoBloqueo() {
+  const tilde = byId('bloquearSensibles');
+  tilde.checked = !!currentStore?.bloquear_sensibles;
+  const estado = byId('bloqueoEstado');
+  if (!hayPinConfigurado()) {
+    estado.textContent = 'Primero poné un PIN arriba: sin PIN no hay con qué desbloquear.';
+    estado.style.color = '#92400E';
+  } else if (bloqueoActivo()) {
+    estado.textContent = '✓ Activado — las acciones sensibles piden el PIN o la huella.';
+    estado.style.color = 'var(--stock)';
+  } else {
+    estado.textContent = 'Apagado — cualquiera con el panel abierto puede hacer todo.';
+    estado.style.color = 'var(--text-mute)';
+  }
+  byId('nombreEquipo').value = nombreDeEsteEquipo();
+}
+
+async function guardarBloqueoSensibles(prender) {
+  const { error } = await sb.from('store_profiles').update({ bloquear_sensibles: prender }).eq('slug', currentStore.slug);
+  if (error) {
+    dialogoAviso('No se pudo guardar:\n\n' + humano(error) +
+      '\n\n(Si dice que falta la columna, correr schema/87-bloqueo-y-registro.sql en Supabase.)');
+  } else {
+    currentStore.bloquear_sensibles = prender;
+    // Apagarlo también queda anotado: es lo primero que haría alguien
+    // que quiere hacer trampa con el panel abierto.
+    registrarIntento(prender ? 'Prender el bloqueo' : 'Apagar el bloqueo', '', 'autorizado');
+  }
+  pintarEstadoBloqueo();
+}
+
+byId('bloquearSensibles').addEventListener('change', () => {
+  const prender = byId('bloquearSensibles').checked;
+  if (prender && !hayPinConfigurado()) {
+    dialogoAviso('Primero poné un PIN de 4 dígitos en "PIN para ver costos y proveedores". Ese PIN es el que desbloquea.');
+    pintarEstadoBloqueo();
+    return;
+  }
+  // Prender o apagar, las dos con el PIN: si no, el que quiere hacer
+  // trampa entra, lo apaga, hace lo suyo y lo vuelve a prender.
+  pintarEstadoBloqueo();   // el tilde vuelve hasta que se confirme
+  abrirPinCostosModal(() => guardarBloqueoSensibles(prender),
+    (prender ? 'Prender' : 'Apagar') + ' el bloqueo de acciones sensibles. Ingresá el PIN.');
+});
+
+byId('guardarNombreEquipoBtn').addEventListener('click', () => {
+  const nombre = byId('nombreEquipo').value.trim();
+  try {
+    if (nombre) localStorage.setItem(claveNombreEquipoLS(), nombre);
+    else localStorage.removeItem(claveNombreEquipoLS());
+  } catch (e) { /* almacenamiento bloqueado */ }
+  dialogoAviso(nombre ? '✓ Esta compu queda como "' + nombre + '".' : 'Listo, esta compu queda sin nombre.');
+});
+
+// ---- Registro de acciones protegidas ----
+const RESULTADO_REGISTRO = {
+  autorizado: '<span style="color:#1FA088;font-weight:600;">✓ Autorizado</span>',
+  pin_mal:    '<span style="color:#DC2626;font-weight:700;">✗ PIN mal</span>',
+  cancelado:  '<span style="color:#B45309;font-weight:600;">Canceló</span>'
+};
+let registroSeguridad = [];
+
+async function abrirRegistroSeguridad() {
+  byId('registroSeguridadBody').innerHTML =
+    '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Cargando…</td></tr>';
+  byId('registroSeguridadResumen').textContent = '';
+  show(byId('registroSeguridadModal'));
+  const { data, error } = await sb.from('store_registro_seguridad')
+    .select('*').eq('store_slug', currentStore.slug)
+    .order('created_at', { ascending: false }).limit(300);
+  if (error) {
+    byId('registroSeguridadBody').innerHTML =
+      '<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:20px;">' +
+      escapeHtml('No se pudo cargar: ' + humano(error)) + '</td></tr>';
+    return;
+  }
+  registroSeguridad = data || [];
+  pintarRegistroSeguridad();
+}
+
+function pintarRegistroSeguridad() {
+  const soloSospechosos = byId('registroSoloSospechosos').checked;
+  const filas = registroSeguridad.filter(r => !soloSospechosos || r.resultado !== 'autorizado');
+
+  // Lo que el dueño quiere ver de un vistazo: PIN mal de hoy.
+  const hoy = fechaLocalISO();
+  const pinMalHoy = registroSeguridad.filter(r => r.resultado === 'pin_mal' && diaARDe(r.created_at) === hoy).length;
+  const resumen = byId('registroSeguridadResumen');
+  resumen.textContent = pinMalHoy
+    ? '⚠️ Hoy pusieron mal el PIN ' + pinMalHoy + (pinMalHoy === 1 ? ' vez.' : ' veces.')
+    : 'Hoy nadie puso mal el PIN.';
+  resumen.style.color = pinMalHoy ? '#DC2626' : 'var(--text-mute)';
+
+  byId('registroSeguridadBody').innerHTML = filas.length ? filas.map(r =>
+    '<tr>' +
+      '<td style="white-space:nowrap;font-size:12.5px;">' +
+        escapeHtml(comoFecha(r.created_at).toLocaleString('es-AR', { timeZone: TZ_AR, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })) + '</td>' +
+      '<td>' + escapeHtml(r.accion) + '</td>' +
+      '<td style="font-size:12.5px;color:var(--text-mute);">' + escapeHtml(r.detalle || '') + '</td>' +
+      '<td style="font-size:12.5px;">' + escapeHtml(r.equipo || '—') + '</td>' +
+      '<td style="white-space:nowrap;">' + (RESULTADO_REGISTRO[r.resultado] || escapeHtml(r.resultado)) + '</td>' +
+    '</tr>'
+  ).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin intentos anotados.</td></tr>';
+}
+
+// Ver el registro siempre pide el PIN (si hay): es del dueño, no del cajero.
+document.querySelectorAll('[data-ver-registro-seguridad]').forEach(b => b.addEventListener('click', () => {
+  if (!hayPinConfigurado() || !byId('configModal').classList.contains('hidden')) return abrirRegistroSeguridad();
+  abrirPinCostosModal(abrirRegistroSeguridad, 'El registro lo ve el dueño. Ingresá el PIN.');
+}));
+byId('closeRegistroSeguridadModal').addEventListener('click', () => hide(byId('registroSeguridadModal')));
+byId('registroSoloSospechosos').addEventListener('change', pintarRegistroSeguridad);
 
 // ---- PIN de costos (Configuración) ----
 async function actualizarEstadoPinCostos() {
