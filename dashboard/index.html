@@ -5037,6 +5037,19 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:14px;">
+            <input type="checkbox" id="temaEstiloModerno" style="width:18px;height:18px;margin:0;accent-color:var(--celeste);">
+            ✨ Estilo moderno, con animaciones
+          </label>
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Encabezado oscuro con luces de tu color que se mueven, una cinta con
+            lo que ofrecés (envíos, medios de pago) y productos que aparecen con
+            movimiento. Usa los colores que elijas abajo.
+            <a href="#" id="verEstiloModerno" style="color:var(--celeste);font-weight:600;">Ver cómo queda</a>
+          </small>
+        </div>
+
         <div class="cfg-corte" data-seccion="Colores"></div>
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
           <label>🎨 Colores de tu tienda</label>
@@ -28288,7 +28301,9 @@ function temaElegido() {
     texto: byId('temaTexto').value,
     banner: byId('temaBanner').value,
     opacidadPortada: Number(byId('temaOpacidadPortada').value),
-    posicionPortada: posicionPortadaX + '% ' + posicionPortadaY + '%'
+    posicionPortada: posicionPortadaX + '% ' + posicionPortadaY + '%',
+    // Ver tienda-moderna.js. Sin tildar queda 'clasico', como siempre.
+    estilo: byId('temaEstiloModerno').checked ? 'moderno' : 'clasico'
   };
 }
 
@@ -28326,6 +28341,12 @@ async function cargarConfiguracion() {
     byId('temaTexto').value = tema.texto || '#15294D';
     byId('temaBanner').value = tema.banner || '#2F8FE0';
     byId('temaOpacidadPortada').value = tema.opacidadPortada != null ? tema.opacidadPortada : 80;
+    byId('temaEstiloModerno').checked = tema.estilo === 'moderno';
+    byId('verEstiloModerno').onclick = (ev) => {
+      ev.preventDefault();
+      // Se prueba sin guardar: el link fuerza el estilo solo en esa pestaña.
+      window.open('/' + encodeURIComponent(currentStore.slug) + '?estilo=moderno', '_blank', 'noopener');
+    };
     cargarPosicionPortada(tema.posicionPortada);
     renderPosicionPortada();
     aplicarPosicionPortadaPreview();

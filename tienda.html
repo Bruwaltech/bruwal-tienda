@@ -31,6 +31,11 @@
      usa el panel: si se cambia el diseno, se cambia en un solo lado. -->
 <script src="/imagen-producto.js"></script>
 <script src="/avisos.js"></script>
+<!-- Estilo "moderno" (aurora, animaciones): solo se enciende en las tiendas
+     que lo eligieron (tema.estilo) o con ?estilo=moderno. Para el resto,
+     estos dos archivos no cambian nada. -->
+<link rel="stylesheet" href="/tienda-moderna.css">
+<script src="/tienda-moderna.js"></script>
 <style>
   :root{
     --navy:#15294D; --celeste:#2F8FE0; --celeste-soft:#5DAEF0;
@@ -1214,6 +1219,7 @@ async function init(){
 
   perfilTienda = store;
   aplicarTema(store.tema);
+  if (window.BruwalModerno) window.BruwalModerno.activar(store);
   // Las páginas legales hablan en nombre de esta tienda.
   document.querySelectorAll('#legales a[data-legal]').forEach(a => {
     a.href = a.getAttribute('href').split('?')[0] + '?tienda=' + encodeURIComponent(store.slug);
