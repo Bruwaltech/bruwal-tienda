@@ -1,0 +1,16 @@
+-- 84: "balanza" en features.ocultar_secciones (misma lista de la 82).
+--
+-- Esconde solo el botón "Conectar balanza" de la caja. La función queda
+-- entera: PLU, etiquetas con peso y la configuración de store_profiles.balanza
+-- siguen igual. No cambia el esquema, no hace falta correrla.
+--
+-- Para ocultarlo a una tienda (sin pisar lo que ya tenga en la lista):
+--   update public.store_profiles
+--      set features = jsonb_set(coalesce(features, '{}'::jsonb), '{ocultar_secciones}',
+--            coalesce(features->'ocultar_secciones', '[]'::jsonb) || '["balanza"]'::jsonb)
+--    where slug = '<slug>'
+--      and not coalesce(features->'ocultar_secciones', '[]'::jsonb) ? 'balanza';
+-- Para devolvérselo:
+--   update public.store_profiles
+--      set features = jsonb_set(features, '{ocultar_secciones}', (features->'ocultar_secciones') - 'balanza')
+--    where slug = '<slug>';
