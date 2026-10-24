@@ -27309,7 +27309,8 @@ function aplicarVisibilidadFlex() {
 // ---- Secciones ocultas por tienda ----
 // Hay clientes a los que les sobran secciones (ej. una distribuidora sin
 // tienda online no usa Pedidos ni Afiliados). Se ocultan con
-// features.ocultar_secciones, ej. ["afiliados","mercadolibre","fiado","pedidos"].
+// features.ocultar_secciones, ej. ["afiliados","mercadolibre","fiado","pedidos"]
+// ("balanza" esconde solo el botón de conectarla en la caja, ver schema/84).
 // Lo pone solo el administrador (features está protegido por el trigger
 // proteger_features). Solo se esconde la pestaña: los datos quedan como
 // estaban y al sacar la sección de la lista vuelve todo igual.
@@ -27347,6 +27348,12 @@ function aplicarSeccionesOcultas() {
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
   }
+
+  // "balanza": solo se esconde el botón de conectarla por cable en la caja.
+  // La función queda entera (PLU, etiquetas con peso) y vuelve al sacarla.
+  const btnBalanza = byId('conectarBalanzaBtn');
+  const balanzaConectada = !byId('balanzaEnVivo')?.classList.contains('hidden');
+  if (btnBalanza && !balanzaConectada) btnBalanza.classList.toggle('hidden', !balanzaDisponible());
 }
 
 // "tienda_online" en la misma lista: el negocio no vende por internet
@@ -28770,7 +28777,7 @@ async function desconectarBalanza() {
   puertoBalanza = null;
   pesoBalanza = null;
   hide(byId('balanzaEnVivo'));
-  if (hayPuertoSerie()) byId('conectarBalanzaBtn').classList.remove('hidden');
+  if (balanzaDisponible()) byId('conectarBalanzaBtn').classList.remove('hidden');
 }
 
 // El peso NO se copia solo a la cantidad: el plato sigue vivo mientras el
@@ -28784,10 +28791,15 @@ function usarPesoDeBalanza() {
   calculateTotal();
 }
 
+// El botón aparece solo donde puede funcionar (en el celular ni aparece, para
+// no ofrecer un boton que va a fallar siempre) y si la tienda no lo tiene
+// oculto con "balanza" en features.ocultar_secciones.
+function balanzaDisponible() {
+  return hayPuertoSerie() && !seccionOculta('balanza');
+}
+
 if (byId('conectarBalanzaBtn')) {
-  // Se muestra solo donde puede funcionar: en el celular ni aparece, para no
-  // ofrecer un boton que va a fallar siempre.
-  byId('conectarBalanzaBtn').classList.toggle('hidden', !hayPuertoSerie());
+  byId('conectarBalanzaBtn').classList.toggle('hidden', !balanzaDisponible());
   byId('conectarBalanzaBtn').addEventListener('click', conectarBalanza);
   byId('balanzaUsarBtn').addEventListener('click', usarPesoDeBalanza);
   byId('balanzaDesconectarBtn').addEventListener('click', desconectarBalanza);
