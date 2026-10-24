@@ -1507,7 +1507,40 @@ tr:last-child td { border-bottom: none; }
    arriba de cualquier otro, sea cual sea el que lo llamó. */
 #pinCostosModal { z-index: 200; }
 /* Se abren encima de Configuración o de Productos. */
-#ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal { z-index: 190; }
+#ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal, #historialPreciosModal { z-index: 190; }
+/* Editor de carteles de oferta */
+.cg-opciones { display:grid; grid-template-columns:1.3fr 1fr 1.3fr; gap:12px; margin-bottom:14px; }
+.cg-opciones select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:14px; }
+.cg-colores { display:flex; gap:8px; flex-wrap:wrap; padding-top:4px; }
+.cg-colores button { width:30px; height:30px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px var(--line); cursor:pointer; transition:transform .15s, box-shadow .15s; }
+.cg-colores button:hover { transform:scale(1.08); }
+.cg-colores button.activo { box-shadow:0 0 0 2px var(--navy); transform:scale(1.08); }
+.cg-cuerpo { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); gap:16px; align-items:start; }
+.cg-filtros { display:flex; gap:4px; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:3px; margin-bottom:8px; }
+.cg-filtros button { flex:1; border:0; background:none; padding:7px 6px; border-radius:7px; font-family:inherit; font-size:12.5px; font-weight:600; color:var(--text-mute); cursor:pointer; transition:background .15s, color .15s; }
+.cg-filtros button.activo { background:var(--surface); color:var(--navy); box-shadow:0 1px 3px rgba(21,41,77,.12); }
+.cg-lista { max-height:46vh; overflow-y:auto; border:1px solid var(--line); border-radius:9px; }
+.cg-fila { display:flex; align-items:center; gap:10px; padding:9px 12px; border-bottom:1px solid var(--line); cursor:pointer; transition:background .12s; }
+.cg-fila:hover { background:var(--bg); }
+.cg-fila.editando { background:#EAF4FD; box-shadow:inset 3px 0 0 var(--celeste); }
+.cg-fila input { margin:0; width:auto; cursor:pointer; }
+.cg-editada { font-size:10.5px; font-weight:700; color:var(--celeste); margin-left:4px; }
+.cg-editor { position:sticky; top:0; }
+.cg-previa-marco { background:repeating-conic-gradient(#EEF3F8 0% 25%, #F8FAFC 0% 50%) 50% / 16px 16px; border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; justify-content:center; align-items:center; min-height:200px; margin-bottom:12px; overflow:hidden; }
+.cg-campos { display:grid; grid-template-columns:1fr 1fr; gap:8px 10px; }
+.cg-campos .field { margin:0; }
+.cg-campos .ancho { grid-column:1 / -1; }
+.cg-campos input { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:13.5px; }
+.cg-chips { display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; }
+.cg-chips button { border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:3px 9px; font-size:11.5px; font-weight:600; color:var(--navy); cursor:pointer; font-family:inherit; }
+.cg-chips button:hover { border-color:var(--celeste); }
+@media (max-width: 760px) {
+  .cg-opciones { grid-template-columns:1fr 1fr; }
+  .cg-opciones > .field:last-child { grid-column:1 / -1; }
+  .cg-cuerpo { grid-template-columns:1fr; }
+  .cg-editor { position:static; }
+  .cg-lista { max-height:34vh; }
+}
 .tk-opciones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:4px 14px; margin:4px 0 14px; }
 .tk-opciones label { display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; padding:4px 0; }
 .tk-opciones input { margin:0; width:auto; cursor:pointer; }
@@ -2258,6 +2291,7 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="mlPublicacionesBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-store"></i> Mercado Libre</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
         <button class="btn-action campo-distribuidora hidden" id="listasPreciosBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-clock-rotate-left"></i> Listas de precios</button>
+        <button class="btn-action" id="historialPreciosBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-chart-line"></i> Historial de precios</button>
         <button class="btn-action campo-distribuidora hidden" id="cartelesGondolaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-rectangle-ad"></i> Carteles de oferta</button>
         <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI <span class="lock-pro hidden" id="lockImei">🔒</span></button>
         <button class="btn-action" id="facturaIaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-invoice"></i> Cargar por factura (IA) <span class="lock-pro hidden" id="lockFacturaIa">🔒</span></button>
@@ -4862,18 +4896,20 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
-<!-- MODAL CARTELES DE GÓNDOLA (distribuidora) -->
+<!-- MODAL CARTELES DE GÓNDOLA (distribuidora) — editor -->
 <div class="modal-overlay hidden" id="gondolaModal">
-  <div class="modal" style="max-width:640px;">
+  <div class="modal" style="max-width:1000px;">
     <button class="modal-close" id="cerrarGondolaModal">✕</button>
-    <h3>🏷️ Carteles de oferta para la góndola</h3>
+    <h3>🏷️ Carteles de oferta</h3>
     <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.5;">
-      Están tus productos con oferta y tus combos. Tildá los que querés imprimir.
+      Tildá los que querés imprimir y tocá uno para editarlo: el texto, el precio y el de antes. Lo que cambies queda guardado.
     </p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+    <div class="cg-opciones">
       <div class="field" style="margin:0;">
         <label>Tamaño</label>
-        <select id="gondolaFormato" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">
+        <select id="gondolaFormato">
+          <option value="8x6">Cartelito 8 × 6 cm (8 por hoja A4)</option>
+          <option value="6x8">Cartelito 6 × 8 cm parado (9 por hoja A4)</option>
           <option value="a4-4">Hoja A4, 4 carteles grandes</option>
           <option value="a4-8">Hoja A4, 8 carteles chicos</option>
           <option value="termica">Impresora de tickets (58 mm)</option>
@@ -4883,14 +4919,31 @@ tr:last-child td { border-bottom: none; }
         <label>Válido hasta <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
         <input type="date" id="gondolaHasta">
       </div>
+      <div class="field" style="margin:0;">
+        <label>Color</label>
+        <div class="cg-colores" id="gondolaColores"></div>
+      </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-      <input type="text" id="gondolaBuscar" placeholder="Buscar..." style="flex:1;min-width:140px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;">
-      <button type="button" class="btn-ghost" id="gondolaTodos" style="padding:6px 10px;font-size:12.5px;">Todos</button>
-      <button type="button" class="btn-ghost" id="gondolaNinguno" style="padding:6px 10px;font-size:12.5px;">Ninguno</button>
+    <div class="cg-cuerpo">
+      <div>
+        <div class="cg-filtros" id="gondolaFiltros">
+          <button type="button" data-cg-filtro="ofertas" class="activo">Ofertas y combos</button>
+          <button type="button" data-cg-filtro="bajaron">Bajaron de precio</button>
+          <button type="button" data-cg-filtro="todos">Todos</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+          <input type="text" id="gondolaBuscar" placeholder="Buscar..." style="flex:1;min-width:140px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;">
+          <button type="button" class="btn-ghost" id="gondolaTodos" style="padding:6px 10px;font-size:12.5px;">Todos</button>
+          <button type="button" class="btn-ghost" id="gondolaNinguno" style="padding:6px 10px;font-size:12.5px;">Ninguno</button>
+        </div>
+        <div id="gondolaLista" class="cg-lista"></div>
+      </div>
+      <div class="cg-editor">
+        <div class="cg-previa-marco"><div id="gondolaPrevia"></div></div>
+        <div id="gondolaCampos"></div>
+      </div>
     </div>
-    <div id="gondolaLista" style="max-height:42vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;margin-bottom:14px;"></div>
-    <button type="button" id="gondolaImprimirBtn" class="btn btn-primary" style="width:100%;">🖨️ Imprimir carteles</button>
+    <button type="button" id="gondolaImprimirBtn" class="btn btn-primary" style="width:100%;margin-top:14px;">🖨️ Imprimir carteles</button>
   </div>
 </div>
 
@@ -4904,6 +4957,36 @@ tr:last-child td { border-bottom: none; }
       Tocá una para ver qué productos cambiaron. El nombre lo cambiás con ✏️.
     </p>
     <div id="listasPreciosContenido"></div>
+  </div>
+</div>
+
+<!-- MODAL HISTORIAL DE PRECIOS -->
+<div class="modal-overlay hidden" id="historialPreciosModal">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" id="cerrarHistorialPreciosModal">✕</button>
+    <h3>📈 Historial de precios</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.5;">
+      Cada vez que un producto sube o baja de precio queda anotado acá, venga de donde venga: a mano, por Excel, por aumento en porcentaje o por el dólar.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <select id="hpPeriodo" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">
+        <option value="1">Hoy</option>
+        <option value="7">Últimos 7 días</option>
+        <option value="30" selected>Últimos 30 días</option>
+        <option value="90">Últimos 3 meses</option>
+        <option value="365">Último año</option>
+      </select>
+      <select id="hpTipo" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">
+        <option value="todos">Todos los cambios</option>
+        <option value="subio">Subieron</option>
+        <option value="bajo">Bajaron</option>
+        <option value="oferta">Ofertas</option>
+        <option value="costo">Costo</option>
+      </select>
+      <input type="text" id="hpBuscar" placeholder="Buscar producto..." style="flex:1;min-width:150px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;">
+    </div>
+    <div id="hpResumen" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;"></div>
+    <div id="hpLista" style="max-height:56vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;"></div>
   </div>
 </div>
 
@@ -19389,13 +19472,69 @@ byId('probarTicketBtn').addEventListener('click', () => {
 // ---- Carteles de oferta para la gondola (distribuidora) ----
 // Lo que se pega en el estante: el precio de oferta bien grande, el de
 // antes tachado y, en un combo, de que esta hecho. Salen los productos con
-// oferta y los combos que se arman solos en la caja.
+// oferta, los combos que se arman solos en la caja, los que bajaron de
+// precio en los ultimos 30 dias (del historial, schema/85) y, buscando,
+// cualquier otro. Cada cartel se puede editar (faja, nombre, detalle,
+// precio, precio de antes) y lo editado queda en store_profiles.carteles
+// para verse igual desde cualquier compu. El cartelito de 8 x 6 cm es el
+// que usa la distribuidora: 8 por hoja A4, con linea de corte.
+const COLORES_CARTEL = {
+  rojo:     { fondo: '#D7261E', texto: '#fff', precio: '#C81E17', nombre: 'Rojo' },
+  amarillo: { fondo: '#FFD400', texto: '#111', precio: '#111',    nombre: 'Amarillo' },
+  naranja:  { fondo: '#F26B1D', texto: '#fff', precio: '#D9560B', nombre: 'Naranja' },
+  verde:    { fondo: '#14995A', texto: '#fff', precio: '#0F8A4F', nombre: 'Verde' },
+  azul:     { fondo: '#1D5FD1', texto: '#fff', precio: '#1D5FD1', nombre: 'Azul' },
+  negro:    { fondo: '#111',    texto: '#fff', precio: '#111',    nombre: 'Negro (para impresora sin color)' }
+};
+const FORMATOS_CARTEL = ['8x6', '6x8', 'a4-4', 'a4-8', 'termica'];
+// Ancho y alto de un cartel en mm, para la vista previa.
+const MEDIDAS_CARTEL = { '8x6': [80, 60], '6x8': [60, 80], 'a4-4': [95, 137], 'a4-8': [95, 68], termica: [56, 70] };
+const FAJAS_CARTEL = ['OFERTA', 'COMBO', '2 × 1', 'LIQUIDACIÓN', 'PRECIO BAJO', 'NUEVO'];
+
 let gondolaElegidos = new Set();
+let gondolaEditando = null;
+let gondolaFiltro = 'ofertas';
+let gondolaBajaron = new Map();     // id -> precio de antes (ultimos 30 dias)
+let gondolaTocado = false;          // ya edito algo: lo que llegue de la base no lo pisa
+let cartelesConfig = { estilo: {}, editados: {} };
+let guardarCartelesTimer = null;
+
+function normalizarCarteles(c) {
+  const ok = c && typeof c === 'object' ? c : {};
+  return {
+    estilo: ok.estilo && typeof ok.estilo === 'object' ? { ...ok.estilo } : {},
+    editados: ok.editados && typeof ok.editados === 'object' ? { ...ok.editados } : {}
+  };
+}
+
+function colorCartel() {
+  return COLORES_CARTEL[cartelesConfig.estilo.color] ? cartelesConfig.estilo.color : 'rojo';
+}
 
 function productosParaGondola() {
   return (products || []).filter(p => !p.solo_interno && !p.pausado &&
       (hayOferta(p) || (p.combo_en_caja && Array.isArray(p.insumos) && p.insumos.length && precioVigente(p) > 0)))
     .sort((a, b) => String(a.name).localeCompare(String(b.name), 'es'));
+}
+
+// Todo lo que puede llevar cartel: lo que se vende y tiene precio.
+function productosConCartelPosible() {
+  return (products || []).filter(p => !p.solo_interno && !p.pausado && p.tipo !== 'servicio' && precioVigente(p) > 0)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'es'));
+}
+
+function productosGondolaFiltro() {
+  if (gondolaFiltro === 'ofertas') return productosParaGondola();
+  const todos = productosConCartelPosible();
+  if (gondolaFiltro === 'bajaron') return todos.filter(p => !hayOferta(p) && gondolaBajaron.has(String(p.id)));
+  return todos;
+}
+
+function tipoCartel(p) {
+  if (hayOferta(p)) return 'oferta';
+  if (p.combo_en_caja && Array.isArray(p.insumos) && p.insumos.length) return 'combo';
+  if (gondolaBajaron.has(String(p.id))) return 'bajo';
+  return 'precio';
 }
 
 // Lo que costarian las partes del combo por separado (con sus ofertas).
@@ -19413,69 +19552,325 @@ function partesComboTexto(p) {
   }).join(' + ');
 }
 
-function abrirCartelesGondola() {
+// El cartel tal como sale sin tocar nada.
+function cartelPorDefecto(p) {
+  const tipo = tipoCartel(p);
+  const precio = precioVigente(p);
+  const antes = tipo === 'oferta' ? Number(p.price)
+    : tipo === 'combo' ? valorPartesCombo(p)
+    : tipo === 'bajo' ? Number(gondolaBajaron.get(String(p.id)))
+    : 0;
+  return {
+    tipo,
+    faja: { oferta: 'OFERTA', combo: 'COMBO', bajo: 'BAJÓ DE PRECIO', precio: 'PRECIO' }[tipo],
+    nombre: String(p.name || ''),
+    detalle: tipo === 'combo' ? partesComboTexto(p) : '',
+    precio,
+    antes: antes > precio + 0.5 ? antes : 0
+  };
+}
+
+// Lo de por defecto con lo editado encima. Los precios editados valen
+// mientras el producto siga cobrandose igual: si despues le cambian el
+// precio en el sistema, el cartel vuelve a tomar el nuevo y no queda
+// mostrando uno viejo.
+function datosCartel(p) {
+  const d = cartelPorDefecto(p);
+  const ed = cartelesConfig.editados[String(p.id)];
+  if (!ed) return d;
+  ['faja', 'nombre', 'detalle'].forEach(k => { if (typeof ed[k] === 'string') d[k] = ed[k]; });
+  if (Number(ed.base) === precioVigente(p)) {
+    if (ed.precio != null && Number(ed.precio) > 0) d.precio = Number(ed.precio);
+    if (ed.antes != null) d.antes = Number(ed.antes) || 0;
+  }
+  return d;
+}
+
+function cartelEditado(p) {
+  const ed = cartelesConfig.editados[String(p.id)];
+  if (!ed) return false;
+  return ['faja', 'nombre', 'detalle'].some(k => typeof ed[k] === 'string') ||
+    (Number(ed.base) === precioVigente(p) && (ed.precio != null || ed.antes != null));
+}
+
+async function cargarBajaronDePrecio() {
+  const m = new Map();
+  const desde = new Date(Date.now() - 30 * 864e5).toISOString();
+  const { data, error } = await sb.from('store_precios_historial')
+    .select('producto_id,precio_antes,precio_despues')
+    .eq('store_slug', currentStore.slug).gte('created_at', desde)
+    .order('created_at', { ascending: true }).limit(5000);
+  if (error || !data) return m;   // sin la migracion 85 no hay "bajaron", el resto anda igual
+  const primero = new Map();
+  data.forEach(r => {
+    if (primero.has(r.producto_id) || Number(r.precio_antes) === Number(r.precio_despues)) return;
+    primero.set(r.producto_id, Number(r.precio_antes));
+  });
+  primero.forEach((antes, id) => {
+    const p = (products || []).find(x => String(x.id) === String(id));
+    if (p && antes > Number(p.price) + 0.5) m.set(String(id), antes);
+  });
+  return m;
+}
+
+async function abrirCartelesGondola() {
+  cartelesConfig = normalizarCarteles(currentStore && currentStore.carteles);
+  gondolaTocado = false;
+  gondolaFiltro = 'ofertas';
+  byId('gondolaBuscar').value = '';
   const lista = productosParaGondola();
   gondolaElegidos = new Set(lista.map(p => String(p.id)));
-  byId('gondolaBuscar').value = '';
-  renderListaGondola();
+  gondolaEditando = lista[0] ? String(lista[0].id) : null;
+  renderGondolaCompleto();
   show(byId('gondolaModal'));
+
+  const [perfil, bajaron] = await Promise.all([
+    sb.from('store_profiles').select('carteles').eq('slug', currentStore.slug).maybeSingle(),
+    cargarBajaronDePrecio()
+  ]);
+  gondolaBajaron = bajaron;
+  if (!gondolaTocado && perfil && !perfil.error && perfil.data) {
+    cartelesConfig = normalizarCarteles(perfil.data.carteles);
+    currentStore.carteles = perfil.data.carteles || null;
+  }
+  renderGondolaCompleto();
+}
+
+function renderGondolaCompleto() {
+  const formato = cartelesConfig.estilo.formato;
+  byId('gondolaFormato').value = FORMATOS_CARTEL.includes(formato) ? formato : '8x6';
+  renderColoresGondola();
+  renderFiltrosGondola();
+  renderListaGondola();
+  renderEditorGondola();
+}
+
+function renderColoresGondola() {
+  const actual = colorCartel();
+  byId('gondolaColores').innerHTML = Object.keys(COLORES_CARTEL).map(k =>
+    '<button type="button" data-cg-color="' + k + '" title="' + escapeHtml(COLORES_CARTEL[k].nombre) + '"' +
+      ' aria-label="' + escapeHtml(COLORES_CARTEL[k].nombre) + '" class="' + (k === actual ? 'activo' : '') + '"' +
+      ' style="background:' + COLORES_CARTEL[k].fondo + ';"></button>').join('');
+}
+
+function renderFiltrosGondola() {
+  byId('gondolaFiltros').querySelectorAll('[data-cg-filtro]').forEach(b => {
+    b.classList.toggle('activo', b.dataset.cgFiltro === gondolaFiltro);
+    if (b.dataset.cgFiltro === 'bajaron') b.textContent = 'Bajaron de precio' + (gondolaBajaron.size ? ' (' + gondolaBajaron.size + ')' : '');
+  });
 }
 
 function renderListaGondola() {
   const filtro = normalizarTexto(byId('gondolaBuscar').value || '');
-  const lista = productosParaGondola().filter(p => !filtro || normalizarTexto(p.name).includes(filtro));
+  const base = productosGondolaFiltro();
+  const lista = base.filter(p => !filtro || normalizarTexto(p.name).includes(filtro));
   const cont = byId('gondolaLista');
-  if (!productosParaGondola().length) {
-    cont.innerHTML = '<div style="padding:16px;font-size:13.5px;color:var(--text-mute);line-height:1.55;">' +
-      'Todavía no tenés productos con oferta ni combos.<br>Poné una oferta desde el botón 🏷️ de cada producto, ' +
-      'o armá un combo (un producto con sus partes cargadas) y prendele <b>Armarlo solo en la caja</b>.</div>';
+  actualizarBotonImprimirGondola();
+  if (!base.length) {
+    cont.innerHTML = '<div style="padding:16px;font-size:13.5px;color:var(--text-mute);line-height:1.55;">' + (
+      gondolaFiltro === 'bajaron'
+        ? 'Ningún producto bajó de precio en los últimos 30 días.'
+        : 'Todavía no tenés productos con oferta ni combos.<br>Poné una oferta desde el botón 🏷️ de cada producto, ' +
+          'o armá un combo y prendele <b>Armarlo solo en la caja</b>. También podés hacerle cartel a cualquier producto desde <b>Todos</b>.'
+    ) + '</div>';
     return;
   }
   cont.innerHTML = lista.map(p => {
-    const combo = !hayOferta(p);
-    const detalle = combo
-      ? 'Combo · ' + escapeHtml(partesComboTexto(p))
-      : 'Antes ' + money(p.price) + ' · ' + porcentajeOff(p) + '% OFF';
-    return '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;">' +
-      '<input type="checkbox" data-gondola="' + escapeHtml(String(p.id)) + '"' + (gondolaElegidos.has(String(p.id)) ? ' checked' : '') + ' style="margin:0;width:auto;">' +
+    const id = String(p.id);
+    const d = datosCartel(p);
+    const detalle = d.tipo === 'oferta' ? 'Antes ' + money(p.price) + ' · ' + porcentajeOff(p) + '% OFF'
+      : d.tipo === 'combo' ? 'Combo · ' + escapeHtml(partesComboTexto(p))
+      : d.tipo === 'bajo' ? 'Bajó de ' + money(gondolaBajaron.get(id))
+      : escapeHtml(p.category || '');
+    return '<div class="cg-fila' + (id === gondolaEditando ? ' editando' : '') + '" data-cg-fila="' + escapeHtml(id) + '">' +
+      '<input type="checkbox" data-gondola="' + escapeHtml(id) + '"' + (gondolaElegidos.has(id) ? ' checked' : '') + ' aria-label="Imprimir">' +
       '<span style="flex:1;min-width:0;"><b style="font-size:13.5px;">' + escapeHtml(p.name) + '</b>' +
+        (cartelEditado(p) ? '<span class="cg-editada">EDITADO</span>' : '') +
         '<span style="display:block;font-size:12px;color:var(--text-mute);">' + detalle + '</span></span>' +
-      '<b style="color:var(--navy);white-space:nowrap;">' + money(precioVigente(p)) + '</b>' +
-    '</label>';
+      '<b style="color:var(--navy);white-space:nowrap;">' + money(d.precio) + '</b>' +
+    '</div>';
   }).join('') || '<div style="padding:14px;font-size:13px;color:var(--text-mute);">Nada coincide con la búsqueda.</div>';
-  cont.querySelectorAll('[data-gondola]').forEach(c => c.addEventListener('change', () => {
-    if (c.checked) gondolaElegidos.add(c.dataset.gondola); else gondolaElegidos.delete(c.dataset.gondola);
+  cont.querySelectorAll('[data-gondola]').forEach(c => {
+    c.addEventListener('click', (ev) => ev.stopPropagation());
+    c.addEventListener('change', () => {
+      if (c.checked) gondolaElegidos.add(c.dataset.gondola); else gondolaElegidos.delete(c.dataset.gondola);
+      actualizarBotonImprimirGondola();
+    });
+  });
+  cont.querySelectorAll('[data-cg-fila]').forEach(f => f.addEventListener('click', () => {
+    gondolaEditando = f.dataset.cgFila;
+    gondolaElegidos.add(gondolaEditando);   // si lo edita, es porque lo quiere imprimir
+    renderListaGondola();
+    renderEditorGondola();
+    if (window.matchMedia('(max-width: 760px)').matches) {
+      byId('gondolaPrevia').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }));
 }
 
-function cartelGondolaHtml(p, hasta) {
-  const combo = !hayOferta(p);
-  const precio = precioVigente(p);
-  const antes = combo ? valorPartesCombo(p) : Number(p.price);
-  const ahorro = antes - precio;
-  return '<div class="cartel">' +
-    '<div class="faja">' + (combo ? 'COMBO' : 'OFERTA') + '</div>' +
-    '<div class="nombre">' + escapeHtml(p.name) + '</div>' +
-    (combo ? '<div class="partes">' + escapeHtml(partesComboTexto(p)) + '</div>' : '') +
-    (ahorro > 0.5 ? '<div class="antes">' + (combo ? 'Por separado ' : 'Antes ') + '<s>' + money(antes) + '</s>' +
-      (combo ? '' : ' <b>-' + porcentajeOff(p) + '%</b>') + '</div>' : '') +
-    '<div class="precio">' + money(precio) + '<span>' + escapeHtml(sufijoPrecioPorMedida(p)) + '</span></div>' +
-    (ahorro > 0.5 ? '<div class="ahorro">Ahorrás ' + money(ahorro) + '</div>' : '') +
-    '<div class="pie">' + (hasta ? 'Válido hasta el ' + escapeHtml(hasta) + ' · ' : '') + escapeHtml(currentStore?.business_name || '') + '</div>' +
-  '</div>';
+function cartelesPorHoja(formato) {
+  return formato === '8x6' ? 8 : formato === '6x8' ? 9 : formato === 'a4-8' ? 8 : formato === 'a4-4' ? 4 : 0;
 }
 
-function estilosCartelesGondola(formato) {
+function actualizarBotonImprimirGondola() {
+  const n = productosConCartelPosible().filter(p => gondolaElegidos.has(String(p.id))).length;
+  const porHoja = cartelesPorHoja(byId('gondolaFormato').value);
+  const hojas = porHoja ? Math.ceil(n / porHoja) : 0;
+  byId('gondolaImprimirBtn').textContent = n
+    ? '🖨️ Imprimir ' + n + ' cartel' + (n === 1 ? '' : 'es') + (hojas ? ' (' + hojas + ' hoja' + (hojas === 1 ? '' : 's') + ')' : '')
+    : '🖨️ Imprimir carteles';
+}
+
+function productoEditandoGondola() {
+  return gondolaEditando ? (products || []).find(p => String(p.id) === gondolaEditando) : null;
+}
+
+function renderEditorGondola() {
+  const cont = byId('gondolaCampos');
+  const p = productoEditandoGondola();
+  renderPreviaGondola();
+  if (!p) {
+    cont.innerHTML = '<div style="font-size:13px;color:var(--text-mute);text-align:center;padding:6px;">Tocá un producto de la lista para editar su cartel.</div>';
+    return;
+  }
+  const d = datosCartel(p);
+  const num = (v) => (v ? String(Math.round(v * 100) / 100) : '');
+  cont.innerHTML =
+    '<div class="cg-campos">' +
+      '<div class="field ancho"><label>Faja de arriba</label>' +
+        '<input type="text" data-cg="faja" maxlength="24" value="' + escapeHtml(d.faja) + '" placeholder="Vacía = sin faja">' +
+        '<div class="cg-chips">' + FAJAS_CARTEL.map(f => '<button type="button" data-cg-faja="' + escapeHtml(f) + '">' + escapeHtml(f) + '</button>').join('') + '</div></div>' +
+      '<div class="field ancho"><label>Nombre</label><input type="text" data-cg="nombre" maxlength="70" value="' + escapeHtml(d.nombre) + '"></div>' +
+      '<div class="field ancho"><label>Detalle <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>' +
+        '<input type="text" data-cg="detalle" maxlength="80" value="' + escapeHtml(d.detalle) + '" placeholder="Ej: x 500 g · sabor frutilla · llevando 3"></div>' +
+      '<div class="field"><label>Precio</label><input type="number" data-cg="precio" min="0" step="0.01" inputmode="decimal" value="' + num(d.precio) + '"></div>' +
+      '<div class="field"><label>Precio de antes <span style="font-weight:400;color:var(--text-mute);">(tachado)</span></label>' +
+        '<input type="number" data-cg="antes" min="0" step="0.01" inputmode="decimal" value="' + num(d.antes) + '" placeholder="Vacío = no se tacha"></div>' +
+    '</div>' +
+    '<div id="gondolaAvisoPrecio" style="font-size:12.5px;color:var(--warn);margin-top:8px;line-height:1.45;"></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;">' +
+      '<span id="gondolaGuardado" style="font-size:12px;color:var(--text-mute);"></span>' +
+      '<button type="button" class="btn-ghost" id="gondolaOriginal" style="padding:6px 10px;font-size:12.5px;">↺ Volver a lo original</button>' +
+    '</div>';
+  actualizarAvisoPrecioGondola(p);
+  byId('gondolaOriginal').classList.toggle('hidden', !cartelEditado(p));
+  cont.querySelectorAll('[data-cg]').forEach(i => i.addEventListener('input', () => tomarEdicionGondola(p)));
+  cont.querySelectorAll('[data-cg-faja]').forEach(b => b.addEventListener('click', () => {
+    const i = cont.querySelector('[data-cg="faja"]');
+    i.value = b.dataset.cgFaja;
+    tomarEdicionGondola(p);
+  }));
+  byId('gondolaOriginal').addEventListener('click', () => {
+    delete cartelesConfig.editados[String(p.id)];
+    gondolaTocado = true;
+    programarGuardarCarteles();
+    renderListaGondola();
+    renderEditorGondola();
+  });
+}
+
+// Lo que escribe en el editor se guarda como diferencia con el cartel de
+// por defecto, asi lo que no toco sigue al producto.
+function tomarEdicionGondola(p) {
+  const cont = byId('gondolaCampos');
+  const val = (k) => cont.querySelector('[data-cg="' + k + '"]').value;
+  const base = cartelPorDefecto(p);
+  const ed = {};
+  ['faja', 'nombre', 'detalle'].forEach(k => { if (val(k).trim() !== String(base[k]).trim()) ed[k] = val(k).trim(); });
+  const precio = Number(val('precio')) || 0;
+  const antes = Number(val('antes')) || 0;
+  if (precio > 0 && Math.abs(precio - base.precio) > 0.004) ed.precio = precio;
+  if (Math.abs(antes - base.antes) > 0.004) ed.antes = antes;
+  if (Object.keys(ed).length) {
+    ed.base = precioVigente(p);
+    cartelesConfig.editados[String(p.id)] = ed;
+  } else {
+    delete cartelesConfig.editados[String(p.id)];
+  }
+  gondolaTocado = true;
+  renderPreviaGondola();
+  actualizarAvisoPrecioGondola(p);
+  byId('gondolaOriginal').classList.toggle('hidden', !cartelEditado(p));
+  const fila = byId('gondolaLista').querySelector('[data-cg-fila="' + CSS.escape(String(p.id)) + '"]');
+  if (fila) {
+    const marca = fila.querySelector('.cg-editada');
+    if (cartelEditado(p) && !marca) fila.querySelector('b').insertAdjacentHTML('afterend', '<span class="cg-editada">EDITADO</span>');
+    if (!cartelEditado(p) && marca) marca.remove();
+    fila.lastElementChild.textContent = money(datosCartel(p).precio);
+  }
+  programarGuardarCarteles();
+}
+
+function actualizarAvisoPrecioGondola(p) {
+  const aviso = byId('gondolaAvisoPrecio');
+  if (!aviso) return;
+  const d = datosCartel(p);
+  aviso.textContent = Math.abs(d.precio - precioVigente(p)) > 0.004
+    ? '⚠️ La caja cobra ' + money(precioVigente(p)) + ' y el cartel dice ' + money(d.precio) + '. Si es un precio nuevo, cambialo también en el producto.'
+    : '';
+}
+
+function programarGuardarCarteles() {
+  const estado = byId('gondolaGuardado');
+  if (estado) estado.textContent = 'Guardando…';
+  clearTimeout(guardarCartelesTimer);
+  guardarCartelesTimer = setTimeout(guardarCarteles, 700);
+}
+
+async function guardarCarteles() {
+  clearTimeout(guardarCartelesTimer);
+  guardarCartelesTimer = null;
+  const ids = new Set((products || []).map(p => String(p.id)));
+  const editados = {};
+  Object.keys(cartelesConfig.editados).forEach(id => { if (ids.has(id)) editados[id] = cartelesConfig.editados[id]; });
+  const carteles = { estilo: cartelesConfig.estilo, editados };
+  const { error } = await sb.from('store_profiles').update({ carteles }).eq('slug', currentStore.slug);
+  const estado = byId('gondolaGuardado');
+  if (error) {
+    console.warn('No se pudieron guardar los carteles:', humano(error));
+    if (estado) estado.textContent = 'No se pudo guardar: ' + humano(error);
+    return;
+  }
+  currentStore.carteles = carteles;
+  if (estado) estado.textContent = '✓ Guardado';
+}
+
+// Estilos del cartel. Los usan la impresion y la vista previa (esta
+// adentro de un shadow DOM, asi no se mezclan con los del panel).
+function estilosCartelesGondola(formato, colorKey) {
+  const c = COLORES_CARTEL[colorKey] || COLORES_CARTEL.rojo;
   const base = 'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#000;}' +
-    '.cartel{box-sizing:border-box;border:2px dashed #000;text-align:center;display:flex;flex-direction:column;justify-content:center;overflow:hidden;page-break-inside:avoid;break-inside:avoid;}' +
-    '.faja{background:#000;color:#fff;font-weight:900;letter-spacing:3px;}' +
-    '.nombre{font-weight:800;line-height:1.1;}' +
+    '*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+    '.cartel{box-sizing:border-box;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;border:2px dashed #000;text-align:center;display:flex;flex-direction:column;overflow:hidden;page-break-inside:avoid;break-inside:avoid;}' +
+    '.medio{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0;}' +
+    '.faja{background:' + c.fondo + ';color:' + c.texto + ';font-weight:900;letter-spacing:3px;}' +
+    '.nombre{font-weight:800;line-height:1.1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}' +
     '.partes{line-height:1.2;}' +
     '.antes s{font-weight:700;}' +
-    '.precio{font-weight:900;line-height:1;letter-spacing:-1px;}' +
+    '.antes b{color:' + c.precio + ';}' +
+    '.precio{font-weight:900;line-height:1;letter-spacing:-1px;color:' + c.precio + ';white-space:nowrap;}' +
     '.precio span{font-size:.35em;letter-spacing:0;}' +
     '.ahorro{font-weight:800;}' +
     '.pie{color:#333;}';
+  if (formato === '8x6' || formato === '6x8') {
+    // Medida exacta: la hoja sin margen de pagina y la grilla centrada.
+    // La linea punteada gris es por donde se corta.
+    const ancho = formato === '8x6';
+    return '@page{size:A4;margin:0;}' + base +
+      '.hoja{width:210mm;height:296mm;display:grid;grid-template-columns:repeat(' + (ancho ? 2 : 3) + ',' + (ancho ? 80 : 60) + 'mm);' +
+        'grid-auto-rows:' + (ancho ? 60 : 80) + 'mm;justify-content:center;align-content:center;page-break-after:always;break-after:page;}' +
+      '.hoja:last-child{page-break-after:auto;break-after:auto;}' +
+      '.cartel{width:' + (ancho ? 80 : 60) + 'mm;height:' + (ancho ? 60 : 80) + 'mm;padding:0 3mm 2mm;border:.3mm dashed #9aa3ad;}' +
+      '.faja{margin:0 -3mm 1.2mm;font-size:' + (ancho ? '15pt' : '14pt') + ';padding:1.2mm 0;letter-spacing:2px;}' +
+      '.nombre{font-size:' + (ancho ? '13pt' : '12pt') + ';}' +
+      '.nombre-largo .nombre{font-size:' + (ancho ? '10.5pt' : '10pt') + ';}' +
+      '.partes{font-size:8pt;margin-top:.6mm;}' +
+      '.antes{font-size:10pt;margin-top:1.2mm;}' +
+      '.precio{font-size:' + (ancho ? '34pt' : '30pt') + ';margin:1mm 0 .6mm;}' +
+      '.precio-largo .precio{font-size:' + (ancho ? '27pt' : '23pt') + ';}' +
+      '.ahorro{font-size:9.5pt;}' +
+      '.pie{font-size:7pt;margin-top:1mm;}';
+  }
   if (formato === 'termica') {
     return '@page{size:58mm auto;margin:1mm;}' + base +
       'body{width:56mm;}' +
@@ -19498,15 +19893,64 @@ function estilosCartelesGondola(formato) {
     '.pie{font-size:' + (ocho ? '10px' : '13px') + ';margin-top:' + (ocho ? '2mm' : '5mm') + ';}';
 }
 
-function imprimirCartelesGondola() {
-  const elegidos = productosParaGondola().filter(p => gondolaElegidos.has(String(p.id)));
-  if (!elegidos.length) { dialogoAviso('Tildá al menos un producto.'); return; }
-  const formato = byId('gondolaFormato').value;
+function cartelGondolaHtml(p, hasta) {
+  const d = datosCartel(p);
+  const ahorro = d.antes - d.precio;
+  const pct = d.antes > 0 ? Math.round((1 - d.precio / d.antes) * 100) : 0;
+  const clases = 'cartel' + (d.nombre.length > 34 ? ' nombre-largo' : '') + (money(d.precio).length > 8 ? ' precio-largo' : '');
+  const pie = [hasta ? 'Válido hasta el ' + hasta : '', currentStore?.business_name || ''].filter(Boolean).join(' · ');
+  return '<div class="' + clases + '">' +
+    (d.faja ? '<div class="faja">' + escapeHtml(d.faja) + '</div>' : '') +
+    '<div class="medio">' +
+      '<div class="nombre">' + escapeHtml(d.nombre) + '</div>' +
+      (d.detalle ? '<div class="partes">' + escapeHtml(d.detalle) + '</div>' : '') +
+      (ahorro > 0.5 ? '<div class="antes">' + (d.tipo === 'combo' ? 'Por separado ' : 'Antes ') + '<s>' + money(d.antes) + '</s>' +
+        (d.tipo !== 'combo' && pct > 0 ? ' <b>-' + pct + '%</b>' : '') + '</div>' : '') +
+      '<div class="precio">' + money(d.precio) + '<span>' + escapeHtml(sufijoPrecioPorMedida(p)) + '</span></div>' +
+      (ahorro > 0.5 ? '<div class="ahorro">Ahorrás ' + money(ahorro) + '</div>' : '') +
+      (pie ? '<div class="pie">' + escapeHtml(pie) + '</div>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function fechaHastaGondola() {
   const fecha = byId('gondolaHasta').value;
-  const hasta = fecha ? fecha.slice(8, 10) + '/' + fecha.slice(5, 7) : '';
-  const cuerpo = formato === 'termica'
-    ? elegidos.map(p => cartelGondolaHtml(p, hasta)).join('')
-    : '<div class="hoja">' + elegidos.map(p => cartelGondolaHtml(p, hasta)).join('') + '</div>';
+  return fecha ? fecha.slice(8, 10) + '/' + fecha.slice(5, 7) : '';
+}
+
+// Vista previa a tamaño real (1 mm de pantalla ~ 3,78 px), achicada solo
+// si no entra en el recuadro.
+function renderPreviaGondola() {
+  const host = byId('gondolaPrevia');
+  const raiz = host.shadowRoot || host.attachShadow({ mode: 'open' });
+  const p = productoEditandoGondola();
+  if (!p) { raiz.innerHTML = '<div style="font:13px Inter,sans-serif;color:#5C6B82;">Sin cartel elegido</div>'; return; }
+  const formato = byId('gondolaFormato').value;
+  const [anchoMm, altoMm] = MEDIDAS_CARTEL[formato] || MEDIDAS_CARTEL['8x6'];
+  const marco = host.parentElement;
+  const lugar = Math.max(160, (marco.clientWidth || 360) - 34);
+  const zoom = Math.min(1, lugar / (anchoMm * 3.78), 380 / (altoMm * 3.78));
+  raiz.innerHTML = '<style>' + estilosCartelesGondola(formato, colorCartel()) +
+    '.solo{width:' + anchoMm + 'mm;zoom:' + zoom.toFixed(3) + ';}' +
+    '.solo .cartel{width:' + anchoMm + 'mm;height:' + altoMm + 'mm;margin:0;box-shadow:0 6px 20px rgba(21,41,77,.16);}' +
+    (formato === 'termica' ? '.solo .cartel{height:auto;}' : '') +
+    '</style><div class="solo">' + cartelGondolaHtml(p, fechaHastaGondola()) + '</div>';
+}
+
+function imprimirCartelesGondola() {
+  const elegidos = productosConCartelPosible().filter(p => gondolaElegidos.has(String(p.id)));
+  if (!elegidos.length) { dialogoAviso('Tildá al menos un producto.'); return; }
+  if (guardarCartelesTimer) guardarCarteles();
+  const formato = byId('gondolaFormato').value;
+  const hasta = fechaHastaGondola();
+  const carteles = elegidos.map(p => cartelGondolaHtml(p, hasta));
+  let cuerpo;
+  if (formato === 'termica') cuerpo = carteles.join('');
+  else if (formato === '8x6' || formato === '6x8') {
+    const porHoja = cartelesPorHoja(formato);
+    cuerpo = '';
+    for (let i = 0; i < carteles.length; i += porHoja) cuerpo += '<div class="hoja">' + carteles.slice(i, i + porHoja).join('') + '</div>';
+  } else cuerpo = '<div class="hoja">' + carteles.join('') + '</div>';
 
   // Mismo truco que el ticket: un iframe oculto, sin ventana emergente que
   // el navegador pueda bloquear.
@@ -19520,7 +19964,7 @@ function imprimirCartelesGondola() {
   const doc = marco.contentWindow.document;
   doc.open();
   doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Carteles de oferta</title><style>' +
-    estilosCartelesGondola(formato) + '</style></head><body>' + cuerpo + '</body></html>');
+    estilosCartelesGondola(formato, colorCartel()) + '</style></head><body>' + cuerpo + '</body></html>');
   doc.close();
   setTimeout(() => {
     if (!marco.isConnected) return;
@@ -19530,14 +19974,153 @@ function imprimirCartelesGondola() {
 }
 
 byId('cartelesGondolaBtn').addEventListener('click', abrirCartelesGondola);
-byId('cerrarGondolaModal').addEventListener('click', () => hide(byId('gondolaModal')));
+byId('cerrarGondolaModal').addEventListener('click', () => {
+  if (guardarCartelesTimer) guardarCarteles();
+  hide(byId('gondolaModal'));
+});
 byId('gondolaBuscar').addEventListener('input', renderListaGondola);
 byId('gondolaTodos').addEventListener('click', () => {
-  productosParaGondola().forEach(p => gondolaElegidos.add(String(p.id)));
+  productosGondolaFiltro().forEach(p => gondolaElegidos.add(String(p.id)));
   renderListaGondola();
 });
-byId('gondolaNinguno').addEventListener('click', () => { gondolaElegidos.clear(); renderListaGondola(); });
+byId('gondolaNinguno').addEventListener('click', () => {
+  productosGondolaFiltro().forEach(p => gondolaElegidos.delete(String(p.id)));
+  renderListaGondola();
+});
+byId('gondolaFiltros').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-cg-filtro]');
+  if (!b) return;
+  gondolaFiltro = b.dataset.cgFiltro;
+  renderFiltrosGondola();
+  renderListaGondola();
+});
+byId('gondolaColores').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-cg-color]');
+  if (!b) return;
+  cartelesConfig.estilo.color = b.dataset.cgColor;
+  gondolaTocado = true;
+  renderColoresGondola();
+  renderPreviaGondola();
+  programarGuardarCarteles();
+});
+byId('gondolaFormato').addEventListener('change', () => {
+  cartelesConfig.estilo.formato = byId('gondolaFormato').value;
+  gondolaTocado = true;
+  renderPreviaGondola();
+  actualizarBotonImprimirGondola();
+  programarGuardarCarteles();
+});
+byId('gondolaHasta').addEventListener('input', renderPreviaGondola);
 byId('gondolaImprimirBtn').addEventListener('click', imprimirCartelesGondola);
+
+// ---- Historial de precios ----
+// Cada cambio de precio, oferta o costo de un producto, con el antes y el
+// despues. Lo llena un trigger en la base (schema/85), asi esta todo lo
+// que se toco aunque haya venido de un Excel, un aumento por porcentaje o
+// el dolar. El costo solo se muestra si los costos estan a la vista.
+let historialPrecios = [];
+
+async function abrirHistorialPrecios() {
+  byId('hpBuscar').value = '';
+  show(byId('historialPreciosModal'));
+  await cargarHistorialPrecios();
+}
+
+async function cargarHistorialPrecios() {
+  const lista = byId('hpLista');
+  lista.innerHTML = '<div style="padding:14px;color:var(--text-mute);font-size:13.5px;">Cargando…</div>';
+  byId('hpResumen').textContent = '';
+  const dias = Number(byId('hpPeriodo').value) || 30;
+  const desde = dias === 1 ? new Date(fechaLocalISO() + 'T00:00:00-03:00') : new Date(Date.now() - dias * 864e5);
+  const { data, error } = await sb.from('store_precios_historial').select('*')
+    .eq('store_slug', currentStore.slug).gte('created_at', desde.toISOString())
+    .order('created_at', { ascending: false }).limit(2000);
+  if (error) {
+    lista.innerHTML = '<div style="padding:14px;color:var(--danger);font-size:13.5px;line-height:1.5;">' +
+      'No se pudo traer el historial: ' + escapeHtml(humano(error)) +
+      '<br>(Si dice que falta la tabla, correr schema/85-historial-precios.sql en Supabase.)</div>';
+    return;
+  }
+  historialPrecios = data || [];
+  renderHistorialPrecios();
+}
+
+// Que cambio en una fila, campo por campo.
+function cambiosHistorial(r, verCosto) {
+  const n = (x) => (x === null || x === undefined ? null : Number(x));
+  const out = [];
+  if (n(r.precio_antes) !== n(r.precio_despues)) out.push({ campo: 'precio', antes: n(r.precio_antes), despues: n(r.precio_despues) });
+  if (n(r.oferta_antes) !== n(r.oferta_despues) && (n(r.oferta_antes) || n(r.oferta_despues))) out.push({ campo: 'oferta', antes: n(r.oferta_antes), despues: n(r.oferta_despues) });
+  if (verCosto && n(r.costo_antes) !== n(r.costo_despues)) out.push({ campo: 'costo', antes: n(r.costo_antes), despues: n(r.costo_despues) });
+  return out;
+}
+
+function lineaCambioHistorial(c) {
+  const plata = (x) => (x ? money(x) : '—');
+  let flecha = '';
+  if (c.antes && c.despues && c.antes !== c.despues) {
+    const pct = Math.round((c.despues / c.antes - 1) * 1000) / 10;
+    const sube = c.despues > c.antes;
+    flecha = ' <span style="display:inline-block;font-weight:700;font-size:11.5px;padding:1px 7px;border-radius:999px;' +
+      (sube ? 'background:#FDECEC;color:var(--danger);">▲ +' : 'background:#E6F6F1;color:var(--stock);">▼ ') +
+      String(pct).replace('.', ',') + '%</span>';
+  }
+  if (c.campo === 'oferta') {
+    if (!c.despues) return 'Sacó la oferta <span style="color:var(--text-mute);">(era ' + plata(c.antes) + ')</span>';
+    if (!c.antes) return 'Puso oferta a <b>' + plata(c.despues) + '</b>';
+    return 'Oferta ' + plata(c.antes) + ' → <b>' + plata(c.despues) + '</b>' + flecha;
+  }
+  return (c.campo === 'costo' ? 'Costo ' : 'Precio ') + plata(c.antes) + ' → <b>' + plata(c.despues) + '</b>' + flecha;
+}
+
+function renderHistorialPrecios() {
+  const tipo = byId('hpTipo').value;
+  const filtro = normalizarTexto(byId('hpBuscar').value || '');
+  const verCosto = !requiereDesbloqueoCostos();
+  const filas = historialPrecios
+    .map(r => ({ r, cambios: cambiosHistorial(r, verCosto) }))
+    .filter(x => x.cambios.length && (!filtro || normalizarTexto(x.r.nombre || '').includes(filtro)));
+
+  const precioDe = (x) => x.cambios.find(c => c.campo === 'precio');
+  const subieron = new Set(filas.filter(x => { const c = precioDe(x); return c && c.despues > c.antes; }).map(x => x.r.producto_id));
+  const bajaron = new Set(filas.filter(x => { const c = precioDe(x); return c && c.despues < c.antes; }).map(x => x.r.producto_id));
+  byId('hpResumen').textContent = filas.length
+    ? 'Subieron ' + subieron.size + ' · bajaron ' + bajaron.size + ' · ' +
+      filas.length + ' cambio' + (filas.length === 1 ? '' : 's') + ' en total'
+    : '';
+
+  const visibles = filas.filter(x => {
+    if (tipo === 'todos') return true;
+    if (tipo === 'subio') { const c = precioDe(x); return c && c.despues > c.antes; }
+    if (tipo === 'bajo') { const c = precioDe(x); return c && c.despues < c.antes; }
+    return x.cambios.some(c => c.campo === tipo);
+  });
+  const lista = byId('hpLista');
+  if (!visibles.length) {
+    lista.innerHTML = '<div style="padding:16px;font-size:13.5px;color:var(--text-mute);line-height:1.55;">' +
+      (historialPrecios.length ? 'Nada coincide con el filtro.' : 'No hubo cambios de precio en este período.') + '</div>';
+    return;
+  }
+  const quien = { duenio: 'Dueño', equipo: 'Empleado', sistema: 'Automático' };
+  lista.innerHTML = visibles.slice(0, 500).map(({ r, cambios }) =>
+    '<div style="padding:9px 12px;border-bottom:1px solid var(--line);font-size:13.5px;">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;">' +
+        '<b style="min-width:0;">' + escapeHtml(r.nombre || 'Producto') + '</b>' +
+        '<span style="font-size:12px;color:var(--text-mute);white-space:nowrap;">' +
+          fechaAR(r.created_at, { day: '2-digit', month: '2-digit' }) + ' ' +
+          horaAR(r.created_at, { hour: '2-digit', minute: '2-digit', hour12: false }) + ' · ' + (quien[r.quien] || 'Automático') +
+        '</span>' +
+      '</div>' +
+      cambios.map(c => '<div style="font-size:13px;margin-top:2px;">' + lineaCambioHistorial(c) + '</div>').join('') +
+    '</div>').join('') +
+    (visibles.length > 500 ? '<div style="padding:10px 12px;font-size:12.5px;color:var(--text-mute);">Se muestran los últimos 500. Buscá un producto para ver los suyos.</div>' : '');
+}
+
+byId('historialPreciosBtn').addEventListener('click', abrirHistorialPrecios);
+byId('cerrarHistorialPreciosModal').addEventListener('click', () => hide(byId('historialPreciosModal')));
+byId('hpPeriodo').addEventListener('change', cargarHistorialPrecios);
+byId('hpTipo').addEventListener('change', renderHistorialPrecios);
+byId('hpBuscar').addEventListener('input', renderHistorialPrecios);
 
 // ---- Listas de precios (distribuidora) ----
 // Cada actualizacion de productos deja un registro con nombre: una lista
