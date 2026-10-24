@@ -1507,7 +1507,7 @@ tr:last-child td { border-bottom: none; }
    arriba de cualquier otro, sea cual sea el que lo llamó. */
 #pinCostosModal { z-index: 200; }
 /* Se abren encima de Configuración o de Productos. */
-#ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal, #historialPreciosModal { z-index: 190; }
+#ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal { z-index: 190; }
 /* Editor de carteles de oferta */
 .cg-opciones { display:grid; grid-template-columns:1.3fr 1fr 1.3fr; gap:12px; margin-bottom:14px; }
 .cg-opciones select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:14px; }
@@ -2291,7 +2291,6 @@ tr:last-child td { border-bottom: none; }
         <button class="btn-action" id="mlPublicacionesBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-store"></i> Mercado Libre</button>
         <button class="btn-action" id="gestionarCategoriasBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-tags"></i> Categorías</button>
         <button class="btn-action campo-distribuidora hidden" id="listasPreciosBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-clock-rotate-left"></i> Listas de precios</button>
-        <button class="btn-action" id="historialPreciosBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-chart-line"></i> Historial de precios</button>
         <button class="btn-action campo-distribuidora hidden" id="cartelesGondolaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-rectangle-ad"></i> Carteles de oferta</button>
         <button class="btn-action campo-electronica hidden" id="buscarImeiBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-mobile-screen"></i> Historial IMEI <span class="lock-pro hidden" id="lockImei">🔒</span></button>
         <button class="btn-action" id="facturaIaBtn" style="background:var(--bg);color:var(--navy);border:1px solid var(--line);"><i class="fa-solid fa-file-invoice"></i> Cargar por factura (IA) <span class="lock-pro hidden" id="lockFacturaIa">🔒</span></button>
@@ -4957,36 +4956,6 @@ tr:last-child td { border-bottom: none; }
       Tocá una para ver qué productos cambiaron. El nombre lo cambiás con ✏️.
     </p>
     <div id="listasPreciosContenido"></div>
-  </div>
-</div>
-
-<!-- MODAL HISTORIAL DE PRECIOS -->
-<div class="modal-overlay hidden" id="historialPreciosModal">
-  <div class="modal" style="max-width:760px;">
-    <button class="modal-close" id="cerrarHistorialPreciosModal">✕</button>
-    <h3>📈 Historial de precios</h3>
-    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.5;">
-      Cada vez que un producto sube o baja de precio queda anotado acá, venga de donde venga: a mano, por Excel, por aumento en porcentaje o por el dólar.
-    </p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-      <select id="hpPeriodo" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">
-        <option value="1">Hoy</option>
-        <option value="7">Últimos 7 días</option>
-        <option value="30" selected>Últimos 30 días</option>
-        <option value="90">Últimos 3 meses</option>
-        <option value="365">Último año</option>
-      </select>
-      <select id="hpTipo" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13.5px;">
-        <option value="todos">Todos los cambios</option>
-        <option value="subio">Subieron</option>
-        <option value="bajo">Bajaron</option>
-        <option value="oferta">Ofertas</option>
-        <option value="costo">Costo</option>
-      </select>
-      <input type="text" id="hpBuscar" placeholder="Buscar producto..." style="flex:1;min-width:150px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;">
-    </div>
-    <div id="hpResumen" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;"></div>
-    <div id="hpLista" style="max-height:56vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;"></div>
   </div>
 </div>
 
@@ -19473,7 +19442,7 @@ byId('probarTicketBtn').addEventListener('click', () => {
 // Lo que se pega en el estante: el precio de oferta bien grande, el de
 // antes tachado y, en un combo, de que esta hecho. Salen los productos con
 // oferta, los combos que se arman solos en la caja, los que bajaron de
-// precio en los ultimos 30 dias (del historial, schema/85) y, buscando,
+// precio en los ultimos 30 dias (del historial de precios, schema/86) y, buscando,
 // cualquier otro. Cada cartel se puede editar (faja, nombre, detalle,
 // precio, precio de antes) y lo editado queda en store_profiles.carteles
 // para verse igual desde cualquier compu. El cartelito de 8 x 6 cm es el
@@ -19596,15 +19565,15 @@ function cartelEditado(p) {
 async function cargarBajaronDePrecio() {
   const m = new Map();
   const desde = new Date(Date.now() - 30 * 864e5).toISOString();
-  const { data, error } = await sb.from('store_precios_historial')
-    .select('producto_id,precio_antes,precio_despues')
-    .eq('store_slug', currentStore.slug).gte('created_at', desde)
+  const { data, error } = await sb.from('store_precio_historial')
+    .select('product_id,antes,despues')
+    .eq('store_slug', currentStore.slug).eq('campo', 'precio').gte('created_at', desde)
     .order('created_at', { ascending: true }).limit(5000);
-  if (error || !data) return m;   // sin la migracion 85 no hay "bajaron", el resto anda igual
+  if (error || !data) return m;   // sin la migracion 86 no hay "bajaron", el resto anda igual
   const primero = new Map();
   data.forEach(r => {
-    if (primero.has(r.producto_id) || Number(r.precio_antes) === Number(r.precio_despues)) return;
-    primero.set(r.producto_id, Number(r.precio_antes));
+    if (primero.has(r.product_id) || Number(r.antes) === Number(r.despues)) return;
+    primero.set(r.product_id, Number(r.antes));
   });
   primero.forEach((antes, id) => {
     const p = (products || []).find(x => String(x.id) === String(id));
@@ -20012,115 +19981,6 @@ byId('gondolaFormato').addEventListener('change', () => {
 });
 byId('gondolaHasta').addEventListener('input', renderPreviaGondola);
 byId('gondolaImprimirBtn').addEventListener('click', imprimirCartelesGondola);
-
-// ---- Historial de precios ----
-// Cada cambio de precio, oferta o costo de un producto, con el antes y el
-// despues. Lo llena un trigger en la base (schema/85), asi esta todo lo
-// que se toco aunque haya venido de un Excel, un aumento por porcentaje o
-// el dolar. El costo solo se muestra si los costos estan a la vista.
-let historialPrecios = [];
-
-async function abrirHistorialPrecios() {
-  byId('hpBuscar').value = '';
-  show(byId('historialPreciosModal'));
-  await cargarHistorialPrecios();
-}
-
-async function cargarHistorialPrecios() {
-  const lista = byId('hpLista');
-  lista.innerHTML = '<div style="padding:14px;color:var(--text-mute);font-size:13.5px;">Cargando…</div>';
-  byId('hpResumen').textContent = '';
-  const dias = Number(byId('hpPeriodo').value) || 30;
-  const desde = dias === 1 ? new Date(fechaLocalISO() + 'T00:00:00-03:00') : new Date(Date.now() - dias * 864e5);
-  const { data, error } = await sb.from('store_precios_historial').select('*')
-    .eq('store_slug', currentStore.slug).gte('created_at', desde.toISOString())
-    .order('created_at', { ascending: false }).limit(2000);
-  if (error) {
-    lista.innerHTML = '<div style="padding:14px;color:var(--danger);font-size:13.5px;line-height:1.5;">' +
-      'No se pudo traer el historial: ' + escapeHtml(humano(error)) +
-      '<br>(Si dice que falta la tabla, correr schema/85-historial-precios.sql en Supabase.)</div>';
-    return;
-  }
-  historialPrecios = data || [];
-  renderHistorialPrecios();
-}
-
-// Que cambio en una fila, campo por campo.
-function cambiosHistorial(r, verCosto) {
-  const n = (x) => (x === null || x === undefined ? null : Number(x));
-  const out = [];
-  if (n(r.precio_antes) !== n(r.precio_despues)) out.push({ campo: 'precio', antes: n(r.precio_antes), despues: n(r.precio_despues) });
-  if (n(r.oferta_antes) !== n(r.oferta_despues) && (n(r.oferta_antes) || n(r.oferta_despues))) out.push({ campo: 'oferta', antes: n(r.oferta_antes), despues: n(r.oferta_despues) });
-  if (verCosto && n(r.costo_antes) !== n(r.costo_despues)) out.push({ campo: 'costo', antes: n(r.costo_antes), despues: n(r.costo_despues) });
-  return out;
-}
-
-function lineaCambioHistorial(c) {
-  const plata = (x) => (x ? money(x) : '—');
-  let flecha = '';
-  if (c.antes && c.despues && c.antes !== c.despues) {
-    const pct = Math.round((c.despues / c.antes - 1) * 1000) / 10;
-    const sube = c.despues > c.antes;
-    flecha = ' <span style="display:inline-block;font-weight:700;font-size:11.5px;padding:1px 7px;border-radius:999px;' +
-      (sube ? 'background:#FDECEC;color:var(--danger);">▲ +' : 'background:#E6F6F1;color:var(--stock);">▼ ') +
-      String(pct).replace('.', ',') + '%</span>';
-  }
-  if (c.campo === 'oferta') {
-    if (!c.despues) return 'Sacó la oferta <span style="color:var(--text-mute);">(era ' + plata(c.antes) + ')</span>';
-    if (!c.antes) return 'Puso oferta a <b>' + plata(c.despues) + '</b>';
-    return 'Oferta ' + plata(c.antes) + ' → <b>' + plata(c.despues) + '</b>' + flecha;
-  }
-  return (c.campo === 'costo' ? 'Costo ' : 'Precio ') + plata(c.antes) + ' → <b>' + plata(c.despues) + '</b>' + flecha;
-}
-
-function renderHistorialPrecios() {
-  const tipo = byId('hpTipo').value;
-  const filtro = normalizarTexto(byId('hpBuscar').value || '');
-  const verCosto = !requiereDesbloqueoCostos();
-  const filas = historialPrecios
-    .map(r => ({ r, cambios: cambiosHistorial(r, verCosto) }))
-    .filter(x => x.cambios.length && (!filtro || normalizarTexto(x.r.nombre || '').includes(filtro)));
-
-  const precioDe = (x) => x.cambios.find(c => c.campo === 'precio');
-  const subieron = new Set(filas.filter(x => { const c = precioDe(x); return c && c.despues > c.antes; }).map(x => x.r.producto_id));
-  const bajaron = new Set(filas.filter(x => { const c = precioDe(x); return c && c.despues < c.antes; }).map(x => x.r.producto_id));
-  byId('hpResumen').textContent = filas.length
-    ? 'Subieron ' + subieron.size + ' · bajaron ' + bajaron.size + ' · ' +
-      filas.length + ' cambio' + (filas.length === 1 ? '' : 's') + ' en total'
-    : '';
-
-  const visibles = filas.filter(x => {
-    if (tipo === 'todos') return true;
-    if (tipo === 'subio') { const c = precioDe(x); return c && c.despues > c.antes; }
-    if (tipo === 'bajo') { const c = precioDe(x); return c && c.despues < c.antes; }
-    return x.cambios.some(c => c.campo === tipo);
-  });
-  const lista = byId('hpLista');
-  if (!visibles.length) {
-    lista.innerHTML = '<div style="padding:16px;font-size:13.5px;color:var(--text-mute);line-height:1.55;">' +
-      (historialPrecios.length ? 'Nada coincide con el filtro.' : 'No hubo cambios de precio en este período.') + '</div>';
-    return;
-  }
-  const quien = { duenio: 'Dueño', equipo: 'Empleado', sistema: 'Automático' };
-  lista.innerHTML = visibles.slice(0, 500).map(({ r, cambios }) =>
-    '<div style="padding:9px 12px;border-bottom:1px solid var(--line);font-size:13.5px;">' +
-      '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;">' +
-        '<b style="min-width:0;">' + escapeHtml(r.nombre || 'Producto') + '</b>' +
-        '<span style="font-size:12px;color:var(--text-mute);white-space:nowrap;">' +
-          fechaAR(r.created_at, { day: '2-digit', month: '2-digit' }) + ' ' +
-          horaAR(r.created_at, { hour: '2-digit', minute: '2-digit', hour12: false }) + ' · ' + (quien[r.quien] || 'Automático') +
-        '</span>' +
-      '</div>' +
-      cambios.map(c => '<div style="font-size:13px;margin-top:2px;">' + lineaCambioHistorial(c) + '</div>').join('') +
-    '</div>').join('') +
-    (visibles.length > 500 ? '<div style="padding:10px 12px;font-size:12.5px;color:var(--text-mute);">Se muestran los últimos 500. Buscá un producto para ver los suyos.</div>' : '');
-}
-
-byId('historialPreciosBtn').addEventListener('click', abrirHistorialPrecios);
-byId('cerrarHistorialPreciosModal').addEventListener('click', () => hide(byId('historialPreciosModal')));
-byId('hpPeriodo').addEventListener('change', cargarHistorialPrecios);
-byId('hpTipo').addEventListener('change', renderHistorialPrecios);
-byId('hpBuscar').addEventListener('input', renderHistorialPrecios);
 
 // ---- Listas de precios (distribuidora) ----
 // Cada actualizacion de productos deja un registro con nombre: una lista
