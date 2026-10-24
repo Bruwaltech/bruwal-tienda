@@ -2547,6 +2547,10 @@ tr:last-child td { border-bottom: none; }
 
     <!-- VENTAS -->
     <div id="ventasView" class="hidden">
+      <!-- Arqueo de ESTA compu (solo con Configuración → Arqueo por caja).
+           Va en Ventas y no en Caja porque el cajero no entra a Caja: la
+           de una distribuidora pide el PIN. La pinta pintarBarraArqueo(). -->
+      <div id="barraArqueo" class="panel hidden" style="margin-bottom:14px;padding:12px 16px;"></div>
       <div class="panel" style="background:#EAF4FD;border:2px solid var(--celeste);margin-bottom:20px;">
         <div class="panel-head">📱 Escanear venta</div>
         <!-- Solo gastronomia: una ferreteria no promete hora de entrega.
@@ -2825,6 +2829,16 @@ tr:last-child td { border-bottom: none; }
         <div class="stat-card" title="Lo vendido en el día menos lo que costo. Un servicio cuenta lo que gasta en insumos.">
           <div class="label">🔒 Ganancia estimada</div>
           <div class="value" id="cajaGanancia">$0</div>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="arqueosDelDiaPanel">
+        <div class="panel-head">🧮 Arqueo de cada caja</div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Caja</th><th>Abrió</th><th style="text-align:right;">Fondo</th><th style="text-align:right;">Esperado</th><th style="text-align:right;">Contado</th><th style="text-align:right;">Diferencia</th></tr></thead>
+            <tbody id="arqueosDelDiaBody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -5468,6 +5482,25 @@ tr:last-child td { border-bottom: none; }
             <input type="text" id="nombreEquipo" maxlength="30" placeholder="Nombre de esta compu (ej: Caja 1)" style="flex:1;min-width:160px;">
             <button type="button" id="guardarNombreEquipoBtn" class="btn" style="width:auto;">Guardar nombre</button>
             <button type="button" class="btn" data-ver-registro-seguridad style="width:auto;background:var(--bg);color:var(--navy);">📋 Ver registro</button>
+          </div>
+        </div>
+
+        <!-- Arqueo por caja: cada compu abre y cierra su propia caja. Usa el
+             nombre de la compu de arriba. Ver pintarBarraArqueo(). -->
+        <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+            <input type="checkbox" role="switch" class="switch" id="arqueoPorCaja">
+            🧮 Arqueo por caja (varias compus)
+          </label>
+          <small style="display:block;margin:6px 0 8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Cada compu (con su nombre puesto arriba) abre la caja del día con un fondo de cambio, puede
+            sumar más cambio si se queda corta, y al cerrar cuenta el efectivo: el panel muestra lo que
+            tendría que haber y la diferencia. El dueño ve el arqueo de todas las cajas en Caja.
+          </small>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:13px;color:var(--text-mute);">Fondo con que arranca cada caja:</span>
+            <input type="number" id="arqueoFondo" min="0" step="100" style="width:130px;">
+            <button type="button" id="guardarArqueoFondoBtn" class="btn" style="width:auto;">Guardar fondo</button>
           </div>
         </div>
 
@@ -21612,11 +21645,12 @@ function renderCaja() {
     }));
 }
 
-byId('cajaFecha').addEventListener('change', renderCaja);
+byId('cajaFecha').addEventListener('change', () => { renderCaja(); pintarArqueosDelDia(); });
 byId('cierreCajaBtn')?.addEventListener('click', imprimirCierreCaja);
 byId('cajaHoyBtn').addEventListener('click', () => {
   byId('cajaFecha').value = fechaLocalISO();
   renderCaja();
+  pintarArqueosDelDia();
 });
 
 byId('nuevoMovimientoCajaBtn').addEventListener('click', () => {
@@ -21650,7 +21684,8 @@ async function guardarMovimientoCaja() {
     monto: monto,
     medio_pago: byId('movCajaMedioPago').value || null,
     fecha: byId('movCajaFecha').value || fechaLocalISO(),
-    notas: byId('movCajaNotas').value.trim()
+    notas: byId('movCajaNotas').value.trim(),
+    ...cajaDeLaVenta()
   }]);
 
   if (error) { dialogoAviso('No se pudo guardar el movimiento:\n\n' + humano(error)); return; }
@@ -22115,6 +22150,7 @@ function renderVentas() {
   renderHourlyChart();
   renderSalesHistory();
   renderPizzasVendidas();
+  pintarBarraArqueo();
 }
 
 // ---- Pizzas vendidas por dia y por semana ----
@@ -23307,6 +23343,7 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
     saldo_pendiente: saldoPendiente,
     vendedor: vendedor || null,
     medio_pago: medioPago || null,
+    ...cajaDeLaVenta(),
     created_at: new Date().toISOString()
   };
 
@@ -23445,6 +23482,297 @@ function actualizarAliasVenta() {
   }));
 }
 byId('barcodeMedioPago')?.addEventListener('change', actualizarAliasVenta);
+
+// ===================== ARQUEO POR CAJA =====================
+// Varias compus cobrando a la vez (JACI: 3 cajeros). Cada compu tiene su
+// nombre (Configuración, vive en el navegador) y cada día abre su caja con
+// un fondo de cambio, suma "ingresos de cambio" si se queda corta y cierra
+// contando el efectivo. Lo que tendría que haber sale de las ventas y
+// movimientos que esa compu marcó con su nombre (orders.caja,
+// store_movimientos_caja.caja) — ver schema/88-arqueo-por-caja.sql.
+const CONCEPTO_INGRESO_CAMBIO = 'Ingreso de cambio';
+
+function arqueoActivo() { return !!currentStore?.arqueo_por_caja; }
+function fondoDeArqueo() {
+  const f = Number(currentStore?.arqueo_fondo);
+  return Number.isFinite(f) && f >= 0 ? f : 20000;
+}
+
+// Lo que se suma a la fila de la venta o del movimiento. Vacío si la tienda
+// no usa arqueo por caja: así no se manda una columna que quizás no existe.
+function cajaDeLaVenta() {
+  const caja = arqueoActivo() && nombreDeEsteEquipo();
+  return caja ? { caja } : {};
+}
+
+// El arqueo de hoy de esta compu: undefined = no se cargó todavía,
+// null = no abrió, objeto = la fila de store_arqueos.
+let arqueoEsteEquipo;
+let arqueoCargadoPara = '';
+let ultimoIntentoArqueo = 0;   // sin internet no se reintenta en cada venta
+
+async function cargarArqueoDeEsteEquipo(forzar) {
+  const caja = nombreDeEsteEquipo();
+  const hoy = fechaLocalISO();
+  if (!arqueoActivo() || !caja || !currentStore) { pintarBarraArqueo(); return; }
+  const clave = caja + '|' + hoy;
+  if (!forzar && arqueoCargadoPara === clave) { pintarBarraArqueo(); return; }
+  ultimoIntentoArqueo = Date.now();
+  arqueoCargadoPara = clave;
+  const { data, error } = await sb.from('store_arqueos').select('*')
+    .eq('store_slug', currentStore.slug).eq('caja', caja).eq('fecha', hoy).maybeSingle();
+  if (error) { arqueoEsteEquipo = undefined; arqueoCargadoPara = ''; }
+  else arqueoEsteEquipo = data || null;
+  pintarBarraArqueo();
+}
+
+// Cambió el día (la compu quedó prendida de ayer) o todavía no se cargó.
+function arqueoDesactualizado() {
+  return arqueoCargadoPara !== nombreDeEsteEquipo() + '|' + fechaLocalISO() &&
+    Date.now() - ultimoIntentoArqueo > 30000;
+}
+
+// Cuánto efectivo tendría que haber en el cajón de una caja un día dado.
+function cuentasDelArqueo(caja, fecha, fondo) {
+  let ventas = 0, cantVentas = 0, sinMedio = 0, cambio = 0, otrosIngresos = 0, egresos = 0;
+  orders.filter(o => o.caja === caja && cuentaComoVenta(o) && diaARDe(o.created_at) === fecha).forEach(o => {
+    const cobrado = Number(o.total || 0) - Number(o.saldo_pendiente || 0) - Number(o.trade_in_valor || 0);
+    cantVentas++;
+    if (o.medio_pago === 'Efectivo') ventas += cobrado;
+    else if (!o.medio_pago) sinMedio += cobrado;
+  });
+  movimientosCaja.filter(m => m.caja === caja && m.fecha === fecha && m.medio_pago === 'Efectivo').forEach(m => {
+    const monto = Number(m.monto || 0);
+    if (m.tipo === 'egreso') egresos += monto;
+    else if (m.concepto === CONCEPTO_INGRESO_CAMBIO) cambio += monto;
+    else otrosIngresos += monto;
+  });
+  const esperado = Number(fondo || 0) + ventas + cambio + otrosIngresos - egresos;
+  return { ventas, cantVentas, sinMedio, cambio, otrosIngresos, egresos, esperado };
+}
+
+function pintarBarraArqueo() {
+  const barra = byId('barraArqueo');
+  if (!barra) return;
+  if (!arqueoActivo()) { barra.classList.add('hidden'); return; }
+  barra.classList.remove('hidden');
+  const caja = nombreDeEsteEquipo();
+  const fila = (a, b) => '<span style="white-space:nowrap;">' + a + ' <b style="color:var(--navy);">' + b + '</b></span>';
+
+  if (!caja) {
+    barra.innerHTML =
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<b style="color:var(--navy);">🧮 ¿Qué caja es esta compu?</b>' +
+        '<input type="text" id="arqueoNombreRapido" maxlength="30" placeholder="Ej: Caja 1" style="width:150px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;">' +
+        '<button type="button" class="btn" id="arqueoNombreRapidoBtn" style="width:auto;padding:7px 14px;font-size:13px;">Guardar</button>' +
+      '</div>';
+    byId('arqueoNombreRapidoBtn').addEventListener('click', () => {
+      const nombre = byId('arqueoNombreRapido').value.trim();
+      if (!nombre) return;
+      try { localStorage.setItem(claveNombreEquipoLS(), nombre); } catch (e) { /* bloqueado */ }
+      cargarArqueoDeEsteEquipo(true);
+    });
+    return;
+  }
+
+  if (arqueoDesactualizado()) { arqueoEsteEquipo = undefined; cargarArqueoDeEsteEquipo(true); }
+  const a = arqueoEsteEquipo;
+  if (a === undefined) {
+    barra.innerHTML = '<span style="color:var(--text-mute);font-size:13px;">🧮 ' + escapeHtml(caja) + ': cargando la caja… ' +
+      '(sin internet no se puede abrir ni cerrar)</span>';
+    return;
+  }
+  if (a === null) {
+    barra.innerHTML =
+      '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
+        '<b style="color:var(--navy);">🧮 ' + escapeHtml(caja) + '</b>' +
+        '<span style="color:#B45309;font-size:13px;font-weight:600;">La caja de hoy no está abierta.</span>' +
+        '<button type="button" class="btn" id="abrirArqueoBtn" style="width:auto;padding:7px 14px;font-size:13px;margin-left:auto;">Abrir caja con ' + money(fondoDeArqueo()) + '</button>' +
+      '</div>';
+    byId('abrirArqueoBtn').addEventListener('click', abrirArqueo);
+    return;
+  }
+
+  const c = cuentasDelArqueo(caja, a.fecha, a.fondo_inicial);
+  if (a.cerrado_at) {
+    const dif = Number(a.diferencia || 0);
+    barra.innerHTML =
+      '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;">' +
+        '<b style="color:var(--navy);">🧮 ' + escapeHtml(caja) + ' — cerrada</b>' +
+        fila('Esperado', money(a.efectivo_esperado)) + fila('Contado', money(a.efectivo_contado)) +
+        '<span style="font-weight:700;color:' + (Math.abs(dif) < 1 ? '#1FA088' : '#DC2626') + ';">' +
+          (Math.abs(dif) < 1 ? '✓ Sin diferencia' : (dif > 0 ? 'Sobran ' : 'Faltan ') + money(Math.abs(dif))) + '</span>' +
+        '<button type="button" class="btn-ghost" id="ticketArqueoBtn" style="width:auto;padding:6px 12px;font-size:12.5px;margin-left:auto;">🧾 Reimprimir</button>' +
+      '</div>';
+    byId('ticketArqueoBtn').addEventListener('click', () => imprimirArqueo(a, c));
+    return;
+  }
+
+  barra.innerHTML =
+    '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;">' +
+      '<b style="color:var(--navy);">🧮 ' + escapeHtml(caja) + '</b>' +
+      // Lo que tendría que haber NO se muestra acá: el cajero cuenta a
+      // ciegas al cerrar. El dueño lo ve en Caja → Arqueo de cada caja.
+      fila('Abierta con', money(a.fondo_inicial)) +
+      (c.cambio ? fila('Cambio agregado', money(c.cambio)) : '') +
+      fila('Ventas', String(c.cantVentas)) +
+      '<span style="margin-left:auto;display:flex;gap:8px;">' +
+        '<button type="button" class="btn-ghost" id="ingresoCambioBtn" style="width:auto;padding:6px 12px;font-size:12.5px;">+ Cambio</button>' +
+        '<button type="button" class="btn" id="cerrarArqueoBtn" style="width:auto;padding:6px 12px;font-size:12.5px;">Cerrar caja</button>' +
+      '</span>' +
+    '</div>' +
+    (c.sinMedio ? '<div style="font-size:12px;color:#B45309;margin-top:6px;">Hay ' + money(c.sinMedio) +
+      ' en ventas sin medio de pago: no entran en lo esperado. Elegí el medio al cobrar.</div>' : '');
+  byId('ingresoCambioBtn').addEventListener('click', agregarCambio);
+  byId('cerrarArqueoBtn').addEventListener('click', cerrarArqueo);
+}
+
+async function abrirArqueo() {
+  if (!puedeOperar()) return;
+  const caja = nombreDeEsteEquipo();
+  const texto = await dialogoPedir('Abrir ' + caja + '\n\n¿Con cuánto cambio arrancás?', String(fondoDeArqueo()));
+  if (texto === null) return;
+  const fondo = Number(String(texto).replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(fondo) || fondo < 0) { dialogoAviso('Escribí un monto válido.'); return; }
+  const { error } = await sb.from('store_arqueos').insert([{
+    store_slug: currentStore.slug, caja, fecha: fechaLocalISO(), fondo_inicial: fondo
+  }]);
+  // Otra pestaña ya la abrió: no es un error, se muestra la que hay.
+  if (error && error.code !== '23505') {
+    dialogoAviso('No se pudo abrir la caja:\n\n' + humano(error) +
+      '\n\n(Si dice que falta la tabla, correr schema/88-arqueo-por-caja.sql en Supabase.)');
+    return;
+  }
+  await cargarArqueoDeEsteEquipo(true);
+}
+
+async function agregarCambio() {
+  if (!puedeOperar()) return;
+  const texto = await dialogoPedir('¿Cuánto cambio agregás a ' + nombreDeEsteEquipo() + '?', '');
+  if (texto === null || !String(texto).trim()) return;
+  const monto = Number(String(texto).replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(monto) || monto <= 0) { dialogoAviso('Escribí un monto mayor que 0.'); return; }
+  const { error } = await sb.from('store_movimientos_caja').insert([{
+    store_slug: currentStore.slug,
+    tipo: 'ingreso',
+    concepto: CONCEPTO_INGRESO_CAMBIO,
+    monto,
+    medio_pago: 'Efectivo',
+    fecha: fechaLocalISO(),
+    notas: '',
+    caja: nombreDeEsteEquipo()
+  }]);
+  if (error) { dialogoAviso('No se pudo guardar el cambio:\n\n' + humano(error)); return; }
+  await refreshData();
+}
+
+async function cerrarArqueo() {
+  if (!puedeOperar()) return;
+  const a = arqueoEsteEquipo;
+  if (!a) return;
+  await refreshData();   // que lo esperado tenga las ventas de las otras pestañas
+  const c = cuentasDelArqueo(a.caja, a.fecha, a.fondo_inicial);
+  // No se le muestra lo esperado antes de contar: si lo ve, "cuenta" eso.
+  const texto = await dialogoPedir('Cerrar ' + a.caja + '\n\nContá todo el efectivo del cajón (con el cambio incluido). ¿Cuánto hay?', '');
+  if (texto === null || !String(texto).trim()) return;
+  const contado = Number(String(texto).replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(contado) || contado < 0) { dialogoAviso('Escribí un monto válido.'); return; }
+
+  const cambios = {
+    cerrado_at: new Date().toISOString(),
+    efectivo_esperado: c.esperado,
+    efectivo_contado: contado,
+    diferencia: contado - c.esperado
+  };
+  const { error } = await sb.from('store_arqueos').update(cambios).eq('id', a.id);
+  if (error) { dialogoAviso('No se pudo cerrar la caja:\n\n' + humano(error)); return; }
+  Object.assign(a, cambios);
+  pintarBarraArqueo();
+  imprimirArqueo(a, c);
+}
+
+function imprimirArqueo(a, c) {
+  const fila = (x, y) => '<div class="tk-fila"><span>' + x + '</span><span>' + y + '</span></div>';
+  const dif = Number(a.diferencia || 0);
+  const html =
+    '<div class="tk-negocio">' + escapeHtml(currentStore?.business_name || 'Tienda') + '</div>' +
+    '<div class="tk-sub">ARQUEO DE ' + escapeHtml(String(a.caja).toUpperCase()) + '</div>' +
+    '<div class="tk-sep"></div>' +
+    fila('Día', fechaAR(a.fecha)) +
+    fila('Abrió', horaAR(a.abierto_at, { hour: '2-digit', minute: '2-digit', hour12: false })) +
+    (a.cerrado_at ? fila('Cerró', horaAR(a.cerrado_at, { hour: '2-digit', minute: '2-digit', hour12: false })) : '') +
+    fila('Ventas', String(c.cantVentas)) +
+    '<div class="tk-sep"></div>' +
+    fila('Fondo inicial', money(a.fondo_inicial)) +
+    fila('Ventas en efectivo', money(c.ventas)) +
+    (c.cambio ? fila('Cambio agregado', money(c.cambio)) : '') +
+    (c.otrosIngresos ? fila('Otros ingresos', money(c.otrosIngresos)) : '') +
+    (c.egresos ? fila('Salidas', '-' + money(c.egresos)) : '') +
+    '<div class="tk-total"><span>ESPERADO</span><span>' + money(a.efectivo_esperado ?? c.esperado) + '</span></div>' +
+    (a.efectivo_contado != null
+      ? fila('Contado', money(a.efectivo_contado)) +
+        fila('<b>Diferencia</b>', '<b>' + (dif < 0 ? '-' : '') + money(Math.abs(dif)) + '</b>')
+      : '') +
+    (c.sinMedio ? fila('Ventas sin medio', money(c.sinMedio)) : '') +
+    '<div class="tk-sep"></div>' +
+    '<div class="tk-pie">Firma: ____________________</div>';
+  abrirVentanaTicket('Arqueo ' + a.caja + ' ' + a.fecha, html, true);
+}
+
+// En Caja (el dueño): el arqueo de cada compu del día elegido.
+async function pintarArqueosDelDia() {
+  const panel = byId('arqueosDelDiaPanel');
+  if (!arqueoActivo()) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  const fecha = byId('cajaFecha').value || fechaLocalISO();
+  const cuerpo = byId('arqueosDelDiaBody');
+  const { data, error } = await sb.from('store_arqueos').select('*')
+    .eq('store_slug', currentStore.slug).eq('fecha', fecha).order('caja');
+  if (error) {
+    cuerpo.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:14px;">' +
+      escapeHtml('No se pudo cargar: ' + humano(error)) + '</td></tr>';
+    return;
+  }
+  cuerpo.innerHTML = (data || []).length ? data.map(a => {
+    const c = cuentasDelArqueo(a.caja, a.fecha, a.fondo_inicial);
+    const cerrada = !!a.cerrado_at;
+    const dif = Number(a.diferencia || 0);
+    return '<tr>' +
+      '<td><b>' + escapeHtml(a.caja) + '</b>' + (cerrada ? '' : ' <span style="font-size:11.5px;color:#B45309;">abierta</span>') + '</td>' +
+      '<td style="font-size:12.5px;">' + horaAR(a.abierto_at, { hour: '2-digit', minute: '2-digit' }) + '</td>' +
+      '<td style="text-align:right;">' + money(a.fondo_inicial) + '</td>' +
+      '<td style="text-align:right;">' + money(cerrada ? a.efectivo_esperado : c.esperado) + '</td>' +
+      '<td style="text-align:right;">' + (cerrada ? money(a.efectivo_contado) : '—') + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + (!cerrada ? 'var(--text-mute)' : Math.abs(dif) < 1 ? '#1FA088' : '#DC2626') + ';">' +
+        (cerrada ? (dif < 0 ? '-' : dif > 0 ? '+' : '') + money(Math.abs(dif)) : '—') + '</td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:14px;">Ninguna caja abrió este día.</td></tr>';
+}
+
+// Configuración
+byId('arqueoPorCaja').addEventListener('change', async () => {
+  const prender = byId('arqueoPorCaja').checked;
+  const { error } = await sb.from('store_profiles').update({ arqueo_por_caja: prender }).eq('slug', currentStore.slug);
+  if (error) {
+    byId('arqueoPorCaja').checked = !prender;
+    dialogoAviso('No se pudo guardar:\n\n' + humano(error) +
+      '\n\n(Si dice que falta la columna, correr schema/88-arqueo-por-caja.sql en Supabase.)');
+    return;
+  }
+  currentStore.arqueo_por_caja = prender;
+  if (prender && !nombreDeEsteEquipo()) dialogoAviso('Listo. Ponele nombre a cada compu (ej: Caja 1) en el campo de arriba, o desde Ventas.');
+  cargarArqueoDeEsteEquipo(true);
+});
+
+byId('guardarArqueoFondoBtn').addEventListener('click', async () => {
+  const fondo = Number(byId('arqueoFondo').value);
+  if (!Number.isFinite(fondo) || fondo < 0) { dialogoAviso('Escribí un monto válido.'); return; }
+  const { error } = await sb.from('store_profiles').update({ arqueo_fondo: fondo }).eq('slug', currentStore.slug);
+  if (error) { dialogoAviso('No se pudo guardar:\n\n' + humano(error)); return; }
+  currentStore.arqueo_fondo = fondo;
+  dialogoAviso('✓ Cada caja va a arrancar con ' + money(fondo) + '.');
+  pintarBarraArqueo();
+});
 
 // ---- Cierre de caja ----
 // Ticket de 58mm con lo que muestra la pantalla de Caja: del dia elegido,
@@ -23866,6 +24194,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     trade_in_valor: tradeIn ? valorEquipo : null,
     vendedor: vendedor || null,
     medio_pago: medioPago || null,
+    ...cajaDeLaVenta(),
     created_at: new Date().toISOString()
   };
 
@@ -27154,6 +27483,7 @@ byId('tabVentas').addEventListener('click', () => {
   byId('tabVentas').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
   byId('ventasView').classList.add('visible');
+  cargarArqueoDeEsteEquipo();
   inicializarTicketVenta();
   aplicarVisibilidadEntrega();
 });
@@ -27185,6 +27515,7 @@ function mostrarVistaCaja() {
   byId('avisoCajaSinClave').classList.toggle('hidden', !(rubroEsDistribuidora() && !hayPinConfigurado()));
   byId('cajaRegistroBtn').classList.toggle('hidden', !bloqueoActivo());
   renderCaja();
+  pintarArqueosDelDia();
 }
 
 byId('tabCaja').addEventListener('click', () => {
@@ -29205,6 +29536,10 @@ async function cargarConfiguracion() {
     // refresca currentStore con lo que hay de verdad en la base.
     currentStore.pin_costos = store.pin_costos || null;
     currentStore.bloquear_sensibles = !!store.bloquear_sensibles;
+    currentStore.arqueo_por_caja = !!store.arqueo_por_caja;
+    currentStore.arqueo_fondo = store.arqueo_fondo;
+    byId('arqueoPorCaja').checked = currentStore.arqueo_por_caja;
+    byId('arqueoFondo').value = fondoDeArqueo();
     byId('configPinNuevo').value = '';
     await actualizarEstadoPinCostos();
     pintarEstadoBloqueo();
@@ -29333,6 +29668,7 @@ byId('guardarNombreEquipoBtn').addEventListener('click', () => {
     else localStorage.removeItem(claveNombreEquipoLS());
   } catch (e) { /* almacenamiento bloqueado */ }
   dialogoAviso(nombre ? '✓ Esta compu queda como "' + nombre + '".' : 'Listo, esta compu queda sin nombre.');
+  cargarArqueoDeEsteEquipo(true);
 });
 
 // ---- Registro de acciones protegidas ----
