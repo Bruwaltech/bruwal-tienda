@@ -1508,6 +1508,9 @@ tr:last-child td { border-bottom: none; }
 #pinCostosModal { z-index: 200; }
 /* Se abren encima de Configuración o de Productos. */
 #ticketModal, #gondolaModal, #listasPreciosModal, #productosViejosModal { z-index: 190; }
+.tk-opciones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:4px 14px; margin:4px 0 14px; }
+.tk-opciones label { display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; padding:4px 0; }
+.tk-opciones input { margin:0; width:auto; cursor:pointer; }
 /* Editor de carteles de oferta */
 .cg-opciones { display:grid; grid-template-columns:1.3fr 1fr 1.3fr; gap:12px; margin-bottom:14px; }
 .cg-opciones select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:14px; }
@@ -1541,9 +1544,6 @@ tr:last-child td { border-bottom: none; }
   .cg-editor { position:static; }
   .cg-lista { max-height:34vh; }
 }
-.tk-opciones { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:4px 14px; margin:4px 0 14px; }
-.tk-opciones label { display:flex; align-items:center; gap:8px; font-size:13.5px; cursor:pointer; padding:4px 0; }
-.tk-opciones input { margin:0; width:auto; cursor:pointer; }
 
 .modal {
   background: var(--surface);
