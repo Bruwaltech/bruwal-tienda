@@ -3,9 +3,18 @@
 // Deliberadamente minimo y SIEMPRE red primero. En este proyecto ya perdimos
 // horas persiguiendo un problema que parecia de cache y no lo era, asi que
 // este archivo nunca sirve una version vieja mientras haya internet.
-// El cache existe solo para que la app abra algo si el local se queda sin señal.
+// El cache existe solo para que la app abra si el local se queda sin señal:
+// la caja tiene que poder seguir vendiendo (ver "SIN INTERNET" en el panel).
 
 const CACHE = 'bruwal-v1';
+
+const LIBRERIAS = [
+  'https://cdn.jsdelivr.net/',
+  'https://cdnjs.cloudflare.com/',
+  'https://unpkg.com/',
+  'https://fonts.googleapis.com/',
+  'https://fonts.gstatic.com/'
+];
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -20,21 +29,31 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
 
-  // Solo lecturas y solo lo nuestro. Las llamadas a Supabase son de otro
-  // origen: no las tocamos nunca, para no romper la sesion ni los datos.
+  // Solo lecturas, y solo lo nuestro o las librerias que el panel baja de
+  // afuera (Supabase, graficos, iconos, fuentes). Sin esas librerias en el
+  // aparato, el panel no abre sin internet aunque el HTML este guardado.
+  // Las llamadas a Supabase (los datos) no se tocan nunca, para no romper
+  // la sesion ni servir datos viejos.
   if (req.method !== 'GET') return;
-  if (!req.url.startsWith(self.location.origin)) return;
+  const propio = req.url.startsWith(self.location.origin);
+  if (!propio && !LIBRERIAS.some(h => req.url.startsWith(h))) return;
 
   e.respondWith(
     fetch(req)
       .then(res => {
-        if (res && res.ok) {
+        // Un <script> de otro dominio vuelve "opaco" (status 0): no se puede
+        // leer, pero si guardar y servir igual.
+        if (res && (res.ok || (!propio && res.type === 'opaque'))) {
           const copia = res.clone();
           caches.open(CACHE).then(c => c.put(req, copia)).catch(() => {});
         }
         return res;
       })
-      .catch(() => caches.match(req))   // sin internet: lo ultimo que vimos
+      // Sin internet: lo ultimo que vimos. El panel se abre como
+      // /dashboard?app=1 desde el icono y como /dashboard desde el link: si
+      // la direccion exacta no esta guardada, sirve la otra.
+      .catch(() => caches.match(req).then(r => r ||
+        (req.mode === 'navigate' ? caches.match(req, { ignoreSearch: true }) : undefined)))
   );
 });
 
