@@ -7017,7 +7017,7 @@ function conClaveDeCaja(accion, que, detalle) {
 // El que cobra puede hacer trampa sin tocar la caja: bajar un precio,
 // sumar stock, borrar el producto que se llevó, cambiar el ticket. Con el
 // interruptor prendido, todo eso pide el PIN o la huella CADA VEZ, y cada
-// intento queda en el registro (schema/84-bloqueo-y-registro.sql), que
+// intento queda en el registro (schema/87-bloqueo-y-registro.sql), que
 // solo se puede agregar y leer. Sin PIN configurado no bloquea nada: no
 // hay con qué desbloquear.
 function bloqueoActivo() { return hayPinConfigurado() && !!currentStore?.bloquear_sensibles; }
@@ -29302,7 +29302,7 @@ async function guardarBloqueoSensibles(prender) {
   const { error } = await sb.from('store_profiles').update({ bloquear_sensibles: prender }).eq('slug', currentStore.slug);
   if (error) {
     dialogoAviso('No se pudo guardar:\n\n' + humano(error) +
-      '\n\n(Si dice que falta la columna, correr schema/84-bloqueo-y-registro.sql en Supabase.)');
+      '\n\n(Si dice que falta la columna, correr schema/87-bloqueo-y-registro.sql en Supabase.)');
   } else {
     currentStore.bloquear_sensibles = prender;
     // Apagarlo también queda anotado: es lo primero que haría alguien
