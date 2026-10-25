@@ -28517,7 +28517,17 @@ async function guardarAfiliado() {
 
 async function eliminarAfiliado(id) {
   if (!puedeOperar()) return;
-  if (!await dialogoConfirmar('¿Borrar este afiliado? Sus pedidos viejos quedan con el código, pero su link deja de funcionar. Si solo querés frenarlo, mejor pausalo.')) return;
+  // Borrar mata para siempre los dos links que ya le mandaste: el de
+  // compartir y el de su panel. Si se vuelve a crear, el panel tiene otro
+  // token. Paso de verdad con Kitzone: lo borraron minutos despues de
+  // crearlo y el afiliado se quedo con un link que al dia siguiente no abria.
+  const a = afiliados.find(x => String(x.id) === String(id));
+  const quien = a ? a.nombre + ' (' + a.codigo + ')' : 'este afiliado';
+  if (!await dialogoConfirmar('¿Borrar a ' + quien + '?\n\n' +
+    'Su link para compartir y el link de su panel dejan de andar YA, también los que ya le mandaste. ' +
+    'Si después lo volvés a cargar, el panel tiene un link nuevo y hay que mandárselo otra vez.\n\n' +
+    'Sus pedidos viejos quedan con el código. Si solo querés frenarlo, mejor editalo y sacale el tilde de activo: ' +
+    'así lo reactivás cuando quieras y sus links siguen siendo los mismos.')) return;
 
   const { error } = await sb.from('store_afiliados').delete().eq('id', id);
   if (error) { dialogoAviso('No se pudo borrar:\n\n' + humano(error)); return; }
