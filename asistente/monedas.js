@@ -178,13 +178,11 @@ const panelMonedas = (() => {
 
   // ---------------------------------------------------------- datos
 
-  async function cargar() {
-    if (cargando) return false;
-    cargando = true;
+  function traerDatos() {
     const { hoy } = ahoraAR();
 
     // Los pedidos abiertos todos; los cerrados, los de los últimos dos meses.
-    const [rc, rp, rch, rr] = await Promise.all([
+    return Promise.all([
       sb.from('walter_config').select('data, actualizado').eq('id', 1).maybeSingle(),
       sb.from('walter_pedidos').select('*')
         .or('estado.in.(nuevo,agendado),creado.gte.' + sumarDias(hoy, -60))
@@ -197,7 +195,29 @@ const panelMonedas = (() => {
         .limit(300),
       sb.from('walter_rutas').select('dia, turno, paradas, aprobada').gte('dia', sumarDias(hoy, -30))
     ]);
+  }
+
+  async function cargar() {
+    if (cargando) return false;
+    cargando = true;
+    let respuestas = await traerDatos();
+    // Al volver de una compu dormida la pestaña consulta antes de que se
+    // renueve la sesión, y todo vuelve 401 "JWT expired". Se renueva y se
+    // reintenta una vez, en vez de mostrar el error hasta la próxima vuelta.
+    if (respuestas.some((x) => x.status === 401)) {
+      const { error: errSesion } = await sb.auth.refreshSession();
+      if (!errSesion) respuestas = await traerDatos();
+      // Si la renovación falló porque la sesión ya no existe (ej. "Refresh
+      // Token Already Used"), cada vuelta seguía consultando sin usuario y
+      // mostraba "permission denied". Se recarga para que pida entrar.
+      else if (!(await sb.auth.getSession()).data.session) {
+        cargando = false;
+        location.reload();
+        return false;
+      }
+    }
     cargando = false;
+    const [rc, rp, rch, rr] = respuestas;
 
     const error = rc.error || rp.error || rch.error || rr.error;
     if (error || !rc.data) {
@@ -1096,6 +1116,8 @@ const panelMonedas = (() => {
       // download= hace que Supabase lo mande como descarga, con ese nombre
       if (n.dataset.bajar) n.href = l.url + '&download=' + encodeURIComponent(n.dataset.bajar.split('/').pop());
       else if (n.tagName === 'A') n.href = l.url;
+      // Un audio o video que está sonando no se toca: cambiarle el link lo cortaría
+      else if (n.src === l.url || n.paused === false) return;
       else {
         // La foto llega después de pintar: si estaba al final, que siga al final
         if (alFinal) n.addEventListener('load', () => { caja.scrollTop = caja.scrollHeight; }, { once: true });
@@ -2530,6 +2552,12 @@ const panelMonedas = (() => {
     setInterval(() => {
       if (document.visibilityState === 'visible' && !enUso()) actualizar();
     }, 2 * 60 * 1000);
+
+    // Con una charla abierta mucho rato los links de los audios y fotos vencen
+    // (valen una hora) y al tocar play daba error. Se renuevan los que vencen.
+    setInterval(() => {
+      if (charlaAbierta && !$('mTelon').classList.contains('hidden')) ponerMedios($('mFichaCharla'), false).catch(() => {});
+    }, 5 * 60 * 1000);
   }
 
   // ---------------------------------------------------------- entrada

@@ -1,0 +1,434 @@
+/* ==========================================================================
+   Tienda — estilo "moderno" (inspirado en los componentes de 21st.dev)
+   --------------------------------------------------------------------------
+   Es una capa opcional sobre tienda.html. Todo cuelga de html.estilo-moderno,
+   que la pone tienda-moderna.js solo cuando la tienda eligió este estilo
+   (tema.estilo = 'moderno') o cuando se abre con ?estilo=moderno para
+   probarlo. Sin esa clase esta hoja no cambia nada: las demás tiendas se ven
+   exactamente igual que antes.
+
+   Referencias de 21st.dev, portadas a CSS a mano (la tienda no usa React):
+   - Aurora Hero: manchas de color difuminadas que se mueven detrás del
+     encabezado, sobre fondo oscuro y una grilla de puntos.
+   - Blur Fade: cada tarjeta entra desenfocada y sube un poco, escalonada.
+   - Spotlight Card: un brillo del color de la tienda sigue al mouse.
+   - Shimmer Button y Border Beam: el botón de pedir y la barra del carrito.
+   - Marquee: una cinta con lo que ofrece la tienda (envíos, pagos, etc.).
+
+   Los colores salen del tema de cada tienda (--celeste es el color del
+   encabezado que eligió el negocio), así que el estilo se adapta solo.
+   Solo se anima opacity, transform y filter.
+   ========================================================================== */
+
+@property --bm-angulo {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+html.estilo-moderno {
+  --bm-oscuro: #07080d;
+  --bm-borde: rgba(15, 23, 42, .08);
+  --bm-acento: var(--celeste);
+  --bm-acento-2: color-mix(in oklab, var(--celeste) 55%, #22d3ee);
+  --bm-acento-3: color-mix(in oklab, var(--celeste) 45%, #8b5cf6);
+  --bm-curva: cubic-bezier(.22, .68, .36, 1);
+}
+
+html.estilo-moderno body {
+  background:
+    radial-gradient(1200px 500px at 50% -120px, color-mix(in oklab, var(--celeste) 10%, transparent), transparent 70%),
+    #f7f8fa;
+}
+
+/* ============ Encabezado: aurora sobre fondo oscuro ============ */
+html.estilo-moderno header {
+  color: #fff !important;
+  padding: 56px 0 48px;
+  box-shadow: none;
+  isolation: isolate;
+}
+html.estilo-moderno header:not(.con-portada) { background: var(--bm-oscuro) !important; }
+/* Con portada la foto queda (va en el style del header); solo el fondo
+   que asoma mientras carga pasa a oscuro. */
+html.estilo-moderno header.con-portada { background-color: var(--bm-oscuro) !important; }
+/* El círculo flotante del estilo clásico no va con la aurora */
+html.estilo-moderno header::before { display: none; }
+
+/* Con foto de portada: la foto se ve, pero oscurecida hacia abajo para que
+   el nombre se lea siempre en blanco. */
+html.estilo-moderno header.con-portada::after {
+  background:
+    linear-gradient(180deg, rgba(7, 8, 13, .35) 0%, rgba(7, 8, 13, .78) 70%, rgba(7, 8, 13, .92) 100%) !important;
+  z-index: 0;
+}
+
+.bm-aurora {
+  position: absolute; inset: -20% -10%;
+  z-index: 1; pointer-events: none;
+  filter: blur(60px) saturate(140%);
+  opacity: .75;
+}
+header.con-portada .bm-aurora { opacity: .5; mix-blend-mode: screen; }
+.bm-aurora span {
+  position: absolute; border-radius: 50%;
+  will-change: transform;
+}
+.bm-aurora span:nth-child(1) {
+  width: 46%; height: 70%; left: 4%; top: 10%;
+  background: var(--bm-acento);
+  animation: bm-deriva-1 16s ease-in-out infinite alternate;
+}
+.bm-aurora span:nth-child(2) {
+  width: 38%; height: 60%; right: 6%; top: -6%;
+  background: var(--bm-acento-2);
+  animation: bm-deriva-2 19s ease-in-out infinite alternate;
+}
+.bm-aurora span:nth-child(3) {
+  width: 34%; height: 56%; left: 38%; bottom: -18%;
+  background: var(--bm-acento-3);
+  animation: bm-deriva-3 22s ease-in-out infinite alternate;
+}
+@keyframes bm-deriva-1 { to { transform: translate(28%, 12%) scale(1.15); } }
+@keyframes bm-deriva-2 { to { transform: translate(-30%, 22%) scale(.9); } }
+@keyframes bm-deriva-3 { to { transform: translate(-22%, -26%) scale(1.2); } }
+
+/* Grilla de puntos que se desvanece hacia los bordes */
+.bm-grilla {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background-image: radial-gradient(rgba(255, 255, 255, .16) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 40%, #000 30%, transparent 75%);
+          mask-image: radial-gradient(ellipse 70% 80% at 50% 40%, #000 30%, transparent 75%);
+}
+
+/* Línea de luz en el borde de abajo del encabezado */
+.bm-haz {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 1px; z-index: 2;
+  background: linear-gradient(90deg, transparent, var(--bm-acento-2) 30%, #fff 50%, var(--bm-acento) 70%, transparent);
+  opacity: .7;
+}
+
+html.estilo-moderno header .wrap { position: relative; z-index: 2; }
+
+html.estilo-moderno .store-info-img {
+  width: 84px; height: 84px; border-radius: 22px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, .18),
+    0 0 0 6px rgba(255, 255, 255, .05),
+    0 10px 40px color-mix(in oklab, var(--celeste) 55%, transparent);
+}
+
+/* El nombre con un brillo que lo recorre (Animated Shiny Text) */
+html.estilo-moderno .store-info h1 {
+  font-size: clamp(30px, 5vw, 44px);
+  letter-spacing: -.035em; line-height: 1.02;
+  background: linear-gradient(110deg, #fff 35%, color-mix(in oklab, var(--bm-acento-2) 50%, #fff) 50%, #fff 65%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  animation: bm-brillo 6s linear infinite;
+  text-shadow: none !important;
+}
+@keyframes bm-brillo { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+
+/* El rubro va como una píldora de vidrio, arriba del nombre */
+html.estilo-moderno .store-desc {
+  display: inline-flex; align-items: center; gap: 8px;
+  order: -1; margin: 0 0 12px; padding: 5px 12px 5px 10px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
+  color: rgba(255, 255, 255, .85) !important;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 999px;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  text-shadow: none !important;
+}
+html.estilo-moderno .store-desc::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--bm-acento-2);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--bm-acento-2) 30%, transparent);
+  animation: bm-latido 2.4s ease-in-out infinite;
+}
+@keyframes bm-latido { 50% { transform: scale(.7); opacity: .6; } }
+
+html.estilo-moderno .store-info > div:last-child { display: flex; flex-direction: column; align-items: flex-start; }
+html.estilo-moderno .store-eslogan {
+  font-style: normal; font-weight: 400; font-size: 16.5px;
+  color: rgba(255, 255, 255, .68) !important; margin-top: 10px;
+  text-shadow: none !important;
+}
+
+/* Botones del encabezado: WhatsApp es el principal, Compartir de vidrio */
+html.estilo-moderno .store-contact {
+  position: relative; overflow: hidden;
+  border-radius: 999px; padding: 11px 20px; font-size: 14px;
+  transition: transform .25s var(--bm-curva), box-shadow .25s var(--bm-curva), background .25s;
+}
+html.estilo-moderno #shareStoreBtn {
+  background: rgba(255, 255, 255, .08); color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+html.estilo-moderno #shareStoreBtn:hover { background: rgba(255, 255, 255, .14); transform: translateY(-2px); }
+html.estilo-moderno #storePhone {
+  background: #fff; color: #07080d;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5), 0 8px 30px color-mix(in oklab, var(--celeste) 45%, transparent);
+}
+html.estilo-moderno #storePhone:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px #fff, 0 12px 40px color-mix(in oklab, var(--celeste) 60%, transparent); }
+/* Shimmer: un reflejo que cruza el botón cada tanto */
+html.estilo-moderno #storePhone::after,
+html.estilo-moderno .checkout-btn::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .55), transparent);
+  transform: skewX(-20deg);
+  animation: bm-reflejo 3.6s var(--bm-curva) infinite;
+  pointer-events: none;
+}
+html.estilo-moderno #storePhone::after { background: linear-gradient(100deg, transparent, color-mix(in oklab, var(--celeste) 25%, transparent), transparent); }
+@keyframes bm-reflejo { 0%, 55% { transform: translateX(0) skewX(-20deg); } 100% { transform: translateX(420%) skewX(-20deg); } }
+
+/* ============ Cinta (Marquee) con lo que ofrece la tienda ============ */
+.bm-cinta {
+  position: relative; overflow: hidden;
+  background: #fff; border-bottom: 1px solid var(--bm-borde);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.bm-cinta-pista {
+  display: flex; width: max-content;
+  animation: bm-cinta 38s linear infinite;
+}
+.bm-cinta:hover .bm-cinta-pista { animation-play-state: paused; }
+.bm-cinta-grupo { display: flex; flex-shrink: 0; }
+.bm-cinta-item {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 13px 26px; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: #334155;
+}
+.bm-cinta-item i { color: var(--celeste); font-size: 14px; }
+.bm-cinta-item::after {
+  content: ''; width: 4px; height: 4px; border-radius: 50%; background: #cbd5e1;
+  margin-left: 26px; margin-right: -26px;
+}
+@keyframes bm-cinta { to { transform: translateX(-50%); } }
+
+/* ============ Buscador, chips y filtros ============ */
+html.estilo-moderno .buscar-campo input,
+html.estilo-moderno .buscar-orden {
+  border: 1px solid var(--bm-borde); background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  transition: border-color .2s, box-shadow .2s;
+}
+html.estilo-moderno .buscar-campo input:focus,
+html.estilo-moderno .buscar-orden:focus {
+  border-color: color-mix(in oklab, var(--celeste) 60%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--celeste) 15%, transparent);
+}
+html.estilo-moderno .chip-cat,
+html.estilo-moderno .category-filter {
+  border: 1px solid var(--bm-borde); background: #fff; color: #334155;
+  transition: transform .2s var(--bm-curva), background .2s, color .2s, box-shadow .2s;
+}
+html.estilo-moderno .chip-cat:hover,
+html.estilo-moderno .category-filter:hover { transform: translateY(-1px); border-color: var(--bm-borde); box-shadow: 0 4px 14px rgba(15, 23, 42, .08); }
+html.estilo-moderno .chip-cat.activo,
+html.estilo-moderno .category-filter.active {
+  background: #0f172a; border-color: #0f172a; color: #fff;
+}
+
+html.estilo-moderno .grupo-cat-titulo,
+html.estilo-moderno .titulo-sueltos {
+  font-size: 20px; letter-spacing: -.02em; border-top-color: var(--bm-borde);
+}
+html.estilo-moderno .grupo-cat-ver { color: var(--celeste); }
+
+/* Columna de contacto: vidrio claro, sin sombra pesada */
+html.estilo-moderno .store-menu {
+  background: rgba(255, 255, 255, .7);
+  border: 1px solid var(--bm-borde);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+html.estilo-moderno .store-menu-item {
+  border-radius: 12px; transition: transform .2s var(--bm-curva), background .2s, border-color .2s;
+}
+html.estilo-moderno .store-menu-item:hover { transform: translateX(3px); border-color: var(--bm-borde); background: #fff; }
+
+/* ============ Tarjetas: Spotlight Card ============ */
+html.estilo-moderno .product-card,
+html.estilo-moderno .cat-card {
+  position: relative; isolation: isolate;
+  background: #fff;
+  border: 1px solid var(--bm-borde);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  transition: transform .35s var(--bm-curva), box-shadow .35s var(--bm-curva), border-color .35s;
+}
+/* El brillo que sigue al mouse (--bm-x/--bm-y las pone el script) */
+html.estilo-moderno .product-card::before {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(260px circle at var(--bm-x, 50%) var(--bm-y, 0%),
+              color-mix(in oklab, var(--celeste) 14%, transparent), transparent 65%);
+  opacity: 0; transition: opacity .35s;
+}
+/* Borde que se ilumina en la zona del mouse */
+html.estilo-moderno .product-card::after {
+  content: ''; position: absolute; inset: -1px; z-index: 3; pointer-events: none;
+  border-radius: inherit; padding: 1px;
+  background: radial-gradient(180px circle at var(--bm-x, 50%) var(--bm-y, 0%),
+              color-mix(in oklab, var(--celeste) 85%, transparent), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0; transition: opacity .35s;
+}
+@media (hover: hover) and (pointer: fine) {
+  html.estilo-moderno .product-card:hover::before,
+  html.estilo-moderno .product-card:hover::after { opacity: 1; }
+  html.estilo-moderno .product-card:hover,
+  html.estilo-moderno .cat-card:hover {
+    transform: translateY(-4px);
+    border-color: transparent;
+    box-shadow: 0 20px 40px -12px rgba(15, 23, 42, .18), 0 0 0 1px rgba(15, 23, 42, .04);
+  }
+}
+html.estilo-moderno .product-photo-container { border-radius: 12px; }
+html.estilo-moderno .product-name { letter-spacing: -.01em; color: #0f172a; }
+html.estilo-moderno .product-price { letter-spacing: -.03em; color: #0f172a; }
+html.estilo-moderno .product-category { color: var(--celeste); letter-spacing: .08em; font-size: 11px; }
+html.estilo-moderno .badge-off {
+  background: color-mix(in oklab, var(--celeste) 12%, #fff);
+  color: color-mix(in oklab, var(--celeste) 70%, #0f172a);
+}
+/* La categoría: el velo un poco más profundo y el "Ver →" como píldora */
+html.estilo-moderno .cat-velo { background: linear-gradient(to top, rgba(7, 8, 13, .85) 0%, rgba(7, 8, 13, .25) 55%, transparent 80%); }
+
+/* Botones de la tarjeta */
+html.estilo-moderno .btn-elegir {
+  border-radius: 999px; background: #0f172a;
+  transition: transform .2s var(--bm-curva), background .2s, box-shadow .2s;
+}
+html.estilo-moderno .btn-elegir:hover { background: var(--celeste); box-shadow: 0 6px 18px color-mix(in oklab, var(--celeste) 40%, transparent); }
+html.estilo-moderno .btn-elegir:active,
+html.estilo-moderno .qty-controls button:active { transform: scale(.94); }
+html.estilo-moderno .qty-controls { border-radius: 999px; background: #f1f5f9; }
+html.estilo-moderno .qty-controls button { border-radius: 999px; color: #0f172a; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+html.estilo-moderno .qty-controls button:hover { background: #0f172a; color: #fff; }
+
+/* ============ Blur Fade: entrada de las tarjetas ============ */
+.bm-entrar {
+  animation: bm-entrar .7s var(--bm-curva) both;
+  animation-delay: calc(var(--bm-i, 0) * 55ms);
+}
+@keyframes bm-entrar {
+  from { opacity: 0; transform: translateY(14px); filter: blur(8px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+/* El encabezado entra igual, pieza por pieza */
+html.estilo-moderno.bm-listo .store-info-img,
+html.estilo-moderno.bm-listo .store-info > div:last-child > *,
+html.estilo-moderno.bm-listo .header-top > div:last-child {
+  animation: bm-entrar .8s var(--bm-curva) both;
+}
+html.estilo-moderno.bm-listo .store-desc { animation-delay: .05s; }
+html.estilo-moderno.bm-listo .store-name { animation-delay: .12s; }
+html.estilo-moderno.bm-listo .store-eslogan { animation-delay: .2s; }
+html.estilo-moderno.bm-listo .header-top > div:last-child { animation-delay: .28s; }
+/* Lo de arriba también anima el h1, y su brillo usa otra animación:
+   se combinan las dos. */
+html.estilo-moderno.bm-listo .store-info h1 {
+  animation: bm-entrar .8s var(--bm-curva) .12s both, bm-brillo 6s linear 1s infinite;
+}
+
+/* ============ Barra del carrito: flotante, con Border Beam ============ */
+html.estilo-moderno .cart-bar {
+  left: 12px; right: 12px; bottom: 12px;
+  max-width: 980px; margin: 0 auto;
+  border: none; border-radius: 20px;
+  background: rgba(255, 255, 255, .82);
+  -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: 0 20px 50px -12px rgba(15, 23, 42, .28), 0 0 0 1px rgba(15, 23, 42, .06);
+  padding: 12px 0;
+  animation: bm-subir .5s var(--bm-curva) both;
+}
+html.estilo-moderno .cart-bar::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px;
+  background: conic-gradient(from var(--bm-angulo), transparent 0 70%, var(--bm-acento-2) 80%, var(--celeste) 88%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: bm-girar 5s linear infinite;
+  pointer-events: none;
+}
+@keyframes bm-girar { to { --bm-angulo: 360deg; } }
+@keyframes bm-subir { from { opacity: 0; transform: translateY(24px) scale(.98); } }
+html.estilo-moderno .cart-bar-inner { padding: 0 16px; }
+html.estilo-moderno .carrito-detalle { padding: 10px 16px 0; }
+/* "1 productos · $X" en una sola línea (en columna quedaba partido en tres) */
+html.estilo-moderno .cart-summary { display: block; font-size: 14px; color: #334155; }
+html.estilo-moderno .ver-carrito { display: flex; margin-top: 4px; }
+html.estilo-moderno .cart-summary b { font-family: 'Space Grotesk', sans-serif; font-size: 18px; color: #0f172a; letter-spacing: -.02em; }
+
+html.estilo-moderno .checkout-btn {
+  position: relative; overflow: hidden;
+  background: #0f172a; border-radius: 999px; padding: 13px 26px; font-size: 14.5px;
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--celeste) 40%, transparent), inset 0 1px 0 rgba(255, 255, 255, .15);
+  transition: transform .25s var(--bm-curva), box-shadow .25s var(--bm-curva);
+}
+html.estilo-moderno .checkout-btn:hover { background: #0f172a; transform: translateY(-1px) scale(1.02); box-shadow: 0 12px 32px color-mix(in oklab, var(--celeste) 55%, transparent); }
+
+/* El total "salta" cuando cambia, para que se note que se sumó */
+.bm-salto { animation: bm-salto .45s var(--bm-curva); }
+@keyframes bm-salto { 30% { transform: scale(1.12); } }
+
+/* ============ Ventanas (ficha y checkout) ============ */
+html.estilo-moderno .modal-overlay {
+  background: rgba(7, 8, 13, .55);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  animation: bm-aparecer .25s ease both;
+}
+html.estilo-moderno .modal-overlay:not(.hidden) .modal {
+  border-radius: 22px;
+  box-shadow: 0 30px 80px -20px rgba(7, 8, 13, .5), 0 0 0 1px rgba(15, 23, 42, .06);
+  animation: bm-modal .4s var(--bm-curva) both;
+}
+@keyframes bm-aparecer { from { opacity: 0; } }
+@keyframes bm-modal { from { opacity: 0; transform: translateY(16px) scale(.97); filter: blur(6px); } }
+html.estilo-moderno .btn-primary {
+  border-radius: 999px; background: #0f172a;
+  box-shadow: 0 10px 26px color-mix(in oklab, var(--celeste) 35%, transparent);
+}
+html.estilo-moderno .field input:focus {
+  border-color: color-mix(in oklab, var(--celeste) 60%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--celeste) 15%, transparent);
+}
+
+/* ============ Celular ============ */
+@media (max-width: 640px) {
+  html.estilo-moderno header { padding: 40px 0 34px; }
+  html.estilo-moderno .header-top { flex-direction: column; gap: 22px; }
+  html.estilo-moderno .store-info { align-items: flex-start; }
+  html.estilo-moderno .store-info-img { width: 64px; height: 64px; border-radius: 18px; }
+  html.estilo-moderno .store-eslogan { font-size: 14.5px; }
+  .bm-aurora { filter: blur(44px) saturate(140%); }
+  .bm-cinta-item { padding: 11px 20px; font-size: 12.5px; }
+  html.estilo-moderno .cart-bar { left: 8px; right: 8px; bottom: 8px; border-radius: 18px; }
+  html.estilo-moderno .checkout-btn { padding: 12px 20px; }
+}
+
+/* Quien pidió menos movimiento: se ve igual de lindo, pero quieto */
+@media (prefers-reduced-motion: reduce) {
+  .bm-aurora span, .bm-cinta-pista, .bm-entrar, .bm-salto,
+  html.estilo-moderno .store-info h1, html.estilo-moderno .store-desc::before,
+  html.estilo-moderno #storePhone::after, html.estilo-moderno .checkout-btn::after,
+  html.estilo-moderno .cart-bar, html.estilo-moderno .cart-bar::before,
+  html.estilo-moderno .modal-overlay, html.estilo-moderno .modal-overlay:not(.hidden) .modal,
+  html.estilo-moderno.bm-listo .store-info-img,
+  html.estilo-moderno.bm-listo .store-info > div:last-child > *,
+  html.estilo-moderno.bm-listo .header-top > div:last-child {
+    animation: none !important;
+  }
+  .bm-cinta-pista { flex-wrap: wrap; width: auto; justify-content: center; }
+  .bm-cinta-grupo + .bm-cinta-grupo { display: none; }
+}

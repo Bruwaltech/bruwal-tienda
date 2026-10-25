@@ -97,7 +97,7 @@ const PLANES = {
     periodo: 'por mes',
     paraQuien: 'Para el que ya vende todos los días y necesita ver la plata y los números, no solo el stock.',
     limites: LIMITES_DE_LA_PLATAFORMA,
-    resumen: 'Todo lo del plan Stock y Pedidos, más el control de la plata y los números del negocio:',
+    resumen: 'Todo lo del plan Stock y Pedidos, más el control de la plata, los números y los horarios de tu equipo:',
     // Plan de Mercado Pago -- cobra $70.000 de verdad, coincide con lo que
     // se muestra. URL larga a proposito, igual que Basic: el acortador
     // (mpago.la) descarta el external_reference del slug de la tienda al
@@ -121,11 +121,25 @@ const PLANES = {
         'Ingreso, venta y reparación de cada equipo, juntos',
         'Buscador de IMEI desde Productos'
       ]},
+      { t: 'Empleados y horarios', items: [
+        'Reloj de entrada y salida para tu equipo',
+        'Fichan con tarjeta o llavero NFC, o tocando su nombre',
+        'Horas trabajadas de cada empleado, por período',
+        'Cuánto pagarle a cada uno según su valor por hora'
+      ]},
       { t: 'Carga inteligente', items: [
         'Cargá el stock sacándole una foto a la factura (IA)',
         'Reconoce productos, cantidades y costos'
       ]},
-      { t: 'Soporte', items: [
+      { t: 'Mercado Libre', items: [
+        'Tu cuenta de Mercado Libre conectada al panel',
+        'Cada venta en ML descuenta el stock al instante',
+        'Ganancia real de cada venta: precio menos costo y comisión',
+        'Trae tus publicaciones con fotos, precios y variantes'
+      ]},
+      { t: 'Y además', items: [
+        'Varios negocios en una misma cuenta',
+        'Insumos que gasta cada servicio, descontados del stock',
         'Atención prioritaria por WhatsApp'
       ]}
     ],

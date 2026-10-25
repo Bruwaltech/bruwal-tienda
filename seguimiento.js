@@ -59,11 +59,16 @@
     return String(texto == null ? '' : texto).replace(/\?[^\s:)'"]*/g, '');
   }
 
+  // Errores que no son nuestros: los inyecta el navegador interno de
+  // Instagram/Facebook (iabjs://) o alguna extensión. No hay nada que arreglar.
+  var AJENO = /(iabjs|chrome-extension|moz-extension|safari-(web-)?extension):\/\//;
+
   function anotar(tipo, mensaje, extra) {
     try {
       extra = extra || {};
       mensaje = cortar(mensaje, 500);
       if (!mensaje) return;
+      if (AJENO.test(String(extra.fuente || '') + ' ' + String(extra.stack || ''))) return;
       var clave = tipo + '|' + mensaje + '|' + (extra.fuente || '');
       if (vistos[clave] || enviados >= MAXIMO) return;
       vistos[clave] = true;
@@ -119,6 +124,9 @@
   // (sesión vencida), 404 y 406 (supabase .single() sin filas) y 409
   // (duplicado): son parte del uso normal, no errores del sitio.
   function esNuestro(url) {
+    // El login: una contraseña mal escrita o una sesión vieja que ya no
+    // existe dan 400, y eso es uso normal, no un error del sitio.
+    if (url.indexOf('/auth/v1/token') !== -1) return false;
     return url.indexOf('/api/') !== -1 && (url.charAt(0) === '/' || url.indexOf(location.origin) === 0)
       || url.indexOf('.supabase.co/') !== -1;
   }

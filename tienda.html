@@ -5,6 +5,19 @@
 <script src="/seguimiento.js"></script>
 <script src="/cookies.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+/* iPhone: Safari agranda la pantalla solo cuando se toca un campo con letra
+   chica (o cuando el panel enfoca uno al abrir), y no la vuelve a achicar.
+   maximum-scale=1 frena ese zoom automatico; en iOS el pellizco para hacer
+   zoom a mano sigue andando. Solo en iOS: en Android ese mismo valor
+   bloquearia el pellizco. */
+(function () {
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var vp = document.querySelector('meta[name=viewport]');
+  if (ios && vp) vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0');
+})();
+</script>
 <title>Tienda — BRUWAL</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="robots" content="noindex, follow">
@@ -31,6 +44,11 @@
      usa el panel: si se cambia el diseno, se cambia en un solo lado. -->
 <script src="/imagen-producto.js"></script>
 <script src="/avisos.js"></script>
+<!-- Estilo "moderno" (aurora, animaciones): solo se enciende en las tiendas
+     que lo eligieron (tema.estilo) o con ?estilo=moderno. Para el resto,
+     estos dos archivos no cambian nada. -->
+<link rel="stylesheet" href="/tienda-moderna.css">
+<script src="/tienda-moderna.js"></script>
 <style>
   :root{
     --navy:#15294D; --celeste:#2F8FE0; --celeste-soft:#5DAEF0;
@@ -559,6 +577,12 @@
   <p style="color:var(--text-mute);margin-top:10px;">Revisá el link, puede estar mal escrito.</p>
 </div>
 
+<div id="cerradaState" class="wrap hidden" style="padding-top:60px;text-align:center;">
+  <h2 id="cerradaNombre"></h2>
+  <p style="color:var(--text-mute);margin-top:10px;">Este negocio no toma pedidos por internet. Te esperamos en el local.</p>
+  <p id="cerradaUbicacion" class="hidden" style="color:var(--text-mute);margin-top:6px;"></p>
+</div>
+
 <div id="storeView" class="hidden">
   <header>
     <div class="wrap">
@@ -755,7 +779,7 @@
     </div>
     <div class="field">
       <label>Aclaraciones <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
-      <textarea id="custAclaraciones" rows="2" maxlength="300" placeholder="Ej: sin sal, cortada en 8, el timbre no anda"
+      <textarea id="custAclaraciones" rows="2" maxlength="300" placeholder="Ej: entregar después de las 18, el timbre no anda"
                 style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;"></textarea>
     </div>
 
@@ -1115,6 +1139,24 @@ async function esDuenioDeLaTienda(store){
   } catch (e) { return false; }
 }
 
+// Tienda online cerrada (ver la carga de la tienda): solo el nombre y, si
+// lo cargó, dónde queda el local. Ni catálogo, ni carrito, ni WhatsApp de
+// pedidos, y que Google no la indexe.
+function mostrarTiendaCerrada(store){
+  hide(byId('loadingState'));
+  byId('cerradaNombre').textContent = store.business_name || store.slug;
+  document.title = store.business_name || 'Tienda';
+  if (store.location){
+    byId('cerradaUbicacion').textContent = '📍 ' + store.location;
+    show(byId('cerradaUbicacion'));
+  }
+  const robots = document.createElement('meta');
+  robots.name = 'robots';
+  robots.content = 'noindex';
+  document.head.appendChild(robots);
+  show(byId('cerradaState'));
+}
+
 async function cargarAfiliado(slug, store){
   if (await esDuenioDeLaTienda(store)) {
     try { localStorage.removeItem(claveAfiliado(slug)); } catch (e) { /* storage bloqueado */ }
@@ -1170,15 +1212,27 @@ async function init(){
   // schema/73-columnas-publicas.sql). Columna nueva que la tienda necesite =
   // sumarla aca Y en el grant de esa migracion.
   const COLS_PERFIL_PUBLICO = 'id,user_id,slug,business_name,phone,created_at,website,instagram,location,description,image_url,email,lat,lng,mensaje_envio,plan,trial_ends_at,plan_updated_at,google_url,categorias,medios_pago,turnos,eslogan,portada_url,tema,hace_reparaciones,rubro_manual,plan_vence,costo_envio,horario_local,demora_texto,demora_minutos,ml_reputacion,transferencia,ofrece_envio,es_demo';
-  const { data: store, error: storeError } = await sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).eq('slug', slug).maybeSingle();
+  // La tienda online puede estar cerrada a pedido del negocio (vende solo en
+  // el local, schema/83-tienda-online-cerrada.sql). Se pregunta junto con el
+  // perfil para no mostrar el catálogo ni un instante. Si la función todavía
+  // no existe en la base, la tienda sigue abierta como siempre.
+  const [{ data: store, error: storeError }, cierre] = await Promise.all([
+    sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).eq('slug', slug).maybeSingle(),
+    sbPublico.rpc('tienda_online_cerrada', { p_slug: slug }).then(r => r, () => ({ data: false }))
+  ]);
   if (storeError || !store){
     hide(byId('loadingState'));
     show(byId('notFoundState'));
     return;
   }
+  if (cierre && cierre.data === true){
+    mostrarTiendaCerrada(store);
+    return;
+  }
 
   perfilTienda = store;
   aplicarTema(store.tema);
+  if (window.BruwalModerno) window.BruwalModerno.activar(store);
   // Las páginas legales hablan en nombre de esta tienda.
   document.querySelectorAll('#legales a[data-legal]').forEach(a => {
     a.href = a.getAttribute('href').split('?')[0] + '?tienda=' + encodeURIComponent(store.slug);
