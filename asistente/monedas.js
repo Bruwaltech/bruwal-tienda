@@ -127,6 +127,29 @@ const panelMonedas = (() => {
       d.getUTCDate() + '/' + (d.getUTCMonth() + 1);
   };
 
+  // Recorridos (Precios y ajustes): si Walter los cambia, los pedidos que el bot
+  // ya había anotado se quedan con el día viejo. Esos se marcan para pasarlos
+  // al próximo recorrido de su localidad, con el mismo criterio que walter-bot.
+  const recorridosPor = (loc) => (cfg.recorridos || []).filter((r) => r && (r.locs || []).includes(loc));
+  const diaSemana = (iso) => new Date(iso + 'T12:00:00Z').getUTCDay();
+
+  function fueraDeRecorrido(p) {
+    if (cerrado(p) || p.retiro === 'Depósito' || !p.dia || !p.turno || !(cfg.recorridos || []).length) return false;
+    return !recorridosPor(p.localidad).some((r) => r.dia === diaSemana(p.dia) && r.turno === p.turno);
+  }
+
+  // Desde mañana, como el bot al anotar; el mismo día, primero la mañana
+  function proximoRecorrido(loc) {
+    const rs = recorridosPor(loc);
+    const { hoy } = ahoraAR();
+    for (let i = 1; i <= 7; i++) {
+      const dia = sumarDias(hoy, i);
+      const r = rs.filter((x) => x.dia === diaSemana(dia)).sort((a, b) => (a.turno === 'Mañana' ? -1 : 1) - (b.turno === 'Mañana' ? -1 : 1))[0];
+      if (r) return { dia, turno: r.turno };
+    }
+    return null;
+  }
+
   // Mismo criterio que walter-bot, con el umbral de hoy: si Walter lo cambia,
   // la hoja de ruta lo toma en el momento. Las contadas se pasan a kilos con
   // cuántas de ese tipo hacen un kilo.
@@ -259,6 +282,11 @@ const panelMonedas = (() => {
     const sinDia = abiertos.filter((p) => p.retiro !== 'Depósito' && (!p.dia || !p.turno)).length;
 
     $('mNumHumano').textContent = humano;
+    // El número sobre el ícono de Bruwal Chat en la pantalla de inicio: las charlas que esperan respuesta
+    try {
+      if (humano && navigator.setAppBadge) navigator.setAppBadge(humano).catch(() => {});
+      else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+    } catch (e) { /* el navegador no tiene número en el ícono */ }
     $('mNumSinDia').textContent = sinDia;
     $('mNumManana').textContent =
       abiertos.filter((p) => p.dia === manana && p.turno && p.retiro !== 'Depósito').length;
@@ -371,6 +399,7 @@ const panelMonedas = (() => {
               ESTADOS[v] + '</option>').join('') +
           '</select>' +
         '</div>' +
+        avisoRecorrido(p) +
         (aviso
           ? '<div class="aviso-pedido">' +
               (aviso.chip ? '<span class="chip ' + aviso.clase + '">' + escapar(aviso.chip) + '</span> ' : '') +
@@ -380,6 +409,35 @@ const panelMonedas = (() => {
         '<button type="button" class="link-borrar" data-borrar-pedido>Borrar pedido</button>' +
       '</div>' +
     '</div>';
+  }
+
+  function avisoRecorrido(p) {
+    if (!fueraDeRecorrido(p)) return '';
+    const prox = proximoRecorrido(p.localidad);
+    return '<div class="aviso-pedido"><span class="chip chip-alerta">Sin recorrido</span> ' +
+      escapar('El ' + nombreDia(p.dia) + ' a la ' + p.turno.toLowerCase() + ' no hay recorrido por ' + p.localidad + '.') +
+      (prox
+        ? ' <button type="button" class="btn btn-suave btn-mover" data-mover-pedido data-dia="' + prox.dia + '" data-turno="' + prox.turno + '">' +
+            escapar('Pasarlo al ' + nombreDia(prox.dia) + ' a la ' + prox.turno.toLowerCase()) + '</button>'
+        : ' Cambiale el día a mano.') +
+      '</div>';
+  }
+
+  // Día y turno juntos: la base borra el aviso viejo y walter-bot le avisa el día nuevo al cliente
+  async function moverPedido(id, dia, turno, boton) {
+    boton.disabled = true;
+    const { data, error } = await sb.from('walter_pedidos').update({ dia, turno }).eq('id', id).select().maybeSingle();
+    const i = pedidos.findIndex((p) => p.id === id);
+    if (error || !data) {
+      boton.disabled = false;
+      return mostrarError('No se pudo cambiar el día' + (error ? ': ' + error.message : '.'));
+    }
+    ocultar($('mError'));
+    if (i >= 0) pedidos[i] = data;
+    pintarTarjetas();
+    pintarPedidos();
+    if (typeof pintarRuta === 'function') pintarRuta();
+    toast('Pasado al ' + nombreDia(dia) + '. El bot le avisa al cliente.');
   }
 
   function pedidosVisibles() {
@@ -431,6 +489,8 @@ const panelMonedas = (() => {
       pintarSeleccionPedidos();
     } else if (e.target.matches('[data-borrar-pedido]')) {
       borrarPedidos([id]);
+    } else if (e.target.matches('[data-mover-pedido]')) {
+      moverPedido(id, e.target.dataset.dia, e.target.dataset.turno, e.target);
     }
   }
 
@@ -630,14 +690,18 @@ const panelMonedas = (() => {
     $('mMapa').classList.toggle('hidden', !ruta.length);
     if (ruta.length) $('mMapa').href = linkMapa(ruta);
 
-    $('mEstadoRuta').innerHTML = !ruta.length ? '' :
+    const fuera = pedidos.filter(fueraDeRecorrido).length;
+    $('mEstadoRuta').innerHTML = (!ruta.length ? '' :
       (igual
         ? '<span class="chip chip-atendido">Aprobada</span> el ' + escapar(fechaHora(aprobada.aprobada))
         : aprobada
         ? '<span class="chip chip-alerta">Cambió</span> desde que la aprobaste el ' +
             escapar(fechaHora(aprobada.aprobada)) + '. Revisala y aprobala de nuevo.'
         : '<span class="chip chip-pendiente">Sin aprobar</span>') +
-      (ruta.length > 10 ? ' Google Maps abre las primeras 10 paradas.' : '');
+      (ruta.length > 10 ? ' Google Maps abre las primeras 10 paradas.' : '')) +
+      (fuera ? '<div class="aviso-pedido"><span class="chip chip-alerta">Sin recorrido</span> ' +
+        escapar(fuera === 1 ? 'Un pedido quedó en un día sin recorrido' : fuera + ' pedidos quedaron en días sin recorrido') +
+        ' (cambiaste los recorridos después de anotarlos). En Pedidos los podés pasar al próximo.</div>' : '');
   }
 
   async function aprobarRuta() {
@@ -1120,15 +1184,19 @@ const panelMonedas = (() => {
     delete $('mFichaCharla').dataset.cargada;
     pintarFichaEstado();
     ver($('mTelon'));
+    // El botón o el gesto de "atrás" del celular cierra la charla en vez de salir del panel
+    if (!(history.state && history.state.charla)) history.pushState({ charla: true }, '');
     await cargarMensajes(c);
   }
 
   function cerrarCharla() {
     terminarAudio(false); // si estaba grabando, no se manda
+    cerrarFotoPrevia();
     cerrarMic();
     quitarCita();
     ocultar($('mTelon'));
     charlaAbierta = null;
+    if (history.state && history.state.charla) history.back();
   }
 
   function errorFicha(texto) {
@@ -1198,7 +1266,7 @@ const panelMonedas = (() => {
       lienzo.width = Math.round(img.naturalWidth * escala);
       lienzo.height = Math.round(img.naturalHeight * escala);
       lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
-      enviarFoto(c, lienzo.toDataURL('image/jpeg', 0.75));
+      mostrarFotoPrevia(c, lienzo.toDataURL('image/jpeg', 0.75));
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -1207,8 +1275,30 @@ const panelMonedas = (() => {
     img.src = url;
   }
 
-  async function enviarFoto(c, foto) {
-    const texto = $('mRespuesta').value.trim();
+  // Antes de mandarla se ve la foto con un renglón para el texto de abajo; lo que ya estaba escrito pasa ahí
+  let fotoPrevia = null;
+  function mostrarFotoPrevia(c, foto) {
+    fotoPrevia = { c, foto };
+    $('mFotoPreviaImg').src = foto;
+    $('mFotoPie').value = $('mRespuesta').value.trim().slice(0, 1024);
+    ver($('mFotoPrevia'));
+    $('mFotoPie').focus();
+  }
+  function cerrarFotoPrevia() {
+    fotoPrevia = null;
+    ocultar($('mFotoPrevia'));
+    $('mFotoPreviaImg').removeAttribute('src');
+    $('mFotoPie').value = '';
+  }
+  function mandarFotoPrevia() {
+    if (!fotoPrevia || charlaAbierta !== fotoPrevia.c) return cerrarFotoPrevia();
+    const { c, foto } = fotoPrevia;
+    const texto = $('mFotoPie').value.trim();
+    cerrarFotoPrevia();
+    enviarFoto(c, foto, texto);
+  }
+
+  async function enviarFoto(c, foto, texto) {
     $('mEnviar').disabled = true;
     $('mFotoBtn').textContent = 'Enviando foto…';
 
@@ -2295,6 +2385,13 @@ const panelMonedas = (() => {
     cfgActualizado = data.actualizado;
     preciosEditados = false;
     pintarPrecios();
+    pintarPedidos();
+    if (typeof pintarRuta === 'function') pintarRuta();
+    const fuera = pedidos.filter(fueraDeRecorrido).length;
+    if (fuera) {
+      $('mPreciosEstado').textContent += ' · ' + (fuera === 1 ? 'Un pedido anotado quedó en un día' : fuera + ' pedidos anotados quedaron en días') +
+        ' sin recorrido: en Pedidos aparecen marcados para pasarlos al próximo.';
+    }
     toast('Guardado: el bot ya usa estos valores');
   }
 
@@ -2379,6 +2476,10 @@ const panelMonedas = (() => {
     $('mBorrarElegidas').addEventListener('click', borrarElegidas);
     $('mSoltarElegidas').addEventListener('click', () => { elegidas.clear(); pintarCharlas(); });
     $('mCerrarFicha').addEventListener('click', cerrarCharla);
+    $('mVolverFicha').addEventListener('click', cerrarCharla);
+    window.addEventListener('popstate', () => {
+      if (!$('mTelon').classList.contains('hidden')) cerrarCharla();
+    });
     $('mTelon').addEventListener('click', (e) => { if (e.target === $('mTelon')) cerrarCharla(); });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
@@ -2391,6 +2492,12 @@ const panelMonedas = (() => {
     $('mBtnBorrar').addEventListener('click', borrarCharla);
     $('mFormResponder').addEventListener('submit', enviarRespuesta);
     $('mFoto').addEventListener('change', elegirFotoCharla);
+    $('mFotoCancelar').addEventListener('click', cerrarFotoPrevia);
+    $('mFotoEnviar').addEventListener('click', mandarFotoPrevia);
+    $('mFotoPie').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); mandarFotoPrevia(); }
+      if (e.key === 'Escape') { e.stopPropagation(); cerrarFotoPrevia(); }
+    });
     $('mAudioBtn').addEventListener('pointerdown', apretarAudio);
     $('mAudioBtn').addEventListener('pointermove', moverAudio);
     $('mAudioBtn').addEventListener('pointerup', soltarAudio);
