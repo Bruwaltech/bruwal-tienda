@@ -24385,7 +24385,8 @@ document.addEventListener('keydown', (e) => {
     searchByBarcode();
     return;
   }
-  if (e.key.length !== 1) return;
+  // El autocompletar de Chrome dispara keydown sin e.key
+  if (!e.key || e.key.length !== 1) return;
   if (ahora - lectorGlobal.ultimo > 40) {
     lectorGlobal.texto = '';
     lectorGlobal.campo = destino;
