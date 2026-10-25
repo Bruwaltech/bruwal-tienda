@@ -10883,12 +10883,7 @@ function mostrarErrorDeRegistro(error, boton, textoBoton) {
 }
 
 // LOGOUT
-byId('logoutBtn').addEventListener('click', async () => {
-  await sb.auth.signOut();
-  // La copia para abrir sin internet es de esta cuenta: en un aparato
-  // compartido no tiene que quedar. Las ventas sin subir SI quedan: son
-  // plata cobrada y suben cuando alguien vuelva a entrar a esa tienda.
-  try { localStorage.removeItem(COPIA_LOCAL); } catch (e) {}
+function mostrarIngreso() {
   arrancoSinConexion = false;
   currentUser = null;
   hide(byId('appView'));
@@ -10896,6 +10891,23 @@ byId('logoutBtn').addEventListener('click', async () => {
   byId('loginForm').reset();
   hide(byId('ayudaBotBtn'));
   hide(byId('ayudaBotPanel'));
+}
+
+byId('logoutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  // La copia para abrir sin internet es de esta cuenta: en un aparato
+  // compartido no tiene que quedar. Las ventas sin subir SI quedan: son
+  // plata cobrada y suben cuando alguien vuelva a entrar a esa tienda.
+  try { localStorage.removeItem(COPIA_LOCAL); } catch (e) {}
+  mostrarIngreso();
+});
+
+// Si la sesión se pierde sola (la renovación falla, por ejemplo con
+// "Refresh Token Not Found"), el panel seguía abierto y el refresco de
+// cada minuto consultaba sin usuario: pedidos y caja volvían vacíos.
+// Se vuelve a la pantalla de ingreso, como al tocar Salir.
+sb.auth.onAuthStateChange((evento) => {
+  if (evento === 'SIGNED_OUT' && currentUser) mostrarIngreso();
 });
 
 // COPY STORE LINK
@@ -13827,7 +13839,7 @@ function hayModalAbierto() {
 }
 
 async function refrescoAutomatico() {
-  if (!currentStore || refrescando) return;
+  if (!currentStore || !currentUser || refrescando) return;   // sin sesión no hay nada que traer
   if (document.hidden) return;      // pestaña en segundo plano: no gastamos consultas
   if (hayModalAbierto()) return;
 
