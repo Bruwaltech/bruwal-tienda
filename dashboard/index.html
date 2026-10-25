@@ -5491,12 +5491,13 @@ tr:last-child td { border-bottom: none; }
         <div class="field" style="border-top:1px solid var(--line);padding-top:16px;">
           <label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
             <input type="checkbox" role="switch" class="switch" id="arqueoPorCaja">
-            🧮 Arqueo por caja (varias compus)
+            🧮 Arqueo de caja diario (una o varias compus)
           </label>
           <small style="display:block;margin:6px 0 8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Cada compu (con su nombre puesto arriba) abre la caja del día con un fondo de cambio, puede
             sumar más cambio si se queda corta, y al cerrar cuenta el efectivo: el panel muestra lo que
-            tendría que haber y la diferencia. El dueño ve el arqueo de todas las cajas en Caja.
+            tendría que haber y la diferencia, solo con lo de ese día. El dueño ve el arqueo de todas las
+            cajas en Caja. Si hay una sola caja, también entran los pedidos de la tienda online.
           </small>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:13px;color:var(--text-mute);">Fondo con que arranca cada caja:</span>
@@ -23514,6 +23515,10 @@ byId('barcodeMedioPago')?.addEventListener('change', actualizarAliasVenta);
 // contando el efectivo. Lo que tendría que haber sale de las ventas y
 // movimientos que esa compu marcó con su nombre (orders.caja,
 // store_movimientos_caja.caja) — ver schema/88-arqueo-por-caja.sql.
+//
+// Con UNA sola caja abierta en el día (Empire Pizzas: una compu), las ventas
+// y movimientos sin caja también son de ella: los pedidos que entran por la
+// tienda online no pasan por ninguna compu y si no, faltaría esa plata.
 const CONCEPTO_INGRESO_CAMBIO = 'Ingreso de cambio';
 
 function arqueoActivo() { return !!currentStore?.arqueo_por_caja; }
@@ -23532,6 +23537,7 @@ function cajaDeLaVenta() {
 // El arqueo de hoy de esta compu: undefined = no se cargó todavía,
 // null = no abrió, objeto = la fila de store_arqueos.
 let arqueoEsteEquipo;
+let arqueosDeHoy = [];         // todas las cajas que abrieron hoy
 let arqueoCargadoPara = '';
 let ultimoIntentoArqueo = 0;   // sin internet no se reintenta en cada venta
 
@@ -23544,9 +23550,12 @@ async function cargarArqueoDeEsteEquipo(forzar) {
   ultimoIntentoArqueo = Date.now();
   arqueoCargadoPara = clave;
   const { data, error } = await sb.from('store_arqueos').select('*')
-    .eq('store_slug', currentStore.slug).eq('caja', caja).eq('fecha', hoy).maybeSingle();
+    .eq('store_slug', currentStore.slug).eq('fecha', hoy);
   if (error) { arqueoEsteEquipo = undefined; arqueoCargadoPara = ''; }
-  else arqueoEsteEquipo = data || null;
+  else {
+    arqueosDeHoy = data || [];
+    arqueoEsteEquipo = arqueosDeHoy.find(a => a.caja === caja) || null;
+  }
   pintarBarraArqueo();
 }
 
@@ -23557,15 +23566,18 @@ function arqueoDesactualizado() {
 }
 
 // Cuánto efectivo tendría que haber en el cajón de una caja un día dado.
-function cuentasDelArqueo(caja, fecha, fondo) {
+// `unica`: es la única caja que abrió ese día, y se queda con lo que no
+// tiene caja (pedidos de la tienda online, movimientos cargados sin arqueo).
+function cuentasDelArqueo(caja, fecha, fondo, unica) {
+  const esDeLaCaja = (x) => x.caja === caja || (unica && !x.caja);
   let ventas = 0, cantVentas = 0, sinMedio = 0, cambio = 0, otrosIngresos = 0, egresos = 0;
-  orders.filter(o => o.caja === caja && cuentaComoVenta(o) && diaARDe(o.created_at) === fecha).forEach(o => {
+  orders.filter(o => esDeLaCaja(o) && cuentaComoVenta(o) && diaARDe(o.created_at) === fecha).forEach(o => {
     const cobrado = Number(o.total || 0) - Number(o.saldo_pendiente || 0) - Number(o.trade_in_valor || 0);
     cantVentas++;
     if (o.medio_pago === 'Efectivo') ventas += cobrado;
     else if (!o.medio_pago) sinMedio += cobrado;
   });
-  movimientosCaja.filter(m => m.caja === caja && m.fecha === fecha && m.medio_pago === 'Efectivo').forEach(m => {
+  movimientosCaja.filter(m => esDeLaCaja(m) && m.fecha === fecha && m.medio_pago === 'Efectivo').forEach(m => {
     const monto = Number(m.monto || 0);
     if (m.tipo === 'egreso') egresos += monto;
     else if (m.concepto === CONCEPTO_INGRESO_CAMBIO) cambio += monto;
@@ -23617,7 +23629,7 @@ function pintarBarraArqueo() {
     return;
   }
 
-  const c = cuentasDelArqueo(caja, a.fecha, a.fondo_inicial);
+  const c = cuentasDelArqueo(caja, a.fecha, a.fondo_inicial, arqueosDeHoy.length === 1);
   if (a.cerrado_at) {
     const dif = Number(a.diferencia || 0);
     barra.innerHTML =
@@ -23692,10 +23704,12 @@ async function agregarCambio() {
 
 async function cerrarArqueo() {
   if (!puedeOperar()) return;
-  const a = arqueoEsteEquipo;
-  if (!a) return;
+  if (!arqueoEsteEquipo) return;
   await refreshData();   // que lo esperado tenga las ventas de las otras pestañas
-  const c = cuentasDelArqueo(a.caja, a.fecha, a.fondo_inicial);
+  await cargarArqueoDeEsteEquipo(true);   // y saber si abrió otra caja
+  const a = arqueoEsteEquipo;
+  if (!a || a.cerrado_at) return;
+  const c = cuentasDelArqueo(a.caja, a.fecha, a.fondo_inicial, arqueosDeHoy.length === 1);
   // No se le muestra lo esperado antes de contar: si lo ve, "cuenta" eso.
   const texto = await dialogoPedir('Cerrar ' + a.caja + '\n\nContá todo el efectivo del cajón (con el cambio incluido). ¿Cuánto hay?', '');
   if (texto === null || !String(texto).trim()) return;
@@ -23758,7 +23772,7 @@ async function pintarArqueosDelDia() {
     return;
   }
   cuerpo.innerHTML = (data || []).length ? data.map(a => {
-    const c = cuentasDelArqueo(a.caja, a.fecha, a.fondo_inicial);
+    const c = cuentasDelArqueo(a.caja, a.fecha, a.fondo_inicial, data.length === 1);
     const cerrada = !!a.cerrado_at;
     const dif = Number(a.diferencia || 0);
     return '<tr>' +
