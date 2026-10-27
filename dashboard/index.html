@@ -183,6 +183,12 @@ h1, h2, h3 {
 }
 
 .hidden { display: none !important; }
+/* Modo empleado (PIN puesto y la sesión del dueño cerrada, ver
+   pintarSesionDuenio): el que atiende no ve el plan ni el Dashboard. */
+body.modo-empleado #trialBar,
+body.modo-empleado #adherirmeBtn,
+body.modo-empleado #tabDashboard,
+body.modo-empleado #inicioLink { display: none !important; }
 
 /* AUTH */
 #authView {
@@ -2187,7 +2193,7 @@ tr:last-child td { border-bottom: none; }
       </div>
       <button class="btn-ghost" id="verGuiaBtn" title="Ver el video de ayuda" style="display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-circle-play"></i> Cómo usar</button>
       <button class="btn-ghost hidden" id="instalarPanelBtn" title="Instalar el panel como app" style="display:none;align-items:center;gap:6px;"><i class="fa-solid fa-mobile-screen"></i> Descargar app</button>
-      <a href="/" class="btn-ghost" title="Ir al inicio" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-house"></i> Inicio</a>
+      <a href="/" class="btn-ghost" id="inicioLink" title="Ir al inicio" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-house"></i> Inicio</a>
       <button class="btn-ghost hidden" id="sesionDuenioBtn" style="display:inline-flex;align-items:center;gap:6px;"></button>
       <button class="btn-ghost" id="logoutBtn">Cerrar sesión</button>
     </div>
@@ -7260,6 +7266,10 @@ function pintarSesionDuenio() {
       : 'Poner el PIN una vez y dejar abierta esta pestaña';
     btn.style.color = sesionDuenio ? '#B45309' : '';
   }
+  // Plan, Dashboard e Inicio se esconden por CSS (body.modo-empleado):
+  // la barra del plan se vuelve a mostrar sola en cada refresco.
+  document.body.classList.toggle('modo-empleado', modoEmpleado());
+  if (modoEmpleado() && byId('dashboardView')?.classList.contains('visible')) byId('tabVentas').click();
   const tab = byId('tabEmpleados');
   if (tab) {
     tab.classList.toggle('hidden', modoEmpleado());
@@ -14213,9 +14223,12 @@ function pintarMenuNegocios() {
   });
 
   const clave = byId('abrirCambiarClaveBtn');
+  // Además de la contraseña actual, con el PIN puesto lo autoriza el dueño:
+  // la cuenta es una sola para todas las cajas.
   if (clave) clave.addEventListener('click', () => {
     hide(byId('negocioPanel'));
-    abrirCambiarClave();
+    conClaveDeCaja(abrirCambiarClave, 'Cambiar la contraseña', '',
+      'Cambiar la contraseña: lo autoriza el dueño. Ingresá el PIN.');
   });
 }
 
@@ -28610,6 +28623,9 @@ byId('scannerInput').addEventListener('keypress', async (e) => {
 });
 
 byId('tabDashboard').addEventListener('click', () => {
+  // El empleado no ve el Dashboard: todo lo que "vuelve al inicio" lo
+  // manda a Ventas.
+  if (modoEmpleado()) { byId('tabVentas').click(); return; }
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   byId('tabDashboard').classList.add('active');
   document.querySelectorAll('main > div').forEach(d => d.classList.remove('visible'));
