@@ -2459,6 +2459,7 @@ tr:last-child td { border-bottom: none; }
         <button type="button" data-sel-accion="precio">$ Ajustar precio</button>
         <button type="button" data-sel-accion="oferta">% Poner oferta</button>
         <button type="button" data-sel-accion="sacar-oferta">Sacar oferta</button>
+        <button type="button" data-sel-accion="por-mayor">📦 Precio por cantidad %</button>
         <button type="button" data-sel-accion="pausar">⏸ Pausar</button>
         <button type="button" data-sel-accion="activar">▶ Activar</button>
         <button type="button" data-sel-accion="eliminar" class="peligro">Eliminar</button>
@@ -3569,6 +3570,7 @@ tr:last-child td { border-bottom: none; }
           <label>📦 Precio por cantidad <span style="font-weight:400;color:var(--text-mute);">(opcional &mdash; venta por mayor)</span></label>
           <small style="display:block;margin:2px 0 10px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
             Un solo producto, un solo stock. El precio baja solo cuando el cliente llega a la cantidad.
+            En cada escal&oacute;n pon&eacute; el precio, o directamente el % menos que el precio de arriba.
           </small>
 
           <div id="porMayorFilas"></div>
@@ -6659,6 +6661,30 @@ function escalonesDeProducto(p) {
     .map(e => ({ desde: Number(e && e.desde), precio: Number(e && e.precio) }))
     .filter(e => e.desde > 1 && e.precio > 0)
     .sort((a, b) => a.desde - b.desde);
+}
+
+// Escalon cargado en porcentaje ("desde 10 u., un 5% menos"): el precio
+// sale del precio de lista y se vuelve a calcular cada vez que la lista
+// cambia (aca en el panel y, por las dudas, con un trigger en la base:
+// schema/95). Se guarda igual el precio ya calculado, asi la tienda y la
+// caja siguen leyendo "precio" sin enterarse del porcentaje.
+// Pesos redondos; con montos chicos (dolares) se dejan los centavos.
+function precioConDescuento(lista, descuento) {
+  const v = Number(lista) * (1 - Number(descuento) / 100);
+  const r = Number(lista) >= 100 ? 1 : 100;
+  return Math.round(v * r) / r;
+}
+
+function descuentoValido(d) {
+  const n = Number(d);
+  return n > 0 && n < 100 ? n : null;
+}
+
+function escalonesConLista(escalones, lista) {
+  if (!Array.isArray(escalones) || !(Number(lista) > 0)) return escalones;
+  return escalones.map(e => descuentoValido(e && e.descuento)
+    ? { ...e, precio: precioConDescuento(lista, e.descuento) }
+    : e);
 }
 
 function aplicarPrecioMayorista(lineas) {
@@ -16527,6 +16553,8 @@ async function accionSeleccion(accion) {
       if (!lista) return null;
       const campos = { price: Math.round(lista * factor) };
       if (hayOferta(p)) campos.precio_oferta = Math.round(Number(p.precio_oferta) * factor);
+      // Los escalones en % siguen a la lista; los de precio fijo quedan.
+      if (Array.isArray(p.precios_por_cantidad)) campos.precios_por_cantidad = escalonesConLista(p.precios_por_cantidad, campos.price);
       return campos;
     }));
     if (r.error) { dialogoAviso('Se cambiaron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + humano(r.error)); }
@@ -16547,6 +16575,37 @@ async function accionSeleccion(accion) {
     }));
     if (r.error) { dialogoAviso('Se pusieron ' + r.hechos + ' y despu\u00e9s fall\u00f3:\n\n' + humano(r.error)); }
     else if (r.saltados) { dialogoAviso('Listo: ' + r.hechos + ' en oferta.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
+    terminarAccionSeleccion();
+    return;
+  }
+
+  if (accion === 'por-mayor') {
+    const txt = await dialogoPedir(
+      'Precio por cantidad para ' + cuantos + ', en porcentaje.\n\n' +
+      'Escribí cada escalón como cantidad x %, separados con coma. ' +
+      'Por ejemplo "10 x 5%, 20 x 10%": desde 10 unidades un 5% menos y desde 20 un 10% menos.\n\n' +
+      'Reemplaza los escalones que ya tengan. Para sacarles los escalones escribí 0.', '10 x 5%, 20 x 10%');
+    if (txt === null || !String(txt).trim()) return;
+
+    let escalones = null;
+    if (String(txt).trim() !== '0') {
+      escalones = leerEscalonesEnPorcentaje(txt);
+      if (!escalones) {
+        dialogoAviso('No lo pudimos leer. Escribilo así: 10 x 5%, 20 x 10%\n\n' +
+                     'La cantidad tiene que ser 2 o más y el porcentaje entre 1 y 99.');
+        return;
+      }
+    }
+
+    const r = await conOrigenPrecio('masivo', () => aplicarUnoPorUno(elegidos, (p) => {
+      if (!escalones) return Array.isArray(p.precios_por_cantidad) ? { precios_por_cantidad: null } : null;
+      const lista = Number(p.price) || 0;
+      if (!lista) return null;
+      return { precios_por_cantidad: escalonesConLista(escalones, lista) };
+    }));
+    if (r.error) { dialogoAviso('Se cargaron ' + r.hechos + ' y después falló:\n\n' + humano(r.error)); }
+    else if (escalones && r.saltados) { dialogoAviso('Listo: ' + r.hechos + ' con precio por cantidad.\n' + r.saltados + ' sin precio de lista quedaron igual.'); }
+    else dialogoAviso('Listo: ' + r.hechos + (escalones ? ' con precio por cantidad.' : ' sin precio por cantidad.'));
     terminarAccionSeleccion();
     return;
   }
@@ -16593,6 +16652,7 @@ document.querySelectorAll('#barraSeleccion [data-sel-accion]').forEach(b => {
     const accion = b.dataset.selAccion;
     // Mover de categoría o pausar no toca plata; precio, oferta y borrar sí.
     const sensible = { precio: 'Cambiar precios en lote', oferta: 'Poner oferta en lote',
+      'por-mayor': 'Precio por cantidad en lote',
       'sacar-oferta': 'Sacar oferta en lote', eliminar: 'Borrar productos en lote' }[accion];
     if (!sensible) return accionSeleccion(accion);
     conClaveSensible(sensible, productosSeleccionados().length + ' productos', () => accionSeleccion(accion));
@@ -27680,18 +27740,63 @@ function numeroArgentino(txt) {
 
 // Lee la lista tal cual la escribe en WhatsApp: "10 X 23.000 c/u".
 // Tolera la equis en minuscula, el simbolo de multiplicar, el signo $ y que
-// no haya espacios.
+// no haya espacios. Con % al final ("10 X 5%") el escalon es un descuento
+// sobre el precio de arriba, y el precio se calcula despues.
 function leerEscalonesDeTexto(texto) {
   const filas = [];
   String(texto || '').split(/[\r\n]+/).forEach((linea) => {
-    const m = linea.match(/^\s*(\d+)\s*[x\u00d7X]\s*\$?\s*([\d.,]+)/);
+    const m = linea.match(/^\s*(\d+)\s*[x\u00d7X]\s*\$?\s*([\d.,]+)\s*(%?)/);
     if (!m) return;
-    const desde  = Number(m[1]);
+    const desde = Number(m[1]);
+    if (m[3]) {
+      const descuento = descuentoValido(Number(m[2].replace(',', '.')));
+      if (desde > 1 && descuento) filas.push({ desde, precio: '', descuento });
+      return;
+    }
     const precio = numeroArgentino(m[2]);
     if (desde > 0 && precio > 0) filas.push({ desde, precio });
   });
   return filas;
 }
+
+// "10 x 5%, 20 x 10%" de la accion en lote. null si algun pedazo no se
+// entiende: cargarle escalones a medias a cien productos es peor que
+// pedir que lo escriba de nuevo.
+function leerEscalonesEnPorcentaje(texto) {
+  const partes = String(texto || '').split(/[;\r\n]+|,(?=\s*\d+\s*[x\u00d7X])/).map(t => t.trim()).filter(Boolean);
+  if (!partes.length) return null;
+  const filas = [];
+  for (const parte of partes) {
+    const m = parte.match(/^(\d+)\s*(?:u\.?\s*)?[x\u00d7X]\s*(\d+(?:[.,]\d+)?)\s*%?$/);
+    if (!m) return null;
+    const desde = Number(m[1]);
+    const descuento = descuentoValido(Number(m[2].replace(',', '.')));
+    if (!(desde > 1) || !descuento) return null;
+    filas.push({ desde, descuento });
+  }
+  return filas.sort((a, b) => a.desde - b.desde);
+}
+
+// El precio de arriba del formulario, en la moneda en la que se carga.
+function precioDeListaEnEdicion() {
+  const v = byId('pPrice') ? byId('pPrice').value : '';
+  const n = Number(v);
+  return isFinite(n) && n > 0 ? n : (numeroArgentino(v) || 0);
+}
+
+// Los escalones en % toman el precio nuevo apenas se toca el de arriba.
+function recalcularEscalonesEnPorcentaje() {
+  const lista = precioDeListaEnEdicion();
+  let cambio = false;
+  escalonesEnEdicion.forEach(e => {
+    if (!descuentoValido(e.descuento)) return;
+    e.precio = lista > 0 ? precioConDescuento(lista, e.descuento) : '';
+    cambio = true;
+  });
+  if (cambio) renderEscalones();
+}
+
+byId('pPrice')?.addEventListener('input', recalcularEscalonesEnPorcentaje);
 
 function renderEscalones() {
   const caja = byId('porMayorFilas');
@@ -27703,25 +27808,67 @@ function renderEscalones() {
     return;
   }
 
-  caja.innerHTML = escalonesEnEdicion.map((e, i) =>
-    '<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">' +
-      '<span style="font-size:12px;color:var(--text-mute);">Desde</span>' +
+  // Dos formas de cargar cada escalon: el precio, o el % menos que el de
+  // arriba. El % escrito es el que manda y el precio se calcula; si se
+  // escribe el precio, el % que se ve en gris es solo de referencia.
+  const lista = precioDeListaEnEdicion();
+  const pctDe = (e) => {
+    if (!(lista > 0) || !(Number(e.precio) > 0) || Number(e.precio) >= lista) return '';
+    return String(Math.round((1 - Number(e.precio) / lista) * 1000) / 10).replace('.', ',');
+  };
+  const estiloInput = 'padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;';
+  const estiloTexto = 'font-size:12px;color:var(--text-mute);';
+
+  caja.innerHTML = escalonesEnEdicion.map((e, i) => {
+    const enPct = !!descuentoValido(e.descuento);
+    return '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:8px;">' +
+      '<span style="' + estiloTexto + '">Desde</span>' +
       '<input type="number" min="2" step="1" data-esc-desde="' + i + '" value="' + (e.desde || '') + '" ' +
-        'style="width:74px;padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">' +
-      '<span style="font-size:12px;color:var(--text-mute);">u. \u2192 $</span>' +
+        'style="width:64px;' + estiloInput + '">' +
+      '<span style="' + estiloTexto + '">u. \u2192</span>' +
+      '<input type="number" min="0" max="99" step="0.5" inputmode="decimal" data-esc-pct="' + i + '" ' +
+        'value="' + (enPct ? e.descuento : '') + '" placeholder="' + (enPct ? '' : pctDe(e)) + '" title="Porcentaje menos que el precio de arriba" ' +
+        'style="width:58px;' + estiloInput + (enPct ? 'border-color:var(--celeste);' : '') + '">' +
+      '<span style="' + estiloTexto + '">% menos =</span>' +
+      '<div style="display:flex;align-items:center;gap:7px;flex:1 1 170px;">' +
+      '<span style="' + estiloTexto + '">$</span>' +
       '<input type="number" min="0" step="0.01" data-esc-precio="' + i + '" value="' + (e.precio || '') + '" ' +
-        'style="flex:1;min-width:90px;padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">' +
-      '<span style="font-size:12px;color:var(--text-mute);">c/u</span>' +
+        (enPct ? 'placeholder="Carg\u00e1 el precio de arriba" ' : '') +
+        'style="flex:1;min-width:90px;' + estiloInput + '">' +
+      '<span style="' + estiloTexto + '">c/u</span>' +
       '<button type="button" data-esc-quitar="' + i + '" title="Quitar" ' +
         'style="width:28px;height:28px;border-radius:6px;border:1px solid var(--line);background:var(--bg);' +
         'color:var(--danger);cursor:pointer;line-height:1;flex-shrink:0;">\u2715</button>' +
-    '</div>').join('');
+      '</div>' +
+    '</div>';
+  }).join('') +
+  (escalonesEnEdicion.some(e => descuentoValido(e.descuento))
+    ? '<div style="font-size:11.5px;color:var(--text-mute);line-height:1.5;">' +
+      'Los que tienen % siguen al precio de arriba: si el precio cambia (a mano, con el d\u00f3lar o con una lista nueva), se recalculan solos.</div>'
+    : '');
 
   caja.querySelectorAll('[data-esc-desde]').forEach(inp => inp.addEventListener('input', () => {
     escalonesEnEdicion[+inp.dataset.escDesde].desde = Number(inp.value);
   }));
+  // Se toca solo el otro campo de la fila, sin volver a dibujar todo: si no,
+  // el teclado del celular se cierra en cada numero.
+  caja.querySelectorAll('[data-esc-pct]').forEach(inp => inp.addEventListener('input', () => {
+    const e = escalonesEnEdicion[+inp.dataset.escPct];
+    const campoPrecio = caja.querySelector('[data-esc-precio="' + inp.dataset.escPct + '"]');
+    const descuento = descuentoValido(Number(String(inp.value).replace(',', '.')));
+    const lista = precioDeListaEnEdicion();
+    if (!descuento) { delete e.descuento; inp.style.borderColor = ''; return; }
+    e.descuento = descuento;
+    e.precio = lista > 0 ? precioConDescuento(lista, descuento) : '';
+    inp.style.borderColor = 'var(--celeste)';
+    if (campoPrecio) campoPrecio.value = e.precio;
+  }));
   caja.querySelectorAll('[data-esc-precio]').forEach(inp => inp.addEventListener('input', () => {
-    escalonesEnEdicion[+inp.dataset.escPrecio].precio = Number(inp.value);
+    const e = escalonesEnEdicion[+inp.dataset.escPrecio];
+    const campoPct = caja.querySelector('[data-esc-pct="' + inp.dataset.escPrecio + '"]');
+    e.precio = Number(inp.value);
+    delete e.descuento;
+    if (campoPct) { campoPct.value = ''; campoPct.style.borderColor = ''; campoPct.placeholder = pctDe(e); }
   }));
   caja.querySelectorAll('[data-esc-quitar]').forEach(b => b.addEventListener('click', () => {
     escalonesEnEdicion.splice(+b.dataset.escQuitar, 1);
@@ -27733,8 +27880,13 @@ function renderEscalones() {
 // precio normal del producto y ya vive en price. null cuando no hay
 // ninguna, para no dejar un array vacio dando vueltas en la base.
 function escalonesParaGuardar() {
+  const lista = precioDeListaEnEdicion();
   const limpios = escalonesEnEdicion
-    .map(e => ({ desde: Number(e.desde), precio: Number(e.precio) }))
+    .map(e => {
+      const descuento = descuentoValido(e.descuento);
+      if (!descuento) return { desde: Number(e.desde), precio: Number(e.precio) };
+      return { desde: Number(e.desde), precio: lista > 0 ? precioConDescuento(lista, descuento) : 0, descuento };
+    })
     .filter(e => e.desde > 1 && e.precio > 0)
     .sort((a, b) => a.desde - b.desde);
   return limpios.length ? limpios : null;
@@ -27762,7 +27914,7 @@ byId('porMayorLeer')?.addEventListener('click', () => {
 
   if (!leidos.length) {
     aviso.style.color = 'var(--danger)';
-    aviso.textContent = 'No encontramos ninguna linea con el formato "10 X 23.000". ' +
+    aviso.textContent = 'No encontramos ninguna linea con el formato "10 X 23.000" o "10 X 5%". ' +
                         'Fijate que cada escalon este en su propio renglon.';
     return;
   }
@@ -27780,6 +27932,8 @@ byId('porMayorLeer')?.addEventListener('click', () => {
     byId('pPrice').value = unitario.precio;
     puso = true;
   }
+  recalcularEscalonesEnPorcentaje();
+  renderEscalones();
 
   aviso.style.color = 'var(--stock)';
   aviso.textContent = 'Listo: ' + escalonesEnEdicion.length + ' escalon' +
@@ -28106,7 +28260,8 @@ async function editProduct(id) {
   if (byId('pPrice')) byId('pPrice').value = p.moneda ? p.precio_original : p.price;
   if (byId('pPrecioOferta')) byId('pPrecioOferta').value = (p.precio_oferta != null ? enMonedaDelProducto(p.precio_oferta, p) : '');
   escalonesEnEdicion = Array.isArray(p.precios_por_cantidad)
-    ? p.precios_por_cantidad.map(x => ({ desde: Number(x.desde), precio: enMonedaDelProducto(Number(x.precio), p) }))
+    ? p.precios_por_cantidad.map(x => ({ desde: Number(x.desde), precio: enMonedaDelProducto(Number(x.precio), p),
+        ...(descuentoValido(x.descuento) ? { descuento: Number(x.descuento) } : {}) }))
     : [];
   renderEscalones();
   actualizarHintMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
