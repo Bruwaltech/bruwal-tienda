@@ -6306,7 +6306,7 @@ function abrirPlanes() {
         `<div class="btn" style="text-align:center;background:var(--bg);color:var(--stock);cursor:default;font-weight:700;">✓ Tu plan actual</div>` +
         (link
           ? `<a href="${link}${sep}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
-                target="_blank" rel="noopener"
+                data-pago-plan="${id}" target="_blank" rel="noopener"
                 style="display:block;text-align:center;margin-top:8px;font-size:12.5px;color:var(--celeste);font-weight:600;">
                ¿No tenés el débito automático? Activalo acá</a>`
           : '');
@@ -6323,7 +6323,7 @@ function abrirPlanes() {
       const sep = link.includes('?') ? '&' : '?';
       accion = `<a class="btn btn-primary" style="text-align:center;text-decoration:none;display:block;"
                    href="${link}${sep}external_reference=${encodeURIComponent(currentStore?.slug || '')}"
-                   target="_blank" rel="noopener">Suscribirme</a>`;
+                   data-pago-plan="${id}" target="_blank" rel="noopener">Suscribirme</a>`;
     }
 
     return `
@@ -6349,7 +6349,31 @@ function abrirPlanes() {
     });
   });
 
+  // Anotar que esta tienda fue a pagar, antes de que se abra Mercado Pago.
+  // Si el cliente paga desde la app de MP o con otro mail y no vuelve por
+  // el link, es lo que le permite al servidor reconocer su suscripcion
+  // (api/_intentos.js). No frena el link: va en segundo plano, y keepalive
+  // la deja terminar aunque el celular cambie de app.
+  cont.querySelectorAll('[data-pago-plan]').forEach(a => {
+    a.addEventListener('click', () => { avisarQueVaAPagar(a.dataset.pagoPlan); });
+  });
+
   show(byId('planesModal'));
+}
+
+async function avisarQueVaAPagar(plan) {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session || !currentStore) return;
+    fetch('/api/suscripcion', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify({ slug: currentStore.slug, accion: 'iniciar-pago', plan })
+    }).catch(() => {});
+  } catch (e) {
+    // Sin esto el pago anda igual: a lo sumo hay que atarlo a mano.
+  }
 }
 
 // Los dos planes cubren a la mayoria, pero no a todos: un taller no necesita

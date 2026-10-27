@@ -14,6 +14,7 @@
 
 const crypto = require('crypto');
 const mail = require('./_mail');
+const intentos = require('./_intentos');
 
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 
@@ -254,6 +255,21 @@ module.exports = async (req, res) => {
       if (porMail) slug = porMail;
     }
 
+    // Tercer camino: la unica tienda que fue a pagar este plan en las horas
+    // previas (api/_intentos.js). Es el que cubre a quien paga desde la app
+    // de Mercado Pago o con otro mail y nunca vuelve al panel.
+    let porIntento = false;
+    if (!slug && plan) {
+      const candidata = await intentos.slugPorIntento(preapproval, plan);
+      // Que no la tenga ya otra tienda. Si la tuviera, porId la habria
+      // encontrado; esto es por si dos avisos llegan a la vez.
+      if (candidata && !(await buscarStore('mp_preapproval_id=eq.' + encodeURIComponent(dataId) +
+                                           '&slug=neq.' + encodeURIComponent(candidata)))) {
+        slug = candidata;
+        porIntento = true;
+      }
+    }
+
     if (!slug || !plan) {
       console.warn('Preapproval sin slug o plan reconocido:', dataId, slug, preapproval.preapproval_plan_id);
       res.statusCode = 200;
@@ -298,6 +314,7 @@ module.exports = async (req, res) => {
         mp_preapproval_id: dataId || null,
         plan_updated_at: new Date().toISOString()
       });
+      if (porIntento) await intentos.marcarUsado(slug, dataId, plan);
       // Despues de escribir el plan, y sin poder romperlo.
       await bienvenidaDelWebhook(req, slug);
 
