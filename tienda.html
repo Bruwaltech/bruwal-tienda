@@ -802,6 +802,18 @@
       <button type="button" id="cancelarPedidoBtn" style="padding:9px 18px;background:#fff;color:#97201D;border:1.5px solid #E7B3B1;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;">Cancelar pedido</button>
       <p id="cancelarPedidoTexto" style="color:var(--text-mute);font-size:13px;margin-top:8px;"></p>
     </div>
+    <!-- Para mandar (o volver a mandar) el pedido por WhatsApp. Lo arma el envio
+         del pedido: en el celular abre la app; en la compu, WhatsApp Web, con la
+         app como segunda opcion y el pedido para copiar si no tiene WhatsApp. -->
+    <div id="exitoWhatsAppCaja" class="hidden" style="margin-top:18px;">
+      <a id="exitoWhatsApp" target="_blank" rel="noopener" style="display:inline-block;padding:13px 28px;background:#25D366;color:#fff;border-radius:8px;font-weight:700;font-size:15px;text-decoration:none;">Enviar por WhatsApp</a>
+      <div id="exitoWhatsAppAyuda" style="font-size:12.5px;color:var(--text-mute);margin-top:8px;line-height:1.5;"></div>
+      <div id="exitoCompu" class="hidden" style="margin-top:10px;font-size:13px;line-height:1.6;">
+        <a id="exitoWhatsAppApp" target="_blank" rel="noopener" style="color:var(--celeste);font-weight:600;">Abrir la app de WhatsApp</a>
+        &nbsp;·&nbsp;
+        <button type="button" id="exitoCopiarPedido" style="background:none;border:none;color:var(--celeste);font-weight:600;font-size:13px;cursor:pointer;padding:0;">Copiar el pedido</button>
+      </div>
+    </div>
     <button onclick="backToShop()" style="margin-top:20px;padding:12px 32px;background:var(--celeste);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:15px;">← Volver a la tienda</button>
   </div>
 </div>
@@ -1435,6 +1447,8 @@ async function init(){
   armarTurnos(store);
 
   const COLS_PRODUCTO_PUBLICO = 'id,store_slug,name,description,price,image_url,category,stock,in_stock,ean,created_at,updated_at,imagenes,opciones,tipo,tiene_variantes,variante_campos,variantes:variantes_publicas,specs,solo_interno,moneda,precio_original,cotizacion,numero,estado_equipo,duracion_minutos,mostrar_precio,unidad_medida,unidad_nombre,pausado,precio_oferta,orden,categorias,ml_nota,ml_opiniones,ml_link,ml_es_catalogo,ml_opiniones_al,precios_por_cantidad';
+  // En paralelo con los productos: lo que ya esta pedido y sin confirmar.
+  const reservasPedidas = traerReservas(slug);
   const { data: prods } = await sbPublico.from('store_products').select(COLS_PRODUCTO_PUBLICO).eq('store_slug', slug).order('name');
   // solo_interno: repuestos y demás productos que el dueño usa desde el
   // panel (por ejemplo, en una reparación) pero que nunca deberían poder
@@ -1442,6 +1456,7 @@ async function init(){
   // ninguna otra parte del código (categorías, grilla, ficha) los llegue
   // a mostrar por accidente.
   products = (prods || []).filter(p => !p.solo_interno);
+  restarReservas(await reservasPedidas);
 
   // El ejemplo de las aclaraciones habla el idioma del rubro: "sin sal,
   // cortada en 8" no le dice nada a quien compra un iPhone, y el pedido
@@ -3675,6 +3690,71 @@ byId('fichaModal').addEventListener('click', (e) => {
   if (e.target === byId('fichaModal')) hide(byId('fichaModal'));   // tocar afuera cierra
 });
 
+// ---- Stock que ya esta en pedidos sin confirmar ----
+// El panel descuenta el stock recien al confirmar el pedido. Hasta ahi la
+// tienda seguia ofreciendo la misma unidad, y un producto con stock 1 se
+// podia pedir una y otra vez. reservado_en_pedidos (schema/93) dice
+// cuanto hay en pedidos pendientes; se le resta al stock que se ofrece.
+// Solo productos sin variantes: en los de talle/color el stock es por
+// combinacion y el pedido no siempre trae cual. Sin la migracion, null:
+// todo como antes.
+async function traerReservas(slug){
+  try {
+    const { data, error } = await sbPublico.rpc('reservado_en_pedidos', { p_slug: slug });
+    if (error || !Array.isArray(data)) return null;
+    const m = {};
+    data.forEach(r => { m[String(r.product_id)] = Number(r.unidades) || 0; });
+    return m;
+  } catch (e) { return null; }
+}
+
+function restarReservas(reservas, soloEstos){
+  if (!reservas) return;
+  products.forEach(p => {
+    if (soloEstos && !soloEstos.has(String(p.id))) return;
+    if (!esProductoFisico(p) || p.tiene_variantes) return;
+    const r = reservas[String(p.id)] || 0;
+    // _stockBase es el stock real de la base; p.stock, lo que queda libre.
+    // Se recalcula siempre desde la base: si un pedido se confirmo o se
+    // cancelo, lo reservado baja y el producto vuelve a estar disponible.
+    if (p._stockBase === undefined) {
+      if (!r) return;
+      p._stockBase = Number(p.stock || 0);
+    }
+    p.stock = Math.max(0, p._stockBase - r);
+  });
+}
+
+// Justo antes de mandar el pedido: ¿sigue libre lo que hay en el carrito?
+// Devuelve el texto del problema, o null si se puede seguir.
+async function faltaStockDelCarrito(){
+  const reservas = await traerReservas(getSlugFromUrl());
+  if (!reservas) return null;
+  const ids = new Set(Object.values(cart).map(l => String(l.productId)));
+  restarReservas(reservas, ids);
+  for (const id of ids) {
+    const p = products.find(x => String(x.id) === id);
+    if (!p || !esProductoFisico(p) || p.tiene_variantes) continue;
+    const pedido = cantidadDelProducto(id);
+    if (pedido > Number(p.stock || 0)) {
+      return Number(p.stock || 0) > 0
+        ? 'De "' + p.name + '" quedan ' + formatearCantidad(p.stock, p) + ' libres: ya hay pedidos esperando confirmación. Cambiá la cantidad para seguir.'
+        : '"' + p.name + '" ya está pedido por otro cliente y no queda stock libre. Sacalo del carrito para seguir.';
+    }
+  }
+  return null;
+}
+
+// ---- Mandar el pedido por WhatsApp desde una compu ----
+// En la compu, wa.me intenta abrir la app de WhatsApp: si no esta
+// instalada queda dando vueltas, y la tienda igual decia "¡Pedido
+// enviado!". WhatsApp Web anda con solo tener WhatsApp en el celular.
+const esCompu = () => !/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(navigator.userAgent || '');
+
+function linkWhatsAppWeb(numero, texto){
+  return 'https://web.whatsapp.com/send?phone=' + numero + '&text=' + encodeURIComponent(texto);
+}
+
 byId('confirmOrderBtn').addEventListener('click', async () => {
   const errEl = byId('checkoutError');
   errEl.classList.add('hidden');
@@ -3809,6 +3889,14 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
   // pedido se ve un solo numero por producto.
 
   byId('confirmOrderBtn').disabled = true;
+
+  const sinStock = await faltaStockDelCarrito();
+  if (sinStock) {
+    errEl.textContent = sinStock;
+    errEl.classList.remove('hidden');
+    byId('confirmOrderBtn').disabled = false;
+    return;
+  }
 
   // El codigo que quedo en el campo manda: el cliente pudo borrarlo o
   // escribir otro despues de entrar por un link.
@@ -3983,6 +4071,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       // boton de cancelar no aparece.
       const tokenCliente = nuevoTokenCliente();
       pedidoParaCancelar = null;
+      pedidoGuardado = false;
       const completo = { ...pedido, ...entregaDelPedido, ...afiliadoEnPedido };
       const intentos = [
         { ...completo, token_cliente: tokenCliente },
@@ -3995,6 +4084,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
         if (!errPedido) {
           pedidoParaCancelar = intento.token_cliente ? tokenCliente : null;
           telefonoParaCancelar = store.phone;
+          pedidoGuardado = true;
           break;
         }
       }
@@ -4002,13 +4092,65 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
       console.warn('No se pudo registrar el pedido:', e);
     }
 
-    const waLink = 'https://wa.me/' + numeroWhatsApp(store.phone) + '?text=' + encodeURIComponent(detalles);
-    window.open(waLink, '_blank');
-    if (window.bruwalEvento) bruwalEvento('pedido_whatsapp', { tienda: store.slug || '', tipo: turnoTexto ? 'turno' : 'pedido' });
+    // Lo que se acaba de pedir ya no esta libre para el proximo pedido
+    // desde este mismo navegador (ver traerReservas).
+    if (pedidoGuardado) {
+      Object.values(cart).forEach(l => {
+        const p = products.find(x => String(x.id) === String(l.productId));
+        if (!p || !esProductoFisico(p) || p.tiene_variantes) return;
+        if (p._stockBase === undefined) p._stockBase = Number(p.stock || 0);
+        p.stock = Math.max(0, Number(p.stock || 0) - Number(l.qty || 0));
+      });
+    }
+
+    const numeroWa = numeroWhatsApp(store.phone);
+    const waLink = 'https://wa.me/' + numeroWa + '?text=' + encodeURIComponent(detalles);
+    const enCompu = esCompu();
+    const linkPrincipal = enCompu ? linkWhatsAppWeb(numeroWa, detalles) : waLink;
+    // Despues de esperar a la base, varios navegadores (Safari en iPhone, los
+    // de Instagram/Facebook) ya no lo toman como un toque del cliente y
+    // bloquean la ventana sin avisar. Se mira si se abrio: si no, el cartel
+    // pide tocar el boton en vez de decir "enviado".
+    let ventana = null;
+    try { ventana = window.open(linkPrincipal, '_blank'); } catch (e) { ventana = null; }
+    const bloqueado = !ventana;
+    const que = turnoTexto ? 'turno' : 'pedido';
+
+    byId('exitoWhatsApp').href = linkPrincipal;
+    byId('exitoWhatsApp').textContent = bloqueado
+      ? 'Enviar ' + que + ' por WhatsApp'
+      : (enCompu ? 'Abrir WhatsApp Web de nuevo' : 'Abrir WhatsApp de nuevo');
+    byId('exitoWhatsAppApp').href = waLink;
+    byId('exitoCopiarPedido').textContent = 'Copiar el ' + que;
+    byId('exitoCopiarPedido').onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(detalles);
+        byId('exitoCopiarPedido').textContent = '✓ Copiado';
+      } catch (e) {
+        window.prompt('Copiá el ' + que + ':', detalles);
+      }
+    };
+    // En la compu se dice la verdad: el pedido le llega al negocio cuando se
+    // manda el WhatsApp. Si no tiene WhatsApp, el telefono del negocio y,
+    // si se pudo guardar, que el negocio igual lo ve en su panel.
+    byId('exitoWhatsAppAyuda').textContent = enCompu
+      ? 'Se abre WhatsApp Web: escaneá el código con tu celular si te lo pide. ' +
+        '¿No tenés WhatsApp? Copiá el ' + que + ' y mandáselo al ' + (store.phone || 'negocio') +
+        (pedidoGuardado ? '. El negocio también lo ve en su panel con tu teléfono.' : '.')
+      : (bloqueado ? '' : '¿No se abrió WhatsApp? Tocá el botón.');
+    byId('exitoCompu').classList.toggle('hidden', !enCompu);
+    show(byId('exitoWhatsAppCaja'));
+
+    if (bloqueado || enCompu) {
+      byId('exitoTitulo').textContent = '¡Ya casi!';
+      byId('exitoTexto').textContent = (turnoTexto ? 'Tu turno ya quedó reservado. ' : '') +
+        'Falta un paso: mandale el ' + que + ' a la tienda por WhatsApp.';
+    }
+    if (window.bruwalEvento) bruwalEvento('pedido_whatsapp', { tienda: store.slug || '', tipo: que });
 
     // Ahora el horario queda efectivamente bloqueado en la agenda, asi que
     // ya podemos decir "reservado" sin mentirle al cliente.
-    if (turnoTexto) {
+    if (turnoTexto && !bloqueado && !enCompu) {
       byId('exitoTitulo').textContent = '¡Turno reservado!';
       byId('exitoTexto').textContent =
         'Te esperamos el ' + turnoTexto + '. Ese horario ya quedó bloqueado a tu nombre.';
@@ -4038,6 +4180,7 @@ byId('confirmOrderBtn').addEventListener('click', async () => {
 // pantalla de "Pedido enviado": al volver a la tienda se olvida.
 let pedidoParaCancelar = null;
 let telefonoParaCancelar = '';
+let pedidoGuardado = false;
 
 function nuevoTokenCliente() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -4081,6 +4224,9 @@ byId('cancelarPedidoBtn').addEventListener('click', async () => {
 
 function backToShop() {
   pedidoParaCancelar = null;
+  hide(byId('exitoWhatsAppCaja'));
+  // El stock que se acaba de pedir ya se resto: que la tienda lo muestre.
+  renderProducts();
   byId('exitoTitulo').textContent = '¡Pedido enviado!';
   byId('exitoTexto').textContent = 'La tienda te va a contactar para coordinar la entrega y el pago.';
   cart = {};
