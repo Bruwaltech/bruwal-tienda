@@ -5647,6 +5647,18 @@ tr:last-child td { border-bottom: none; }
           </small>
         </div>
 
+        <!-- Se esconde hasta que exista la columna (schema/92): sin ella, guardar
+             la configuracion con este dato fallaria entero. -->
+        <div class="field hidden" id="campoConfigAclaraciones">
+          <label>Campo "Aclaraciones" del pedido <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <input type="text" id="configAclaracionesTitulo" maxlength="60" autocomplete="off" placeholder="Título. Ej: Aclaraciones">
+          <input type="text" id="configAclaracionesAyuda" maxlength="160" autocomplete="off" style="margin-top:8px;"
+                 placeholder="Ejemplo que ve el cliente. Ej: entregar después de las 18, el timbre no anda">
+          <small style="display:block;margin-top:8px;color:var(--text-mute);font-size:12px;line-height:1.5;">
+            Es el cuadrito que completa el cliente al hacer el pedido en tu tienda. Vacío = el texto de siempre.
+          </small>
+        </div>
+
         <div class="field">
           <label>Medios de pago que aceptás</label>
           <div id="configMediosPago" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"></div>
@@ -30336,6 +30348,12 @@ async function cargarConfiguracion() {
 
     if (byId('configCostoEnvio')) byId('configCostoEnvio').value = store.costo_envio != null ? store.costo_envio : '';
     if (byId('configDemora')) byId('configDemora').value = store.demora_texto || '';
+    if (byId('campoConfigAclaraciones')) {
+      const tc = store.textos_checkout || {};
+      byId('campoConfigAclaraciones').classList.toggle('hidden', !('textos_checkout' in store));
+      byId('configAclaracionesTitulo').value = tc.aclaraciones_titulo || '';
+      byId('configAclaracionesAyuda').value = tc.aclaraciones_ayuda || '';
+    }
     if (byId('configOfreceEnvio')) {
       byId('configOfreceEnvio').checked = store.ofrece_envio !== false;
       actualizarCampoCostoEnvio();
@@ -30658,6 +30676,16 @@ async function guardarConfiguracion() {
     hace_reparaciones: byId('configHaceReparaciones').checked,
     balanza: configuracionDeBalanza()
   };
+
+  // Solo si la columna ya existe (schema/92): si no, el update entero
+  // rebotaria por una columna desconocida.
+  if ('textos_checkout' in currentStore) {
+    const titulo = (byId('configAclaracionesTitulo')?.value || '').trim();
+    const ayuda = (byId('configAclaracionesAyuda')?.value || '').trim();
+    updateData.textos_checkout = (titulo || ayuda)
+      ? { ...(currentStore.textos_checkout || {}), aclaraciones_titulo: titulo || null, aclaraciones_ayuda: ayuda || null }
+      : null;
+  }
 
   if (imageUrl) updateData.image_url = imageUrl;
 

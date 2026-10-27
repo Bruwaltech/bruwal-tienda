@@ -773,12 +773,15 @@
 
     <div id="hlAvisoCheckout" class="hidden" style="padding:11px 13px;border-radius:9px;margin-bottom:12px;font-size:13px;line-height:1.5;"></div>
     <div class="field">
-      <label>¿Te recomendó alguien? <span style="font-weight:400;color:var(--text-mute);">(código, opcional)</span></label>
+      <label id="afiliadoLabel">¿Te recomendó alguien? <span style="font-weight:400;color:var(--text-mute);">(código, opcional)</span></label>
+      <!-- Si la tienda tiene vendedores cargados se elige de la lista (checkout_de_tienda, schema/92);
+           el campo de texto queda escondido y sigue siendo el que lleva el código al pedido. -->
+      <select id="custVendedor" class="hidden" style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff;"></select>
       <input type="text" id="custCodigoAfiliado" maxlength="30" autocomplete="off" autocapitalize="characters" placeholder="Ej: JUAN">
       <small id="afiliadoHint" class="hidden" style="display:block;margin-top:6px;font-size:12.5px;line-height:1.45;"></small>
     </div>
     <div class="field">
-      <label>Aclaraciones <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+      <label id="aclaracionesLabel">Aclaraciones <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
       <textarea id="custAclaraciones" rows="2" maxlength="300" placeholder="Ej: entregar después de las 18, el timbre no anda"
                 style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical;"></textarea>
     </div>
@@ -1099,8 +1102,16 @@ function recordarCodigoAfiliado(slug, codigo){
 
 // null si el codigo no existe, esta dado de baja, o todavia no se corrio la
 // migracion 60. En ninguno de esos casos se frena nada: la tienda anda igual.
+// Los codigos son solo letras sin tilde, numeros, - y _ (60-afiliados.sql),
+// pero el cliente escribe "Joaquín" o "joaquin " y la base no lo
+// encontraba: el pedido salia sin vendedor y nadie se enteraba.
+function normalizarCodigo(codigo){
+  return String(codigo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '').trim();
+}
+
 async function buscarAfiliado(slug, codigo){
-  const limpio = String(codigo || '').trim();
+  const limpio = normalizarCodigo(codigo);
   if (!limpio) return null;
   try {
     const { data, error } = await sb.rpc('afiliado_de_tienda', { p_slug: slug, p_codigo: limpio });
@@ -1123,6 +1134,7 @@ function pintarAfiliado(){
     : '🤝 Te recomendó ' + afiliado.nombre + '.';
   show(banner);
   byId('custCodigoAfiliado').value = afiliado.codigo;
+  elegirVendedorEnLista(afiliado.codigo);
   hint.style.color = '#1E7B3A';
   hint.textContent = '✓ ' + afiliado.nombre + (pct > 0 ? ' · ' + pct + '% off en los productos' : '');
   show(hint);
@@ -1158,11 +1170,18 @@ function mostrarTiendaCerrada(store){
 }
 
 async function cargarAfiliado(slug, store){
-  if (await esDuenioDeLaTienda(store)) {
-    try { localStorage.removeItem(claveAfiliado(slug)); } catch (e) { /* storage bloqueado */ }
-    return;
-  }
   const delLink = (new URLSearchParams(window.location.search).get('ref') || '').trim();
+  // El duenio no es un cliente recomendado: no se le recuerda el codigo
+  // 30 dias. Pero si abrio a proposito un link con ?ref= (probar el link de
+  // un vendedor, o el cliente compra en la compu del local) ese pedido SI
+  // tiene que quedar a nombre del vendedor. Antes se ignoraba el link
+  // entero, y probando desde la compu de Kit zone ningun pedido le quedaba
+  // al afiliado.
+  const duenio = await esDuenioDeLaTienda(store);
+  if (duenio) {
+    try { localStorage.removeItem(claveAfiliado(slug)); } catch (e) { /* storage bloqueado */ }
+    if (!delLink) return;
+  }
   const codigo = delLink || codigoAfiliadoGuardado(slug);
   if (!codigo) return;
   const a = await buscarAfiliado(slug, codigo);
@@ -1170,8 +1189,76 @@ async function cargarAfiliado(slug, store){
   afiliado = a;
   // Se guarda recien cuando el codigo es valido: un link mal copiado no
   // tiene que pisar el de alguien que si existe.
-  if (delLink) recordarCodigoAfiliado(slug, a.codigo);
+  if (delLink && !duenio) recordarCodigoAfiliado(slug, a.codigo);
   pintarAfiliado();
+}
+
+// ---- Lo que cada tienda configura para su checkout ----
+// Los vendedores para elegir de una lista (en vez de escribir el codigo a
+// mano, que es donde se perdia la venta) y los textos de "Aclaraciones".
+// Si la funcion todavia no existe en la base (schema/92), queda todo como
+// siempre: el campo de codigo y los textos de fabrica.
+let textosCheckout = null;
+
+function elegirVendedorEnLista(codigo){
+  const sel = byId('custVendedor');
+  if (!sel || sel.classList.contains('hidden')) return;
+  const op = Array.from(sel.options).find(o => o.value.toLowerCase() === String(codigo || '').toLowerCase());
+  sel.value = op ? op.value : '';
+}
+
+async function cargarCheckoutDeTienda(slug){
+  let datos = null;
+  try {
+    const { data, error } = await sbPublico.rpc('checkout_de_tienda', { p_slug: slug });
+    if (error) return;
+    datos = data;
+  } catch (e) { return; }
+  if (!datos) return;
+
+  const t = datos.textos || {};
+  textosCheckout = t;
+  if (t.aclaraciones_titulo) {
+    const label = byId('aclaracionesLabel');
+    label.textContent = t.aclaraciones_titulo + ' ';
+    const op = document.createElement('span');
+    op.style.cssText = 'font-weight:400;color:var(--text-mute);';
+    op.textContent = '(opcional)';
+    label.appendChild(op);
+  }
+  if (t.aclaraciones_ayuda) byId('custAclaraciones').placeholder = t.aclaraciones_ayuda;
+
+  const vendedores = Array.isArray(datos.afiliados) ? datos.afiliados : [];
+  if (!vendedores.length) return;
+
+  const sel = byId('custVendedor');
+  sel.innerHTML = '';
+  const nadie = document.createElement('option');
+  nadie.value = '';
+  nadie.textContent = 'Nadie / no sé';
+  sel.appendChild(nadie);
+  vendedores.forEach(v => {
+    const op = document.createElement('option');
+    op.value = v.codigo;
+    op.textContent = v.nombre;
+    sel.appendChild(op);
+  });
+  byId('afiliadoLabel').textContent = '¿Quién te atendió? ';
+  const opc = document.createElement('span');
+  opc.style.cssText = 'font-weight:400;color:var(--text-mute);';
+  opc.textContent = '(opcional)';
+  byId('afiliadoLabel').appendChild(opc);
+  show(sel);
+  hide(byId('custCodigoAfiliado'));
+  elegirVendedorEnLista(afiliado && afiliado.codigo);
+
+  // Elegir de la lista es lo mismo que escribir el codigo: el resto del
+  // checkout (descuento, mensaje de WhatsApp, pedido) no cambia.
+  sel.addEventListener('change', () => {
+    const campo = byId('custCodigoAfiliado');
+    campo.value = sel.value;
+    campo.dispatchEvent(new Event('change'));
+  });
 }
 
 byId('custCodigoAfiliado').addEventListener('change', async () => {
@@ -1239,6 +1326,7 @@ async function init(){
   });
   // Sin await: la tienda se muestra igual mientras se valida el codigo.
   cargarAfiliado(slug, store);
+  cargarCheckoutDeTienda(slug);
 
   // Horario del local: de esto dependen el cartel de abierto/cerrado y el
   // aviso del checkout. Si la tienda no lo configuró, queda en null y no
@@ -1358,7 +1446,7 @@ async function init(){
   // El ejemplo de las aclaraciones habla el idioma del rubro: "sin sal,
   // cortada en 8" no le dice nada a quien compra un iPhone, y el pedido
   // tipico ahi es entregar el telefono viejo como parte de pago.
-  if (products.some(p => productoEsIphone(p.name))) {
+  if (products.some(p => productoEsIphone(p.name)) && !(textosCheckout && textosCheckout.aclaraciones_ayuda)) {
     byId('custAclaraciones').placeholder = 'Ej: me gustaría entregar mi teléfono como parte de pago (marca y modelo)';
   }
 
