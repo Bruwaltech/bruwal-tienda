@@ -5,7 +5,7 @@
   "description": "El panel de tu chatbot: charlas, pedidos y hoja de ruta.",
   "lang": "es-AR",
   "start_url": "/chat",
-  "scope": "/",
+  "scope": "/chat",
   "display": "standalone",
   "background_color": "#15294D",
   "theme_color": "#15294D",

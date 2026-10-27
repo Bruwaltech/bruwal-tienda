@@ -1116,6 +1116,15 @@ const fechaHora = (iso) =>
 
 // Misma lógica que el dashboard: si el usuario no marcó "mantenerme conectado",
 // la sesión vive en sessionStorage y muere al cerrar la pestaña.
+// La marca es propia de Bruwal Chat: con la del dashboard compartida, entrar a
+// la tienda sin "mantenerme conectado" pasaba también la sesión del chat a
+// sessionStorage en la siguiente renovación, y al cerrar la app había que
+// volver a entrar. Quien todavía no tiene la marca nueva sigue con la vieja.
+const MARCA_RECORDAR = 'bruwal_chat_recordar';
+const recordarSesion = () => {
+  const marca = localStorage.getItem(MARCA_RECORDAR);
+  return (marca ?? localStorage.getItem('bruwal_remember_me')) === 'true';
+};
 const almacenamientoSesion = {
   getItem: (k) => {
     try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); }
@@ -1123,7 +1132,7 @@ const almacenamientoSesion = {
   },
   setItem: (k, v) => {
     try {
-      if (localStorage.getItem('bruwal_remember_me') === 'true') {
+      if (recordarSesion()) {
         localStorage.setItem(k, v); sessionStorage.removeItem(k);
       } else {
         sessionStorage.setItem(k, v); localStorage.removeItem(k);
@@ -1185,8 +1194,7 @@ $('formLogin').addEventListener('submit', async (e) => {
 
   // Se define ANTES de entrar: el adaptador de almacenamiento lee esta marca en
   // el momento en que Supabase guarda la sesión, que ocurre dentro del signIn.
-  if ($('recordarme').checked) localStorage.setItem('bruwal_remember_me', 'true');
-  else localStorage.removeItem('bruwal_remember_me');
+  localStorage.setItem(MARCA_RECORDAR, $('recordarme').checked ? 'true' : 'false');
 
   const { error } = await sb.auth.signInWithPassword({
     email: $('email').value.trim(),
