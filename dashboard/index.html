@@ -2188,6 +2188,7 @@ tr:last-child td { border-bottom: none; }
       <button class="btn-ghost" id="verGuiaBtn" title="Ver el video de ayuda" style="display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-circle-play"></i> Cómo usar</button>
       <button class="btn-ghost hidden" id="instalarPanelBtn" title="Instalar el panel como app" style="display:none;align-items:center;gap:6px;"><i class="fa-solid fa-mobile-screen"></i> Descargar app</button>
       <a href="/" class="btn-ghost" title="Ir al inicio" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i class="fa-solid fa-house"></i> Inicio</a>
+      <button class="btn-ghost hidden" id="sesionDuenioBtn" style="display:inline-flex;align-items:center;gap:6px;"></button>
       <button class="btn-ghost" id="logoutBtn">Cerrar sesión</button>
     </div>
   </header>
@@ -2861,7 +2862,7 @@ tr:last-child td { border-bottom: none; }
         <div class="panel-head">🧮 Arqueo de cada caja</div>
         <div style="overflow-x:auto;">
           <table>
-            <thead><tr><th>Caja</th><th>Abrió</th><th style="text-align:right;">Fondo</th><th style="text-align:right;">Esperado</th><th style="text-align:right;">Contado</th><th style="text-align:right;">Diferencia</th></tr></thead>
+            <thead><tr><th>Caja</th><th>Abrió</th><th style="text-align:right;">Fondo</th><th style="text-align:right;">Esperado</th><th style="text-align:right;">Contado</th><th style="text-align:right;">Diferencia</th><th></th></tr></thead>
             <tbody id="arqueosDelDiaBody"></tbody>
           </table>
         </div>
@@ -4555,6 +4556,10 @@ tr:last-child td { border-bottom: none; }
              placeholder="••••" style="font-size:26px;letter-spacing:12px;text-align:center;padding:12px;">
     </div>
     <div id="pinCostosError" class="hidden" style="color:var(--danger);font-size:12.5px;margin:-6px 0 10px;text-align:center;">PIN incorrecto.</div>
+    <label id="pinDejarAbiertoFila" class="hidden" style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--text-dark);margin:0 0 12px;cursor:pointer;line-height:1.4;">
+      <input type="checkbox" id="pinDejarAbierto" style="margin:2px 0 0;width:auto;cursor:pointer;">
+      <span>Dejar abierto en esta sesión<br><span style="color:var(--text-mute);font-size:12px;">No lo vuelve a pedir en esta pestaña hasta que toques 🔓 Cerrar arriba.</span></span>
+    </label>
     <button type="button" id="pinCostosConfirmar" class="btn btn-primary" style="width:100%;margin-bottom:8px;">Desbloquear</button>
     <button type="button" id="pinCostosHuella" class="hidden btn" style="width:100%;background:var(--bg);color:var(--navy);">👆 Usar huella</button>
   </div>
@@ -7142,6 +7147,7 @@ function cajaConClave() { return hayPinConfigurado() && (rubroEsDistribuidora() 
 
 function conClaveDeCaja(accion, que, detalle) {
   if (!cajaConClave()) return accion();
+  if (sesionDuenioAbierta()) return accionConSesionAbierta(que || 'Movimiento de caja', detalle, accion);
   abrirPinCostosModal(accion, 'Los movimientos de caja los autoriza el dueño. Ingresá el PIN.');
   intentoPendiente = { que: que || 'Movimiento de caja', detalle: detalle || '' };
 }
@@ -7157,6 +7163,7 @@ function bloqueoActivo() { return hayPinConfigurado() && !!currentStore?.bloquea
 
 function conClaveSensible(que, detalle, accion) {
   if (!bloqueoActivo()) return accion();
+  if (sesionDuenioAbierta()) return accionConSesionAbierta(que, detalle, accion);
   abrirPinCostosModal(accion, que + ': lo autoriza el dueño o el encargado. Ingresá el PIN.');
   intentoPendiente = { que, detalle: detalle || '' };
 }
@@ -7192,7 +7199,80 @@ async function registrarIntento(que, detalle, resultado) {
     }]);
   } catch (e) { /* sin internet: no se anota */ }
 }
-function requiereDesbloqueoCostos() { return hayPinConfigurado() && !costosDesbloqueados; }
+function requiereDesbloqueoCostos() { return hayPinConfigurado() && !costosDesbloqueados && !sesionDuenioAbierta(); }
+
+// ---- Dejar abierto en esta sesión (el dueño) ----
+// Con la caja con clave o el bloqueo prendido, el PIN se pide CADA VEZ. El
+// dueño que se sienta a trabajar un rato no quiere ponerlo veinte veces:
+// tilda "Dejar abierto en esta sesión" y el panel no lo vuelve a pedir en
+// ESA pestaña hasta que toque 🔓 Cerrar arriba, cierre la pestaña, salga
+// de la cuenta o pase la compu a modo reloj. Vive en sessionStorage: otra
+// pestaña, otra compu o el navegador cerrado arrancan trabados.
+// Con la sesión cerrada (modo empleado) además se esconden Empleados (lo
+// que gana cada uno) y la casilla de venta mayorista (precio más bajo en
+// todo): el empleado no las ve ni sabe que existen.
+// Lo que se hace con la sesión abierta queda igual en el registro, con
+// "sesión del dueño abierta" en el detalle.
+let sesionDuenio = false;
+function claveSesionDuenioSS() { return 'bruwal_sesion_duenio_' + (currentStore?.slug || ''); }
+
+function hayClaveDeDuenio() { return cajaConClave(); }
+function sesionDuenioAbierta() { return sesionDuenio && hayClaveDeDuenio(); }
+// El que está en la caja es (o puede ser) un empleado.
+function modoEmpleado() { return hayClaveDeDuenio() && !sesionDuenio; }
+
+function leerSesionDuenio() {
+  try { sesionDuenio = sessionStorage.getItem(claveSesionDuenioSS()) === '1'; } catch (e) { /* bloqueado: queda lo que había en memoria */ }
+}
+
+function abrirSesionDuenio() {
+  sesionDuenio = true;
+  try { sessionStorage.setItem(claveSesionDuenioSS(), '1'); } catch (e) { /* bloqueado: dura hasta recargar */ }
+  registrarIntento('Dejar abierto en esta sesión', '', 'autorizado');
+  pintarSesionDuenio();
+}
+
+function cerrarSesionDuenio() {
+  const estabaAbierta = sesionDuenio;
+  sesionDuenio = false;
+  if (hayPinConfigurado()) costosDesbloqueados = false;
+  try { sessionStorage.removeItem(claveSesionDuenioSS()); } catch (e) { /* nada */ }
+  pintarSesionDuenio();
+  // Si quedó parado en algo que el empleado no ve, vuelve al inicio.
+  const protegidas = ['tabEmpleados', 'tabCaja', 'tabGastos', 'tabEstadisticas'];
+  if (estabaAbierta && protegidas.some(id => byId(id)?.classList.contains('active'))) byId('tabDashboard').click();
+}
+
+function accionConSesionAbierta(que, detalle, accion) {
+  registrarIntento(que, (detalle ? detalle + ' · ' : '') + 'sesión del dueño abierta', 'autorizado');
+  return accion();
+}
+
+function pintarSesionDuenio() {
+  const btn = byId('sesionDuenioBtn');
+  if (btn) {
+    btn.classList.toggle('hidden', !hayClaveDeDuenio());
+    btn.innerHTML = sesionDuenio
+      ? '🔓 Dueño · Cerrar'
+      : '🔒 Soy el dueño';
+    btn.title = sesionDuenio
+      ? 'La sesión del dueño está abierta en esta pestaña: no se pide el PIN. Tocá para cerrarla.'
+      : 'Poner el PIN una vez y dejar abierta esta pestaña';
+    btn.style.color = sesionDuenio ? '#B45309' : '';
+  }
+  const tab = byId('tabEmpleados');
+  if (tab) {
+    tab.classList.toggle('hidden', modoEmpleado());
+    if (modoEmpleado() && tab.classList.contains('active')) byId('tabDashboard').click();
+  }
+  actualizarFilaMayorista();
+}
+
+byId('sesionDuenioBtn').addEventListener('click', () => {
+  if (sesionDuenio) { cerrarSesionDuenio(); return; }
+  abrirPinCostosModal(null, 'Ingresá el PIN del dueño para dejar abierta esta pestaña.');
+  byId('pinDejarAbierto').checked = true;
+});
 
 // La huella es un atajo LOCAL a ese dispositivo puntual (Windows Hello/Touch
 // ID/huella de Android vía el navegador) — sin servidor propio no hay forma
@@ -7254,6 +7334,8 @@ async function abrirPinCostosModal(alDesbloquear, mensaje) {
   byId('pinCostosMensaje').textContent = mensaje || 'Ingresá el PIN para ver esta información.';
   byId('pinCostosInput').value = '';
   hide(byId('pinCostosError'));
+  byId('pinDejarAbierto').checked = false;
+  byId('pinDejarAbiertoFila').classList.toggle('hidden', !hayClaveDeDuenio());
   const conHuella = localStorage.getItem(claveHuellaLS()) && await huellaDisponible();
   byId('pinCostosHuella').classList.toggle('hidden', !conHuella);
   show(byId('pinCostosModal'));
@@ -7283,6 +7365,7 @@ function pinCostosAutorizado() {
   hide(byId('pinCostosModal'));
   if (intentoPendiente) registrarIntento(intentoPendiente.que, intentoPendiente.detalle, 'autorizado');
   intentoPendiente = null;
+  if (hayClaveDeDuenio() && byId('pinDejarAbierto').checked) abrirSesionDuenio();
   const cb = alDesbloquearCostos;
   alDesbloquearCostos = null;
   if (cb) cb();
@@ -10996,6 +11079,7 @@ function mostrarIngreso() {
 }
 
 byId('logoutBtn').addEventListener('click', async () => {
+  if (sesionDuenio) cerrarSesionDuenio();
   await sb.auth.signOut();
   credencialesPendientes = null;
   // La copia para abrir sin internet es de esta cuenta. En un aparato
@@ -13397,6 +13481,8 @@ function pintarTodo() {
   aplicarVisibilidadPorTurnos();
   aplicarVisibilidadFlex();
   aplicarSeccionesOcultas();
+  leerSesionDuenio();
+  pintarSesionDuenio();
   aplicarTiendaOnlineCerrada();
   aplicarVisibilidadPorPlan();
   refrescarListaDeCategorias();
@@ -23602,7 +23688,16 @@ function seleccionarProductoVenta(id, cantidad) {
 function actualizarFilaMayorista() {
   const fila = byId('filaMayorista');
   if (!fila) return;
-  fila.classList.toggle('hidden', !(products || []).some(p => escalonesDeProducto(p).length));
+  // El empleado no la ve: si no, cualquiera le cobra a un conocido el
+  // precio más bajo de todos. Los precios por cantidad siguen aplicándose
+  // solos cuando la cantidad llega al escalón.
+  const oculta = modoEmpleado() || !(products || []).some(p => escalonesDeProducto(p).length);
+  fila.classList.toggle('hidden', oculta);
+  const tilde = byId('barcodeMayorista');
+  if (oculta && tilde?.checked) {
+    tilde.checked = false;
+    if (currentBarcodeProduct) calculateTotal(); else pintarTotalConCarrito();
+  }
 }
 byId('barcodeMayorista')?.addEventListener('change', () => {
   if (currentBarcodeProduct) calculateTotal(); else pintarTotalConCarrito();
@@ -24685,9 +24780,13 @@ function pintarBarraArqueo() {
         fila('Esperado', money(a.efectivo_esperado)) + fila('Contado', money(a.efectivo_contado)) +
         '<span style="font-weight:700;color:' + (Math.abs(dif) < 1 ? '#1FA088' : '#DC2626') + ';">' +
           (Math.abs(dif) < 1 ? '✓ Sin diferencia' : (dif > 0 ? 'Sobran ' : 'Faltan ') + money(Math.abs(dif))) + '</span>' +
-        '<button type="button" class="btn-ghost" id="ticketArqueoBtn" style="width:auto;padding:6px 12px;font-size:12.5px;margin-left:auto;">🧾 Reimprimir</button>' +
+        '<span style="margin-left:auto;display:flex;gap:8px;">' +
+          '<button type="button" class="btn-ghost" id="reabrirArqueoBtn" style="width:auto;padding:6px 12px;font-size:12.5px;">🔓 Reabrir caja</button>' +
+          '<button type="button" class="btn-ghost" id="ticketArqueoBtn" style="width:auto;padding:6px 12px;font-size:12.5px;">🧾 Reimprimir</button>' +
+        '</span>' +
       '</div>';
     byId('ticketArqueoBtn').addEventListener('click', () => imprimirArqueo(a, c));
+    byId('reabrirArqueoBtn').addEventListener('click', () => reabrirArqueo(a));
     return;
   }
 
@@ -24776,6 +24875,29 @@ async function cerrarArqueo() {
   imprimirArqueo(a, c);
 }
 
+function reaperturas(a) { return Array.isArray(a?.cierres_anteriores) ? a.cierres_anteriores.length : 0; }
+
+// Se cerró y después apareció una venta más, o se contó mal. El cierre
+// anterior no se borra: queda en cierres_anteriores (schema/94) y el
+// intento en el registro. Lo autoriza el dueño con el PIN.
+function reabrirArqueo(a) {
+  if (!puedeOperar() || !a?.cerrado_at) return;
+  const detalle = a.caja + ' del ' + fechaAR(a.fecha) + ' (había cerrado con ' + money(a.efectivo_contado) + ')';
+  const reabrir = async () => {
+    if (!await dialogoConfirmar('¿Reabrir ' + a.caja + '?\n\nSe puede seguir vendiendo y después se vuelve a cerrar contando el efectivo. El cierre anterior queda guardado.')) return;
+    const { error } = await sb.rpc('reabrir_arqueo', { p_id: a.id });
+    if (error) {
+      dialogoAviso('No se pudo reabrir la caja:\n\n' + humano(error) +
+        '\n\n(Si dice que falta la función, correr schema/94-reabrir-caja.sql en Supabase.)');
+      return;
+    }
+    await cargarArqueoDeEsteEquipo(true);
+    if (byId('cajaView')?.classList.contains('visible')) pintarArqueosDelDia();
+  };
+  if (cajaConClave()) conClaveDeCaja(reabrir, 'Reabrir caja', detalle);
+  else reabrir();
+}
+
 function imprimirArqueo(a, c) {
   const fila = (x, y) => '<div class="tk-fila"><span>' + x + '</span><span>' + y + '</span></div>';
   const dif = Number(a.diferencia || 0);
@@ -24814,7 +24936,7 @@ async function pintarArqueosDelDia() {
   const { data, error } = await sb.from('store_arqueos').select('*')
     .eq('store_slug', currentStore.slug).eq('fecha', fecha).order('caja');
   if (error) {
-    cuerpo.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:14px;">' +
+    cuerpo.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--danger);padding:14px;">' +
       escapeHtml('No se pudo cargar: ' + humano(error)) + '</td></tr>';
     return;
   }
@@ -24823,15 +24945,21 @@ async function pintarArqueosDelDia() {
     const cerrada = !!a.cerrado_at;
     const dif = Number(a.diferencia || 0);
     return '<tr>' +
-      '<td><b>' + escapeHtml(a.caja) + '</b>' + (cerrada ? '' : ' <span style="font-size:11.5px;color:#B45309;">abierta</span>') + '</td>' +
+      '<td><b>' + escapeHtml(a.caja) + '</b>' + (cerrada ? '' : ' <span style="font-size:11.5px;color:#B45309;">abierta</span>') +
+        (reaperturas(a) ? ' <span style="font-size:11.5px;color:#B45309;" title="Se cerró y se volvió a abrir">reabierta ' + reaperturas(a) + '×</span>' : '') + '</td>' +
       '<td style="font-size:12.5px;">' + horaAR(a.abierto_at, { hour: '2-digit', minute: '2-digit' }) + '</td>' +
       '<td style="text-align:right;">' + money(a.fondo_inicial) + '</td>' +
       '<td style="text-align:right;">' + money(cerrada ? a.efectivo_esperado : c.esperado) + '</td>' +
       '<td style="text-align:right;">' + (cerrada ? money(a.efectivo_contado) : '—') + '</td>' +
       '<td style="text-align:right;font-weight:700;color:' + (!cerrada ? 'var(--text-mute)' : Math.abs(dif) < 1 ? '#1FA088' : '#DC2626') + ';">' +
         (cerrada ? (dif < 0 ? '-' : dif > 0 ? '+' : '') + money(Math.abs(dif)) : '—') + '</td>' +
+      '<td style="text-align:right;">' + (cerrada
+        ? '<button type="button" class="icon-btn" data-reabrir-arqueo="' + escapeHtml(a.id) + '" title="Reabrir esta caja">🔓</button>'
+        : '') + '</td>' +
     '</tr>';
-  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-mute);padding:14px;">Ninguna caja abrió este día.</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:14px;">Ninguna caja abrió este día.</td></tr>';
+  cuerpo.querySelectorAll('[data-reabrir-arqueo]').forEach(b => b.addEventListener('click', () =>
+    reabrirArqueo((data || []).find(a => String(a.id) === b.dataset.reabrirArqueo))));
 }
 
 // Configuración
@@ -28631,7 +28759,7 @@ function mostrarVistaCaja() {
 byId('tabCaja').addEventListener('click', () => {
   if (!tienePlanPro()) { ofrecerUpgradePro('Caja'); return; }
   // En distribuidora se pide cada vez que se entra, no una vez por sesion.
-  if (requiereDesbloqueoCostos() || cajaConClave()) { abrirPinCostosModal(mostrarVistaCaja); return; }
+  if (requiereDesbloqueoCostos() || (cajaConClave() && !sesionDuenioAbierta())) { abrirPinCostosModal(mostrarVistaCaja); return; }
   mostrarVistaCaja();
 });
 
@@ -29171,6 +29299,7 @@ function abrirReloj() {
   // tablet queda en la entrada y la toca cualquiera. Para volver al panel
   // hay que poner el PIN otra vez.
   if (hayPinConfigurado()) costosDesbloqueados = false;
+  if (sesionDuenio) cerrarSesionDuenio();
 
   // El aviso solo cuando corresponde: si hay PIN, salir ya esta trabado.
   byId('relojAvisoPin').classList.toggle('hidden', hayPinConfigurado());
@@ -29265,6 +29394,7 @@ function mostrarVistaEmpleados() {
 
 byId('tabEmpleados').addEventListener('click', () => {
   if (!tienePlanPro()) { ofrecerUpgradePro('Empleados'); return; }
+  if (modoEmpleado()) return;   // escondida: ver pintarSesionDuenio()
   // Acá se ve cuánto gana cada uno: mismo candado que Caja y Gastos.
   if (requiereDesbloqueoCostos()) { abrirPinCostosModal(mostrarVistaEmpleados); return; }
   mostrarVistaEmpleados();
@@ -30760,6 +30890,7 @@ function pintarEstadoBloqueo() {
     estado.style.color = 'var(--text-mute)';
   }
   byId('nombreEquipo').value = nombreDeEsteEquipo();
+  pintarSesionDuenio();
 }
 
 async function guardarBloqueoSensibles(prender) {
