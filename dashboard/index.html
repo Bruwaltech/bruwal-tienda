@@ -2667,6 +2667,10 @@ tr:last-child td { border-bottom: none; }
                   🧾 Imprimir ticket al confirmar
                 </label>
                 <button type="button" class="btn-ghost" data-abrir-diseno-ticket style="padding:4px 10px;font-size:12px;">✏️ Diseño del ticket</button>
+                <label class="campo-distribuidora hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);cursor:pointer;">
+                  <input type="checkbox" id="barcodeRemito" style="margin:0;width:auto;cursor:pointer;">
+                  📄 Hacer remito al confirmar
+                </label>
               </div>
 
               <label id="filaTradeIn" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
@@ -5065,6 +5069,43 @@ tr:last-child td { border-bottom: none; }
           <iframe id="tkVistaPrevia" title="Vista previa del ticket" style="display:block;width:260px;height:520px;border:0;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.12);"></iframe>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL REMITO (distribuidora) -->
+<div class="modal-overlay hidden" id="remitoModal">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" id="cerrarRemitoModal">✕</button>
+    <h3>📄 Remito</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 16px;line-height:1.5;">
+      Sale en hoja A4, con el detalle de la venta. Lo que cambies acá va solo en el papel, no cambia la venta.
+    </p>
+    <div class="field">
+      <label>Cliente</label>
+      <input type="text" id="remitoCliente" maxlength="80" placeholder="Ej: Enzo Colari">
+    </div>
+    <div class="field">
+      <label>Domicilio</label>
+      <input type="text" id="remitoDomicilio" maxlength="120" placeholder="Ej: San Martín y Ledesma - San Lorenzo">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="field" style="margin:0;">
+        <label>Vendedor</label>
+        <input type="text" id="remitoVendedor" maxlength="60">
+      </div>
+      <div class="field" style="margin:0;">
+        <label>Forma de pago</label>
+        <input type="text" id="remitoPago" maxlength="40" placeholder="Contado">
+      </div>
+    </div>
+    <label style="display:flex;align-items:flex-start;gap:9px;margin:16px 0 4px;font-size:14px;cursor:pointer;">
+      <input type="checkbox" id="remitoMembrete" style="margin:3px 0 0;width:auto;cursor:pointer;">
+      <span><b>Con el nombre de la distribuidora</b><br>
+        <span style="font-size:12.5px;color:var(--text-mute);">Destildalo para que salga sin nombre, dirección ni teléfono del negocio (por ejemplo, el de bebidas).</span></span>
+    </label>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+      <button type="button" id="imprimirRemitoBtn" class="btn btn-primary" style="flex:1;min-width:150px;">🖨️ Imprimir remito</button>
     </div>
   </div>
 </div>
@@ -21480,6 +21521,146 @@ function imprimirTicketDeOrden(id) {
   abrirVentanaTicket('Ticket #' + numeroDeTicket(o.id), html, true);
 }
 
+// ---- Remito (distribuidora) ----
+// JACI hace remitos en hoja A4 (27/10): cliente, domicilio, vendedor, forma
+// de pago y el detalle con precio unitario y descuento, "Documento no
+// válido como factura" y "Controle su pedido". Para lo de bebidas lo
+// necesitan SIN el nombre de la distribuidora: la casilla del membrete.
+// Se arma con lo guardado en la venta, igual que la reimpresion del ticket.
+let remitoOrdenId = null;
+
+function claveMembreteRemito() {
+  return 'bruwal_remito_membrete_' + (currentStore ? currentStore.slug : '');
+}
+
+// Si todo lo vendido es de una categoria de bebidas, arranca sin membrete;
+// si no, como se uso la ultima vez.
+function membretePorDefecto(o) {
+  const items = Array.isArray(o.items) ? o.items : [];
+  const cats = items.map(it => {
+    const p = products.find(x => String(x.id) === String(it.product_id));
+    return p ? String(p.category || '') : '';
+  });
+  if (cats.length && cats.every(c => /bebida/i.test(c))) return false;
+  try { return localStorage.getItem(claveMembreteRemito()) !== '0'; } catch (e) { return true; }
+}
+
+function abrirRemito(id) {
+  const lista = (orders || []).concat(pedidosTodos || []);
+  const o = lista.find(x => String(x.id) === String(id));
+  if (!o) { dialogoAviso('No se encontr\u00f3 esa venta.'); return; }
+  remitoOrdenId = o.id;
+  const cliente = (o.customer_name && o.customer_name !== 'scanner' && o.customer_name !== 'Mostrador') ? o.customer_name : '';
+  byId('remitoCliente').value = cliente;
+  byId('remitoDomicilio').value = [o.direccion, o.direccion_detalle].filter(Boolean).join(' - ');
+  byId('remitoVendedor').value = o.vendedor || '';
+  byId('remitoPago').value = Number(o.saldo_pendiente) > 0 ? 'Cuenta corriente' : (o.medio_pago || 'Contado');
+  byId('remitoMembrete').checked = membretePorDefecto(o);
+  show(byId('remitoModal'));
+}
+
+function estilosRemito() {
+  return '@page { size: A4; margin: 12mm; }' +
+    'body{font-family:"Courier New","DejaVu Sans Mono",monospace;color:#000;margin:0;font-size:12.5px;}' +
+    '.rm-cab{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;min-height:30mm;}' +
+    '.rm-negocio{font-family:Georgia,"Times New Roman",serif;max-width:48%;}' +
+    '.rm-negocio b{display:block;font-size:22px;text-transform:uppercase;margin-bottom:4px;}' +
+    '.rm-negocio div{font-size:11px;white-space:pre-line;}' +
+    '.rm-logo{max-height:20mm;max-width:45mm;display:block;margin-bottom:4px;}' +
+    '.rm-num{text-align:right;}' +
+    '.rm-num b{font-size:17px;letter-spacing:3px;}' +
+    '.rm-datos{border-top:1px solid #000;border-bottom:1px solid #000;padding:6px 0;margin:8px 0 10px;line-height:1.6;}' +
+    '.rm-datos span{display:inline-block;min-width:34mm;}' +
+    'table{width:100%;border-collapse:collapse;border:1px solid #000;}' +
+    'th{font-family:Georgia,"Times New Roman",serif;font-weight:400;font-size:12px;text-transform:uppercase;border-bottom:1px solid #000;padding:5px 4px;}' +
+    'td{padding:3px 4px;vertical-align:top;}' +
+    '.n{text-align:right;white-space:nowrap;}' +
+    '.rm-total{display:flex;justify-content:flex-end;gap:14px;font-size:16px;margin-top:8px;}' +
+    '.rm-pie{display:flex;justify-content:space-between;margin-top:28px;font-size:13px;letter-spacing:4px;}' +
+    '.rm-firma{border-top:1px solid #000;width:60mm;text-align:center;padding-top:3px;letter-spacing:0;font-size:11px;}';
+}
+
+function armarRemitoHtml(o, datos) {
+  const cfg = configTicket();
+  const cant = (n) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+  const plata = (n) => Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fecha = comoFecha(o.created_at);
+
+  const filas = (Array.isArray(o.items) ? o.items : []).map(it => {
+    const qty = Number(it.qty || 1);
+    const precio = Number(it.price || 0);
+    const lista = Number(it.precio_lista) > precio ? Number(it.precio_lista) : precio;
+    const desc = lista > 0 ? (1 - precio / lista) * 100 : 0;
+    const detalle = escapeHtml(nombreDelItem(it)) +
+      detalleDeItemTicket(it).replace(/<div class="det">/g, '<div style="font-size:11px;padding-left:8px;">');
+    return '<tr><td class="n">' + cant(qty) + '</td><td>' + detalle + '</td>' +
+      '<td class="n">' + (lista > 0 ? plata(lista) : '') + '</td>' +
+      '<td class="n">' + plata(desc) + '</td>' +
+      '<td class="n">' + (precio > 0 ? plata(precio * qty) : '') + '</td></tr>';
+  }).join('');
+
+  const membrete = datos.membrete
+    ? (cfg.mostrarLogo && currentStore?.image_url ? '<img class="rm-logo" src="' + escapeHtml(currentStore.image_url) + '" alt="">' : '') +
+      '<b>' + escapeHtml(String(cfg.titulo || '').trim() || currentStore?.business_name || '') + '</b>' +
+      (currentStore?.location ? '<div>' + escapeHtml(String(currentStore.location).split(',')[0].trim()) + '</div>' : '') +
+      (currentStore?.phone ? '<div>Tel: ' + escapeHtml(currentStore.phone) + '</div>' : '') +
+      (String(cfg.encabezado || '').trim() ? '<div>' + escapeHtml(String(cfg.encabezado).trim()) + '</div>' : '')
+    : '';
+
+  return '<div class="rm-cab"><div class="rm-negocio">' + membrete + '</div>' +
+      '<div class="rm-num"><b>REMITO</b> &nbsp;N\u00ba ' + (numeroDeTicket(o.id) || '') + ' - ' +
+        fechaAR(fecha) + ' ' + horaAR(fecha, { hour: '2-digit', minute: '2-digit', hour12: false }) +
+        '<div>Documento no v\u00e1lido como factura.</div></div></div>' +
+    '<div class="rm-datos">' +
+      '<div><span>Cliente :</span>' + escapeHtml(datos.cliente || 'Consumidor final') + '</div>' +
+      (datos.domicilio ? '<div><span>Domicilio :</span>' + escapeHtml(datos.domicilio) + '</div>' : '') +
+      (datos.vendedor ? '<div><span>Vendedor :</span>' + escapeHtml(datos.vendedor) + '</div>' : '') +
+      '<div><span>Forma de pago :</span>' + escapeHtml(datos.pago || 'Contado') + '</div>' +
+    '</div>' +
+    '<table><thead><tr><th style="width:16%;">Cantidad</th><th>Detalle</th><th style="width:15%;">P. Unitario</th>' +
+      '<th style="width:9%;">% Desc.</th><th style="width:16%;">Total</th></tr></thead><tbody>' + filas + '</tbody></table>' +
+    '<div class="rm-total"><span>TOTAL $</span><b>' + plata(o.total || 0) + '</b></div>' +
+    (Number(o.saldo_pendiente) > 0 ? '<div class="rm-total" style="font-size:13px;"><span>Queda debiendo $</span><b>' + plata(o.saldo_pendiente) + '</b></div>' : '') +
+    '<div class="rm-pie"><span>CONTROLE SU PEDIDO</span><span class="rm-firma">Recib\u00ed conforme</span></div>';
+}
+
+function imprimirRemito() {
+  const lista = (orders || []).concat(pedidosTodos || []);
+  const o = lista.find(x => String(x.id) === String(remitoOrdenId));
+  if (!o) { hide(byId('remitoModal')); return; }
+  const datos = {
+    cliente: byId('remitoCliente').value.trim(),
+    domicilio: byId('remitoDomicilio').value.trim(),
+    vendedor: byId('remitoVendedor').value.trim(),
+    pago: byId('remitoPago').value.trim(),
+    membrete: byId('remitoMembrete').checked
+  };
+  try { localStorage.setItem(claveMembreteRemito(), datos.membrete ? '1' : '0'); } catch (e) {}
+  hide(byId('remitoModal'));
+
+  // Mismo iframe que el ticket, con hoja A4.
+  const viejo = document.getElementById('marcoTicket');
+  if (viejo) viejo.remove();
+  const marco = document.createElement('iframe');
+  marco.id = 'marcoTicket';
+  marco.setAttribute('aria-hidden', 'true');
+  marco.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  document.body.appendChild(marco);
+  const doc = marco.contentWindow.document;
+  doc.open();
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Remito ' + escapeHtml(numeroDeTicket(o.id) || '') +
+    '</title><style>' + estilosRemito() + '</style></head><body>' + armarRemitoHtml(o, datos) + '</body></html>');
+  doc.close();
+  setTimeout(() => {
+    if (!marco.isConnected || !marco.contentWindow) return;
+    try { marco.contentWindow.focus(); marco.contentWindow.print(); }
+    catch (e) { dialogoAviso('No se pudo abrir la impresi\u00f3n:\n\n' + (e && humano(e) ? humano(e) : e)); }
+  }, 350);
+}
+
+byId('cerrarRemitoModal').addEventListener('click', () => hide(byId('remitoModal')));
+byId('imprimirRemitoBtn').addEventListener('click', imprimirRemito);
+
 // Que se llevo, debajo del renglon: "Tamano: Porcion", "+ Cheddar". Sin
 // esto, tres porciones de distinto tamano salian las tres como "1 x Basic"
 // y en la cocina no habia forma de saber cual era cual.
@@ -21552,7 +21733,12 @@ function inicializarTicketVenta() {
   let guardado = null;
   try { guardado = localStorage.getItem(clave); } catch (e) {}
   casilla.checked = (guardado === null) ? true : guardado === '1';
+  // El remito arranca destildado: no toda venta lleva remito.
+  try { byId('barcodeRemito').checked = localStorage.getItem('bruwal_remito_' + currentStore.slug) === '1'; } catch (e) {}
 }
+byId('barcodeRemito').addEventListener('change', (e) => {
+  try { localStorage.setItem('bruwal_remito_' + (currentStore ? currentStore.slug : ''), e.target.checked ? '1' : '0'); } catch (err) {}
+});
 
 // Etiqueta chica para pegarle al equipo en reparación: el código grande es
 // lo único que hace falta para encontrarlo después entre varios celulares
@@ -23081,6 +23267,7 @@ function renderSalesHistory() {
       '<td style="text-align:right;color:var(--navy);font-weight:600;">' + money(o.total) + '</td>' +
       '<td style="text-align:right;">' +
         '<button class="icon-btn" data-ticket-venta="' + o.id + '" title="Reimprimir el ticket">🧾</button>' +
+        (rubroEsDistribuidora() ? '<button class="icon-btn" data-remito-venta="' + o.id + '" title="Hacer remito">📄</button>' : '') +
         '<button class="icon-btn" data-borrar-venta="' + o.id + '" title="Anular esta venta" ' +
         'style="color:var(--danger);">🗑</button></td>' +
       '</tr>';
@@ -23095,6 +23282,9 @@ function renderSalesHistory() {
   });
   el.querySelectorAll('[data-ticket-venta]').forEach(b => {
     b.addEventListener('click', () => imprimirTicketDeOrden(b.dataset.ticketVenta));
+  });
+  el.querySelectorAll('[data-remito-venta]').forEach(b => {
+    b.addEventListener('click', () => abrirRemito(b.dataset.remitoVenta));
   });
 }
 
@@ -24120,6 +24310,7 @@ async function confirmarVentaCarrito() {
   if (byId('barcodeTicket')?.checked) {
     imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
   }
+  if (rubroEsDistribuidora() && byId('barcodeRemito')?.checked && ok.ordenId) abrirRemito(ok.ordenId);
 
   carritoVenta = [];
   renderCarritoVenta();
@@ -24895,6 +25086,7 @@ async function confirmBarcodeVenta() {
         abonaAhora
       });
     }
+    if (rubroEsDistribuidora() && byId('barcodeRemito')?.checked && ok.ordenId) abrirRemito(ok.ordenId);
 
     const idEquipoParaFoto = (ok.tradeIn && ok.equipoTomadoOk) ? ok.equipoTomadoId : null;
 
