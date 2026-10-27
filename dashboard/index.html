@@ -23969,6 +23969,7 @@ async function clearBarcodeResult() {
   hide(byId('barcodeResult'));
   hide(byId('barcodeMatches'));
   currentBarcodeProduct = null;
+  if (rubroEsDistribuidora()) renderCarritoVenta();
   byId('barcodeInput').value = '';
   byId('barcodeInput').focus();
 }
@@ -24283,6 +24284,7 @@ function nombreConAgregados(l) {
 function renderCarritoVenta() {
   const caja = byId('carritoVentaBox');
   if (!caja) return;
+  if (rubroEsDistribuidora()) { renderGrillaVenta(caja); return; }
   if (!carritoVenta.length) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
 
   // Con la linea de la pantalla incluida: puede ser la que hace llegar al
@@ -24306,6 +24308,148 @@ function renderCarritoVenta() {
   caja.querySelectorAll('[data-quitar-linea-venta]').forEach(b =>
     b.addEventListener('click', () => quitarLineaDelPedido(Number(b.dataset.quitarLineaVenta))));
 }
+
+// ---- Grilla de renglones (distribuidora) ----
+// Como la "Emision de Comprobantes" del sistema viejo de JACI: cada
+// producto que se pasa queda como un renglon (codigo, descripcion,
+// cantidad, precio unitario, % desc. y total) y abajo el total grande.
+// El que esta en pantalla ya aparece (marcado "cargando") para que el
+// cliente vea armarse el pedido desde el primer producto.
+function renglonesDeGrilla() {
+  const r = resumenVentaActual();
+  const n = carritoVenta.length;
+  const renglones = r.lineas.map((l, i) => {
+    const qty = Number(l.qty) || 0;
+    const extras = sumaDeAgregados(l.opciones);
+    const lista = Math.max(Number(l.precioUnitario) || 0, Number(l.precioLista) || 0,
+                           l.mayorista ? Number(l.mayorista.lista) + extras : 0);
+    const bruto = lista * qty;
+    const importe = Number(l.importe) || 0;
+    const desc = bruto > 0 && importe < bruto - 0.005 ? (1 - importe / bruto) * 100 : 0;
+    return {
+      i,
+      cargando: i >= n,
+      codigo: l.product.ean || '',
+      descripcion: nombreConAgregados(l),
+      cantidad: seVendePorMedida(l.product) ? formatearCantidad(qty, l.product) : String(qty),
+      unitario: lista,
+      desc,
+      total: importe,
+      motivo: textoPromoDeLinea(l)
+    };
+  });
+  const notas = r.ajustes.map(textoAjustePorciones)
+    .concat(r.lineas.filter(l => l.mayorista).map(textoMayorista))
+    .concat((r.combos || []).map(textoCombo));
+  return { renglones, total: r.total || 0, notas };
+}
+
+const pesosGrilla = (n) => Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// La tabla, igual para la caja y para la pantalla del cliente. En la del
+// cliente no van los botones de sacar.
+function tablaGrillaVentaHtml(g, paraCliente) {
+  const filas = g.renglones.map(x =>
+    '<tr class="' + (x.cargando ? 'grilla-cargando' : '') + '">' +
+      '<td class="g-cod">' + escapeHtml(x.codigo) + '</td>' +
+      '<td class="g-desc">' + escapeHtml(x.descripcion) +
+        (x.cargando ? ' <span class="g-tag">cargando</span>' : '') +
+        (x.motivo ? '<div class="g-motivo">' + escapeHtml(x.motivo) + '</div>' : '') + '</td>' +
+      '<td class="g-num">' + escapeHtml(x.cantidad) + '</td>' +
+      '<td class="g-num">' + pesosGrilla(x.unitario) + '</td>' +
+      '<td class="g-num">' + (x.desc ? x.desc.toLocaleString('es-AR', { maximumFractionDigits: 1 }) : '0') + '</td>' +
+      '<td class="g-num g-tot">' + pesosGrilla(x.total) + '</td>' +
+      (paraCliente ? '' : '<td class="g-x">' + (x.cargando ? '' :
+        '<button type="button" class="icon-btn danger" data-quitar-linea-venta="' + x.i + '" title="Sacar del pedido">✕</button>') + '</td>') +
+    '</tr>').join('');
+  const unidades = g.renglones.length;
+  return '<div class="grilla-venta-scroll"><table class="grilla-venta">' +
+      '<thead><tr><th class="g-cod">Código</th><th>Descripción</th><th class="g-num">Cantidad</th>' +
+      '<th class="g-num">P. Unitario</th><th class="g-num">% Desc.</th><th class="g-num">Total</th>' +
+      (paraCliente ? '' : '<th></th>') + '</tr></thead>' +
+      '<tbody>' + filas + '</tbody></table></div>' +
+    '<div class="grilla-venta-pie">' +
+      '<span>' + unidades + (unidades === 1 ? ' artículo' : ' artículos') + '</span>' +
+      '<span class="grilla-venta-total"><small>TOTAL $</small> ' + pesosGrilla(g.total) + '</span>' +
+    '</div>' +
+    g.notas.map(t => '<div class="grilla-venta-nota">' + escapeHtml(t) + '</div>').join('');
+}
+
+function renderGrillaVenta(caja) {
+  const g = renglonesDeGrilla();
+  pintarPantallaCliente(g);
+  if (!g.renglones.length) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
+  caja.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+      '<span style="font-weight:700;color:var(--navy);flex:1;">🧾 Comprobante en curso</span>' +
+      '<button type="button" class="btn-ghost" id="abrirPantallaClienteBtn" style="padding:5px 10px;font-size:12.5px;" title="Abre una ventana para la pantalla que mira el cliente">🖥️ Pantalla del cliente</button>' +
+    '</div>' +
+    tablaGrillaVentaHtml(g, false) +
+    '<div style="font-size:12.5px;color:var(--text-mute);margin-top:8px;">Pasá el próximo producto arriba (el de pantalla se suma solo), o completá los datos y tocá <b>Registrar venta</b>.</div>';
+  caja.classList.remove('hidden');
+  caja.querySelectorAll('[data-quitar-linea-venta]').forEach(b =>
+    b.addEventListener('click', () => quitarLineaDelPedido(Number(b.dataset.quitarLineaVenta))));
+  byId('abrirPantallaClienteBtn')?.addEventListener('click', abrirPantallaCliente);
+}
+
+// ---- Pantalla del cliente ----
+// Una ventana aparte (se arrastra al monitor que mira el mostrador) con la
+// misma grilla en letra grande. Se repinta sola con cada producto.
+let ventanaCliente = null;
+
+function abrirPantallaCliente() {
+  if (ventanaCliente && !ventanaCliente.closed) { ventanaCliente.focus(); return; }
+  ventanaCliente = window.open('', 'bruwal-pantalla-cliente', 'width=1000,height=700');
+  if (!ventanaCliente) { dialogoAviso('El navegador bloqueó la ventana. Permití las ventanas emergentes para esta página y volvé a tocar el botón.'); return; }
+  const negocio = (currentStore && (currentStore.business_name || currentStore.slug)) || '';
+  ventanaCliente.document.open();
+  ventanaCliente.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><title>' + escapeHtml(negocio || 'Tu compra') + '</title><style>' +
+    'body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:#f4f7fb;color:#12233d;}' +
+    'header{background:#12233d;color:#fff;padding:18px 28px;font-size:26px;font-weight:800;letter-spacing:.5px;}' +
+    'main{padding:20px 28px;}' + ESTILO_GRILLA_VENTA.replace(/var\(--[a-z-]+\)/g, m => ({ 'var(--line)': '#d8e0ea', 'var(--navy)': '#12233d', 'var(--text-mute)': '#5b6b80' }[m] || '#12233d')) +
+    '.grilla-venta-scroll{max-height:calc(100vh - 240px);}.grilla-venta{font-size:22px;background:#fff;}.grilla-venta th{font-size:15px;}.grilla-venta-total{font-size:56px;}' +
+    '.vacio{font-size:30px;color:#5b6b80;text-align:center;margin-top:120px;}' +
+    '</style></head><body><header>' + escapeHtml(negocio) + '</header><main id="pantalla"></main></body></html>');
+  ventanaCliente.document.close();
+  renderCarritoVenta();
+}
+
+function pintarPantallaCliente(g) {
+  if (!ventanaCliente || ventanaCliente.closed) return;
+  const main = ventanaCliente.document.getElementById('pantalla');
+  if (!main) return;
+  main.innerHTML = g.renglones.length
+    ? tablaGrillaVentaHtml(g, true)
+    : '<div class="vacio">¡Gracias por su compra!</div>';
+  const scroll = main.querySelector('.grilla-venta-scroll');
+  if (scroll) scroll.scrollTop = scroll.scrollHeight;
+}
+
+const ESTILO_GRILLA_VENTA =
+  '.grilla-venta-scroll{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:6px;}' +
+  '.grilla-venta{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;}' +
+  '.grilla-venta th{position:sticky;top:0;background:#12233d;color:#fff;text-align:left;padding:7px 8px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;}' +
+  '.grilla-venta td{padding:6px 8px;border-top:1px solid var(--line);vertical-align:top;}' +
+  '.grilla-venta tbody tr:nth-child(even){background:#f3f8f3;}' +
+  '.grilla-venta tr.grilla-cargando{background:#fff8d6 !important;}' +
+  '.grilla-venta .g-num{text-align:right;white-space:nowrap;}' +
+  '.grilla-venta .g-cod{white-space:nowrap;}.grilla-venta td.g-cod{color:#5b6b80;font-size:.85em;}' +
+  '.grilla-venta .g-desc{font-weight:600;text-transform:uppercase;}' +
+  '.grilla-venta .g-tot{font-weight:700;}' +
+  '.grilla-venta .g-x{width:1%;padding:2px 4px;}' +
+  '.grilla-venta .g-tag{font-size:.7em;font-weight:700;background:#f2c94c;color:#5a4300;border-radius:4px;padding:1px 6px;text-transform:none;}' +
+  '.grilla-venta .g-motivo{font-size:.78em;font-weight:600;color:#1FA088;text-transform:none;}' +
+  '.grilla-venta-pie{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:10px;color:var(--text-mute);font-size:13px;}' +
+  '.grilla-venta-total{font-size:32px;font-weight:800;color:#c0162c;font-variant-numeric:tabular-nums;}' +
+  '.grilla-venta-total small{font-size:.4em;color:var(--text-mute);font-weight:700;}' +
+  '.grilla-venta-nota{font-size:12.5px;color:#1FA088;font-weight:600;margin-top:6px;}' +
+  '@media (max-width:600px){.grilla-venta .g-cod{display:none;}.grilla-venta{font-size:13px;}.grilla-venta td,.grilla-venta th{padding:5px;}}';
+
+(function () {
+  const st = document.createElement('style');
+  st.textContent = ESTILO_GRILLA_VENTA;
+  document.head.appendChild(st);
+})();
 
 function pintarTotalConCarrito() {
   const nota = byId('barcodeArmadoNota');
