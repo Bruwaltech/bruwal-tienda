@@ -1576,6 +1576,8 @@ tr:last-child td { border-bottom: none; }
 /* Editor de carteles de oferta */
 .cg-opciones { display:grid; grid-template-columns:1.3fr 1fr 1.3fr; gap:12px; margin-bottom:14px; }
 .cg-opciones select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:14px; }
+.cg-check { display:flex; align-items:center; gap:8px; font-size:13.5px; margin:-4px 0 14px; cursor:pointer; }
+.cg-check input { margin:0; width:auto; }
 .cg-colores { display:flex; gap:8px; flex-wrap:wrap; padding-top:4px; }
 .cg-colores button { width:30px; height:30px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px var(--line); cursor:pointer; transition:transform .15s, box-shadow .15s; }
 .cg-colores button:hover { transform:scale(1.08); }
@@ -5151,6 +5153,7 @@ tr:last-child td { border-bottom: none; }
         <div class="cg-colores" id="gondolaColores"></div>
       </div>
     </div>
+    <label class="cg-check"><input type="checkbox" id="gondolaAhorro" checked> Mostrar cuánto ahorra el cliente <span style="color:var(--text-mute);">("Ahorrás $…")</span></label>
     <div class="cg-cuerpo">
       <div>
         <div class="cg-filtros" id="gondolaFiltros">
@@ -20721,7 +20724,8 @@ byId('probarTicketBtn').addEventListener('click', () => {
 // ---- Carteles de oferta para la gondola (distribuidora) ----
 // Lo que se pega en el estante: el precio de oferta bien grande, el de
 // antes tachado y, en un combo, de que esta hecho. Salen los productos con
-// oferta, los combos que se arman solos en la caja, los que bajaron de
+// oferta, los que tienen precio por cantidad ("llevando 3, $X c/u"), los
+// combos que se arman solos en la caja, los que bajaron de
 // precio en los ultimos 30 dias (del historial de precios, schema/86) y, buscando,
 // cualquier otro. Cada cartel se puede editar (faja, nombre, detalle,
 // precio, precio de antes) y lo editado queda en store_profiles.carteles
@@ -20760,9 +20764,24 @@ function colorCartel() {
   return COLORES_CARTEL[cartelesConfig.estilo.color] ? cartelesConfig.estilo.color : 'rojo';
 }
 
+// La oferta por cantidad que va en el cartel: el primer escalon que de
+// verdad baja el precio (la caja tampoco aplica uno que no lo baje).
+function escalonCartel(p) {
+  const vigente = precioVigente(p);
+  return escalonesDeProducto(p).find(e => e.precio < vigente - 0.004) || null;
+}
+
+function textoEscalonCartel(e) {
+  return 'Llevando ' + e.desde + ' o más: ' + e.desde + ' × ' + money(Math.round(e.precio * e.desde * 100) / 100);
+}
+
+function mostrarAhorroCartel() {
+  return cartelesConfig.estilo.ahorro !== false;
+}
+
 function productosParaGondola() {
   return (products || []).filter(p => !p.solo_interno && !p.pausado &&
-      (hayOferta(p) || (p.combo_en_caja && Array.isArray(p.insumos) && p.insumos.length && precioVigente(p) > 0)))
+      (hayOferta(p) || escalonCartel(p) || (p.combo_en_caja && Array.isArray(p.insumos) && p.insumos.length && precioVigente(p) > 0)))
     .sort((a, b) => String(a.name).localeCompare(String(b.name), 'es'));
 }
 
@@ -20781,6 +20800,7 @@ function productosGondolaFiltro() {
 
 function tipoCartel(p) {
   if (hayOferta(p)) return 'oferta';
+  if (escalonCartel(p)) return 'cantidad';
   if (p.combo_en_caja && Array.isArray(p.insumos) && p.insumos.length) return 'combo';
   if (gondolaBajaron.has(String(p.id))) return 'bajo';
   return 'precio';
@@ -20801,21 +20821,37 @@ function partesComboTexto(p) {
   }).join(' + ');
 }
 
+// El precio que el cartel anuncia sin editar: en una oferta por cantidad
+// es el de cada unidad llevando las que pide el escalon, en el resto el
+// que cobra la caja.
+function precioBaseCartel(p) {
+  const e = tipoCartel(p) === 'cantidad' ? escalonCartel(p) : null;
+  return e ? e.precio : precioVigente(p);
+}
+
 // El cartel tal como sale sin tocar nada.
 function cartelPorDefecto(p) {
   const tipo = tipoCartel(p);
-  const precio = precioVigente(p);
+  const precio = precioBaseCartel(p);
   const antes = tipo === 'oferta' ? Number(p.price)
+    : tipo === 'cantidad' ? precioVigente(p)
     : tipo === 'combo' ? valorPartesCombo(p)
     : tipo === 'bajo' ? Number(gondolaBajaron.get(String(p.id)))
     : 0;
+  // Una oferta comun que ademas tiene precio por cantidad lo dice abajo.
+  const escalon = tipo === 'cantidad' || tipo === 'oferta' ? escalonCartel(p) : null;
   return {
     tipo,
-    faja: { oferta: 'OFERTA', combo: 'COMBO', bajo: 'BAJÓ DE PRECIO', precio: 'PRECIO' }[tipo],
+    faja: tipo === 'cantidad' ? 'LLEVANDO ' + escalon.desde
+      : { oferta: 'OFERTA', combo: 'COMBO', bajo: 'BAJÓ DE PRECIO', precio: 'PRECIO' }[tipo],
     nombre: String(p.name || ''),
-    detalle: tipo === 'combo' ? partesComboTexto(p) : '',
+    detalle: tipo === 'combo' ? partesComboTexto(p)
+      : tipo === 'cantidad' ? textoEscalonCartel(escalon)
+      : escalon ? 'Llevando ' + escalon.desde + ' o más, ' + money(escalon.precio) + ' c/u'
+      : '',
     precio,
-    antes: antes > precio + 0.5 ? antes : 0
+    antes: antes > precio + 0.5 ? antes : 0,
+    desde: tipo === 'cantidad' ? escalon.desde : 0
   };
 }
 
@@ -20828,7 +20864,7 @@ function datosCartel(p) {
   const ed = cartelesConfig.editados[String(p.id)];
   if (!ed) return d;
   ['faja', 'nombre', 'detalle'].forEach(k => { if (typeof ed[k] === 'string') d[k] = ed[k]; });
-  if (Number(ed.base) === precioVigente(p)) {
+  if (Number(ed.base) === precioBaseCartel(p)) {
     if (ed.precio != null && Number(ed.precio) > 0) d.precio = Number(ed.precio);
     if (ed.antes != null) d.antes = Number(ed.antes) || 0;
   }
@@ -20839,7 +20875,7 @@ function cartelEditado(p) {
   const ed = cartelesConfig.editados[String(p.id)];
   if (!ed) return false;
   return ['faja', 'nombre', 'detalle'].some(k => typeof ed[k] === 'string') ||
-    (Number(ed.base) === precioVigente(p) && (ed.precio != null || ed.antes != null));
+    (Number(ed.base) === precioBaseCartel(p) && (ed.precio != null || ed.antes != null));
 }
 
 async function cargarBajaronDePrecio() {
@@ -20888,6 +20924,7 @@ async function abrirCartelesGondola() {
 function renderGondolaCompleto() {
   const formato = cartelesConfig.estilo.formato;
   byId('gondolaFormato').value = FORMATOS_CARTEL.includes(formato) ? formato : '8x6';
+  byId('gondolaAhorro').checked = mostrarAhorroCartel();
   renderColoresGondola();
   renderFiltrosGondola();
   renderListaGondola();
@@ -20920,7 +20957,7 @@ function renderListaGondola() {
       gondolaFiltro === 'bajaron'
         ? 'Ningún producto bajó de precio en los últimos 30 días.'
         : 'Todavía no tenés productos con oferta ni combos.<br>Poné una oferta desde el botón 🏷️ de cada producto, ' +
-          'o armá un combo y prendele <b>Armarlo solo en la caja</b>. También podés hacerle cartel a cualquier producto desde <b>Todos</b>.'
+          'cargale precio por cantidad (ej: llevando 3), o armá un combo y prendele <b>Armarlo solo en la caja</b>. También podés hacerle cartel a cualquier producto desde <b>Todos</b>.'
     ) + '</div>';
     return;
   }
@@ -20928,6 +20965,7 @@ function renderListaGondola() {
     const id = String(p.id);
     const d = datosCartel(p);
     const detalle = d.tipo === 'oferta' ? 'Antes ' + money(p.price) + ' · ' + porcentajeOff(p) + '% OFF'
+      : d.tipo === 'cantidad' ? 'Llevando ' + d.desde + ': ' + money(escalonCartel(p).precio) + ' c/u · suelto ' + money(precioVigente(p))
       : d.tipo === 'combo' ? 'Combo · ' + escapeHtml(partesComboTexto(p))
       : d.tipo === 'bajo' ? 'Bajó de ' + money(gondolaBajaron.get(id))
       : escapeHtml(p.category || '');
@@ -21031,7 +21069,7 @@ function tomarEdicionGondola(p) {
   if (precio > 0 && Math.abs(precio - base.precio) > 0.004) ed.precio = precio;
   if (Math.abs(antes - base.antes) > 0.004) ed.antes = antes;
   if (Object.keys(ed).length) {
-    ed.base = precioVigente(p);
+    ed.base = precioBaseCartel(p);
     cartelesConfig.editados[String(p.id)] = ed;
   } else {
     delete cartelesConfig.editados[String(p.id)];
@@ -21054,8 +21092,10 @@ function actualizarAvisoPrecioGondola(p) {
   const aviso = byId('gondolaAvisoPrecio');
   if (!aviso) return;
   const d = datosCartel(p);
-  aviso.textContent = Math.abs(d.precio - precioVigente(p)) > 0.004
-    ? '⚠️ La caja cobra ' + money(precioVigente(p)) + ' y el cartel dice ' + money(d.precio) + '. Si es un precio nuevo, cambialo también en el producto.'
+  const base = precioBaseCartel(p);
+  aviso.textContent = Math.abs(d.precio - base) > 0.004
+    ? '⚠️ La caja cobra ' + money(base) + (d.tipo === 'cantidad' ? ' c/u llevando ' + d.desde : '') +
+      ' y el cartel dice ' + money(d.precio) + '. Si es un precio nuevo, cambialo también en el producto.'
     : '';
 }
 
@@ -21144,7 +21184,8 @@ function estilosCartelesGondola(formato, colorKey) {
 
 function cartelGondolaHtml(p, hasta) {
   const d = datosCartel(p);
-  const ahorro = d.antes - d.precio;
+  // En la oferta por cantidad el ahorro es el de llevar las unidades que pide.
+  const ahorro = (d.antes - d.precio) * (d.tipo === 'cantidad' ? d.desde : 1);
   const pct = d.antes > 0 ? Math.round((1 - d.precio / d.antes) * 100) : 0;
   const clases = 'cartel' + (d.nombre.length > 34 ? ' nombre-largo' : '') + (money(d.precio).length > 8 ? ' precio-largo' : '');
   const pie = [hasta ? 'Válido hasta el ' + hasta : '', currentStore?.business_name || ''].filter(Boolean).join(' · ');
@@ -21153,10 +21194,10 @@ function cartelGondolaHtml(p, hasta) {
     '<div class="medio">' +
       '<div class="nombre">' + escapeHtml(d.nombre) + '</div>' +
       (d.detalle ? '<div class="partes">' + escapeHtml(d.detalle) + '</div>' : '') +
-      (ahorro > 0.5 ? '<div class="antes">' + (d.tipo === 'combo' ? 'Por separado ' : 'Antes ') + '<s>' + money(d.antes) + '</s>' +
+      (ahorro > 0.5 ? '<div class="antes">' + (d.tipo === 'combo' ? 'Por separado ' : d.tipo === 'cantidad' ? 'Suelto ' : 'Antes ') + '<s>' + money(d.antes) + '</s>' +
         (d.tipo !== 'combo' && pct > 0 ? ' <b>-' + pct + '%</b>' : '') + '</div>' : '') +
-      '<div class="precio">' + money(d.precio) + '<span>' + escapeHtml(sufijoPrecioPorMedida(p)) + '</span></div>' +
-      (ahorro > 0.5 ? '<div class="ahorro">Ahorrás ' + money(ahorro) + '</div>' : '') +
+      '<div class="precio">' + money(d.precio) + '<span>' + escapeHtml(sufijoPrecioPorMedida(p) || (d.tipo === 'cantidad' ? ' c/u' : '')) + '</span></div>' +
+      (ahorro > 0.5 && mostrarAhorroCartel() ? '<div class="ahorro">Ahorrás ' + money(ahorro) + (d.tipo === 'cantidad' ? ' llevando ' + d.desde : '') + '</div>' : '') +
       (pie ? '<div class="pie">' + escapeHtml(pie) + '</div>' : '') +
     '</div>' +
   '</div>';
@@ -21257,6 +21298,12 @@ byId('gondolaFormato').addEventListener('change', () => {
   gondolaTocado = true;
   renderPreviaGondola();
   actualizarBotonImprimirGondola();
+  programarGuardarCarteles();
+});
+byId('gondolaAhorro').addEventListener('change', () => {
+  cartelesConfig.estilo.ahorro = byId('gondolaAhorro').checked;
+  gondolaTocado = true;
+  renderPreviaGondola();
   programarGuardarCarteles();
 });
 byId('gondolaHasta').addEventListener('input', renderPreviaGondola);
