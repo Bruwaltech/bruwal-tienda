@@ -13379,6 +13379,21 @@ async function arranqueDirectoAVentas() {
   toggleCameraScanner();
 }
 
+// La base devuelve como mucho 1000 filas por consulta: una tienda con más
+// productos (JACI tiene ~1450) veía solo una parte. Se traen de a mil,
+// ordenados por id para que ninguna página repita ni saltee filas.
+async function traerProductosDeLaTienda(slug) {
+  const filas = [];
+  for (let desde = 0; desde < 100000; desde += 1000) {
+    const { data, error } = await sb.from('store_products').select('*')
+      .eq('store_slug', slug).order('id').range(desde, desde + 999);
+    if (error) return { data: null, error };
+    filas.push(...data);
+    if (data.length < 1000) break;
+  }
+  return { data: filas, error: null };
+}
+
 async function refreshData(reintento) {
   if (!currentStore) return;
 
@@ -13397,7 +13412,7 @@ async function refreshData(reintento) {
   // Sin internet NO se pisa nada: antes cada refresco fallido dejaba la
   // lista de productos y de pedidos vacia, y al minuto del corte la caja no
   // tenia nada para vender. Se sigue con lo que ya estaba en pantalla.
-  const { data: prods, error: errProds } = await sb.from('store_products').select('*').eq('store_slug', currentStore.slug);
+  const { data: prods, error: errProds } = await traerProductosDeLaTienda(currentStore.slug);
   if (errProds && esFallaDeRed(errProds)) {
     marcarSinConexion(true);
     pintarConLoQueHay();
