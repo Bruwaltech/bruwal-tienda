@@ -13369,7 +13369,7 @@ async function arranqueDirectoAVentas() {
   toggleCameraScanner();
 }
 
-async function refreshData() {
+async function refreshData(reintento) {
   if (!currentStore) return;
 
   // Se entro sin internet y sin sesion: hasta tenerla, nada de leer ni subir.
@@ -13391,6 +13391,16 @@ async function refreshData() {
   if (errProds && esFallaDeRed(errProds)) {
     marcarSinConexion(true);
     pintarConLoQueHay();
+    return;
+  }
+  // Sesión vencida ("JWT expired") o perdida: el refresco de cada minuto
+  // seguía consultando y todo volvía 401 por horas. Se renueva y se
+  // reintenta una vez; si la sesión ya no existe, vuelve al ingreso. En
+  // ningún caso se pisa lo que hay en pantalla.
+  if (errProds && (/^PGRST30/.test(errProds.code || '') || errProds.code === '42501')) {
+    const { error: errSesion } = await sb.auth.refreshSession();
+    if (!errSesion && !reintento) return refreshData(true);
+    if (!(await sb.auth.getSession()).data.session) mostrarIngreso();
     return;
   }
   marcarSinConexion(false);
