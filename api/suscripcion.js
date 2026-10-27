@@ -17,6 +17,7 @@
 // darse un plan a uno mismo.
 
 const mail = require('./_mail');
+const intentos = require('./_intentos');
 
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const MP_API = 'https://api.mercadopago.com';
@@ -25,7 +26,7 @@ const MP_API = 'https://api.mercadopago.com';
 // respuesta. Sin esto, cuando algo falla no hay forma de saber si lo que
 // esta corriendo tiene el arreglo o es el codigo viejo todavia cacheado:
 // se pierde media hora discutiendo contra un fantasma.
-const VERSION = 3;
+const VERSION = 4;
 
 // El mismo mapa que usa el webhook. Si algún día se recrea un plan en
 // Mercado Pago (cambia el precio y sale un id nuevo), hay que actualizar los
@@ -606,6 +607,26 @@ module.exports = async (req, res) => {
   // POR Mercado Pago. Al que le pusiste el plan a mano (paga por
   // transferencia, es una cortesia) no se lo toca: cortarle a ese seria
   // peor que no cortar a nadie.
+  // ---- El cliente fue a pagar ----
+  //
+  // Lo manda el panel al apretar "Suscribirme", antes de abrir Mercado
+  // Pago. No activa nada: deja anotado que esta tienda fue a pagar este
+  // plan a esta hora, que es lo que despues permite reconocer su
+  // suscripcion si llega sin dueño (ver api/_intentos.js).
+  if ((req.body || {}).accion === 'iniciar-pago') {
+    const plan = String((req.body || {}).plan || '');
+    if (!['basic', 'pro'].includes(plan)) {
+      return res.status(400).json({ error: 'Plan invalido' });
+    }
+    try {
+      await intentos.registrar(tienda.slug, plan);
+    } catch (err) {
+      // No puede frenar el pago: a lo sumo se ata a mano como antes.
+      console.warn('No se pudo anotar el intento de pago de', tienda.slug, err && err.message);
+    }
+    return res.status(200).json({ ok: true });
+  }
+
   if ((req.body || {}).accion === 'revisar') {
     if (!tienda.mp_preapproval_id) {
       return res.status(200).json({ ok: true, revisado: false,
@@ -1293,6 +1314,41 @@ module.exports = async (req, res) => {
       }
     }
 
+    // Tampoco por email: se busca entre los pagos sin dueño uno que haya
+    // nacido justo despues de que ESTA tienda apretara "Suscribirme", y de
+    // ninguna otra. Es el caso de quien paga desde la app de Mercado Pago
+    // (o con otro mail) y no vuelve al panel por el link.
+    let rescatadaPorIntento = false;
+    if (!autorizada && !esperandoElPrimerCobro) {
+      const sueltas = await pagosSinDuenio();
+      for (const s of sueltas) {
+        if (!s.plan) continue;
+        const duenia = await intentos.slugPorIntento({ id: s.id, date_created: s.desde }, s.plan);
+        if (duenia !== tienda.slug) continue;
+
+        // El detalle, para ver con datos frescos que cobro o esta en prueba.
+        const detalle = await detalleDeSuscripcion(s.id);
+        if (!detalle || detalle.status !== 'authorized') continue;
+        const c = cobrosDe(detalle);
+        if (!(c === null || c > 0 || enPruebaGratis(detalle))) continue;
+
+        autorizada = {
+          id: detalle.id,
+          estado: detalle.status,
+          plan: s.plan,
+          plan_id: detalle.preapproval_plan_id,
+          desde: detalle.date_created || null,
+          proximo_cobro: detalle.next_payment_date ||
+            (detalle.auto_recurring && detalle.auto_recurring.next_payment_date) || null
+        };
+        rescatadaPorIntento = true;
+        vistas.push(autorizada);
+        await intentos.marcarUsado(tienda.slug, detalle.id, s.plan);
+        await marcarSuscripcionConSlug(detalle.id, tienda.slug);
+        break;
+      }
+    }
+
     if (!autorizada) {
       // Una suscripción autorizada de un plan que no está en el mapa es el
       // caso peligroso: el cliente paga y nadie se entera de por qué no se
@@ -1417,6 +1473,7 @@ module.exports = async (req, res) => {
       plan: autorizada.plan,
       antes: tienda.plan,
       por_email: rescatadaPorEmail,
+      por_intento: rescatadaPorIntento,
       suscripciones: vistas
     });
   } catch (err) {
