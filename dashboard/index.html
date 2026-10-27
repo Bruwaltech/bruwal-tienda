@@ -7145,10 +7145,10 @@ function hayPinConfigurado() { return !!currentStore?.pin_costos; }
 // en cualquier rubro.
 function cajaConClave() { return hayPinConfigurado() && (rubroEsDistribuidora() || bloqueoActivo()); }
 
-function conClaveDeCaja(accion, que, detalle) {
+function conClaveDeCaja(accion, que, detalle, mensaje) {
   if (!cajaConClave()) return accion();
   if (sesionDuenioAbierta()) return accionConSesionAbierta(que || 'Movimiento de caja', detalle, accion);
-  abrirPinCostosModal(accion, 'Los movimientos de caja los autoriza el dueño. Ingresá el PIN.');
+  abrirPinCostosModal(accion, mensaje || 'Los movimientos de caja los autoriza el dueño. Ingresá el PIN.');
   intentoPendiente = { que: que || 'Movimiento de caja', detalle: detalle || '' };
 }
 
@@ -18104,10 +18104,17 @@ function renderClientes() {
 
   byId('clientesBody').querySelectorAll('[data-vender-a]').forEach(b =>
     b.addEventListener('click', () => venderACliente(b.dataset.venderA)));
+  // Entrar a Clientes es libre; cambiar el nombre (toca todas sus ventas)
+  // o borrar el cliente (borra sus ventas) es como anular: lo autoriza el
+  // dueño con el PIN, igual que en el historial de Ventas.
+  const conPinDeClientes = (que, nombre, accion) =>
+    conClaveDeCaja(accion, que, nombre, que + ': lo autoriza el dueño. Ingresá el PIN.');
   byId('clientesBody').querySelectorAll('[data-renombrar]').forEach(b =>
-    b.addEventListener('click', () => renombrarCliente(b.dataset.renombrar)));
+    b.addEventListener('click', () => conPinDeClientes('Editar cliente', b.dataset.renombrar,
+      () => renombrarCliente(b.dataset.renombrar))));
   byId('clientesBody').querySelectorAll('[data-eliminar-cliente]').forEach(b =>
-    b.addEventListener('click', () => eliminarCliente(b.dataset.eliminarCliente)));
+    b.addEventListener('click', () => conPinDeClientes('Borrar cliente y sus ventas', b.dataset.eliminarCliente,
+      () => eliminarCliente(b.dataset.eliminarCliente))));
 
   // El desplegable de clientes en la pantalla de ventas
   const dl = byId('listaClientes');
