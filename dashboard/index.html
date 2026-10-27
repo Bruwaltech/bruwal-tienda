@@ -10666,7 +10666,14 @@ byId('loginForm').addEventListener('submit', async (e) => {
     localStorage.removeItem('bruwal_remember_me');
   }
 
-  const { error } = await sb.auth.signInWithPassword({ email, password });
+  // Sin internet ni se intenta: supabase-js tarda en rendirse.
+  if (!navigator.onLine) { await entrarSinInternet(email, password); return; }
+
+  const { data: ingreso, error } = await sb.auth.signInWithPassword({ email, password });
+
+  if (error && esFallaDeRedSesion(error)) { await entrarSinInternet(email, password); return; }
+
+  if (!error) recordarIngresoSinInternet(email, password, ingreso && ingreso.user && ingreso.user.id);
 
   if (error) {
     // Antes cualquier error decia "email o contraseña incorrectos". A quien
@@ -10949,10 +10956,16 @@ function mostrarIngreso() {
 
 byId('logoutBtn').addEventListener('click', async () => {
   await sb.auth.signOut();
-  // La copia para abrir sin internet es de esta cuenta: en un aparato
-  // compartido no tiene que quedar. Las ventas sin subir SI quedan: son
-  // plata cobrada y suben cuando alguien vuelva a entrar a esa tienda.
-  try { localStorage.removeItem(COPIA_LOCAL); } catch (e) {}
+  credencialesPendientes = null;
+  // La copia para abrir sin internet es de esta cuenta. En un aparato
+  // propio ("Mantenerme conectado") queda, y para abrirla sin internet hay
+  // que poner la contraseña. En uno prestado se borra, con la comprobacion
+  // de la contraseña. Las ventas sin subir SI quedan siempre: son plata
+  // cobrada y suben cuando alguien vuelva a entrar a esa tienda.
+  if (localStorage.getItem('bruwal_remember_me') !== 'true') {
+    try { localStorage.removeItem(COPIA_LOCAL); } catch (e) {}
+    olvidarIngresoSinInternet();
+  }
   mostrarIngreso();
 });
 
@@ -10995,7 +11008,12 @@ async function onLoggedIn() {
   if (!user) {
     // Hay sesion pero no internet para validarla: si este aparato tiene la
     // copia, se abre con eso y la caja sigue vendiendo.
-    if (errorUsuario && esFallaDeRedSesion(errorUsuario)) await arrancarSinConexion();
+    if (errorUsuario && esFallaDeRedSesion(errorUsuario) && !(await arrancarSinConexion())) {
+      const cartel = byId('authError');
+      cartel.classList.remove('exito');
+      cartel.innerHTML = '<b>No hay internet</b> y este aparato todavía no tiene guardado tu panel. Conectate un momento y después ya abre sin wifi.';
+      show(cartel);
+    }
     return;
   }
 
@@ -13229,6 +13247,14 @@ async function arranqueDirectoAVentas() {
 async function refreshData() {
   if (!currentStore) return;
 
+  // Se entro sin internet y sin sesion: hasta tenerla, nada de leer ni subir.
+  if (credencialesPendientes && !(navigator.onLine && await asegurarSesionAlVolver())) {
+    if (!currentUser) return;   // la contraseña cambio y volvio al ingreso
+    marcarSinConexion(true);
+    pintarConLoQueHay();
+    return;
+  }
+
   // Lo que se vendio sin internet sube ANTES de leer: asi lo que vuelve de
   // la base ya trae esas ventas y el stock descontado.
   await sincronizarVentasPendientes();
@@ -13700,6 +13726,101 @@ async function arrancarSinConexion(userId) {
 
   pintarTodo();
   await arranqueDirectoAVentas();
+  return true;
+}
+
+// ---- Entrar sin internet ----
+// Hasta aca el panel solo abria sin internet si la sesion seguia guardada.
+// Si el aparato no la tenia (se cerro sesion, la pestaña se cerro sin
+// "Mantenerme conectado", o se entro con otra cuenta), quedaba la pantalla
+// de ingreso y entrar era imposible: la contraseña la valida Supabase y sin
+// internet no contesta (Walter, 26/10).
+//
+// Ahora, cada vez que se entra CON internet, el aparato se guarda una
+// comprobacion de la contraseña (PBKDF2, nunca la contraseña). Sin internet,
+// si el email y la contraseña coinciden con esa comprobacion y la copia del
+// panel es de esa cuenta, se abre con la copia. La contraseña queda solo en
+// memoria para iniciar la sesion de verdad apenas vuelva la conexion: sin
+// sesion la base no deja subir las ventas.
+
+const INGRESO_SIN_INTERNET = 'bruwal_ingreso_sin_internet';
+const VUELTAS_PBKDF2 = 150000;
+let credencialesPendientes = null;   // { email, password } si se entro sin sesion
+
+function aHex(buf) {
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function huellaDeClave(email, password, salHex) {
+  const sal = new Uint8Array(salHex.match(/../g).map(h => parseInt(h, 16)));
+  const clave = await crypto.subtle.importKey('raw', new TextEncoder().encode(email.toLowerCase() + '\n' + password),
+    'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: sal, iterations: VUELTAS_PBKDF2, hash: 'SHA-256' }, clave, 256);
+  return aHex(bits);
+}
+
+async function recordarIngresoSinInternet(email, password, userId) {
+  if (!(window.crypto && crypto.subtle) || !email || !password || !userId) return;
+  try {
+    const sal = aHex(crypto.getRandomValues(new Uint8Array(16)));
+    const huella = await huellaDeClave(email, password, sal);
+    localStorage.setItem(INGRESO_SIN_INTERNET, JSON.stringify({ email: email.toLowerCase(), userId, sal, huella }));
+  } catch (e) { /* sin esto solo se pierde entrar sin internet */ }
+}
+
+function olvidarIngresoSinInternet() {
+  try { localStorage.removeItem(INGRESO_SIN_INTERNET); } catch (e) {}
+}
+
+// true si abrio el panel con la copia. Si no se puede, deja el motivo en
+// el cartel de ingreso.
+async function entrarSinInternet(email, password) {
+  const cartel = byId('authError');
+  const avisar = (texto) => { cartel.classList.remove('exito'); cartel.innerHTML = texto; show(cartel); return false; };
+
+  let guardado = null;
+  try { guardado = JSON.parse(localStorage.getItem(INGRESO_SIN_INTERNET) || 'null'); } catch (e) {}
+  const copia = leerCopiaLocal();
+
+  if (!guardado || !copia || !copia.store || copia.userId !== guardado.userId ||
+      guardado.email !== email.toLowerCase()) {
+    return avisar('<b>No hay internet.</b><br><span style="font-size:12.5px;">Para entrar sin conexión, esta cuenta tiene que haber ' +
+      'entrado antes en este aparato con internet. Conectate un momento (datos del celular o otra red) y después ya funciona sin wifi.</span>');
+  }
+  if (!(window.crypto && crypto.subtle)) return avisar('<b>No hay internet</b> y este navegador no permite entrar sin conexión.');
+
+  const huella = await huellaDeClave(email, password, guardado.sal);
+  if (huella !== guardado.huella) {
+    return avisar('El email o la contraseña no coinciden con los de la última vez que entraste en este aparato.');
+  }
+
+  credencialesPendientes = { email, password };
+  hide(cartel);
+  return await arrancarSinConexion(guardado.userId);
+}
+
+// Antes de hablar con la base: si se entro sin sesion, se inicia ahora.
+// false = todavia no hay sesion (sin internet, o la contraseña cambio).
+async function asegurarSesionAlVolver() {
+  if (!credencialesPendientes) return true;
+  const { email, password } = credencialesPendientes;
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    if (esFallaDeRedSesion(error)) return false;
+    // La contraseña cambio desde otro aparato: hay que entrar de nuevo. Las
+    // ventas sin subir quedan guardadas y suben al volver a entrar.
+    credencialesPendientes = null;
+    olvidarIngresoSinInternet();
+    mostrarIngreso();
+    const cartel = byId('authError');
+    cartel.classList.remove('exito');
+    cartel.innerHTML = 'Volvió internet pero la contraseña ya no es la misma. Entrá de nuevo: las ventas hechas sin internet siguen guardadas y se suben al entrar.';
+    show(cartel);
+    return false;
+  }
+  credencialesPendientes = null;
+  if (data && data.user) currentUser = data.user;
+  recordarIngresoSinInternet(email, password, data && data.user && data.user.id);
   return true;
 }
 
@@ -14463,6 +14584,7 @@ byId('cambiarClaveForm').addEventListener('submit', async (e) => {
 
     const { error } = await sb.auth.updateUser({ password: nueva });
     if (error) { fallar(error.message); return; }
+    recordarIngresoSinInternet(email, nueva, currentUser && currentUser.id);
 
     hide(byId('cambiarClaveModal'));
     dialogoAviso('\u2713 Listo, contrase\u00f1a cambiada.\n\n' +
@@ -28972,6 +29094,9 @@ byId('empleadoTarjetaNfcBtn').addEventListener('click', (e) =>
 // Cuando el aparato recupera la conexión, las marcas que quedaron esperando
 // suben solas. Sin esto habría que acordarse de entrar al panel.
 window.addEventListener('online', async () => {
+  // Si se entro sin internet, primero la sesion: sin ella la base rechaza
+  // las marcas y se descartarian.
+  if (!(await asegurarSesionAlVolver())) return;
   await sincronizarFichadasPendientes();
   renderAvisoPendientes();
   // Las ventas hechas sin internet, y sacar el cartel de "sin internet".
