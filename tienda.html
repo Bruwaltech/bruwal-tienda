@@ -918,7 +918,7 @@ function unidadesDelProductoEnCarrito(productoId){
 // vacia que el vendedor dejo abierta no puede cambiarle el precio a nadie.
 function escalonesDe(p){
   return (Array.isArray(p && p.precios_por_cantidad) ? p.precios_por_cantidad : [])
-    .map(e => ({ desde: Number(e && e.desde), precio: Number(e && e.precio) }))
+    .map(e => ({ desde: Number(e && e.desde), precio: Number(e && e.precio), pack: !!(e && e.pack) }))
     .filter(e => e.desde > 1 && e.precio > 0)
     .sort((a, b) => a.desde - b.desde);
 }
@@ -989,7 +989,7 @@ function bloquePorMayor(p){
         '<span class="por-mayor-cant">' + e.desde + '</span>' +
         '<span class="por-mayor-x">&times;</span>' +
         '<span class="por-mayor-precio">' + money(e.precio) + '</span>' +
-        '<span class="por-mayor-cu">c/u</span>' +
+        '<span class="por-mayor-cu">c/u' + (e.pack ? ' (pack)' : '') + '</span>' +
       '</div>').join('') +
     '<div class="por-mayor-pie">El precio se ajusta solo al llegar a la cantidad.</div>' +
   '</div>';
