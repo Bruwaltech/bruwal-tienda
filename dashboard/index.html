@@ -3578,6 +3578,7 @@ tr:last-child td { border-bottom: none; }
           <small style="display:block;margin:2px 0 10px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
             Un solo producto, un solo stock. El precio baja solo cuando el cliente llega a la cantidad.
             En cada escal&oacute;n pon&eacute; el precio, o directamente el % menos que el precio de arriba.
+            Si un escal&oacute;n es el pack (la caja o bolsa cerrada), tild&aacute; <b>Pack</b>: el cartel y el ticket van a decir &ldquo;Por pack&rdquo;.
           </small>
 
           <div id="porMayorFilas"></div>
@@ -6666,9 +6667,16 @@ function renderAgregadosVenta() {
 // vende a un revendedor.
 function escalonesDeProducto(p) {
   return (Array.isArray(p && p.precios_por_cantidad) ? p.precios_por_cantidad : [])
-    .map(e => ({ desde: Number(e && e.desde), precio: Number(e && e.precio) }))
+    .map(e => ({ desde: Number(e && e.desde), precio: Number(e && e.precio), ...(e && e.pack ? { pack: true } : {}) }))
     .filter(e => e.desde > 1 && e.precio > 0)
     .sort((a, b) => a.desde - b.desde);
+}
+
+// Como se nombra un escalon en el cartel y en el ticket: "Por 3 unidades"
+// o, si es el que esta marcado como pack (pedido de JACI 28/10: "TOMATE
+// $934 / Por 3 unidades $800 / Por pack $600"), "Por pack".
+function nombreEscalon(e) {
+  return e && e.pack ? 'Por pack' : 'Por ' + e.desde + ' unidades';
 }
 
 // Escalon cargado en porcentaje ("desde 10 u., un 5% menos"): el precio
@@ -6713,7 +6721,8 @@ function aplicarPrecioMayorista(lineas) {
     const extras = sumaDeAgregados(l.opciones);
     const base = Number(l.precioUnitario) - extras;
     if (!(escalon.precio < base)) return l;
-    return { ...l, precioUnitario: escalon.precio + extras, mayorista: { lista: base, precio: escalon.precio } };
+    return { ...l, precioUnitario: escalon.precio + extras,
+      mayorista: { lista: base, precio: escalon.precio, desde: escalon.desde, pack: !!escalon.pack, forzado } };
   });
 }
 
@@ -6839,7 +6848,10 @@ function textoCombo(c) {
 function textoPromoDeLinea(l) {
   const motivos = [];
   if (l.combo) motivos.push('Combo ' + l.combo);
-  if (l.mayorista) motivos.push('Precio por cantidad');
+  // El escalon que se aplico ("Por 3 unidades", "Por pack"), asi el
+  // ticket dice lo mismo que el cartel. Con "Venta mayorista" tildado el
+  // precio no depende de cuantas lleva y queda el texto general.
+  if (l.mayorista) motivos.push(l.mayorista.desde && !l.mayorista.forzado ? nombreEscalon(l.mayorista) : 'Precio por cantidad');
   else if (hayOferta(l.product) && Number(l.precioLista) > Number(l.precioUnitario)) motivos.push('Oferta ' + porcentajeOff(l.product) + '% OFF');
   return motivos.join(' + ');
 }
@@ -20776,8 +20788,23 @@ function escalonCartel(p) {
   return escalonesDeProducto(p).find(e => e.precio < vigente - 0.004) || null;
 }
 
-function textoEscalonCartel(e) {
-  return 'Llevando ' + e.desde + ' o más: ' + e.desde + ' × ' + money(Math.round(e.precio * e.desde * 100) / 100);
+// Los escalones que bajan el precio, en orden: son los renglones del
+// cartel por cantidad ("Por 3 unidades $800", "Por pack $600").
+function escalonesCartel(p) {
+  const vigente = precioVigente(p);
+  return escalonesDeProducto(p).filter(e => e.precio < vigente - 0.004);
+}
+
+// Los renglones del cartel por cantidad, como el que mando JACI:
+//   TOMATE HUERTA  $934 / Por 3 unidades $800 / Por pack $600
+// El primero es el precio suelto (el "precio de antes" del editor) y el
+// segundo el del primer escalon (el "precio" del editor), asi lo que se
+// edita a mano sigue valiendo.
+function filasCartelCantidad(p, d) {
+  const filas = escalonesCartel(p).map(e => ({ texto: nombreEscalon(e), desde: e.desde, pack: !!e.pack, precio: e.precio }));
+  if (filas.length) filas[0].precio = d.precio;
+  filas.unshift({ texto: 'Por unidad', precio: d.antes > 0 ? d.antes : precioVigente(p), unidad: true });
+  return filas;
 }
 
 function mostrarAhorroCartel() {
@@ -20847,12 +20874,13 @@ function cartelPorDefecto(p) {
   const escalon = tipo === 'cantidad' || tipo === 'oferta' ? escalonCartel(p) : null;
   return {
     tipo,
-    faja: tipo === 'cantidad' ? 'LLEVANDO ' + escalon.desde
+    faja: tipo === 'cantidad'
+      ? (escalonesCartel(p).length > 1 ? 'POR CANTIDAD' : escalon.pack ? 'PRECIO POR PACK' : 'LLEVANDO ' + escalon.desde)
       : { oferta: 'OFERTA', combo: 'COMBO', bajo: 'BAJÓ DE PRECIO', precio: 'PRECIO' }[tipo],
     nombre: String(p.name || ''),
     detalle: tipo === 'combo' ? partesComboTexto(p)
-      : tipo === 'cantidad' ? textoEscalonCartel(escalon)
-      : escalon ? 'Llevando ' + escalon.desde + ' o más, ' + money(escalon.precio) + ' c/u'
+      : tipo === 'cantidad' ? ''
+      : escalon ? (escalon.pack ? 'Por pack' : 'Llevando ' + escalon.desde + ' o más') + ', ' + money(escalon.precio) + ' c/u'
       : '',
     precio,
     antes: antes > precio + 0.5 ? antes : 0,
@@ -20970,7 +20998,7 @@ function renderListaGondola() {
     const id = String(p.id);
     const d = datosCartel(p);
     const detalle = d.tipo === 'oferta' ? 'Antes ' + money(p.price) + ' · ' + porcentajeOff(p) + '% OFF'
-      : d.tipo === 'cantidad' ? 'Llevando ' + d.desde + ': ' + money(escalonCartel(p).precio) + ' c/u · suelto ' + money(precioVigente(p))
+      : d.tipo === 'cantidad' ? 'Suelto ' + money(precioVigente(p)) + ' · ' + escalonesCartel(p).map(e => nombreEscalon(e).replace('Por ', '') + ' ' + money(e.precio)).join(' · ')
       : d.tipo === 'combo' ? 'Combo · ' + escapeHtml(partesComboTexto(p))
       : d.tipo === 'bajo' ? 'Bajó de ' + money(gondolaBajaron.get(id))
       : escapeHtml(p.category || '');
@@ -21035,8 +21063,8 @@ function renderEditorGondola() {
       '<div class="field ancho"><label>Nombre</label><input type="text" data-cg="nombre" maxlength="70" value="' + escapeHtml(d.nombre) + '"></div>' +
       '<div class="field ancho"><label>Detalle <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>' +
         '<input type="text" data-cg="detalle" maxlength="80" value="' + escapeHtml(d.detalle) + '" placeholder="Ej: x 500 g · sabor frutilla · llevando 3"></div>' +
-      '<div class="field"><label>Precio</label><input type="number" data-cg="precio" min="0" step="0.01" inputmode="decimal" value="' + num(d.precio) + '"></div>' +
-      '<div class="field"><label>Precio de antes <span style="font-weight:400;color:var(--text-mute);">(tachado)</span></label>' +
+      '<div class="field"><label>' + (d.tipo === 'cantidad' ? escapeHtml(nombreEscalon(escalonCartel(p))) + ' (c/u)' : 'Precio') + '</label><input type="number" data-cg="precio" min="0" step="0.01" inputmode="decimal" value="' + num(d.precio) + '"></div>' +
+      '<div class="field"><label>' + (d.tipo === 'cantidad' ? 'Por unidad' : 'Precio de antes <span style="font-weight:400;color:var(--text-mute);">(tachado)</span>') + '</label>' +
         '<input type="number" data-cg="antes" min="0" step="0.01" inputmode="decimal" value="' + num(d.antes) + '" placeholder="Vacío = no se tacha"></div>' +
     '</div>' +
     '<div id="gondolaAvisoPrecio" style="font-size:12.5px;color:var(--warn);margin-top:8px;line-height:1.45;"></div>' +
@@ -21145,7 +21173,14 @@ function estilosCartelesGondola(formato, colorKey) {
     '.precio{font-weight:900;line-height:1;letter-spacing:-1px;color:' + c.precio + ';white-space:nowrap;}' +
     '.precio span{font-size:.35em;letter-spacing:0;}' +
     '.ahorro{font-weight:800;}' +
-    '.pie{color:#333;}';
+    '.pie{color:#333;}' +
+    '.filas{text-align:left;}' +
+    '.fila{display:flex;justify-content:space-between;align-items:baseline;gap:2mm;font-weight:800;line-height:1.15;border-top:.3mm solid #ccc;}' +
+    '.fila:first-child{border-top:0;}' +
+    '.fila b{font-weight:900;white-space:nowrap;}' +
+    '.fila small{font-size:.55em;font-weight:700;}' +
+    '.fila.mejor b{color:' + c.precio + ';font-size:1.25em;}' +
+    '.filas.muchas .fila{font-size:.8em;}';
   if (formato === '8x6' || formato === '6x8') {
     // Medida exacta: la hoja sin margen de pagina y la grilla centrada.
     // La linea punteada gris es por donde se corta.
@@ -21163,7 +21198,9 @@ function estilosCartelesGondola(formato, colorKey) {
       '.precio{font-size:' + (ancho ? '34pt' : '30pt') + ';margin:1mm 0 .6mm;}' +
       '.precio-largo .precio{font-size:' + (ancho ? '27pt' : '23pt') + ';}' +
       '.ahorro{font-size:9.5pt;}' +
-      '.pie{font-size:7pt;margin-top:1mm;}';
+      '.pie{font-size:7pt;margin-top:1mm;}' +
+      '.filas{font-size:' + (ancho ? '15pt' : '13pt') + ';margin-top:1mm;}' +
+      '.fila{padding:.6mm 0;}';
   }
   if (formato === 'termica') {
     return '@page{size:58mm auto;margin:1mm;}' + base +
@@ -21172,7 +21209,8 @@ function estilosCartelesGondola(formato, colorKey) {
       '.faja{font-size:18px;padding:2px 0;margin-bottom:2mm;}' +
       '.nombre{font-size:18px;}.partes{font-size:12px;margin-top:1mm;}' +
       '.antes{font-size:13px;margin-top:2mm;}.precio{font-size:38px;margin:2mm 0;}' +
-      '.ahorro{font-size:14px;}.pie{font-size:10px;margin-top:2mm;}';
+      '.ahorro{font-size:14px;}.pie{font-size:10px;margin-top:2mm;}' +
+      '.filas{font-size:19px;margin-top:2mm;}.fila{padding:1mm 0;}';
   }
   const ocho = formato === 'a4-8';
   return '@page{size:A4;margin:8mm;}' + base +
@@ -21184,11 +21222,14 @@ function estilosCartelesGondola(formato, colorKey) {
     '.antes{font-size:' + (ocho ? '14px' : '22px') + ';margin-top:' + (ocho ? '2mm' : '5mm') + ';}' +
     '.precio{font-size:' + (ocho ? '46px' : '88px') + ';margin:' + (ocho ? '2mm' : '5mm') + ' 0;}' +
     '.ahorro{font-size:' + (ocho ? '14px' : '24px') + ';}' +
-    '.pie{font-size:' + (ocho ? '10px' : '13px') + ';margin-top:' + (ocho ? '2mm' : '5mm') + ';}';
+    '.pie{font-size:' + (ocho ? '10px' : '13px') + ';margin-top:' + (ocho ? '2mm' : '5mm') + ';}' +
+    '.filas{font-size:' + (ocho ? '19px' : '36px') + ';margin-top:' + (ocho ? '1mm' : '4mm') + ';}' +
+    '.fila{padding:' + (ocho ? '.8mm' : '2.5mm') + ' 0;}';
 }
 
 function cartelGondolaHtml(p, hasta) {
   const d = datosCartel(p);
+  if (d.tipo === 'cantidad') return cartelCantidadHtml(p, d, hasta);
   // En la oferta por cantidad el ahorro es el de llevar las unidades que pide.
   const ahorro = (d.antes - d.precio) * (d.tipo === 'cantidad' ? d.desde : 1);
   const pct = d.antes > 0 ? Math.round((1 - d.precio / d.antes) * 100) : 0;
@@ -21203,6 +21244,29 @@ function cartelGondolaHtml(p, hasta) {
         (d.tipo !== 'combo' && pct > 0 ? ' <b>-' + pct + '%</b>' : '') + '</div>' : '') +
       '<div class="precio">' + money(d.precio) + '<span>' + escapeHtml(sufijoPrecioPorMedida(p) || (d.tipo === 'cantidad' ? ' c/u' : '')) + '</span></div>' +
       (ahorro > 0.5 && mostrarAhorroCartel() ? '<div class="ahorro">Ahorrás ' + money(ahorro) + (d.tipo === 'cantidad' ? ' llevando ' + d.desde : '') + '</div>' : '') +
+      (pie ? '<div class="pie">' + escapeHtml(pie) + '</div>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+// El cartel por cantidad: un renglon por precio, el mas barato resaltado.
+function cartelCantidadHtml(p, d, hasta) {
+  const filas = filasCartelCantidad(p, d);
+  const sufijo = sufijoPrecioPorMedida(p);
+  const clases = 'cartel' + (d.nombre.length > 34 ? ' nombre-largo' : '');
+  const pie = [hasta ? 'Válido hasta el ' + hasta : '', currentStore?.business_name || ''].filter(Boolean).join(' · ');
+  return '<div class="' + clases + '">' +
+    (d.faja ? '<div class="faja">' + escapeHtml(d.faja) + '</div>' : '') +
+    '<div class="medio">' +
+      '<div class="nombre">' + escapeHtml(d.nombre) + '</div>' +
+      (d.detalle ? '<div class="partes">' + escapeHtml(d.detalle) + '</div>' : '') +
+      '<div class="filas' + (filas.length > 3 ? ' muchas' : '') + '">' +
+        filas.map((f, i) =>
+          '<div class="fila' + (i === filas.length - 1 ? ' mejor' : '') + '"><span>' + escapeHtml(f.texto) +
+            (f.pack ? '<small> (' + f.desde + ' u.)</small>' : '') + '</span>' +
+            '<b>' + money(f.precio) + (f.unidad && sufijo ? '<small>' + escapeHtml(sufijo) + '</small>' : '') +
+            (!f.unidad ? '<small> c/u</small>' : '') + '</b></div>').join('') +
+      '</div>' +
       (pie ? '<div class="pie">' + escapeHtml(pie) + '</div>' : '') +
     '</div>' +
   '</div>';
@@ -21835,7 +21899,9 @@ function armarRemitoHtml(o, datos) {
     const lista = Number(it.precio_lista) > precio ? Number(it.precio_lista) : precio;
     const desc = lista > 0 ? (1 - precio / lista) * 100 : 0;
     const detalle = escapeHtml(nombreDelItem(it)) +
-      detalleDeItemTicket(it).replace(/<div class="det">/g, '<div style="font-size:11px;padding-left:8px;">');
+      detalleDeItemTicket(it).replace(/<div class="det">/g, '<div style="font-size:11px;padding-left:8px;">') +
+      // El precio que le toco ("Por 3 unidades", "Por pack", la oferta).
+      (it.promo && lista > precio ? '<div style="font-size:11px;padding-left:8px;">* ' + escapeHtml(it.promo) + '</div>' : '');
     return '<tr><td class="n">' + cant(qty) + '</td><td>' + detalle + '</td>' +
       '<td class="n">' + (lista > 0 ? plata(lista) : '') + '</td>' +
       '<td class="n">' + plata(desc) + '</td>' +
@@ -27855,13 +27921,15 @@ function leerEscalonesDeTexto(texto) {
     const m = linea.match(/^\s*(\d+)\s*[x\u00d7X]\s*\$?\s*([\d.,]+)\s*(%?)/);
     if (!m) return;
     const desde = Number(m[1]);
+    // "12 X 600 pack": ese escalon es el precio por pack.
+    const pack = /\bpack\b/i.test(linea) ? { pack: true } : {};
     if (m[3]) {
       const descuento = descuentoValido(Number(m[2].replace(',', '.')));
-      if (desde > 1 && descuento) filas.push({ desde, precio: '', descuento });
+      if (desde > 1 && descuento) filas.push({ desde, precio: '', descuento, ...pack });
       return;
     }
     const precio = numeroArgentino(m[2]);
-    if (desde > 0 && precio > 0) filas.push({ desde, precio });
+    if (desde > 0 && precio > 0) filas.push({ desde, precio, ...pack });
   });
   return filas;
 }
@@ -27943,6 +28011,9 @@ function renderEscalones() {
         (enPct ? 'placeholder="Carg\u00e1 el precio de arriba" ' : '') +
         'style="flex:1;min-width:90px;' + estiloInput + '">' +
       '<span style="' + estiloTexto + '">c/u</span>' +
+      '<label title="Es el precio por pack: el cartel y el ticket dicen &quot;Por pack&quot; en vez de &quot;Por ' + (e.desde || 'N') + ' unidades&quot;" ' +
+        'style="display:inline-flex;align-items:center;gap:3px;' + estiloTexto + 'cursor:pointer;white-space:nowrap;">' +
+        '<input type="checkbox" data-esc-pack="' + i + '"' + (e.pack ? ' checked' : '') + ' style="margin:0;">Pack</label>' +
       '<button type="button" data-esc-quitar="' + i + '" title="Quitar" ' +
         'style="width:28px;height:28px;border-radius:6px;border:1px solid var(--line);background:var(--bg);' +
         'color:var(--danger);cursor:pointer;line-height:1;flex-shrink:0;">\u2715</button>' +
@@ -27977,6 +28048,14 @@ function renderEscalones() {
     delete e.descuento;
     if (campoPct) { campoPct.value = ''; campoPct.style.borderColor = ''; campoPct.placeholder = pctDe(e); }
   }));
+  // Un solo pack por producto: marcar uno desmarca el resto.
+  caja.querySelectorAll('[data-esc-pack]').forEach(inp => inp.addEventListener('change', () => {
+    escalonesEnEdicion.forEach((e, j) => {
+      if (j === +inp.dataset.escPack && inp.checked) e.pack = true;
+      else delete e.pack;
+    });
+    caja.querySelectorAll('[data-esc-pack]').forEach(o => { if (o !== inp) o.checked = false; });
+  }));
   caja.querySelectorAll('[data-esc-quitar]').forEach(b => b.addEventListener('click', () => {
     escalonesEnEdicion.splice(+b.dataset.escQuitar, 1);
     renderEscalones();
@@ -27991,8 +28070,9 @@ function escalonesParaGuardar() {
   const limpios = escalonesEnEdicion
     .map(e => {
       const descuento = descuentoValido(e.descuento);
-      if (!descuento) return { desde: Number(e.desde), precio: Number(e.precio) };
-      return { desde: Number(e.desde), precio: lista > 0 ? precioConDescuento(lista, descuento) : 0, descuento };
+      const pack = e.pack ? { pack: true } : {};
+      if (!descuento) return { desde: Number(e.desde), precio: Number(e.precio), ...pack };
+      return { desde: Number(e.desde), precio: lista > 0 ? precioConDescuento(lista, descuento) : 0, descuento, ...pack };
     })
     .filter(e => e.desde > 1 && e.precio > 0)
     .sort((a, b) => a.desde - b.desde);
@@ -28368,7 +28448,8 @@ async function editProduct(id) {
   if (byId('pPrecioOferta')) byId('pPrecioOferta').value = (p.precio_oferta != null ? enMonedaDelProducto(p.precio_oferta, p) : '');
   escalonesEnEdicion = Array.isArray(p.precios_por_cantidad)
     ? p.precios_por_cantidad.map(x => ({ desde: Number(x.desde), precio: enMonedaDelProducto(Number(x.precio), p),
-        ...(descuentoValido(x.descuento) ? { descuento: Number(x.descuento) } : {}) }))
+        ...(descuentoValido(x.descuento) ? { descuento: Number(x.descuento) } : {}),
+        ...(x.pack ? { pack: true } : {}) }))
     : [];
   renderEscalones();
   actualizarHintMoneda('pPrice', 'pPriceMoneda', 'pPriceHint');
