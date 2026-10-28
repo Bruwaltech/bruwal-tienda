@@ -183,6 +183,10 @@ h1, h2, h3 {
 }
 
 .hidden { display: none !important; }
+/* El PIN es un campo de texto con puntitos y no type=password: en el
+   iPhone, un campo de contraseña hace que Safari tome la casilla de al lado
+   (el nombre de la caja) como usuario y le salte el llavero encima. */
+.campo-pin { -webkit-text-security: disc; text-security: disc; }
 /* Modo empleado (PIN puesto y la sesión del dueño cerrada, ver
    pintarSesionDuenio): el que atiende no ve el plan ni el Dashboard. */
 body.modo-empleado #trialBar,
@@ -1939,6 +1943,7 @@ tr:last-child td { border-bottom: none; }
   input[type=text], input[type=tel], input[type=number], input[type=search],
   input[type=email], input[type=password], input[type=date], input[type=time],
   input:not([type]), select, textarea { font-size: 16px !important; }
+  #pinCostosInput { font-size: 26px !important; }
 }
 </style>
 <!-- Rutas absolutas a propósito: el panel también se abre como /dashboard
@@ -4562,7 +4567,7 @@ tr:last-child td { border-bottom: none; }
     <h3 style="font-size:17px;">🔒 Información protegida</h3>
     <p id="pinCostosMensaje" style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;">Ingresá el PIN para ver esta información.</p>
     <div class="field">
-      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinCostosInput"
+      <input type="text" class="campo-pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinCostosInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
              placeholder="••••" style="font-size:26px;letter-spacing:12px;text-align:center;padding:12px;">
     </div>
     <div id="pinCostosError" class="hidden" style="color:var(--danger);font-size:12.5px;margin:-6px 0 10px;text-align:center;">PIN incorrecto.</div>
@@ -5532,7 +5537,7 @@ tr:last-child td { border-bottom: none; }
           </small>
           <div id="pinCostosEstado" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;">Sin configurar</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="configPinNuevo"
+            <input type="text" class="campo-pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="configPinNuevo" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                    placeholder="PIN nuevo (4 dígitos)" style="flex:1;min-width:140px;">
             <button type="button" id="guardarPinCostosBtn" class="btn" style="width:auto;">Guardar PIN</button>
             <button type="button" id="quitarPinCostosBtn" class="btn-ghost hidden" style="width:auto;color:var(--danger);">Quitar PIN</button>
@@ -5558,7 +5563,7 @@ tr:last-child td { border-bottom: none; }
           </small>
           <div id="bloqueoEstado" style="font-size:12.5px;color:var(--text-mute);margin-bottom:8px;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <input type="text" id="nombreEquipo" maxlength="30" placeholder="Nombre de esta compu (ej: Caja 1)" style="flex:1;min-width:160px;">
+            <input type="text" id="nombreEquipo" name="caja-de-esta-compu" maxlength="30" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Nombre de esta compu (ej: Caja 1)" style="flex:1;min-width:160px;">
             <button type="button" id="guardarNombreEquipoBtn" class="btn" style="width:auto;">Guardar nombre</button>
             <button type="button" class="btn" data-ver-registro-seguridad style="width:auto;background:var(--bg);color:var(--navy);">📋 Ver registro</button>
           </div>
@@ -24530,28 +24535,75 @@ function renderGrillaVenta(caja) {
 // ---- Pantalla del cliente ----
 // Una ventana aparte (se arrastra al monitor que mira el mostrador) con la
 // misma grilla en letra grande. Se repinta sola con cada producto.
+//
+// En iPhone/iPad no hay ventanas: Safari la abría como otra pestaña a
+// pantalla completa y no había cómo volver a la caja (Bruno, 28/10). Ahí se
+// muestra encima del panel, con un botón grande para salir.
 let ventanaCliente = null;
 
+function cssPantallaCliente() {
+  return 'body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:#f4f7fb;color:#12233d;}' +
+    '.pc-head{display:flex;align-items:center;gap:12px;background:#12233d;color:#fff;padding:18px 28px;font-size:26px;font-weight:800;letter-spacing:.5px;}' +
+    '.pc-head span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+    '.pc-salir{flex:none;background:#fff;color:#12233d;border:0;border-radius:10px;padding:10px 16px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;}' +
+    '.pc-main{padding:20px 28px;}' + ESTILO_GRILLA_VENTA.replace(/var\(--[a-z-]+\)/g, m => ({ 'var(--line)': '#d8e0ea', 'var(--navy)': '#12233d', 'var(--text-mute)': '#5b6b80' }[m] || '#12233d')) +
+    '.pc-main .grilla-venta-scroll{max-height:calc(100vh - 240px);}.pc-main .grilla-venta{font-size:22px;background:#fff;}.pc-main .grilla-venta th{font-size:15px;}.pc-main .grilla-venta-total{font-size:56px;}' +
+    '.pc-main .vacio{font-size:30px;color:#5b6b80;text-align:center;margin-top:120px;}' +
+    '@media (max-width:700px){.pc-head{font-size:19px;padding:12px 16px;}.pc-main{padding:12px;}.pc-main .grilla-venta{font-size:16px;}.pc-main .grilla-venta-total{font-size:38px;}.pc-main .vacio{font-size:22px;margin-top:60px;}.pc-largo{display:none;}}';
+}
+
 function abrirPantallaCliente() {
+  if (ES_IOS) { abrirPantallaClienteEnPagina(); return; }
   if (ventanaCliente && !ventanaCliente.closed) { ventanaCliente.focus(); return; }
   ventanaCliente = window.open('', 'bruwal-pantalla-cliente', 'width=1000,height=700');
   if (!ventanaCliente) { dialogoAviso('El navegador bloqueó la ventana. Permití las ventanas emergentes para esta página y volvé a tocar el botón.'); return; }
   const negocio = (currentStore && (currentStore.business_name || currentStore.slug)) || '';
   ventanaCliente.document.open();
   ventanaCliente.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><title>' + escapeHtml(negocio || 'Tu compra') + '</title><style>' +
-    'body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:#f4f7fb;color:#12233d;}' +
-    'header{background:#12233d;color:#fff;padding:18px 28px;font-size:26px;font-weight:800;letter-spacing:.5px;}' +
-    'main{padding:20px 28px;}' + ESTILO_GRILLA_VENTA.replace(/var\(--[a-z-]+\)/g, m => ({ 'var(--line)': '#d8e0ea', 'var(--navy)': '#12233d', 'var(--text-mute)': '#5b6b80' }[m] || '#12233d')) +
-    '.grilla-venta-scroll{max-height:calc(100vh - 240px);}.grilla-venta{font-size:22px;background:#fff;}.grilla-venta th{font-size:15px;}.grilla-venta-total{font-size:56px;}' +
-    '.vacio{font-size:30px;color:#5b6b80;text-align:center;margin-top:120px;}' +
-    '</style></head><body><header>' + escapeHtml(negocio) + '</header><main id="pantalla"></main></body></html>');
+    cssPantallaCliente() +
+    '</style></head><body><header class="pc-head"><span>' + escapeHtml(negocio) + '</span>' +
+    '<button type="button" class="pc-salir" onclick="window.close()">✕ Cerrar</button></header>' +
+    '<main class="pc-main" id="pantalla"></main></body></html>');
   ventanaCliente.document.close();
   renderCarritoVenta();
 }
 
+// iPhone/iPad: la pantalla del cliente tapa todo el panel. "Salir" vuelve a
+// la caja con el pedido como estaba.
+function abrirPantallaClienteEnPagina() {
+  let capa = byId('pantallaClienteCapa');
+  if (!capa) {
+    const st = document.createElement('style');
+    st.textContent = cssPantallaCliente().replace(/body\{/, '#pantallaClienteCapa{') +
+      '#pantallaClienteCapa{position:fixed;inset:0;z-index:10000;overflow:auto;-webkit-overflow-scrolling:touch;}' +
+      '#pantallaClienteCapa .pc-head{padding-top:max(12px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));}';
+    document.head.appendChild(st);
+    capa = document.createElement('div');
+    capa.id = 'pantallaClienteCapa';
+    capa.className = 'hidden';
+    capa.innerHTML = '<header class="pc-head"><span id="pantallaClienteNegocio"></span>' +
+      '<button type="button" class="pc-salir" id="pantallaClienteSalir">✕ Salir<span class="pc-largo"> de pantalla completa</span></button></header>' +
+      // Un div y no un <main>: el panel esconde todo "main > div" que no sea
+      // la pestaña visible, y la grilla no se veía.
+      '<div class="pc-main" id="pantallaClienteMain"></div>';
+    document.body.appendChild(capa);
+    byId('pantallaClienteSalir').addEventListener('click', cerrarPantallaClienteEnPagina);
+  }
+  byId('pantallaClienteNegocio').textContent = (currentStore && (currentStore.business_name || currentStore.slug)) || '';
+  capa.classList.remove('hidden');
+  document.documentElement.style.overflow = 'hidden';
+  renderCarritoVenta();
+}
+
+function cerrarPantallaClienteEnPagina() {
+  byId('pantallaClienteCapa')?.classList.add('hidden');
+  document.documentElement.style.overflow = '';
+}
+
 function pintarPantallaCliente(g) {
-  if (!ventanaCliente || ventanaCliente.closed) return;
-  const main = ventanaCliente.document.getElementById('pantalla');
+  const capa = byId('pantallaClienteCapa');
+  const main = capa && !capa.classList.contains('hidden') ? byId('pantallaClienteMain')
+    : (ventanaCliente && !ventanaCliente.closed ? ventanaCliente.document.getElementById('pantalla') : null);
   if (!main) return;
   main.innerHTML = g.renglones.length
     ? tablaGrillaVentaHtml(g, true)
@@ -25034,18 +25086,26 @@ function pintarBarraArqueo() {
   const fila = (a, b) => '<span style="white-space:nowrap;">' + a + ' <b style="color:var(--navy);">' + b + '</b></span>';
 
   if (!caja) {
+    // El refresco de cada minuto vuelve a pintar la barra: si el cajero está
+    // escribiendo el nombre, rearmarla le borraba lo escrito y en el iPhone
+    // le cerraba el teclado. Si la casilla ya está, se deja como está.
+    if (byId('arqueoNombreRapido')) return;
     barra.innerHTML =
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
         '<b style="color:var(--navy);">🧮 ¿Qué caja es esta compu?</b>' +
-        '<input type="text" id="arqueoNombreRapido" maxlength="30" placeholder="Ej: Caja 1" style="width:150px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;">' +
+        '<input type="text" id="arqueoNombreRapido" name="caja-de-esta-compu" maxlength="30" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Ej: Caja 1" style="width:150px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;">' +
         '<button type="button" class="btn" id="arqueoNombreRapidoBtn" style="width:auto;padding:7px 14px;font-size:13px;">Guardar</button>' +
       '</div>';
-    byId('arqueoNombreRapidoBtn').addEventListener('click', () => {
+    const guardarNombre = () => {
       const nombre = byId('arqueoNombreRapido').value.trim();
       if (!nombre) return;
       try { localStorage.setItem(claveNombreEquipoLS(), nombre); } catch (e) { /* bloqueado */ }
+      byId('arqueoNombreRapido').blur();
+      barra.innerHTML = '';
       cargarArqueoDeEsteEquipo(true);
-    });
+    };
+    byId('arqueoNombreRapidoBtn').addEventListener('click', guardarNombre);
+    byId('arqueoNombreRapido').addEventListener('keydown', (e) => { if (e.key === 'Enter') guardarNombre(); });
     return;
   }
 
