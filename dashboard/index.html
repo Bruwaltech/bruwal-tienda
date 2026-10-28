@@ -18380,20 +18380,30 @@ function leerPadronDeExcel(matriz) {
     if (c.nombre !== undefined) { filaTitulos = i; cols = c; break; }
   }
   if (!cols) return null;
-  const vistos = new Set();
   const clientes = [];
   for (let i = filaTitulos + 1; i < matriz.length; i++) {
     const fila = matriz[i] || [];
     const dato = (k) => cols[k] === undefined ? '' : String(fila[cols[k]] == null ? '' : fila[cols[k]]).trim();
     const nombre = dato('nombre');
-    if (!nombre || vistos.has(nombre.toLowerCase())) continue;
-    vistos.add(nombre.toLowerCase());
+    if (!nombre) continue;
     clientes.push({
       codigo: dato('codigo') || null, nombre: nombre.slice(0, 120),
       domicilio: dato('domicilio').slice(0, 160) || null, localidad: dato('localidad').slice(0, 80) || null,
       telefono: dato('telefono').slice(0, 40) || null, cuit: dato('cuit').slice(0, 20) || null
     });
   }
+  // Nombres repetidos ("ANA", "ALDANA") son clientes distintos: se les
+  // agrega el domicilio para que el cajero elija el que es.
+  const veces = {};
+  clientes.forEach(c => { const k = c.nombre.toLowerCase(); veces[k] = (veces[k] || 0) + 1; });
+  const usados = new Set();
+  clientes.forEach(c => {
+    if (veces[c.nombre.toLowerCase()] > 1) c.nombre = c.nombre + ' (' + (c.domicilio || c.localidad || c.codigo || '?') + ')';
+    let n = c.nombre, i = 2;
+    while (usados.has(n.toLowerCase())) n = c.nombre + ' ' + i++;
+    c.nombre = n.slice(0, 160);
+    usados.add(c.nombre.toLowerCase());
+  });
   return clientes;
 }
 
