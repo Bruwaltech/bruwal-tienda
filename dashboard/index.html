@@ -18361,14 +18361,14 @@ function pintarDomicilioVenta() {
 // Localidad, Teléfono, CUIT); la fila de títulos puede no ser la primera.
 function leerPadronDeExcel(matriz) {
   const norm = (v) => String(v == null ? '' : v).trim().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
   const COLUMNAS = {
-    codigo: /^(cuenta|codigo|cod\.?|nro\.?( de)? cuenta|n[°º]? ?cuenta|id)$/,
+    codigo: /^(cuenta|codigo|cod|(cod|codigo|nro|n[°º]?) ?(de )?(cuenta|cliente)|id)$/,
     nombre: /^(nombre|cliente|denominacion|razon social|apellido y nombre|nombre y apellido)$/,
     domicilio: /^(domicilio|direccion|calle|domicilio comercial)$/,
     localidad: /^(localidad|ciudad|zona|barrio)$/,
-    telefono: /^(telefono|tel\.?|celular|whatsapp|movil)$/,
-    cuit: /^(cuit|cuil|dni|documento|cuit\/dni|nro\.? documento)$/
+    telefono: /^(telefono|tel|celular|whatsapp|movil)$/,
+    cuit: /^(cuit|cuil|dni|documento|cuit\/dni|nro documento)$/
   };
   let filaTitulos = -1, cols = null;
   for (let i = 0; i < Math.min(matriz.length, 15); i++) {
