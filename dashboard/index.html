@@ -2549,6 +2549,8 @@ tr:last-child td { border-bottom: none; }
     <div id="clientesView" class="hidden">
       <div class="toolbar">
         <input type="text" id="clientSearch" placeholder="🔍 Buscar cliente..." style="padding:10px 14px;border:1px solid var(--line);border-radius:8px;width:200px;">
+        <div style="flex:1;"></div>
+        <button type="button" id="importarClientesBtn" class="btn" style="width:auto;padding:8px 14px;font-size:13px;">📥 Importar clientes (Excel)</button>
       </div>
       <div class="panel">
         <div class="panel-head">👥 Clientes y compras</div>
@@ -2623,6 +2625,7 @@ tr:last-child td { border-bottom: none; }
               </div>
               <div id="barcodeStockRestante" class="hidden" style="font-size:13px;margin:-6px 0 12px;line-height:1.5;font-weight:600;"></div>
               <div id="barcodeTelAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;"></div>
+              <div id="barcodeClienteDatos" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;color:var(--text-mute);"></div>
               <div id="barcodeBalanzaAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;color:var(--stock);font-weight:600;"></div>
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
                 <label style="font-size:14px;color:var(--text-mute);">Atendió:</label>
@@ -5125,6 +5128,62 @@ tr:last-child td { border-bottom: none; }
   </div>
 </div>
 
+<!-- MODAL IMPORTAR CLIENTES -->
+<!-- La cartera que el negocio ya tiene en otro sistema (JACI, 28/10). Se
+     lee la primera hoja, se adivina qué es cada columna y se puede
+     corregir. Nunca duplica: un cliente que ya estaba (mismo CUIT, mismo
+     teléfono o mismo nombre) solo completa los datos que le faltaban. -->
+<div class="modal-overlay hidden" id="importarClientesModal">
+  <div class="modal" style="max-width:640px;">
+    <button class="modal-close" id="cerrarImportarClientesModal">✕</button>
+    <h3>📥 Importar clientes desde Excel</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.6;">
+      Subí la lista de clientes que tenés en tu otro sistema (Excel o CSV). Hace falta al menos el
+      <b>nombre</b>; si trae teléfono, CUIT y dirección, al venderle se completan solos y el remito sale con su domicilio.
+      Los que ya estaban no se repiten: solo se les completa lo que les faltaba.
+    </p>
+    <button type="button" id="plantillaClientesBtn" class="btn" style="width:auto;padding:9px 16px;font-size:13px;margin-bottom:16px;">
+      ⬇ Descargar planilla de ejemplo
+    </button>
+    <div class="field">
+      <label>Archivo (.xlsx, .csv, .ods)</label>
+      <input type="file" id="importarClientesInput" accept=".xlsx,.xls,.xlsm,.csv,.ods,.txt,.tsv">
+    </div>
+    <div id="importarClientesOpciones" class="hidden">
+      <div class="field">
+        <label>Qué es cada columna</label>
+        <div id="importarClientesMapeo"></div>
+      </div>
+    </div>
+    <div id="importarClientesResumen" style="font-size:13.5px;line-height:1.6;margin:8px 0;"></div>
+    <div id="importarClientesPreview" style="max-height:220px;overflow:auto;font-size:12.5px;"></div>
+    <button type="button" id="confirmarImportarClientesBtn" class="btn btn-primary hidden" style="margin-top:14px;">Importar</button>
+  </div>
+</div>
+
+<!-- MODAL DATOS DEL CLIENTE (base de clientes) -->
+<div class="modal-overlay hidden" id="clienteDatosModal">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" id="cerrarClienteDatosModal">✕</button>
+    <h3>👤 Datos del cliente</h3>
+    <p style="color:var(--text-mute);font-size:13px;margin:6px 0 14px;line-height:1.5;">
+      Si cambiás el nombre, también se cambia en todas sus compras.
+    </p>
+    <div class="field"><label>Nombre</label><input type="text" id="cdNombre" maxlength="120"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="field" style="margin:0;"><label>Teléfono</label><input type="tel" id="cdTelefono" maxlength="40"></div>
+      <div class="field" style="margin:0;"><label>CUIT / DNI</label><input type="text" id="cdCuit" maxlength="20"></div>
+    </div>
+    <div class="field" style="margin-top:12px;"><label>Dirección</label><input type="text" id="cdDireccion" maxlength="160"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="field" style="margin:0;"><label>Localidad</label><input type="text" id="cdLocalidad" maxlength="80"></div>
+      <div class="field" style="margin:0;"><label>Código</label><input type="text" id="cdCodigo" maxlength="30"></div>
+    </div>
+    <div class="field" style="margin-top:12px;"><label>Notas</label><input type="text" id="cdNotas" maxlength="200"></div>
+    <button type="button" id="guardarClienteDatosBtn" class="btn btn-primary" style="margin-top:6px;">Guardar</button>
+  </div>
+</div>
+
 <!-- MODAL CARTELES DE GÓNDOLA (distribuidora) — editor -->
 <div class="modal-overlay hidden" id="gondolaModal">
   <div class="modal" style="max-width:1000px;">
@@ -5784,6 +5843,10 @@ tr:last-child td { border-bottom: none; }
 const ES_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 let nombresDeClientes = [];
+// Libreta de clientes importada (store_clientes): ver cargarBaseClientes.
+let clientesBase = [];
+let indiceBaseClientes = null;   // nombre normalizado -> cliente, se arma al primer uso
+let baseClientesDe = null;   // slug de la tienda cuya libreta esta en memoria
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
 // Donde se guarda la sesion depende de "Mantenerme conectado":
@@ -13512,6 +13575,10 @@ async function refreshData(reintento) {
   // empleado creería que su marca se perdió.
   if (!(resFchs.error && esFallaDeRed(resFchs.error))) fichadas = mezclarFichadasPendientes(resFchs.data || []);
 
+  // La libreta de clientes se lee una vez (puede tener miles); despues
+  // solo se vuelve a leer al importar o editar.
+  if (baseClientesDe !== currentStore.slug) { clientesBase = []; indiceBaseClientes = null; await cargarBaseClientes(); }
+
   pintarTodo();
   await sincronizarFichadasPendientes();
   renderEmpleados();
@@ -18184,17 +18251,33 @@ function renderClientes() {
     }
   });
 
+  // Los de la libreta que todavia no compraron tambien estan: al final,
+  // por nombre. Los que si compraron se reconocen sin mayusculas/acentos.
+  const conCompras = new Set(Object.keys(clients).map(claveNombreCliente));
+  const soloLibreta = clientesBase
+    .filter(c => !conCompras.has(claveNombreCliente(c.nombre)))
+    .map(c => ({ name: c.nombre, qty: 0, total: 0, lastOrder: null, avg: 0 }));
+
   const sorted = Object.entries(clients)
     .map(([name, data]) => ({ name, qty: data.qty, total: data.total, lastOrder: data.lastOrder, avg: data.total / data.qty }))
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => b.total - a.total)
+    .concat(soloLibreta);
+
+  const lineaLibreta = (nombre) => {
+    const c = clienteDeLaBase(nombre);
+    if (!c) return '';
+    const partes = [c.codigo ? '#' + c.codigo : '', direccionDeClienteBase(c), c.telefono || '', c.cuit ? 'CUIT ' + c.cuit : '']
+      .filter(Boolean);
+    return partes.length ? '<br><span style="font-size:12px;color:var(--text-mute);">' + escapeHtml(partes.join(' \u00b7 ')) + '</span>' : '';
+  };
 
   byId('clientesBody').innerHTML = sorted.length ? sorted.map(c =>
     '<tr>' +
-      '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
+      '<td><strong>' + escapeHtml(c.name) + '</strong>' + lineaLibreta(c.name) + '</td>' +
       '<td>' + c.qty + '</td>' +
       '<td>' + money(c.total) + '</td>' +
-      '<td>' + fechaAR(c.lastOrder) + '</td>' +
-      '<td>' + money(c.avg) + '</td>' +
+      '<td>' + (c.lastOrder ? fechaAR(c.lastOrder) : '\u2014') + '</td>' +
+      '<td>' + (c.qty ? money(c.avg) : '\u2014') + '</td>' +
       '<td><div class="row-actions">' +
         '<button class="icon-btn" data-vender-a="' + escapeHtml(c.name) + '" title="Cargarle una venta">+ Venta</button>' +
         '<button class="icon-btn" data-renombrar="' + escapeHtml(c.name) + '" title="Corregir el nombre">Editar</button>' +
@@ -18212,7 +18295,7 @@ function renderClientes() {
     conClaveDeCaja(accion, que, nombre, que + ': lo autoriza el dueño. Ingresá el PIN.');
   byId('clientesBody').querySelectorAll('[data-renombrar]').forEach(b =>
     b.addEventListener('click', () => conPinDeClientes('Editar cliente', b.dataset.renombrar,
-      () => renombrarCliente(b.dataset.renombrar))));
+      () => editarDatosCliente(b.dataset.renombrar))));
   byId('clientesBody').querySelectorAll('[data-eliminar-cliente]').forEach(b =>
     b.addEventListener('click', () => conPinDeClientes('Borrar cliente y sus ventas', b.dataset.eliminarCliente,
       () => eliminarCliente(b.dataset.eliminarCliente))));
@@ -18270,6 +18353,391 @@ function sugerenciasDeClientesIOS(input, alElegir) {
 }
 
 
+// ---- Base de clientes (store_clientes, schema 96) ----
+// La cartera que el negocio ya tenia en otro sistema (JACI, 28/10). Es una
+// libreta aparte de las ventas: las ventas siguen guardando el nombre como
+// texto, y si ese nombre esta en la libreta se le suman su direccion y su
+// telefono. Sin la migracion la lectura falla y todo sigue como antes.
+
+async function cargarBaseClientes() {
+  if (!currentStore) return;
+  // PostgREST corta en 1000 filas: una cartera de distribuidora pasa eso.
+  const todas = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await sb.from('store_clientes').select('*')
+      .eq('store_slug', currentStore.slug).order('nombre').range(desde, desde + 999);
+    if (error) { if (!esFallaDeRed(error)) baseClientesDe = currentStore.slug; return; }
+    todas.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  clientesBase = todas;
+  baseClientesDe = currentStore.slug;
+  indiceBaseClientes = null;
+}
+
+const claveNombreCliente = (n) => normalizarTexto(n).replace(/\s+/g, ' ').trim();
+const soloDigitos = (v) => String(v ?? '').replace(/\D/g, '');
+
+function clienteDeLaBase(nombre) {
+  const buscado = claveNombreCliente(nombre);
+  if (!buscado) return null;
+  if (!indiceBaseClientes) {
+    indiceBaseClientes = new Map();
+    clientesBase.forEach(c => { const k = claveNombreCliente(c.nombre); if (!indiceBaseClientes.has(k)) indiceBaseClientes.set(k, c); });
+  }
+  return indiceBaseClientes.get(buscado) || null;
+}
+
+function direccionDeClienteBase(c) {
+  if (!c) return '';
+  const dir = String(c.direccion || '').trim();
+  const loc = String(c.localidad || '').trim();
+  // "San Martín 123 - San Lorenzo", sin repetir la localidad si ya viene.
+  if (loc && !normalizarTexto(dir).includes(normalizarTexto(loc))) return [dir, loc].filter(Boolean).join(' - ');
+  return dir;
+}
+
+// Lo que se suma a la fila de la venta: la direccion queda guardada en la
+// orden, asi el remito (y la reimpresion) la tienen aunque despues el
+// cliente cambie de domicilio en la libreta.
+function datosDeClienteParaVenta(nombre) {
+  const dir = direccionDeClienteBase(clienteDeLaBase(nombre));
+  return dir ? { direccion: dir } : {};
+}
+
+// Debajo del campo Cliente en Ventas: que el cajero vea a quien le esta
+// vendiendo (direccion, CUIT) sin tener que preguntarlo.
+function pintarDatosClienteVenta() {
+  const caja = byId('barcodeClienteDatos');
+  if (!caja) return;
+  const c = clienteDeLaBase(byId('barcodeCliente')?.value);
+  const partes = c ? [
+    direccionDeClienteBase(c) ? '📍 ' + direccionDeClienteBase(c) : '',
+    c.cuit ? 'CUIT ' + c.cuit : '',
+    c.codigo ? 'Cód. ' + c.codigo : ''
+  ].filter(Boolean) : [];
+  caja.textContent = partes.join(' · ');
+  caja.classList.toggle('hidden', !partes.length);
+}
+
+// ---- Importar clientes desde Excel ----
+const COLUMNAS_CLIENTES = {
+  nombre:    { etiqueta: 'Nombre / Razón social',
+               exactos: ['nombre', 'cliente', 'razonsocial', 'apellidoynombre', 'nombreyapellido', 'denominacion', 'nombrecliente', 'nombrefantasia', 'fantasia'],
+               contiene: ['razonsoc', 'nombre', 'cliente', 'fantasia', 'denominacion'] },
+  codigo:    { etiqueta: 'Código de cliente',
+               exactos: ['codigo', 'cod', 'codcliente', 'codigocliente', 'nrocliente', 'numerocliente', 'id', 'nro', 'numero'],
+               contiene: ['codigo', 'nrocli', 'codcli'] },
+  telefono:  { etiqueta: 'Teléfono',
+               exactos: ['telefono', 'tel', 'celular', 'cel', 'whatsapp', 'movil', 'telefonos'],
+               contiene: ['telef', 'celu', 'whats', 'movil'] },
+  cuit:      { etiqueta: 'CUIT / DNI',
+               exactos: ['cuit', 'cuil', 'dni', 'documento', 'nrodoc', 'cuitdni', 'dnicuit'],
+               contiene: ['cuit', 'cuil', 'dni', 'document'] },
+  direccion: { etiqueta: 'Dirección',
+               exactos: ['direccion', 'domicilio', 'calle', 'dir', 'domicilioentrega', 'direccionentrega'],
+               contiene: ['direcc', 'domicil', 'calle'] },
+  localidad: { etiqueta: 'Localidad',
+               exactos: ['localidad', 'ciudad', 'barrio', 'zona', 'partido', 'pueblo'],
+               contiene: ['localid', 'ciudad', 'barrio', 'zona'] },
+  email:     { etiqueta: 'Email',
+               exactos: ['email', 'mail', 'correo', 'correoelectronico'],
+               contiene: ['mail', 'correo'] },
+  notas:     { etiqueta: 'Notas',
+               exactos: ['notas', 'observaciones', 'obs', 'comentarios', 'nota'],
+               contiene: ['observ', 'nota', 'coment'] }
+};
+
+let tablaClientesImport = null;      // { encabezados, datos: [celdas[]] }
+let mapeoClientesImport = {};
+let clientesAImportar = { nuevos: [], completar: [] };
+
+function campoClienteDeEncabezado(enc, usados) {
+  const plano = clavePlana(enc);
+  if (!plano) return '';
+  for (const [campo, def] of Object.entries(COLUMNAS_CLIENTES)) {
+    if (!usados.has(campo) && def.exactos.some(s => clavePlana(s) === plano)) return campo;
+  }
+  for (const [campo, def] of Object.entries(COLUMNAS_CLIENTES)) {
+    if (!usados.has(campo) && def.contiene.some(s => plano.includes(clavePlana(s)))) return campo;
+  }
+  return '';
+}
+
+function abrirImportarClientes() {
+  if (!puedeOperar()) return;
+  tablaClientesImport = null;
+  mapeoClientesImport = {};
+  clientesAImportar = { nuevos: [], completar: [] };
+  byId('importarClientesInput').value = '';
+  byId('importarClientesMapeo').innerHTML = '';
+  byId('importarClientesResumen').textContent = '';
+  byId('importarClientesPreview').innerHTML = '';
+  hide(byId('importarClientesOpciones'));
+  byId('confirmarImportarClientesBtn').classList.add('hidden');
+  show(byId('importarClientesModal'));
+}
+
+async function leerArchivoClientes(file) {
+  byId('confirmarImportarClientesBtn').classList.add('hidden');
+  byId('importarClientesResumen').textContent = 'Leyendo archivo...';
+  let matriz;
+  try {
+    const libro = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: true });
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    matriz = XLSX.utils.sheet_to_json(hoja, { header: 1, raw: false, defval: '', blankrows: false });
+  } catch (err) {
+    byId('importarClientesResumen').textContent = 'No se pudo leer el archivo. Probá guardarlo de nuevo como .xlsx o .csv.';
+    return;
+  }
+
+  // El encabezado puede no estar en la fila 1 (logo, titulo): se toma la
+  // fila, entre las 15 primeras, que reconoce mas columnas.
+  let iEnc = -1, mejor = 0;
+  matriz.slice(0, 15).forEach((fila, i) => {
+    const usados = new Set();
+    let puntos = 0;
+    fila.forEach(c => { const campo = campoClienteDeEncabezado(c, usados); if (campo) { usados.add(campo); puntos++; } });
+    if (puntos > mejor) { mejor = puntos; iEnc = i; }
+  });
+  const ancho = matriz.reduce((m, f) => Math.max(m, f.length), 0);
+  const encabezados = [];
+  for (let i = 0; i < ancho; i++) {
+    const crudo = iEnc >= 0 ? String(matriz[iEnc][i] ?? '').trim() : '';
+    encabezados.push(crudo || 'Columna ' + letraColumna(i));
+  }
+  const datos = matriz.slice(iEnc + 1).filter(f => !f.every(celdaVacia));
+  if (!datos.length) {
+    byId('importarClientesResumen').textContent = 'El archivo no tiene filas con datos.';
+    return;
+  }
+  tablaClientesImport = { encabezados, datos };
+
+  mapeoClientesImport = {};
+  const usados = new Set();
+  encabezados.forEach((enc, i) => {
+    const campo = campoClienteDeEncabezado(enc, usados);
+    if (campo) { mapeoClientesImport[campo] = i; usados.add(campo); }
+  });
+  // Sin una columna "nombre", la primera con texto.
+  if (mapeoClientesImport.nombre === undefined) {
+    const libre = (c) => !Object.values(mapeoClientesImport).includes(c);
+    for (let c = 0; c < ancho; c++) {
+      if (libre(c) && datos.slice(0, 20).filter(f => /[a-zA-Z]/.test(String(f[c] || ''))).length >= Math.min(3, datos.length)) {
+        mapeoClientesImport.nombre = c; break;
+      }
+    }
+  }
+  pintarMapeoClientes();
+  previsualizarClientes();
+}
+
+function pintarMapeoClientes() {
+  const t = tablaClientesImport;
+  if (!t) return;
+  byId('importarClientesMapeo').innerHTML = t.encabezados.map((enc, i) => {
+    const asignado = Object.keys(mapeoClientesImport).find(k => mapeoClientesImport[k] === i) || '';
+    const muestra = (t.datos.find(f => !celdaVacia(f[i])) || [])[i];
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;flex-wrap:wrap;">' +
+      '<span style="flex:1;min-width:130px;font-size:12.5px;line-height:1.35;"><strong>' + escapeHtml(enc) + '</strong>' +
+        (celdaVacia(muestra) ? '' : '<br><span style="color:var(--text-mute);">ej: ' + escapeHtml(String(muestra).trim()) + '</span>') +
+      '</span>' +
+      '<select data-col-cliente="' + i + '" style="flex:0 0 175px;padding:7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;font-family:inherit;background:#fff;">' +
+        '<option value="">— no cargar —</option>' +
+        Object.entries(COLUMNAS_CLIENTES).map(([k, d]) =>
+          '<option value="' + k + '"' + (k === asignado ? ' selected' : '') + '>' + escapeHtml(d.etiqueta) + '</option>').join('') +
+      '</select></div>';
+  }).join('');
+  byId('importarClientesMapeo').querySelectorAll('[data-col-cliente]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const col = Number(sel.dataset.colCliente);
+      Object.keys(mapeoClientesImport).forEach(k => { if (mapeoClientesImport[k] === col) delete mapeoClientesImport[k]; });
+      if (sel.value) mapeoClientesImport[sel.value] = col;
+      pintarMapeoClientes();
+      previsualizarClientes();
+    });
+  });
+  show(byId('importarClientesOpciones'));
+}
+
+// Un cliente es el mismo si coincide el CUIT, el telefono o el nombre. Asi
+// se puede volver a importar la lista actualizada sin repetir a nadie.
+function indiceDeClientes(lista) {
+  const porCuit = new Map(), porTel = new Map(), porNombre = new Map();
+  lista.forEach(c => {
+    const cuit = soloDigitos(c.cuit), tel = soloDigitos(c.telefono).slice(-8);
+    if (cuit.length >= 7) porCuit.set(cuit, c);
+    if (tel.length >= 6) porTel.set(tel, c);
+    if (claveNombreCliente(c.nombre)) porNombre.set(claveNombreCliente(c.nombre), c);
+  });
+  return (c) => {
+    const cuit = soloDigitos(c.cuit), tel = soloDigitos(c.telefono).slice(-8);
+    return (cuit.length >= 7 && porCuit.get(cuit)) ||
+           (tel.length >= 6 && porTel.get(tel)) ||
+           porNombre.get(claveNombreCliente(c.nombre)) || null;
+  };
+}
+
+const CAMPOS_CLIENTE = ['codigo', 'telefono', 'cuit', 'direccion', 'localidad', 'email', 'notas'];
+
+function previsualizarClientes() {
+  const t = tablaClientesImport;
+  const btn = byId('confirmarImportarClientesBtn');
+  btn.classList.add('hidden');
+  if (!t) return;
+  if (mapeoClientesImport.nombre === undefined) {
+    byId('importarClientesResumen').innerHTML = '⚠️ Elegí cuál columna es el <b>nombre</b> del cliente.';
+    byId('importarClientesPreview').innerHTML = '';
+    return;
+  }
+
+  const celda = (f, campo) => mapeoClientesImport[campo] === undefined ? '' : String(f[mapeoClientesImport[campo]] ?? '').trim();
+  const yaEsta = indiceDeClientes(clientesBase);
+  const enArchivo = { cuit: new Set(), tel: new Set(), nombre: new Set() };
+  const claves = (c) => ({ cuit: soloDigitos(c.cuit), tel: soloDigitos(c.telefono).slice(-8), nombre: claveNombreCliente(c.nombre) });
+  const nuevos = [], completar = new Map();
+  let sinNombre = 0, repetidosEnArchivo = 0, yaEstaban = 0;
+
+  t.datos.forEach(f => {
+    const c = { nombre: celda(f, 'nombre').replace(/\s+/g, ' ') };
+    CAMPOS_CLIENTE.forEach(k => { c[k] = celda(f, k) || null; });
+    if (!c.nombre) { sinNombre++; return; }
+
+    const existente = yaEsta(c);
+    if (existente) {
+      // Ya estaba en la libreta: solo se le completa lo que no tenia.
+      const previo = completar.get(existente.id) || {};
+      const cambios = {};
+      CAMPOS_CLIENTE.forEach(k => { if (c[k] && !existente[k] && !previo[k]) cambios[k] = c[k]; });
+      if (Object.keys(cambios).length) completar.set(existente.id, { ...previo, ...cambios });
+      yaEstaban++;
+      return;
+    }
+    const k = claves(c);
+    if ((k.cuit.length >= 7 && enArchivo.cuit.has(k.cuit)) ||
+        (k.tel.length >= 6 && enArchivo.tel.has(k.tel)) ||
+        enArchivo.nombre.has(k.nombre)) { repetidosEnArchivo++; return; }
+    if (k.cuit.length >= 7) enArchivo.cuit.add(k.cuit);
+    if (k.tel.length >= 6) enArchivo.tel.add(k.tel);
+    enArchivo.nombre.add(k.nombre);
+    nuevos.push(c);
+  });
+  clientesAImportar = { nuevos, completar: [...completar.entries()].map(([id, cambios]) => ({ id, cambios })) };
+
+  const partes = ['<b>' + nuevos.length + '</b> cliente' + (nuevos.length === 1 ? '' : 's') + ' nuevo' + (nuevos.length === 1 ? '' : 's')];
+  if (yaEstaban) partes.push(yaEstaban + ' ya estaban' + (clientesAImportar.completar.length ? ' (a ' + clientesAImportar.completar.length + ' se les completan datos)' : ''));
+  if (repetidosEnArchivo) partes.push(repetidosEnArchivo + ' repetidos en el archivo');
+  if (sinNombre) partes.push(sinNombre + ' filas sin nombre (se saltean)');
+  byId('importarClientesResumen').innerHTML = partes.join(' · ');
+
+  const col = (k) => mapeoClientesImport[k] !== undefined;
+  const cols = ['nombre', ...CAMPOS_CLIENTE.filter(col)];
+  byId('importarClientesPreview').innerHTML = nuevos.length
+    ? '<table><thead><tr>' + cols.map(k => '<th>' + escapeHtml(COLUMNAS_CLIENTES[k].etiqueta) + '</th>').join('') + '</tr></thead><tbody>' +
+      nuevos.slice(0, 30).map(c => '<tr>' + cols.map(k => '<td>' + escapeHtml(c[k] || '') + '</td>').join('') + '</tr>').join('') +
+      '</tbody></table>' + (nuevos.length > 30 ? '<div style="color:var(--text-mute);padding:6px 0;">…y ' + (nuevos.length - 30) + ' más</div>' : '')
+    : '';
+
+  const total = nuevos.length + clientesAImportar.completar.length;
+  if (total) {
+    btn.textContent = 'Importar ' + (nuevos.length ? nuevos.length + ' nuevo' + (nuevos.length === 1 ? '' : 's') : '') +
+      (nuevos.length && clientesAImportar.completar.length ? ' y ' : '') +
+      (clientesAImportar.completar.length ? 'completar ' + clientesAImportar.completar.length : '');
+    btn.classList.remove('hidden');
+  }
+}
+
+async function confirmarImportarClientes() {
+  if (!puedeOperar()) return;
+  const { nuevos, completar } = clientesAImportar;
+  if (!nuevos.length && !completar.length) return;
+  const btn = byId('confirmarImportarClientesBtn');
+  btn.disabled = true;
+  btn.textContent = 'Importando...';
+
+  let cargados = 0, completados = 0, error = null;
+  for (let i = 0; i < nuevos.length && !error; i += 500) {
+    const lote = nuevos.slice(i, i + 500).map(c => ({ ...c, store_slug: currentStore.slug }));
+    const res = await sb.from('store_clientes').insert(lote);
+    if (res.error) error = res.error; else cargados += lote.length;
+  }
+  for (const { id, cambios } of completar) {
+    if (error) break;
+    const res = await sb.from('store_clientes').update({ ...cambios, updated_at: new Date().toISOString() }).eq('id', id);
+    if (res.error) error = res.error; else completados++;
+  }
+  btn.disabled = false;
+
+  await cargarBaseClientes();
+  renderClientes();
+  if (error) {
+    const sinTabla = /store_clientes|42P01|PGRST205/.test((error.code || '') + ' ' + (error.message || ''));
+    dialogoAviso('Se cargaron ' + cargados + ' y se completaron ' + completados + ', pero hubo un error:\n\n' + humano(error) +
+      (sinTabla ? '\n\n(Falta correr schema/96-base-de-clientes.sql en Supabase.)' : ''));
+    previsualizarClientes();
+    return;
+  }
+  hide(byId('importarClientesModal'));
+  dialogoAviso('\u2713 Listo: ' + cargados + ' cliente' + (cargados === 1 ? '' : 's') + ' nuevo' + (cargados === 1 ? '' : 's') +
+    (completados ? ' y ' + completados + ' con datos completados' : '') + '.');
+}
+
+function descargarPlantillaClientes() {
+  const filas = [
+    ['Código', 'Nombre', 'Teléfono', 'CUIT', 'Dirección', 'Localidad', 'Notas'],
+    ['101', 'Almacén Don José', '3476 123456', '20-12345678-3', 'San Martín 1234', 'San Lorenzo', 'Entregar a la mañana'],
+    ['102', 'Kiosco La Esquina', '3476 654321', '', 'Belgrano y Moreno', 'Capitán Bermúdez', '']
+  ];
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filas), 'Clientes');
+  XLSX.writeFile(libro, 'plantilla-clientes-bruwal.xlsx');
+}
+
+// ---- Editar un cliente de la libreta ----
+let clienteEditandoId = null;
+
+function editarDatosCliente(nombre) {
+  const c = clienteDeLaBase(nombre);
+  if (!c) return renombrarCliente(nombre);
+  clienteEditandoId = c.id;
+  byId('cdNombre').value = c.nombre || '';
+  byId('cdTelefono').value = c.telefono || '';
+  byId('cdCuit').value = c.cuit || '';
+  byId('cdDireccion').value = c.direccion || '';
+  byId('cdLocalidad').value = c.localidad || '';
+  byId('cdCodigo').value = c.codigo || '';
+  byId('cdNotas').value = c.notas || '';
+  show(byId('clienteDatosModal'));
+}
+
+async function guardarDatosCliente() {
+  if (!puedeOperar()) return;
+  const c = clientesBase.find(x => x.id === clienteEditandoId);
+  if (!c) return;
+  const nombre = byId('cdNombre').value.trim().replace(/\s+/g, ' ');
+  if (!nombre) { dialogoAviso('El nombre no puede quedar vacío.'); return; }
+  const val = (id) => byId(id).value.trim() || null;
+  const cambios = {
+    nombre, telefono: val('cdTelefono'), cuit: val('cdCuit'), direccion: val('cdDireccion'),
+    localidad: val('cdLocalidad'), codigo: val('cdCodigo'), notas: val('cdNotas'),
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await sb.from('store_clientes').update(cambios).eq('id', c.id);
+  if (error) { dialogoAviso('No se pudo guardar:\n\n' + humano(error)); return; }
+
+  // Si cambio el nombre, tambien en sus compras: el cliente de la lista
+  // se arma con el nombre de las ventas.
+  if (nombre !== c.nombre && pedidosTodos.some(o => o.customer_name === c.nombre)) {
+    const res = await sb.from('orders').update({ customer_name: nombre })
+      .eq('store_slug', currentStore.slug).eq('customer_name', c.nombre);
+    if (res.error) dialogoAviso('Los datos se guardaron, pero no se pudo cambiar el nombre en sus compras:\n\n' + humano(res.error));
+  }
+  hide(byId('clienteDatosModal'));
+  await cargarBaseClientes();
+  await refreshData();
+}
+
+
 // 'scanner' era el centinela de "venta de mostrador, sin telefono" cuando
 // la pantalla de ventas todavia no pedia uno. Sigue guardandose asi cuando
 // no se carga nada, por eso hay que descartarlo explicitamente: no es un
@@ -18288,7 +18756,10 @@ function telefonoDeCliente(nombre) {
   const conTelefono = orders
     .filter(o => (o.customer_name || '').trim().toLowerCase() === buscado && esTelefonoReal(o.customer_phone))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  return conTelefono.length ? conTelefono[0].customer_phone : '';
+  if (conTelefono.length) return conTelefono[0].customer_phone;
+  // Si nunca dejo uno en una compra, el de la libreta de clientes.
+  const libreta = clienteDeLaBase(nombre);
+  return libreta && esTelefonoReal(libreta.telefono) ? String(libreta.telefono).trim() : '';
 }
 
 // Lleva a la pantalla de ventas con el cliente ya cargado
@@ -18346,13 +18817,26 @@ async function eliminarCliente(nombre) {
   if (!puedeOperar()) return;
 
   const suyos = pedidosTodos.filter(o => o.customer_name === nombre);
-  if (!suyos.length) return;
+  const libreta = clienteDeLaBase(nombre);
+  if (!suyos.length) {
+    // Solo esta en la libreta (todavia no compro): se saca de ahi.
+    if (!libreta || !await dialogoConfirmar('¿Sacar a "' + nombre + '" de tu lista de clientes?')) return;
+    const { error } = await sb.from('store_clientes').delete().eq('id', libreta.id);
+    if (error) { dialogoAviso('No se pudo borrar el cliente:\n\n' + humano(error)); return; }
+    await cargarBaseClientes();
+    renderClientes();
+    return;
+  }
 
   const total = suyos.reduce((s, o) => s + Number(o.total || 0), 0);
   if (!await dialogoConfirmar('¿Borrar a "' + nombre + '" y sus ' + suyos.length +
                ' compra' + (suyos.length === 1 ? '' : 's') + ' (' + money(total) + ')?\n\n' +
                'Las compras confirmadas devuelven su stock antes de borrarse. ' +
                'No se puede deshacer.')) return;
+  if (libreta) {
+    await sb.from('store_clientes').delete().eq('id', libreta.id);
+    await cargarBaseClientes();
+  }
 
   for (const pedido of suyos) {
     if (estadoPedido(pedido) === 'confirmado') {
@@ -21790,7 +22274,10 @@ function abrirRemito(id) {
   remitoOrdenId = o.id;
   const cliente = (o.customer_name && o.customer_name !== 'scanner' && o.customer_name !== 'Mostrador') ? o.customer_name : '';
   byId('remitoCliente').value = cliente;
-  byId('remitoDomicilio').value = [o.direccion, o.direccion_detalle].filter(Boolean).join(' - ');
+  // Ventas viejas (o de antes de cargar la libreta) no traen direccion:
+  // se toma la del cliente de la libreta, si esta.
+  byId('remitoDomicilio').value = [o.direccion, o.direccion_detalle].filter(Boolean).join(' - ') ||
+    direccionDeClienteBase(clienteDeLaBase(cliente));
   byId('remitoVendedor').value = o.vendedor || '';
   byId('remitoPago').value = Number(o.saldo_pendiente) > 0 ? 'Cuenta corriente' : (o.medio_pago || 'Contado');
   byId('remitoMembrete').checked = membretePorDefecto(o);
@@ -24791,6 +25278,7 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
     store_slug: currentStore.slug,
     customer_name: nombre,
     customer_phone: String(telefono || '').trim() || 'scanner',
+    ...datosDeClienteParaVenta(nombreCliente),
     hora_entrega: horaEntregaISO(horaEntrega),
     items,
     total,
@@ -25569,6 +26057,7 @@ function autocompletarTelefonoCliente() {
     campoTel.value = '';
   }
   avisoTelefonoVenta();
+  pintarDatosClienteVenta();
 }
 
 // Un solo cartel, que dice lo unico util en cada momento: que el telefono
@@ -25701,6 +26190,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // Sin telefono cargado se sigue guardando 'scanner', el centinela que ya
     // entienden Pedidos, Fiado y el estado de cuenta (ver esTelefonoReal).
     customer_phone: String(telefono || '').trim() || 'scanner',
+    ...datosDeClienteParaVenta(nombreCliente),
     hora_entrega: horaEntregaISO(horaEntrega),
     items: [{ product_id: product.id, qty, name: nombreItem, price: precioUnitario, variante, ...opcionesItem }],
     total: total,
@@ -30405,6 +30895,14 @@ byId('facturaIaArchivoInput').addEventListener('change', (e) => {
 });
 byId('confirmarFacturaIaBtn').addEventListener('click', confirmarFacturaIa);
 
+
+byId('importarClientesBtn').addEventListener('click', abrirImportarClientes);
+byId('cerrarImportarClientesModal').addEventListener('click', () => hide(byId('importarClientesModal')));
+byId('plantillaClientesBtn').addEventListener('click', descargarPlantillaClientes);
+byId('importarClientesInput').addEventListener('change', (e) => { if (e.target.files[0]) leerArchivoClientes(e.target.files[0]); });
+byId('confirmarImportarClientesBtn').addEventListener('click', confirmarImportarClientes);
+byId('cerrarClienteDatosModal').addEventListener('click', () => hide(byId('clienteDatosModal')));
+byId('guardarClienteDatosBtn').addEventListener('click', guardarDatosCliente);
 
 byId('clientSearch').addEventListener('input', (e) => {
   const q = e.target.value.toLowerCase();
