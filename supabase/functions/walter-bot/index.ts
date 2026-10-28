@@ -34,6 +34,8 @@ const sumarUso = (servicio: string, entrada: number, salida = 0) =>
     .then(({ error }) => { if (error) console.error("uso", error.message); });
 // Lo que corre aparte (uso de la IA, avisos al celular): el webhook lo espera antes de terminar
 const aparte: PromiseLike<unknown>[] = [];
+// El número falso con el que se prueba el bot (perfil "Prueba Claude"): sus charlas no son ejemplo de nada
+const PRUEBA = "5490000000099";
 contarUso((e, s) => { aparte.push(sumarUso("ia", e, s)); });
 
 // Claves: primero los secretos de la Edge Function; si no están, Vault (walter_secreto, solo prefijo walter_).
@@ -107,7 +109,7 @@ Deno.serve(async (req) => {
         if (texto) tareas.push(atender("whatsapp", m.from, texto, m.type === "text", nombres[m.from], undefined, wa));
         else if (md?.id) {
           tareas.push(recibirMedia("whatsapp", m.from, { tipo: MEDIA[m.type], id: md.id, mime: md.mime_type, caption: md.caption, archivo: md.filename }, nombres[m.from], wa));
-        } else tareas.push(enviar("whatsapp", m.from, [{ text: "Eso no lo puedo abrir. ¿Me lo escribís?" }]));
+        } else if (m.type !== "reaction") tareas.push(noSeAbre(m.from));
       }
     }
   } else if (body.object === "page") {
@@ -126,6 +128,17 @@ Deno.serve(async (req) => {
   else await todo;
   return new Response("ok", { status: 200 });
 });
+
+// Un mensaje que no se puede leer (encuesta, ubicación…). Las reacciones no se contestan, y si la charla la
+// atiende Walter (o está el modo manual) el bot tampoco dice nada.
+async function noSeAbre(usuario: string) {
+  const [cfg, { data: conv }] = await Promise.all([
+    config(),
+    db.from("walter_conversaciones").select("bot_pausado").eq("canal", "whatsapp").eq("usuario", usuario).maybeSingle(),
+  ]);
+  if (conv?.bot_pausado || cfg.modo === "manual" || await walterEscribioRecien("whatsapp", usuario)) return;
+  await enviar("whatsapp", usuario, [{ text: "Eso no lo puedo abrir. ¿Me lo escribís?" }]);
+}
 
 async function config(): Promise<Config> {
   const { data, error } = await db.from("walter_config").select("data").eq("id", 1).single();
@@ -170,7 +183,8 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
 
   // Walter la está atendiendo desde el panel (o puso el modo manual para todas): el bot guarda el
   // mensaje y no contesta. Si la charla quedó quieta más de 2 días, vuelve a contestar el bot.
-  if ((conv.data?.bot_pausado && !vieja) || cfg.modo === "manual") {
+  // El número de prueba contesta igual en modo manual, para probar cambios sin molestar a los clientes.
+  if ((conv.data?.bot_pausado && !vieja) || (cfg.modo === "manual" && usuario !== PRUEBA)) {
     if (pendiente) return;
     await db.from("walter_conversaciones").upsert({
       canal, usuario, pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
@@ -236,7 +250,7 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   }
 
   // Lo último de la charla, para que la IA no lea cada mensaje suelto (y vea lo que llegó mientras Walter atendía)
-  const charla = id ? await charlaReciente(canal, usuario, id) : "";
+  const [charla, ejemplos] = await Promise.all([id ? charlaReciente(canal, usuario, id) : "", ejemplosEquipo()]);
   const clave = await secreto("ANTHROPIC_API_KEY");
   // Lo escrito libremente lo lee Haiku antes, salvo el nombre y la dirección, que se anotan tal cual
   const lectura = libre && !["name", "addr"].includes(estado?.step ?? "")
@@ -282,12 +296,14 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   // Hizo una pregunta: la respuesta va antes de la pregunta en la que estábamos. Si la IA no
   // puede contestarla con lo que sabe el negocio, le avisamos a Walter.
   if (r.consulta) {
-    const resp = await contestar(clave, texto, hechos(cfg), charla);
+    const resp = await contestar(clave, texto, hechos(cfg), charla, ejemplos);
     r.respuestas.splice(Math.max(0, r.respuestas.length - 1), 0, { text: resp ?? "Eso te lo confirma alguien del equipo, ya le aviso." });
     if (!resp) await db.from("walter_conversaciones").update({ pide_humano: true }).eq("canal", canal).eq("usuario", usuario);
   }
   // El bot arma qué decir y con qué números; Haiku lo dice como lo diría una persona
-  const salen = await redactar(clave, texto, juntar(r.respuestas), charla);
+  // Nunca el mismo texto dos veces seguidas: si ya se lo mandamos hace poco, no se repite
+  const salen = await sinRepetir(canal, usuario, await redactar(clave, texto, juntar(r.respuestas), charla, ejemplos));
+  if (!salen.length) return;
   await new Promise((ok) => setTimeout(ok, Math.max(0, demora(salen[0]?.text ?? "") - (Date.now() - desde))));
   await enviar(canal, usuario, salen);
   // Primera charla con este cliente: después del saludo, la nota de voz que grabó Walter
@@ -364,6 +380,51 @@ async function escribioRecien(canal: Canal, usuario: string, hastaId: number): P
   const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("canal", canal).eq("usuario", usuario)
     .eq("direccion", "entra").lt("id", hastaId).gte("creado", new Date(Date.now() - 120e3).toISOString());
   return (count ?? 0) > 0;
+}
+
+// Lo que ya le mandó el bot en los últimos 10 minutos no sale otra vez igual (salvo que lleve botones)
+async function sinRepetir(canal: Canal, usuario: string, rs: Respuesta[]): Promise<Respuesta[]> {
+  const { data } = await db.from("walter_mensajes").select("texto").eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "sale").gte("creado", new Date(Date.now() - 10 * 60e3).toISOString());
+  const dichos = new Set((data ?? []).map((m) => norm(String(m.texto))));
+  return rs.filter((r) => r.options?.length || !dichos.has(norm(r.text)));
+}
+
+async function walterEscribioRecien(canal: Canal, usuario: string): Promise<boolean> {
+  const { count } = await db.from("walter_mensajes").select("id", { count: "exact", head: true }).eq("canal", canal).eq("usuario", usuario)
+    .eq("autor", "walter").gte("creado", new Date(Date.now() - 30 * 60e3).toISOString());
+  return (count ?? 0) > 0;
+}
+
+// Cómo contesta Walter: lo que escribió él a mano en las últimas semanas, con el mensaje del cliente
+// que venía antes. La IA lo usa como ejemplo de estilo. Se arma cada 10 minutos.
+let ejemplosCache: { hasta: number; txt: string } | null = null;
+async function ejemplosEquipo(): Promise<string> {
+  if (ejemplosCache && ejemplosCache.hasta > Date.now()) return ejemplosCache.txt;
+  const { data } = await db.from("walter_mensajes").select("usuario, direccion, autor, texto").neq("usuario", PRUEBA)
+    .gte("creado", new Date(Date.now() - 30 * 86400e3).toISOString()).order("id", { ascending: false }).limit(800);
+  const porCharla = new Map<string, { direccion: string; autor: string | null; texto: string }[]>();
+  for (const m of (data ?? []).reverse()) {
+    if (!porCharla.has(m.usuario)) porCharla.set(m.usuario, []);
+    porCharla.get(m.usuario)!.push({ direccion: m.direccion, autor: m.autor, texto: String(m.texto ?? "") });
+  }
+  // Un pedacito de charla por cada vez que Walter contestó: lo último del cliente y lo que escribió él
+  const tramos: string[] = [];
+  for (const ms of porCharla.values()) {
+    for (let i = 0; i < ms.length; i++) {
+      if (ms[i].direccion !== "entra" || ms[i].texto.startsWith("[")) continue;
+      const suyo: string[] = [];
+      let j = i + 1;
+      while (j < ms.length && ms[j].direccion === "sale" && ms[j].autor === "walter") {
+        if (!ms[j].texto.startsWith("[")) suyo.push(ms[j].texto.slice(0, 300));
+        j++;
+      }
+      if (suyo.length) tramos.push(`Cliente: ${ms[i].texto.slice(0, 300)}\n${suyo.map((t) => "Equipo: " + t).join("\n")}`);
+    }
+  }
+  const txt = tramos.slice(-25).join("\n---\n");
+  ejemplosCache = { hasta: Date.now() + 10 * 60e3, txt };
+  return txt;
 }
 
 // Los últimos mensajes antes del actual, del más viejo al más nuevo

@@ -118,21 +118,25 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
 
 // ---------- Redacción: Haiku le da tono de persona a las respuestas que ya armó el bot ----------
 
-const ESTILO = `Sos quien atiende el WhatsApp de Punto Metales, un negocio chico de la zona de Rosario que compra monedas, llaves, cobre y bronce. Te paso el mensaje del cliente y lo que el sistema le quiere contestar, con los precios y las cuentas ya hechos. Escribí lo mismo como lo escribiría una persona del negocio en WhatsApp: rioplatense (vos, tenés, dale), cálido y natural, frases cortas, sin sonar a formulario. No copies las frases del sistema: decilo con tus palabras, y si el cliente contó algo o hizo una pregunta, reaccioná a eso primero.
+const ESTILO = `Sos quien atiende el WhatsApp de Punto Metales, un negocio chico de la zona de Rosario que compra monedas, llaves, cobre y bronce. Te paso el mensaje del cliente y lo que el sistema le quiere contestar, con los precios y las cuentas ya hechos. Escribí lo mismo como lo escribiría una persona del negocio en WhatsApp: rioplatense, natural, frases cortas, sin sonar a formulario ni a bot. No copies las frases del sistema: decilo con tus palabras, y si el cliente contó algo o hizo una pregunta, reaccioná a eso primero.
 
-Ejemplo. Sistema: "¡Genial, en Funes trabajamos! Por 3 kg de cobre te pagamos $45.000 ($15.000 el kilo, precio minorista). El monto final se confirma al pesar en el momento del retiro." Vos: "¡Buenísimo! A Funes vamos 👌 Por esos 3 kg de cobre serían $45.000, a $15.000 el kilo. Lo terminamos de confirmar cuando lo pesamos al retirarlo."
+Si te paso "como_escribe_el_equipo", son charlas reales de quien atiende el negocio: escribí como esa persona (largo de los mensajes, saludos, cómo pregunta, si usa signos o no). De esos ejemplos tomá solo el estilo, nunca los datos: ni precios, ni días, ni lugares, ni nombres.
+
+Ejemplo. Sistema: "¡Genial, en Funes trabajamos! Por 3 kg de cobre te pagamos $45.000 ($15.000 el kilo, precio minorista). El monto final se confirma al pesar en el momento del retiro." Vos: "A Funes vamos. Por esos 3 kg de cobre serían $45.000, a $15.000 el kilo. Lo confirmamos cuando lo pesamos al retirarlo."
 
 Reglas:
 - Una respuesta tuya por cada respuesta del sistema, en el mismo orden.
 - Los datos van exactos: montos, precios, kilos, cantidades, direcciones, horarios, nombres y localidades, con el mismo formato ($75.000, 7,5 kg). No agregues números.
+- Lo que el sistema pone "por ejemplo" lo podés sacar o acortar: muchas veces alcanza con "¿cuántas tenés de cada una?".
 - No inventes datos, promesas ni condiciones. Si el sistema hace una pregunta, la tuya también la hace al final.
 - No agregues nada que el sistema no diga: ni distancias, ni si un lugar queda cerca o lejos, ni lugares, días u horarios para encontrarse. Si el cliente propone algo (un lugar, un día), no lo aceptes ni lo confirmes: eso lo arregla alguien del equipo. Podés decir que lo tenés en cuenta, nada más.
+- No digas cómo te llamás ni firmes con un nombre.
 - No cambies palabras que no entendés del mensaje del cliente ni las repitas si suenan raras (los audios pasados a texto traen errores).
 - Cuando hay opciones, el cliente las ve como botones abajo del mensaje: no hace falta enumerarlas, pero si nombrás una, con el mismo nombre. Lo que está entre comillas va tal cual, con comillas.
-- Como mucho un emoji por mensaje. Nada de "estimado" ni "le informamos".
-- Corto, como en un chat: una a tres frases por mensaje. Las listas de precios y el resumen del pedido van como vienen.
-- Variá cómo arrancás: no empieces siempre con "¡Buenísimo!", "¡Dale!" o "¡Genial!", y muchas veces no hace falta ninguna exclamación.
-- Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó. Si el bot ya hizo esta misma pregunta, hacela con otras palabras y más corta.`;
+- Sin emojis, salvo que el cliente los use. Nada de "estimado", "le informamos", "¡Genial!" ni "¡Perfecto!".
+- Si el cliente trata de usted, tratalo de usted; si no, de vos.
+- Corto, como en un chat: una o dos frases por mensaje, una sola pregunta. Las listas de precios y el resumen del pedido van como vienen.
+- Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó. Si el bot ya hizo esta misma pregunta, hacela con otras palabras y más corta. Si el cliente dijo que después te pasa los datos ("ahí te digo", "bancame"), no le vuelvas a pedir lo mismo: decile que lo esperás.`;
 
 // Los datos que la respuesta reescrita tiene que conservar sí o sí: montos, números y textos entre comillas
 const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[^"]+"/g) ?? []).map((x) => x.replace(/\$\s/, "$"));
@@ -141,7 +145,7 @@ const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[
  * Las respuestas con el tono de una persona. Los números salen del bot: si Haiku cambia o pierde
  * alguno, si tarda o si falla, esa respuesta va con el texto original.
  */
-export async function redactar(apiKey: string, cliente_dijo: string, rs: { text: string; options?: string[] }[], charla = "") {
+export async function redactar(apiKey: string, cliente_dijo: string, rs: { text: string; options?: string[] }[], charla = "", ejemplos = "") {
   if (!apiKey || !rs.length) return rs;
   cliente ??= nuevoCliente(apiKey);
   try {
@@ -158,6 +162,7 @@ export async function redactar(apiKey: string, cliente_dijo: string, rs: { text:
       },
       messages: [{ role: "user", content: JSON.stringify({
         cliente: cliente_dijo,
+        ...(ejemplos ? { como_escribe_el_equipo: ejemplos } : {}),
         ...(charla ? { charla_reciente: charla } : {}),
         respuestas: rs.map((r) => (r.options?.length ? { texto: r.text, opciones: r.options } : { texto: r.text })),
       }) }],
@@ -179,26 +184,35 @@ export async function redactar(apiKey: string, cliente_dijo: string, rs: { text:
   }
 }
 
-/** Cada monto, número y texto entre comillas del original aparece en la reescrita, y no hay números nuevos. */
+// "Por ejemplo: 50 de $1 y 20 de 50 centavos." Esos números la reescrita los puede sacar
+const EJEMPLO = /por ejemplo:?[^.?!\n]*/gi;
+
+/**
+ * Cada monto, número y texto entre comillas del original aparece en la reescrita, y no hay números nuevos.
+ * Los de un "por ejemplo" pueden quedar o no.
+ */
 export function conservaDatos(original: string, nueva: string): boolean {
-  const a = datosDe(original), b = datosDe(nueva);
+  const a = datosDe(original.replace(EJEMPLO, "")), b = datosDe(nueva);
   const quedan = [...b];
   for (const x of a) {
     const i = quedan.indexOf(x);
     if (i < 0) return false;
     quedan.splice(i, 1);
   }
-  return quedan.length === 0;
+  const ejemplos = (original.match(EJEMPLO) ?? []).flatMap(datosDe);
+  return quedan.every((x) => ejemplos.includes(x));
 }
 
 // ---------- Preguntas: Haiku contesta con lo que sabe el negocio, sin inventar ----------
 
 const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una a tres frases), cálido, como una persona del negocio.
 
-Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma alguien del equipo. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.`;
+Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma alguien del equipo. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.
+
+Si te paso "como_escribe_el_equipo", son charlas reales del negocio: copiá el estilo (corto, sin emojis, usted o vos según el cliente), nunca los datos. No digas cómo te llamás.`;
 
 /** Respuesta a una pregunta del cliente, con los números sacados de hechos; null si no se pudo o si inventó un número. */
-export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = ""): Promise<string | null> {
+export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = "", ejemplos = ""): Promise<string | null> {
   if (!apiKey) return null;
   cliente ??= nuevoCliente(apiKey);
   try {
@@ -212,7 +226,7 @@ export async function contestar(apiKey: string, pregunta: string, hechos: string
           type: "object", properties: { respuesta: { type: "string" } }, required: ["respuesta"], additionalProperties: false,
         } },
       },
-      messages: [{ role: "user", content: JSON.stringify({ datos_del_negocio: hechos, ...(charla ? { charla_reciente: charla } : {}), pregunta }) }],
+      messages: [{ role: "user", content: JSON.stringify({ datos_del_negocio: hechos, ...(ejemplos ? { como_escribe_el_equipo: ejemplos } : {}), ...(charla ? { charla_reciente: charla } : {}), pregunta }) }],
     });
     anotar(res);
     if (res.stop_reason !== "end_turn") { console.error("ia: contestar stop_reason", res.stop_reason); return null; }
