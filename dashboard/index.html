@@ -2549,7 +2549,12 @@ tr:last-child td { border-bottom: none; }
     <div id="clientesView" class="hidden">
       <div class="toolbar">
         <input type="text" id="clientSearch" placeholder="🔍 Buscar cliente..." style="padding:10px 14px;border:1px solid var(--line);border-radius:8px;width:200px;">
+        <label class="btn campo-distribuidora hidden" style="width:auto;padding:9px 14px;font-size:13px;background:#fff;color:var(--navy);border:1px solid var(--line);cursor:pointer;">
+          📥 Cargar clientes desde Excel
+          <input type="file" id="padronClientesInput" accept=".xlsx,.xls,.csv,.ods" style="display:none;">
+        </label>
       </div>
+      <div id="padronClientesEstado" class="campo-distribuidora hidden" style="font-size:12.5px;color:var(--text-mute);margin:-4px 0 10px;"></div>
       <div class="panel">
         <div class="panel-head">👥 Clientes y compras</div>
         <table>
@@ -2621,6 +2626,7 @@ tr:last-child td { border-bottom: none; }
                        autocomplete="off" inputmode="tel"
                        style="flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px;">
               </div>
+              <div id="barcodeDomicilioCliente" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;color:var(--text-mute);"></div>
               <div id="barcodeStockRestante" class="hidden" style="font-size:13px;margin:-6px 0 12px;line-height:1.5;font-weight:600;"></div>
               <div id="barcodeTelAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;"></div>
               <div id="barcodeBalanzaAviso" class="hidden" style="font-size:12.5px;margin:-6px 0 12px;line-height:1.5;color:var(--stock);font-weight:600;"></div>
@@ -2679,7 +2685,7 @@ tr:last-child td { border-bottom: none; }
                 <button type="button" class="btn-ghost" data-abrir-diseno-ticket style="padding:4px 10px;font-size:12px;">✏️ Diseño del ticket</button>
                 <label class="campo-distribuidora hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);cursor:pointer;">
                   <input type="checkbox" id="barcodeRemito" style="margin:0;width:auto;cursor:pointer;">
-                  📄 Hacer remito al confirmar
+                  📄 Preguntar por el remito al registrar
                 </label>
               </div>
 
@@ -5098,7 +5104,7 @@ tr:last-child td { border-bottom: none; }
     </p>
     <div class="field">
       <label>Cliente</label>
-      <input type="text" id="remitoCliente" maxlength="80" placeholder="Ej: Enzo Colari">
+      <input type="text" id="remitoCliente" maxlength="80" placeholder="Ej: Enzo Colari" list="listaClientes" autocomplete="off">
     </div>
     <div class="field">
       <label>Domicilio</label>
@@ -13512,6 +13518,8 @@ async function refreshData(reintento) {
   // empleado creería que su marca se perdió.
   if (!(resFchs.error && esFallaDeRed(resFchs.error))) fichadas = mezclarFichadasPendientes(resFchs.data || []);
 
+  if (rubroEsDistribuidora() && padronCargadoDe !== currentStore.slug) await cargarPadronClientes();
+
   pintarTodo();
   await sincronizarFichadasPendientes();
   renderEmpleados();
@@ -18220,9 +18228,19 @@ function renderClientes() {
   // El desplegable de clientes en la pantalla de ventas
   const dl = byId('listaClientes');
   nombresDeClientes = sorted.map(c => c.name);
+  // Los del padrón (distribuidora) que todavía no compraron, al final.
+  const yaEstan = new Set(nombresDeClientes.map(n => String(n || '').trim().toLowerCase()));
+  padronClientes.forEach(c => {
+    const n = String(c.nombre || '').trim();
+    if (n && !yaEstan.has(n.toLowerCase())) { yaEstan.add(n.toLowerCase()); nombresDeClientes.push(n); }
+  });
+  const estado = byId('padronClientesEstado');
+  if (estado) estado.textContent = padronClientes.length
+    ? padronClientes.length + ' clientes cargados del Excel: se sugieren al vender y el remito sale con su domicilio.'
+    : 'Cargá el Excel con tus clientes (Nombre, Domicilio, Localidad, Teléfono) y el remito sale con el domicilio solo.';
   // En iPad/iPhone no hay datalist (ver sugerenciasDeClientesIOS): tocarlo
   // mientras alguien escribe es lo que le trababa la casilla.
-  if (dl && !ES_IOS) dl.innerHTML = sorted.map(c => '<option value="' + escapeHtml(c.name) + '">').join('');
+  if (dl && !ES_IOS) dl.innerHTML = nombresDeClientes.map(n => '<option value="' + escapeHtml(n) + '">').join('');
 }
 
 // ---- Sugerencias de clientes en iPad/iPhone ----
@@ -18288,7 +18306,128 @@ function telefonoDeCliente(nombre) {
   const conTelefono = orders
     .filter(o => (o.customer_name || '').trim().toLowerCase() === buscado && esTelefonoReal(o.customer_phone))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  return conTelefono.length ? conTelefono[0].customer_phone : '';
+  if (conTelefono.length) return conTelefono[0].customer_phone;
+  const delPadron = clienteDelPadron(nombre);
+  return delPadron && esTelefonoReal(delPadron.telefono) ? delPadron.telefono : '';
+}
+
+// ---- Padrón de clientes (distribuidora) ----
+// La base de clientes del sistema viejo (cuenta, nombre, domicilio,
+// teléfono), cargada desde un Excel (schema/96-padron-clientes.sql). Sirve
+// para que el nombre se sugiera al vender y el remito salga con el
+// domicilio sin escribirlo. Sin la migración, la consulta vuelve con error
+// y todo sigue como antes.
+let padronClientes = [];
+let padronCargadoDe = null;
+
+async function cargarPadronClientes() {
+  if (!currentStore) return;
+  const filas = [];
+  for (let desde = 0; desde < 100000; desde += 1000) {
+    const { data, error } = await sb.from('store_clientes_padron').select('*')
+      .eq('store_slug', currentStore.slug).order('nombre').range(desde, desde + 999);
+    if (error) return;   // sin la 96 o sin internet: queda lo que había
+    filas.push(...data);
+    if (data.length < 1000) break;
+  }
+  padronClientes = filas;
+  padronCargadoDe = currentStore.slug;
+}
+
+function clienteDelPadron(nombre) {
+  const buscado = String(nombre || '').trim().toLowerCase();
+  if (!buscado || !padronClientes.length) return null;
+  return padronClientes.find(c => String(c.nombre || '').trim().toLowerCase() === buscado) || null;
+}
+
+function domicilioDelPadron(nombre) {
+  const c = clienteDelPadron(nombre);
+  if (!c) return '';
+  return [c.domicilio, c.localidad].map(x => String(x || '').trim()).filter(Boolean).join(' - ');
+}
+
+// Debajo del nombre en la venta: que se vea que el cliente es del padrón
+// y a qué domicilio va el remito.
+function pintarDomicilioVenta() {
+  const caja = byId('barcodeDomicilioCliente');
+  if (!caja) return;
+  const dom = rubroEsDistribuidora() ? domicilioDelPadron(byId('barcodeCliente')?.value) : '';
+  caja.textContent = dom ? '📍 ' + dom : '';
+  caja.classList.toggle('hidden', !dom);
+}
+
+// Lee el Excel del sistema viejo. Las columnas se reconocen por el título
+// (Cuenta, Nombre/Denominación/Razón social, Domicilio/Dirección,
+// Localidad, Teléfono, CUIT); la fila de títulos puede no ser la primera.
+function leerPadronDeExcel(matriz) {
+  const norm = (v) => String(v == null ? '' : v).trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const COLUMNAS = {
+    codigo: /^(cuenta|codigo|cod\.?|nro\.?( de)? cuenta|n[°º]? ?cuenta|id)$/,
+    nombre: /^(nombre|cliente|denominacion|razon social|apellido y nombre|nombre y apellido)$/,
+    domicilio: /^(domicilio|direccion|calle|domicilio comercial)$/,
+    localidad: /^(localidad|ciudad|zona|barrio)$/,
+    telefono: /^(telefono|tel\.?|celular|whatsapp|movil)$/,
+    cuit: /^(cuit|cuil|dni|documento|cuit\/dni|nro\.? documento)$/
+  };
+  let filaTitulos = -1, cols = null;
+  for (let i = 0; i < Math.min(matriz.length, 15); i++) {
+    const c = {};
+    (matriz[i] || []).forEach((v, j) => {
+      const t = norm(v);
+      Object.entries(COLUMNAS).forEach(([k, re]) => { if (c[k] === undefined && re.test(t)) c[k] = j; });
+    });
+    if (c.nombre !== undefined) { filaTitulos = i; cols = c; break; }
+  }
+  if (!cols) return null;
+  const vistos = new Set();
+  const clientes = [];
+  for (let i = filaTitulos + 1; i < matriz.length; i++) {
+    const fila = matriz[i] || [];
+    const dato = (k) => cols[k] === undefined ? '' : String(fila[cols[k]] == null ? '' : fila[cols[k]]).trim();
+    const nombre = dato('nombre');
+    if (!nombre || vistos.has(nombre.toLowerCase())) continue;
+    vistos.add(nombre.toLowerCase());
+    clientes.push({
+      codigo: dato('codigo') || null, nombre: nombre.slice(0, 120),
+      domicilio: dato('domicilio').slice(0, 160) || null, localidad: dato('localidad').slice(0, 80) || null,
+      telefono: dato('telefono').slice(0, 40) || null, cuit: dato('cuit').slice(0, 20) || null
+    });
+  }
+  return clientes;
+}
+
+async function importarPadronClientes(archivo) {
+  let clientes = null;
+  try {
+    const libro = XLSX.read(await archivo.arrayBuffer(), { type: 'array' });
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    clientes = leerPadronDeExcel(XLSX.utils.sheet_to_json(hoja, { header: 1, defval: '' }));
+  } catch (e) {
+    dialogoAviso('No se pudo leer el archivo. Probá exportarlo de nuevo como .xlsx o .csv.');
+    return;
+  }
+  if (!clientes) {
+    dialogoAviso('No encontré la columna del nombre del cliente.\n\nLa primera fila tiene que tener los títulos: Nombre (o Denominación), Domicilio, Localidad, Teléfono, Cuenta.');
+    return;
+  }
+  if (!clientes.length) { dialogoAviso('El archivo no trae clientes.'); return; }
+  const conDomicilio = clientes.filter(c => c.domicilio).length;
+  if (!await dialogoConfirmar('¿Cargar ' + clientes.length + ' clientes (' + conDomicilio + ' con domicilio)?\n\n' +
+      (padronClientes.length ? 'Reemplaza los ' + padronClientes.length + ' que ya estaban cargados. ' : '') +
+      'Las ventas no se tocan.')) return;
+
+  const slug = currentStore.slug;
+  const { error: errBorrar } = await sb.from('store_clientes_padron').delete().eq('store_slug', slug);
+  if (errBorrar) { dialogoAviso('No se pudo cargar: ' + humano(errBorrar)); return; }
+  for (let i = 0; i < clientes.length; i += 500) {
+    const { error } = await sb.from('store_clientes_padron')
+      .insert(clientes.slice(i, i + 500).map(c => ({ ...c, store_slug: slug })));
+    if (error) { dialogoAviso('Se cortó a mitad de la carga (' + i + ' de ' + clientes.length + '): ' + humano(error) + '\n\nVolvé a cargar el archivo.'); break; }
+  }
+  await cargarPadronClientes();
+  renderClientes();
+  dialogoAviso('✓ Padrón cargado: ' + padronClientes.length + ' clientes.');
 }
 
 // Lleva a la pantalla de ventas con el cliente ya cargado
@@ -21790,7 +21929,7 @@ function abrirRemito(id) {
   remitoOrdenId = o.id;
   const cliente = (o.customer_name && o.customer_name !== 'scanner' && o.customer_name !== 'Mostrador') ? o.customer_name : '';
   byId('remitoCliente').value = cliente;
-  byId('remitoDomicilio').value = [o.direccion, o.direccion_detalle].filter(Boolean).join(' - ');
+  byId('remitoDomicilio').value = [o.direccion, o.direccion_detalle].filter(Boolean).join(' - ') || domicilioDelPadron(cliente);
   byId('remitoVendedor').value = o.vendedor || '';
   byId('remitoPago').value = Number(o.saldo_pendiente) > 0 ? 'Cuenta corriente' : (o.medio_pago || 'Contado');
   byId('remitoMembrete').checked = membretePorDefecto(o);
@@ -21896,7 +22035,17 @@ function imprimirRemito() {
   }, 350);
 }
 
+byId('padronClientesInput').addEventListener('change', (e) => {
+  const archivo = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (archivo) conClaveSensible('Cargar clientes desde Excel', archivo.name, () => importarPadronClientes(archivo));
+});
 byId('cerrarRemitoModal').addEventListener('click', () => hide(byId('remitoModal')));
+// Elegir un cliente del padrón con el domicilio vacío lo completa.
+byId('remitoCliente').addEventListener('change', () => {
+  const dom = domicilioDelPadron(byId('remitoCliente').value);
+  if (dom && !byId('remitoDomicilio').value.trim()) byId('remitoDomicilio').value = dom;
+});
 byId('imprimirRemitoBtn').addEventListener('click', imprimirRemito);
 
 // Que se llevo, debajo del renglon: "Tamano: Porcion", "+ Cheddar". Sin
@@ -21971,8 +22120,22 @@ function inicializarTicketVenta() {
   let guardado = null;
   try { guardado = localStorage.getItem(clave); } catch (e) {}
   casilla.checked = (guardado === null) ? true : guardado === '1';
-  // El remito arranca destildado: no toda venta lleva remito.
-  try { byId('barcodeRemito').checked = localStorage.getItem('bruwal_remito_' + currentStore.slug) === '1'; } catch (e) {}
+  // En la distribuidora casi toda venta lleva remito: arranca tildado y
+  // al registrar PREGUNTA si se imprime (no lo larga solo). El que no lo
+  // quiere nunca lo destilda una vez.
+  let remito = null;
+  try { remito = localStorage.getItem('bruwal_remito_' + currentStore.slug); } catch (e) {}
+  byId('barcodeRemito').checked = remito !== '0';
+  // Pedido de JACI: casi todo se cobra en efectivo. Queda elegido y se
+  // cambia si paga con otra cosa.
+  if (!byId('barcodeMedioPago').value) byId('barcodeMedioPago').value = medioPagoPorDefecto();
+}
+
+function medioPagoPorDefecto() { return rubroEsDistribuidora() ? 'Efectivo' : ''; }
+
+// Después del aviso de "Venta registrada" (los diálogos van en fila).
+async function preguntarRemito(ordenId) {
+  if (await dialogoConfirmar('¿Imprimir el remito de esta venta?')) abrirRemito(ordenId);
 }
 byId('barcodeRemito').addEventListener('change', (e) => {
   try { localStorage.setItem('bruwal_remito_' + (currentStore ? currentStore.slug : ''), e.target.checked ? '1' : '0'); } catch (err) {}
@@ -24701,7 +24864,7 @@ async function confirmarVentaCarrito() {
   if (byId('barcodeTicket')?.checked) {
     imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
   }
-  if (rubroEsDistribuidora() && byId('barcodeRemito')?.checked && ok.ordenId) abrirRemito(ok.ordenId);
+  if (rubroEsDistribuidora() && byId('barcodeRemito')?.checked && ok.ordenId) preguntarRemito(ok.ordenId);
 
   carritoVenta = [];
   renderCarritoVenta();
@@ -24714,13 +24877,14 @@ async function confirmarVentaCarrito() {
 function limpiarDatosDeVentaRegistrada() {
   if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
   if (byId('barcodeClienteTel')) byId('barcodeClienteTel').value = '';
+  pintarDomicilioVenta();
   telefonoVentaAutocompletado = true;
   horaEntregaEditadaAMano = false;
   if (byId('barcodeHoraEntrega')) byId('barcodeHoraEntrega').value = horaEntregaSugerida();
   byId('barcodeFiado').checked = false;
   byId('campoFiadoMonto').classList.add('hidden');
   byId('barcodeFiadoAbono').value = '0';
-  byId('barcodeMedioPago').value = '';
+  byId('barcodeMedioPago').value = medioPagoPorDefecto();
   limpiarDosMediosVenta();
   actualizarAliasVenta();
   byId('barcodeAbono').value = '0';
@@ -25510,12 +25674,13 @@ async function confirmBarcodeVenta() {
         abonaAhora
       });
     }
-    if (rubroEsDistribuidora() && byId('barcodeRemito')?.checked && ok.ordenId) abrirRemito(ok.ordenId);
+    if (rubroEsDistribuidora() && byId('barcodeRemito')?.checked && ok.ordenId) preguntarRemito(ok.ordenId);
 
     const idEquipoParaFoto = (ok.tradeIn && ok.equipoTomadoOk) ? ok.equipoTomadoId : null;
 
     if (byId('barcodeCliente')) byId('barcodeCliente').value = '';
     if (byId('barcodeClienteTel')) byId('barcodeClienteTel').value = '';
+    pintarDomicilioVenta();
     telefonoVentaAutocompletado = true;
     // El proximo pedido arranca de cero: la hora del anterior no aplica.
     horaEntregaEditadaAMano = false;
@@ -25523,7 +25688,7 @@ async function confirmBarcodeVenta() {
     byId('barcodeFiado').checked = false;
     byId('campoFiadoMonto').classList.add('hidden');
     byId('barcodeFiadoAbono').value = '0';
-    byId('barcodeMedioPago').value = '';
+    byId('barcodeMedioPago').value = medioPagoPorDefecto();
     limpiarDosMediosVenta();
     byId('barcodeTradeIn').checked = false;
     byId('campoTradeIn').classList.add('hidden');
@@ -25624,8 +25789,10 @@ function avisoBalanzaVenta(datos) {
 
 byId('barcodeCliente').addEventListener('input', autocompletarTelefonoCliente);
 byId('barcodeCliente').addEventListener('change', autocompletarTelefonoCliente);
+byId('barcodeCliente').addEventListener('input', pintarDomicilioVenta);
+byId('barcodeCliente').addEventListener('change', pintarDomicilioVenta);
 if (ES_IOS) {
-  sugerenciasDeClientesIOS(byId('barcodeCliente'), autocompletarTelefonoCliente);
+  sugerenciasDeClientesIOS(byId('barcodeCliente'), () => { autocompletarTelefonoCliente(); pintarDomicilioVenta(); });
   sugerenciasDeClientesIOS(byId('fmNombre'), () => byId('fmNombre').dispatchEvent(new Event('input')));
 }
 byId('barcodeClienteTel').addEventListener('input', () => {
@@ -31376,9 +31543,10 @@ function pintarRegistroSeguridad() {
   ).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-mute);padding:20px;">Sin intentos anotados.</td></tr>';
 }
 
-// Ver el registro siempre pide el PIN (si hay): es del dueño, no del cajero.
+// Ver el registro pide el PIN (si hay): es del dueño, no del cajero. Con
+// la sesión del dueño abierta no: ya lo puso al abrirla.
 document.querySelectorAll('[data-ver-registro-seguridad]').forEach(b => b.addEventListener('click', () => {
-  if (!hayPinConfigurado() || !byId('configModal').classList.contains('hidden')) return abrirRegistroSeguridad();
+  if (!hayPinConfigurado() || sesionDuenioAbierta() || !byId('configModal').classList.contains('hidden')) return abrirRegistroSeguridad();
   abrirPinCostosModal(abrirRegistroSeguridad, 'El registro lo ve el dueño. Ingresá el PIN.');
 }));
 byId('closeRegistroSeguridadModal').addEventListener('click', () => hide(byId('registroSeguridadModal')));
