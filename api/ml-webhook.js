@@ -361,6 +361,92 @@ async function soltarReclamo(orden) {
   });
 }
 
+// Una orden que ya estaba anotada llega PAGADA recien ahora (el primer aviso
+// la vio "payment_required" o "payment_in_process"). Sin esto la venta no se
+// registraba nunca: el primer aviso tomo el candado sin vender nada y los
+// siguientes la veian como repetida.
+//
+// El candado aca es el PATCH condicionado: solo una fila pasa de "no pagada
+// y sin pedido" a "paid", asi que dos avisos simultaneos no la registran dos
+// veces.
+async function tomarPagoTardio(orden) {
+  const filas = await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' +
+    encodeURIComponent(String(orden.id)) + '&estado=neq.paid&order_id=is.null', {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: { estado: 'paid', actualizado_en: new Date().toISOString() }
+  });
+  return !!(filas && filas.length);
+}
+
+// El comprador o Mercado Libre cancelo una venta que ya estaba registrada.
+// Antes quedaba como venta confirmada para siempre: sumaba en Caja y
+// Estadisticas, el stock no volvia y la comision seguia anotada, aunque ML
+// la devuelve. Es lo mismo que anular el pedido a mano en el panel.
+//
+// Candado: solo un aviso logra pasar la fila de "paid" a "cancelled".
+async function anularVentaCancelada(slug, orden) {
+  const ruta = '/rest/v1/store_ml_ordenes?ml_order_id=eq.' + encodeURIComponent(String(orden.id));
+  const tomadas = await sb(ruta + '&estado=eq.paid', {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: { estado: 'cancelled', actualizado_en: new Date().toISOString() }
+  });
+  const fila = tomadas && tomadas[0];
+  if (!fila || !fila.order_id) return false;
+
+  // .eq('estado','confirmado'): si alguien ya lo anulo a mano, el stock ya
+  // volvio y no se toca de nuevo.
+  const pedidos = await sb('/rest/v1/orders?id=eq.' + encodeURIComponent(fila.order_id) +
+    '&estado=eq.confirmado', {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: { estado: 'cancelado' }
+  });
+  const pedido = pedidos && pedidos[0];
+  if (!pedido) return false;
+
+  // Se devuelve solo lo que descontarUnItem desconto: lineas con producto,
+  // que no salieron por Full.
+  for (const it of (Array.isArray(pedido.items) ? pedido.items : [])) {
+    if (!it.product_id || it.full || it.sin_vincular) continue;
+    const cantidad = Number(it.qty) || 0;
+    if (!cantidad) continue;
+    const productos = await sb('/rest/v1/store_products?id=eq.' + encodeURIComponent(it.product_id) +
+      '&select=id,stock,tiene_variantes,variantes');
+    const producto = productos && productos[0];
+    if (!producto) continue;
+
+    if (it.variante && producto.tiene_variantes && Array.isArray(producto.variantes)) {
+      const clave = claveDeAtributos(it.variante);
+      const lista = producto.variantes.map((v) => Object.assign({}, v));
+      const i = lista.findIndex((v) => claveDeAtributos(v.atributos) === clave);
+      if (i < 0) continue;
+      lista[i].stock = (Number(lista[i].stock) || 0) + cantidad;
+      await sb('/rest/v1/store_products?id=eq.' + encodeURIComponent(producto.id), {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { variantes: lista }
+      });
+    } else {
+      await sb('/rest/v1/store_products?id=eq.' + encodeURIComponent(producto.id), {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: { stock: (Number(producto.stock) || 0) + cantidad }
+      });
+    }
+  }
+
+  // La comision y el envio que se anotaron con la venta: ML no los cobra si
+  // la venta se cancela.
+  const conceptos = ['Comisi\u00f3n Mercado Libre \u2014 Orden ' + orden.id,
+                     'Env\u00edo Mercado Libre \u2014 Orden ' + orden.id];
+  for (const concepto of conceptos) {
+    await sb('/rest/v1/store_gastos?store_slug=eq.' + encodeURIComponent(slug) +
+      '&concepto=eq.' + encodeURIComponent(concepto), {
+      method: 'DELETE', headers: { Prefer: 'return=minimal' }
+    });
+  }
+  return true;
+}
+
 async function registrarPedido(slug, orden, items, resumen) {
   // Solo si Mercado Libre mando una orden sin lineas, que no deberia pasar.
   // Antes esto se cumplia tambien cuando ninguna linea estaba vinculada, y
@@ -542,8 +628,12 @@ module.exports = async (req, res) => {
     const reclamo = await reclamarOrden(slug, orden);
 
     // Otro aviso la tiene: solo se refresca el estado. El stock NO se
-    // vuelve a tocar y no se crea ninguna venta.
-    if (!reclamo.nuestra) {
+    // vuelve a tocar y no se crea ninguna venta. Salvo dos casos: llego
+    // pagada despues de un aviso sin pagar (se registra ahora), o se
+    // cancelo una venta ya registrada (se anula).
+    const pagoTardio = !reclamo.nuestra && pagada && await tomarPagoTardio(orden);
+    if (!reclamo.nuestra && !pagoTardio) {
+      if (orden.status === 'cancelled') await anularVentaCancelada(slug, orden);
       await sb('/rest/v1/store_ml_ordenes?ml_order_id=eq.' + encodeURIComponent(String(orden.id)), {
         method: 'PATCH',
         headers: { Prefer: 'return=minimal' },

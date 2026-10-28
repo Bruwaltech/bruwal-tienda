@@ -17589,6 +17589,10 @@ async function aplicarInsumosDeItem(item, signo, soloEnPantalla = false) {
 }
 
 async function aplicarStockDeItem(item, signo, soloEnPantalla = false) {
+  // Venta de Mercado Libre enviada por Full: esa unidad salió del depósito
+  // de ML, nunca del local. Anularla no tiene que sumarle stock acá.
+  if (item.full) return null;
+
   const p = products.find(x => String(x.id) === String(item.product_id));
 
   // Los insumos se descuentan aunque el ítem sea un servicio (que no tiene
