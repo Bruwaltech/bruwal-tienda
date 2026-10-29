@@ -1192,7 +1192,8 @@ const panelMonedas = (() => {
   function cerrarCharla() {
     terminarAudio(false); // si estaba grabando, no se manda
     cerrarFotoPrevia();
-    cerrarMic();
+    // El micrófono queda abierto al pasar de una charla a otra: si se cierra, Safari vuelve a pedir permiso
+    // en el próximo audio. Se cierra solo después de MIC_ABIERTO o si se va de la página.
     quitarCita();
     ocultar($('mTelon'));
     charlaAbierta = null;
@@ -1329,7 +1330,9 @@ const panelMonedas = (() => {
   const LAMEJS = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
   const TOQUE = 400; // ms: soltar antes es un toque, no mantener apretado
   const PERMISO = 800; // ms: si el micrófono tarda más en abrir, el navegador preguntó por el permiso
-  const MIC_ABIERTO = 2 * 60 * 1000; // después del último audio, el micrófono queda abierto este rato
+  const MIC_ABIERTO = 15 * 60 * 1000; // después del último audio, el micrófono queda abierto este rato
+  // Si cierra la pestaña o la deja de lado, se suelta el micrófono
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !grabacion) cerrarMic(); });
   let grabacion = null;
   // El micrófono queda abierto mientras la charla está abierta (y un rato después del último audio):
   // así el navegador no pide permiso para cada audio.

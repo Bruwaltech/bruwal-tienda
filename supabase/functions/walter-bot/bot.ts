@@ -799,7 +799,8 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     return rechazar(estado, c, false, texto);
   }
   // Después de un pedido, si cuenta que tiene otra cosa, cotizamos de nuevo en la misma localidad
-  if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo)) estado = { step: "cat", d: { loc: estado.d.loc } };
+  // (también si solo pasa la lista: "67 de 25 doradas, 45 de 25 plateadas, 2 de $10")
+  if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo || l?.items?.length)) estado = { step: "cat", d: { loc: estado.d.loc } };
   let r = procesar(estado, texto, c);
   const sinAvance = !!estado && JSON.stringify(r.estado.d) === JSON.stringify(estado.d);
   // Lo que procesar no reconoce por palabras clave ("¿dónde quedan?")
