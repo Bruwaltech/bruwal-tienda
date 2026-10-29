@@ -32,9 +32,10 @@ function esquema(c: Config) {
       } }),
       entrega: nulo({ type: "string", enum: ["Retiro a domicilio", "Punto de encuentro", "Depósito"] }),
       direccion: nulo({ type: "string" }),
+      de25_sin_color: nulo({ type: "number" }),
       intencion: nulo({ type: "string", enum: ["precios", "depositos", "humano", "otro", "prohibido", "no_vende", "consulta"] }),
     },
-    required: ["localidad", "viaja", "material", "modo", "tipo", "cantidad", "monedas", "entrega", "direccion", "intencion"],
+    required: ["localidad", "viaja", "material", "modo", "tipo", "cantidad", "monedas", "entrega", "direccion", "de25_sin_color", "intencion"],
     additionalProperties: false,
   };
 }
@@ -49,10 +50,11 @@ Campos (null si el mensaje no lo dice claramente; no adivines):
 - material: Monedas, Cobre o Bronce. Las llaves cuentan como Monedas, con tipo de llave.
 - modo: "kg" si habla de peso (kilos, bolsa de X kg), "u" si habla de cantidad de unidades contadas.
 - tipo: el tipo de moneda si lo dice. Tipos: ${tipos}. "${MEZCLADAS}" si son de varias clases.
-- cantidad: el número de kilos o de unidades, según el modo ("unos tres kilos" = 3, "dos mil monedas" = 2000, "medio kilo" = 0.5).
-- monedas: si nombra dos o más clases de monedas con su cantidad, una entrada por clase ("145 de 1, 58 de 50" = $1: 145 y 50 centavos: 58; "$2 ---> 230 u" = $2: 230). Las de "25" sin color, si hay doradas y plateadas, no las adivines: dejalas afuera. Las que van por kilo, tipo ${MEZCLADAS} y la cantidad en kilos. Con una sola clase o ninguna, null. También las que dijo en mensajes anteriores de la charla reciente que el bot todavía no anotó.
+- cantidad: el número de kilos o de unidades, según el modo ("unos tres kilos" = 3, "dos mil monedas" = 2000, "medio kilo" = 0.5). Los gramos van pasados a kilos ("648 gramos" = 0.648, modo "kg"). Si repite una plata que el bot le dijo ("las de un peso 1.320" cuando el bot le dijo $1.320 por sus monedas de $1), eso no es una cantidad: null.
+- monedas: si nombra dos o más clases de monedas con su cantidad, una entrada por clase ("145 de 1, 58 de 50" = $1: 145 y 50 centavos: 58; "$2 ---> 230 u" = $2: 230). Las de "25" sin color, si hay doradas y plateadas, no las adivines: dejalas afuera (van en de25_sin_color). "50 pesos" o "$50" no es 50 centavos, y una moneda que no está en la lista de tipos no va. Las que van por kilo, tipo ${MEZCLADAS} y la cantidad en kilos. Con una sola clase o ninguna, null. También las que dijo en mensajes anteriores de la charla reciente que el bot todavía no anotó.
 - entrega: si quiere que se lo pasen a buscar ("Retiro a domicilio"), encontrarse en algún lugar ("Punto de encuentro") o llevarlo él ("Depósito").
 - direccion: la calle y el número donde pasar a buscarlo, tal como los escribió, si los escribió.
+- de25_sin_color: cuántas monedas de 25 centavos nombró sin decir si son doradas o plateadas ("3 de 25" = 3); si no, null.
 - intencion: "precios" si pregunta cuánto pagan sin dar cantidad, "depositos" si pregunta dónde están o el horario, "humano" si pide hablar con una persona. "prohibido" si ofrece medidores (de agua, gas o luz), placas o cosas de cementerio, cables telefónicos, piezas con numeración o de la vía pública, o algo que parezca robado. "otro" si ofrece algo que claramente no es monedas, llaves, cobre ni bronce (aluminio, hierro, plomo, electrodomésticos); los cables o caños de cobre no son "otro". "no_vende" si dice que no quiere vender, que solo consultaba o se despide (gracias, chau, por ahora no). "consulta" si hace una pregunta que no es solo de precios ni de depósitos y que hay que contestarle antes de seguir (qué le conviene, cómo funciona el retiro, si tiene que mandar algo, si pagan en efectivo). Si no, null.
 
 Te paso también la charla reciente. Si en mensajes anteriores del cliente hay datos que el bot todavía no anotó (por ejemplo dijo "tengo monedas" y nadie le contestó), extraelos también.`;
@@ -107,6 +109,7 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
     }
     if (j.entrega) l.ret = j.entrega;
     if (j.direccion) l.dir = j.direccion;
+    if (typeof j.de25_sin_color === "number" && j.de25_sin_color > 0) l.sin25 = j.de25_sin_color;
     if (j.intencion) l.intencion = j.intencion;
     return l;
   } catch (e) {
@@ -205,7 +208,7 @@ export function conservaDatos(original: string, nueva: string): boolean {
 
 // ---------- Preguntas: Haiku contesta con lo que sabe el negocio, sin inventar ----------
 
-const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una a tres frases), cálido, como una persona del negocio.
+const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una o dos frases, sin listas), como una persona del negocio. Contestá solo lo que preguntó: no le recites todos los precios ni todo lo que compramos si no lo pidió.
 
 Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma alguien del equipo. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.
 
@@ -236,7 +239,7 @@ export async function contestar(apiKey: string, pregunta: string, hechos: string
     // Cada número de la respuesta tiene que estar en los datos (o en la pregunta)
     const num = (x: string) => x.replace("$", "");
     const validos = new Set([...datosDe(hechos), ...datosDe(pregunta)].map(num));
-    if (!t || t.length > 600 || datosDe(t).some((x) => !x.startsWith('"') && !validos.has(num(x)))) return null;
+    if (!t || t.length > 400 || datosDe(t).some((x) => !x.startsWith('"') && !validos.has(num(x)))) return null;
     return t;
   } catch (e) {
     if (e instanceof Anthropic.APIError) console.error("ia: contestar", e.status, e.message);

@@ -9,7 +9,7 @@
 // (Meta no manda uno; la función valida la firma X-Hub-Signature-256):
 //   supabase functions deploy walter-bot --no-verify-jwt --project-ref qduguqazpxjjpxjfnkif
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { conPerfil, type Config, cuandoDe, esCoordinar, horarioDe, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
+import { conPerfil, type Config, cotizar, cuandoDe, lineas, tiposDe, esCoordinar, horarioDe, esPing, esSaludo, type Estado, hechos, juntar, nombreDePerfil, norm, pareceCortado, procesar, procesarConLectura, type Respuesta, tipoSuelto } from "./bot.ts";
 import { contarUso, contestar, leer, redactar } from "./ia.ts";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
@@ -99,6 +99,8 @@ Deno.serve(async (req) => {
       const v = ch.value ?? {};
       const nombres: Record<string, string> = {};
       for (const c of v.contacts ?? []) nombres[c.wa_id] = c.profile?.name;
+      // WhatsApp avisa después si un mensaje no se pudo entregar (por ejemplo un audio que no acepta)
+      for (const st of v.statuses ?? []) if (st.status === "failed") console.error("entrega fallida", st.recipient_id, st.id, JSON.stringify(st.errors ?? []).slice(0, 400));
       for (const m of v.messages ?? []) {
         const texto = m.type === "text" ? m.text?.body
           : m.type === "interactive" ? (m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title)
@@ -255,6 +257,16 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   // Lo escrito libremente lo lee Haiku antes, salvo el nombre y la dirección, que se anotan tal cual
   const lectura = libre && !["name", "addr"].includes(estado?.step ?? "")
     ? await leer(clave, texto, estado, cfg, charla) : null;
+  // "Las de un peso 1.320" cuando le dijimos $1.320 por sus monedas de $1: es la plata, no 1.320 monedas
+  if (lectura && estado) {
+    const yaDicho = (tipo: string | undefined, q: number | undefined) => {
+      const l = lineas(estado!.d).find((x) => x.tipo === tipo);
+      return !!l && !!q && q !== l.cant && q === Math.round(cotizar(cfg, "Monedas", l.modo, l.cant, l.tipo).total);
+    };
+    if (lectura.items) lectura.items = lectura.items.filter((x) => !yaDicho(x.tipo, x.cant));
+    if (lectura.items && !lectura.items.length) delete lectura.items;
+    if (yaDicho(lectura.tipo ?? estado.d.tipo, lectura.cant)) delete lectura.cant;
+  }
   if (lectura) console.log("lectura", JSON.stringify({ step: estado?.step, intencion: lectura.intencion ?? null, campos: Object.keys(lectura) }));
   // Con pistas guardadas de un mensaje anterior, también cuando toca un botón
   const r0 = lectura || estado?.p ? procesarConLectura(estado, texto, cfg, lectura) : procesar(estado, texto, cfg);
@@ -271,6 +283,13 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     r.derivar = true;
     r.estado.rep = 0;
   }
+  // "3 de 25": no sabemos si son doradas o plateadas, que se pagan distinto. Antes se perdían: ahora se pregunta.
+  const de25 = tiposDe(cfg).filter((t) => /\b25\b/.test(t.n));
+  if (lectura?.sin25 && de25.length > 1 && r.estado.step !== "done" && !lineas(r.estado.d).some((x) => /\b25\b/.test(x.tipo ?? ""))) {
+    const ult = r.respuestas[r.respuestas.length - 1];
+    const precios = de25.map((t) => `las ${t.n.replace(/^25 centavos\s*/, "")}s a $${t.u}`).join(" y ");
+    if (ult) ult.text = `Las ${lectura.sin25} de 25, ¿son doradas o plateadas? Pagamos ${precios} cada una.\n\n` + ult.text;
+  }
   await db.from("walter_conversaciones").upsert({
     canal, usuario, estado: r.estado, actualizado: new Date().toISOString(), bot_pausado: false,
     ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
@@ -278,12 +297,19 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
   });
   if (r.pedido) {
     const p = r.pedido;
-    await db.from("walter_pedidos").insert({
+    const fila = {
       canal, usuario, nombre: p.nombre, localidad: p.loc, material: p.mat, modo: p.modo, tipo: p.tipo, cantidad: p.cant,
-      retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad, ...(p.items ? { items: p.items } : {}),
+      retiro: p.ret, direccion: p.dir, monto: p.monto, tarifa: p.tarifa, prioridad: p.prioridad, items: p.items ?? null,
       // Anotado en el recorrido de su localidad: el día ya se lo dijo el bot, no hace falta el aviso del día
       ...(p.dia && p.turno ? { dia: p.dia, turno: p.turno, estado: "agendado", aviso_dia: "enviado" } : {}),
-    });
+    };
+    // El mismo cliente vuelve a cerrar un pedido el mismo día (corrigió algo, o el bot rearmó la charla):
+    // se corrige el que ya estaba en vez de anotar otro
+    const { data: previo } = await db.from("walter_pedidos").select("id").eq("canal", canal).eq("usuario", usuario)
+      .in("estado", ["nuevo", "agendado"]).gte("creado", new Date(Date.now() - 86400e3).toISOString())
+      .order("id", { ascending: false }).limit(1).maybeSingle();
+    if (previo) await db.from("walter_pedidos").update(fila).eq("id", previo.id);
+    else await db.from("walter_pedidos").insert(fila);
     // Antes de anotarlo dijo cuándo puede ("hoy estoy entre las 18 y 18:45"): el bot no lo acuerda, lo ve el equipo
     if (id && [texto, ...await sinResponder(canal, usuario, id)].some(esCoordinar)) {
       if (p.dia) {
@@ -852,6 +878,8 @@ async function panelEnviarMedio(canal: string, usuario: string, tipo: "imagen" |
   if (texto.length > 1024) return respuesta({ error: "El texto de la foto va hasta 1024 letras." }, 400);
   const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
   if (bytes.length > s.max * 1024 * 1024) return respuesta({ error: `${s.nombre} pesa demasiado (hasta ${s.max} MB).` }, 400);
+  // Un audio de menos de 1 KB es solo la cabecera, sin sonido: al cliente le llegaba un audio vacío
+  if (tipo === "audio" && bytes.length < 1024) return respuesta({ error: "El audio salió vacío, sin sonido. Grabalo de nuevo." }, 400);
   const { data: conv } = await db.from("walter_conversaciones").select("usuario").eq("canal", canal).eq("usuario", usuario).maybeSingle();
   if (!conv) return respuesta({ error: "No encontramos esa charla." }, 404);
   if (!(await ventanaAbierta(canal, usuario))) return SIN_VENTANA();

@@ -1418,30 +1418,42 @@ const panelMonedas = (() => {
       let datos = null;
       rec.ondataavailable = (d) => { datos = d; };
       const fin = new Promise((ok) => { rec.onstop = ok; });
+      if (ctx.state !== 'running') await ctx.resume().catch(() => {});
       await rec.start();
+      // A veces (sobre todo en Safari) el contexto de audio queda mudo y el ogg sale con la cabecera sola,
+      // 128 bytes sin sonido. Por eso graba también el navegador por su lado y, si el ogg salió vacío, va eso en MP3.
+      const respaldo = grabadorNavegador(stream);
       return {
-        pausar: () => rec.pause(),
-        seguir: () => rec.resume(),
+        pausar: () => { rec.pause(); respaldo && respaldo.pausar(); },
+        seguir: () => { rec.resume(); respaldo && respaldo.seguir(); },
         async terminar() {
           await rec.stop();
           await fin;
           ctx.close();
-          return datos && datos.length ? new Blob([datos], { type: 'audio/ogg' }) : null;
+          if (datos && datos.length >= 1024) { respaldo && respaldo.cancelar(); return new Blob([datos], { type: 'audio/ogg' }); }
+          console.warn('el ogg salió vacío (' + (datos ? datos.length : 0) + ' bytes), va el MP3');
+          return respaldo ? respaldo.terminar() : null;
         },
-        cancelar() { rec.stop().catch(() => {}).then(() => ctx.close()); }
+        cancelar() { rec.stop().catch(() => {}).then(() => ctx.close()); respaldo && respaldo.cancelar(); }
       };
     } catch (e) {
       console.warn('audio en opus no anduvo, va en MP3', e);
       ctx.close();
     }
-    // MP3: lo que grabe el navegador (webm, ogg o mp4) se convierte al final
-    if (!window.MediaRecorder) throw new Error('sin MediaRecorder');
+    const motor = grabadorNavegador(stream);
+    if (!motor) throw new Error('sin MediaRecorder');
+    return motor;
+  }
+
+  // MP3: lo que grabe el navegador (webm, ogg o mp4) se convierte al final. null si no puede grabar.
+  function grabadorNavegador(stream) {
+    if (!window.MediaRecorder) return null;
     cargarScript(LAMEJS).catch(() => {}); // mientras habla
-    const rec = new MediaRecorder(stream);
+    let rec;
+    try { rec = new MediaRecorder(stream); rec.start(); } catch (e) { return null; }
     const partes = [];
     rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
     const fin = new Promise((ok) => { rec.onstop = ok; });
-    rec.start();
     return {
       pausar: () => rec.pause && rec.pause(),
       seguir: () => rec.resume && rec.resume(),
