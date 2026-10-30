@@ -1272,12 +1272,20 @@ $('formLogin').addEventListener('submit', async (e) => {
 
   // Se define ANTES de entrar: el adaptador de almacenamiento lee esta marca en
   // el momento en que Supabase guarda la sesión, que ocurre dentro del signIn.
-  localStorage.setItem(MARCA_RECORDAR, $('recordarme').checked ? 'true' : 'false');
+  try { localStorage.setItem(MARCA_RECORDAR, $('recordarme').checked ? 'true' : 'false'); } catch (err) {}
 
-  const { error } = await sb.auth.signInWithPassword({
-    email: $('email').value.trim(),
-    password: $('clave').value
-  });
+  // Sin señal o con el navegador trabado, el botón quedaba en "Entrando…" para siempre y no decía nada
+  let error;
+  try {
+    ({ error } = await Promise.race([
+      sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('clave').value }),
+      new Promise((_, mal) => setTimeout(() => mal(new Error('tiempo')), 20000))
+    ]));
+  } catch (err) {
+    error = { message: err.message === 'tiempo'
+      ? 'No hubo respuesta. Fijate que tengas internet y volvé a probar.'
+      : 'No se pudo entrar: ' + err.message };
+  }
 
   boton.disabled = false;
   boton.textContent = 'Ingresar';
@@ -1351,6 +1359,14 @@ async function entrar() {
   }
 
   clientes = data || [];
+
+  // Recién entrado, a veces la primera consulta sale vacía (la sesión todavía no llegó a la base):
+  // antes de echarlo, se prueba una vez más
+  if (!clientes.length) {
+    await new Promise((ok) => setTimeout(ok, 1500));
+    const otra = await sb.from('clientes').select('id, slug, nombre, tipo, plan, limite_conversaciones, tope_duro').order('nombre');
+    clientes = otra.data || [];
+  }
 
   if (!clientes.length) {
     $('avisoLogin').innerHTML =
