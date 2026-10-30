@@ -408,11 +408,24 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
     return out({ text: "¡Dale, sin apuro! Cuando las tengas, pasame cuántas tenés de cada una y te hago la cuenta." });
   }
 
+  // Ya cotizado por kilo, aclara que eran gramos ("648 gramos, perdón"): se pasa a kilos y se rehace la cuenta
+  const gramos = /\b(gramos?|grs?)\b/.test(n) ? parseNum(t) : null;
+  if (gramos && d.modo === "kg" && d.cant && ["mod", "name", "addr", "done"].includes(e.step)) {
+    d.cant = gramos / 1000;
+    delete d.ret; delete d.dir;
+    e.step = "mod";
+    const fin = soloDeposito(d, c) ? minTxt(d, c) : "El monto final se confirma al pesar en el momento del retiro.";
+    return out({ text: `Listo, lo corrijo. ${resumen(d, c)}\n${fin}` }, pregunta(e, c));
+  }
+
   // Ya cotizado, corrige la cantidad o la localidad ("soy de Totoras, tengo unas 300 llaves"): se rehace la cuenta
   if (e.step === "mod" && d.mat === "Monedas") {
     const tipo = findTipo(c, t);
     const q = tipo && tipo !== MEZCLADAS ? cantidadConTipo(t, tipo) : null;
-    if (q) return corregir(e, tipo!, q, findLoc(t), c);
+    // "Las de un peso 1.320": repite la plata que le dijimos por ese tipo, no son 1.320 monedas
+    const ya = q ? lineas(d).find((l) => l.tipo === tipo) : null;
+    const repiteMonto = !!ya && (/\$/.test(t) || q === Math.round(cotizar(c, "Monedas", ya.modo, ya.cant, ya.tipo).total));
+    if (q && !repiteMonto) return corregir(e, tipo!, q, findLoc(t), c);
   }
 
   switch (e.step) {
@@ -425,8 +438,9 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       if (!l) {
         e.step = "out";
         return out({
-          text: `Por ahora retiramos en Rosario y alrededores: ${LOCALIDADES.map((x) => x.n).join(", ")}.\n` +
-            `Si te queda cerca, también podés acercarte a nuestro depósito:\n\n${depositos(c)}`,
+          // Corto: la lista entera de localidades y los dos depósitos era un mensaje larguísimo
+          text: `Retiramos en Rosario y la zona, hasta San Lorenzo, Totoras, Funes y Roldán. ¿De qué localidad sos?\n` +
+            `Si no, podés acercarte al depósito de Pueblo Andino (${c.depPA}).`,
           options: ["Otra localidad", "Hablar con alguien"],
         });
       }
@@ -536,6 +550,10 @@ export function procesar(estado: Estado | null, texto: string, c: Config): Resul
       e.step = "addr"; return out(pregunta(e, c));
     }
     case "addr": {
+      // "Dale genial" o "648 gramos, perdón" no son una dirección: se vuelve a pedir
+      if (d.ret !== "Punto de encuentro" && !esDireccion(n)) {
+        return out({ text: `Para pasar a buscarlo necesito la calle y el número en ${d.loc}. ¿Me los pasás?` });
+      }
       d.dir = t.slice(0, 120);
       return anotar(e, c);
     }
@@ -620,7 +638,7 @@ function cantidadConTipo(t: string, tipo: string): number | null {
 
 // Una dirección escrita en vez de elegir cómo entregarlo: calle y número, sin horarios ni cantidades
 const esDireccion = (n: string) =>
-  /\d/.test(n) && /[a-z]{3,}/.test(n) && !/\b(hs|hora|horas|manana|tarde|noche|kilo|kilos|kg|monedas?)\b/.test(n);
+  /\d/.test(n) && /[a-z]{3,}/.test(n) && !/\b(hs|hora|horas|manana|tarde|noche|kilo|kilos|kg|gramos?|grs?|monedas?)\b/.test(n);
 
 // Cierra un pedido con retiro a domicilio o punto de encuentro
 function anotar(e: Estado, c: Config): Resultado {
@@ -669,6 +687,8 @@ export function conPerfil(r: Resultado, nombre: string | null, c: Config): Resul
 // viaja: vive lejos pero va a estar en una localidad de la lista ("soy de Rafaela y el finde voy a Beltrán")
 export type Lectura = Pistas & {
   otraLoc?: boolean; viaja?: boolean;
+  // Cuántas de 25 centavos nombró sin decir si son doradas o plateadas (se le pregunta)
+  sin25?: number;
   intencion?: "precios" | "depositos" | "humano" | "otro" | "prohibido" | "no_vende" | "consulta";
 };
 
@@ -779,7 +799,8 @@ export function procesarConLectura(estado: Estado | null, texto: string, c: Conf
     return rechazar(estado, c, false, texto);
   }
   // Después de un pedido, si cuenta que tiene otra cosa, cotizamos de nuevo en la misma localidad
-  if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo)) estado = { step: "cat", d: { loc: estado.d.loc } };
+  // (también si solo pasa la lista: "67 de 25 doradas, 45 de 25 plateadas, 2 de $10")
+  if (estado?.step === "done" && estado.d.loc && (l?.mat || l?.tipo || l?.items?.length)) estado = { step: "cat", d: { loc: estado.d.loc } };
   let r = procesar(estado, texto, c);
   const sinAvance = !!estado && JSON.stringify(r.estado.d) === JSON.stringify(estado.d);
   // Lo que procesar no reconoce por palabras clave ("¿dónde quedan?")

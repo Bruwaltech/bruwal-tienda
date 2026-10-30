@@ -32,9 +32,10 @@ function esquema(c: Config) {
       } }),
       entrega: nulo({ type: "string", enum: ["Retiro a domicilio", "Punto de encuentro", "Depósito"] }),
       direccion: nulo({ type: "string" }),
+      de25_sin_color: nulo({ type: "number" }),
       intencion: nulo({ type: "string", enum: ["precios", "depositos", "humano", "otro", "prohibido", "no_vende", "consulta"] }),
     },
-    required: ["localidad", "viaja", "material", "modo", "tipo", "cantidad", "monedas", "entrega", "direccion", "intencion"],
+    required: ["localidad", "viaja", "material", "modo", "tipo", "cantidad", "monedas", "entrega", "direccion", "de25_sin_color", "intencion"],
     additionalProperties: false,
   };
 }
@@ -49,10 +50,11 @@ Campos (null si el mensaje no lo dice claramente; no adivines):
 - material: Monedas, Cobre o Bronce. Las llaves cuentan como Monedas, con tipo de llave.
 - modo: "kg" si habla de peso (kilos, bolsa de X kg), "u" si habla de cantidad de unidades contadas.
 - tipo: el tipo de moneda si lo dice. Tipos: ${tipos}. "${MEZCLADAS}" si son de varias clases.
-- cantidad: el número de kilos o de unidades, según el modo ("unos tres kilos" = 3, "dos mil monedas" = 2000, "medio kilo" = 0.5).
-- monedas: si nombra dos o más clases de monedas con su cantidad, una entrada por clase ("145 de 1, 58 de 50" = $1: 145 y 50 centavos: 58; "$2 ---> 230 u" = $2: 230). Las de "25" sin color, si hay doradas y plateadas, no las adivines: dejalas afuera. Las que van por kilo, tipo ${MEZCLADAS} y la cantidad en kilos. Con una sola clase o ninguna, null. También las que dijo en mensajes anteriores de la charla reciente que el bot todavía no anotó.
+- cantidad: el número de kilos o de unidades, según el modo ("unos tres kilos" = 3, "dos mil monedas" = 2000, "medio kilo" = 0.5). Los gramos van pasados a kilos ("648 gramos" = 0.648, modo "kg"). Si repite una plata que el bot le dijo ("las de un peso 1.320" cuando el bot le dijo $1.320 por sus monedas de $1), eso no es una cantidad: null.
+- monedas: si nombra dos o más clases de monedas con su cantidad, una entrada por clase ("145 de 1, 58 de 50" = $1: 145 y 50 centavos: 58; "$2 ---> 230 u" = $2: 230). Las de "25" sin color, si hay doradas y plateadas, no las adivines: dejalas afuera (van en de25_sin_color). "50 pesos" o "$50" no es 50 centavos, y una moneda que no está en la lista de tipos no va. Las que van por kilo, tipo ${MEZCLADAS} y la cantidad en kilos. Con una sola clase o ninguna, null. También las que dijo en mensajes anteriores de la charla reciente que el bot todavía no anotó.
 - entrega: si quiere que se lo pasen a buscar ("Retiro a domicilio"), encontrarse en algún lugar ("Punto de encuentro") o llevarlo él ("Depósito").
 - direccion: la calle y el número donde pasar a buscarlo, tal como los escribió, si los escribió.
+- de25_sin_color: cuántas monedas de 25 centavos nombró sin decir si son doradas o plateadas ("3 de 25" = 3); si no, null.
 - intencion: "precios" si pregunta cuánto pagan sin dar cantidad, "depositos" si pregunta dónde están o el horario, "humano" si pide hablar con una persona. "prohibido" si ofrece medidores (de agua, gas o luz), placas o cosas de cementerio, cables telefónicos, piezas con numeración o de la vía pública, o algo que parezca robado. "otro" si ofrece algo que claramente no es monedas, llaves, cobre ni bronce (aluminio, hierro, plomo, electrodomésticos); los cables o caños de cobre no son "otro". "no_vende" si dice que no quiere vender, que solo consultaba o se despide (gracias, chau, por ahora no). "consulta" si hace una pregunta que no es solo de precios ni de depósitos y que hay que contestarle antes de seguir (qué le conviene, cómo funciona el retiro, si tiene que mandar algo, si pagan en efectivo). Si no, null.
 
 Te paso también la charla reciente. Si en mensajes anteriores del cliente hay datos que el bot todavía no anotó (por ejemplo dijo "tengo monedas" y nadie le contestó), extraelos también.`;
@@ -107,6 +109,7 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
     }
     if (j.entrega) l.ret = j.entrega;
     if (j.direccion) l.dir = j.direccion;
+    if (typeof j.de25_sin_color === "number" && j.de25_sin_color > 0) l.sin25 = j.de25_sin_color;
     if (j.intencion) l.intencion = j.intencion;
     return l;
   } catch (e) {
@@ -118,21 +121,25 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
 
 // ---------- Redacción: Haiku le da tono de persona a las respuestas que ya armó el bot ----------
 
-const ESTILO = `Sos quien atiende el WhatsApp de Punto Metales, un negocio chico de la zona de Rosario que compra monedas, llaves, cobre y bronce. Te paso el mensaje del cliente y lo que el sistema le quiere contestar, con los precios y las cuentas ya hechos. Escribí lo mismo como lo escribiría una persona del negocio en WhatsApp: rioplatense (vos, tenés, dale), cálido y natural, frases cortas, sin sonar a formulario. No copies las frases del sistema: decilo con tus palabras, y si el cliente contó algo o hizo una pregunta, reaccioná a eso primero.
+const ESTILO = `Sos quien atiende el WhatsApp de Punto Metales, un negocio chico de la zona de Rosario que compra monedas, llaves, cobre y bronce. Te paso el mensaje del cliente y lo que el sistema le quiere contestar, con los precios y las cuentas ya hechos. Escribí lo mismo como lo escribiría una persona del negocio en WhatsApp: rioplatense, natural, frases cortas, sin sonar a formulario ni a bot. No copies las frases del sistema: decilo con tus palabras, y si el cliente contó algo o hizo una pregunta, reaccioná a eso primero.
 
-Ejemplo. Sistema: "¡Genial, en Funes trabajamos! Por 3 kg de cobre te pagamos $45.000 ($15.000 el kilo, precio minorista). El monto final se confirma al pesar en el momento del retiro." Vos: "¡Buenísimo! A Funes vamos 👌 Por esos 3 kg de cobre serían $45.000, a $15.000 el kilo. Lo terminamos de confirmar cuando lo pesamos al retirarlo."
+Si te paso "como_escribe_el_equipo", son charlas reales de quien atiende el negocio: escribí como esa persona (largo de los mensajes, saludos, cómo pregunta, si usa signos o no). De esos ejemplos tomá solo el estilo, nunca los datos: ni precios, ni días, ni lugares, ni nombres.
+
+Ejemplo. Sistema: "¡Genial, en Funes trabajamos! Por 3 kg de cobre te pagamos $45.000 ($15.000 el kilo, precio minorista). El monto final se confirma al pesar en el momento del retiro." Vos: "A Funes vamos. Por esos 3 kg de cobre serían $45.000, a $15.000 el kilo. Lo confirmamos cuando lo pesamos al retirarlo."
 
 Reglas:
 - Una respuesta tuya por cada respuesta del sistema, en el mismo orden.
 - Los datos van exactos: montos, precios, kilos, cantidades, direcciones, horarios, nombres y localidades, con el mismo formato ($75.000, 7,5 kg). No agregues números.
+- Lo que el sistema pone "por ejemplo" lo podés sacar o acortar: muchas veces alcanza con "¿cuántas tenés de cada una?".
 - No inventes datos, promesas ni condiciones. Si el sistema hace una pregunta, la tuya también la hace al final.
 - No agregues nada que el sistema no diga: ni distancias, ni si un lugar queda cerca o lejos, ni lugares, días u horarios para encontrarse. Si el cliente propone algo (un lugar, un día), no lo aceptes ni lo confirmes: eso lo arregla alguien del equipo. Podés decir que lo tenés en cuenta, nada más.
+- No digas cómo te llamás ni firmes con un nombre.
 - No cambies palabras que no entendés del mensaje del cliente ni las repitas si suenan raras (los audios pasados a texto traen errores).
 - Cuando hay opciones, el cliente las ve como botones abajo del mensaje: no hace falta enumerarlas, pero si nombrás una, con el mismo nombre. Lo que está entre comillas va tal cual, con comillas.
-- Como mucho un emoji por mensaje. Nada de "estimado" ni "le informamos".
-- Corto, como en un chat: una a tres frases por mensaje. Las listas de precios y el resumen del pedido van como vienen.
-- Variá cómo arrancás: no empieces siempre con "¡Buenísimo!", "¡Dale!" o "¡Genial!", y muchas veces no hace falta ninguna exclamación.
-- Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó. Si el bot ya hizo esta misma pregunta, hacela con otras palabras y más corta.`;
+- Sin emojis, salvo que el cliente los use. Nada de "estimado", "le informamos", "¡Genial!" ni "¡Perfecto!".
+- Si el cliente trata de usted, tratalo de usted; si no, de vos.
+- Corto, como en un chat: una o dos frases por mensaje, una sola pregunta. Las listas de precios y el resumen del pedido van como vienen.
+- Si viene la charla reciente, no repitas frases que el bot ya dijo y no vuelvas a saludar si ya saludó. Si el bot ya hizo esta misma pregunta, hacela con otras palabras y más corta. Si el cliente dijo que después te pasa los datos ("ahí te digo", "bancame"), no le vuelvas a pedir lo mismo: decile que lo esperás.`;
 
 // Los datos que la respuesta reescrita tiene que conservar sí o sí: montos, números y textos entre comillas
 const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[^"]+"/g) ?? []).map((x) => x.replace(/\$\s/, "$"));
@@ -141,7 +148,7 @@ const datosDe = (s: string) => (s.match(/\$\s?\d+(?:[.,]\d+)*|\d+(?:[.,]\d+)*|"[
  * Las respuestas con el tono de una persona. Los números salen del bot: si Haiku cambia o pierde
  * alguno, si tarda o si falla, esa respuesta va con el texto original.
  */
-export async function redactar(apiKey: string, cliente_dijo: string, rs: { text: string; options?: string[] }[], charla = "") {
+export async function redactar(apiKey: string, cliente_dijo: string, rs: { text: string; options?: string[] }[], charla = "", ejemplos = "") {
   if (!apiKey || !rs.length) return rs;
   cliente ??= nuevoCliente(apiKey);
   try {
@@ -158,6 +165,7 @@ export async function redactar(apiKey: string, cliente_dijo: string, rs: { text:
       },
       messages: [{ role: "user", content: JSON.stringify({
         cliente: cliente_dijo,
+        ...(ejemplos ? { como_escribe_el_equipo: ejemplos } : {}),
         ...(charla ? { charla_reciente: charla } : {}),
         respuestas: rs.map((r) => (r.options?.length ? { texto: r.text, opciones: r.options } : { texto: r.text })),
       }) }],
@@ -179,26 +187,35 @@ export async function redactar(apiKey: string, cliente_dijo: string, rs: { text:
   }
 }
 
-/** Cada monto, número y texto entre comillas del original aparece en la reescrita, y no hay números nuevos. */
+// "Por ejemplo: 50 de $1 y 20 de 50 centavos." Esos números la reescrita los puede sacar
+const EJEMPLO = /por ejemplo:?[^.?!\n]*/gi;
+
+/**
+ * Cada monto, número y texto entre comillas del original aparece en la reescrita, y no hay números nuevos.
+ * Los de un "por ejemplo" pueden quedar o no.
+ */
 export function conservaDatos(original: string, nueva: string): boolean {
-  const a = datosDe(original), b = datosDe(nueva);
+  const a = datosDe(original.replace(EJEMPLO, "")), b = datosDe(nueva);
   const quedan = [...b];
   for (const x of a) {
     const i = quedan.indexOf(x);
     if (i < 0) return false;
     quedan.splice(i, 1);
   }
-  return quedan.length === 0;
+  const ejemplos = (original.match(EJEMPLO) ?? []).flatMap(datosDe);
+  return quedan.every((x) => ejemplos.includes(x));
 }
 
 // ---------- Preguntas: Haiku contesta con lo que sabe el negocio, sin inventar ----------
 
-const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una a tres frases), cálido, como una persona del negocio.
+const RESPONDER = `Atendés el WhatsApp de Punto Metales, que compra monedas, llaves, cobre y bronce en la zona de Rosario. El cliente hizo una pregunta. Contestala en rioplatense, corto (una o dos frases, sin listas), como una persona del negocio. Contestá solo lo que preguntó: no le recites todos los precios ni todo lo que compramos si no lo pidió.
 
-Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma alguien del equipo. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.`;
+Usá solo los datos que te paso. Si la respuesta no está ahí, decí que eso lo confirma alguien del equipo. No inventes precios, horarios, formas de pago ni promesas, y no hagas preguntas: el sistema sigue la charla después de tu respuesta. Si los datos ya dicen qué le conviene, decíselo directo con esos números, aunque no sepas cuánto tiene.
+
+Si te paso "como_escribe_el_equipo", son charlas reales del negocio: copiá el estilo (corto, sin emojis, usted o vos según el cliente), nunca los datos. No digas cómo te llamás.`;
 
 /** Respuesta a una pregunta del cliente, con los números sacados de hechos; null si no se pudo o si inventó un número. */
-export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = ""): Promise<string | null> {
+export async function contestar(apiKey: string, pregunta: string, hechos: string, charla = "", ejemplos = ""): Promise<string | null> {
   if (!apiKey) return null;
   cliente ??= nuevoCliente(apiKey);
   try {
@@ -212,7 +229,7 @@ export async function contestar(apiKey: string, pregunta: string, hechos: string
           type: "object", properties: { respuesta: { type: "string" } }, required: ["respuesta"], additionalProperties: false,
         } },
       },
-      messages: [{ role: "user", content: JSON.stringify({ datos_del_negocio: hechos, ...(charla ? { charla_reciente: charla } : {}), pregunta }) }],
+      messages: [{ role: "user", content: JSON.stringify({ datos_del_negocio: hechos, ...(ejemplos ? { como_escribe_el_equipo: ejemplos } : {}), ...(charla ? { charla_reciente: charla } : {}), pregunta }) }],
     });
     anotar(res);
     if (res.stop_reason !== "end_turn") { console.error("ia: contestar stop_reason", res.stop_reason); return null; }
@@ -222,7 +239,7 @@ export async function contestar(apiKey: string, pregunta: string, hechos: string
     // Cada número de la respuesta tiene que estar en los datos (o en la pregunta)
     const num = (x: string) => x.replace("$", "");
     const validos = new Set([...datosDe(hechos), ...datosDe(pregunta)].map(num));
-    if (!t || t.length > 600 || datosDe(t).some((x) => !x.startsWith('"') && !validos.has(num(x)))) return null;
+    if (!t || t.length > 400 || datosDe(t).some((x) => !x.startsWith('"') && !validos.has(num(x)))) return null;
     return t;
   } catch (e) {
     if (e instanceof Anthropic.APIError) console.error("ia: contestar", e.status, e.message);

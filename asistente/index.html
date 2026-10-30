@@ -550,6 +550,84 @@ tbody tr:hover { background: #F8FBFF; }
   .panel { border: none; }
   .parada { break-inside: avoid; }
 }
+/* ---------------- estilo vidrio (tipo iOS, "Liquid Glass") ----------------
+   Fondo con color suave y superficies translúcidas con desenfoque. Va al final para pisar lo de arriba;
+   sin backdrop-filter (navegadores viejos) quedan las superficies blancas de siempre. */
+:root {
+  --vidrio: rgba(255, 255, 255, .62);
+  --vidrio-fuerte: rgba(255, 255, 255, .78);
+  --vidrio-borde: rgba(255, 255, 255, .7);
+  --vidrio-sombra: 0 10px 30px -12px rgba(21, 41, 77, .28), inset 0 1px 0 rgba(255, 255, 255, .85);
+  --radius: 20px;
+}
+@media screen {
+  body {
+    background:
+      radial-gradient(1200px 700px at 0% -10%, #CFE4FF 0%, transparent 60%),
+      radial-gradient(900px 600px at 100% 0%, #E3D9FF 0%, transparent 55%),
+      radial-gradient(900px 700px at 50% 110%, #CFF3EA 0%, transparent 60%),
+      #EEF3FA;
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  .barra {
+    position: sticky; top: 0; z-index: 30;
+    background: rgba(21, 41, 77, .78);
+    -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(255, 255, 255, .18);
+  }
+  .barra button { border-radius: 999px; background: rgba(255, 255, 255, .16); }
+  .tarjeta, .panel, .datos, .charla, .caja-login, .aviso-tienda, .barra-modo, .recorrido, .foto-elegida {
+    background: var(--vidrio);
+    -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid var(--vidrio-borde);
+    box-shadow: var(--vidrio-sombra);
+  }
+  .barra-modo { background: rgba(225, 245, 228, .7); }
+  .barra-modo.manual { background: rgba(255, 243, 222, .75); }
+  .panel-cabecera, td, .pedido, .parada, .nota-panel, .acciones-ruta, .pie-form, .dato, .resumen-ruta {
+    border-color: rgba(21, 41, 77, .08);
+  }
+  th, .resumen-ruta, tbody tr:hover { background: rgba(255, 255, 255, .45); }
+  .telon {
+    background: rgba(21, 41, 77, .22);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .ficha { background: rgba(238, 243, 250, .82); -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%); }
+  .ficha-cabecera {
+    background: var(--vidrio-fuerte);
+    -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(21, 41, 77, .08);
+  }
+  .burbuja { border-radius: 20px; box-shadow: 0 1px 1px rgba(21, 41, 77, .06); }
+  .burbuja.de-cliente { background: rgba(255, 255, 255, .92); border-bottom-left-radius: 6px; }
+  .burbuja.de-bot { background: linear-gradient(180deg, #24406F, var(--navy)); border-bottom-right-radius: 6px; }
+  .burbuja.de-walter { background: linear-gradient(180deg, #4AA3F0, #2F8FE0); border-bottom-right-radius: 6px; }
+  .btn { border-radius: 999px; }
+  .btn-primario { background: linear-gradient(180deg, #24406F, var(--navy)); box-shadow: 0 6px 16px -8px rgba(21, 41, 77, .6), inset 0 1px 0 rgba(255, 255, 255, .25); }
+  .btn-ok { background: linear-gradient(180deg, #2BB79C, var(--ok)); box-shadow: 0 6px 16px -8px rgba(31, 160, 136, .7), inset 0 1px 0 rgba(255, 255, 255, .3); }
+  .btn-suave, .btn-peligro, .filtro, .pestana, .buscador {
+    background: rgba(255, 255, 255, .6);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, .8);
+    box-shadow: 0 2px 8px -4px rgba(21, 41, 77, .25), inset 0 1px 0 rgba(255, 255, 255, .9);
+  }
+  .pestana, .filtro { border-radius: 999px; }
+  .pestana.activa, .filtro.activo { background: rgba(21, 41, 77, .88); border-color: transparent; color: #fff; }
+  .campo input, .campo textarea, .campo select, .responder textarea, .fila-agenda input, .fila-agenda select,
+  .selector, .tipo-moneda input, .recorrido-fila select, .recorrido-fila input, .foto-elegida input {
+    background: rgba(255, 255, 255, .7); border: 1px solid rgba(21, 41, 77, .1); border-radius: 14px;
+  }
+  .responder textarea { border-radius: 20px; }
+  .toast {
+    background: rgba(21, 41, 77, .82); border-radius: 999px;
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  }
+  .grabando { border-radius: 16px; background: rgba(253, 236, 236, .8); }
+}
+@media screen and (prefers-reduced-transparency: reduce) {
+  .tarjeta, .panel, .datos, .charla, .ficha, .ficha-cabecera, .caja-login { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
 </style>
 </head>
 <body>
@@ -1081,7 +1159,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261025a"></script>
+<script src="/asistente/monedas.js?v=20261029a"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
@@ -1194,12 +1272,20 @@ $('formLogin').addEventListener('submit', async (e) => {
 
   // Se define ANTES de entrar: el adaptador de almacenamiento lee esta marca en
   // el momento en que Supabase guarda la sesión, que ocurre dentro del signIn.
-  localStorage.setItem(MARCA_RECORDAR, $('recordarme').checked ? 'true' : 'false');
+  try { localStorage.setItem(MARCA_RECORDAR, $('recordarme').checked ? 'true' : 'false'); } catch (err) {}
 
-  const { error } = await sb.auth.signInWithPassword({
-    email: $('email').value.trim(),
-    password: $('clave').value
-  });
+  // Sin señal o con el navegador trabado, el botón quedaba en "Entrando…" para siempre y no decía nada
+  let error;
+  try {
+    ({ error } = await Promise.race([
+      sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('clave').value }),
+      new Promise((_, mal) => setTimeout(() => mal(new Error('tiempo')), 20000))
+    ]));
+  } catch (err) {
+    error = { message: err.message === 'tiempo'
+      ? 'No hubo respuesta. Fijate que tengas internet y volvé a probar.'
+      : 'No se pudo entrar: ' + err.message };
+  }
 
   boton.disabled = false;
   boton.textContent = 'Ingresar';
@@ -1273,6 +1359,14 @@ async function entrar() {
   }
 
   clientes = data || [];
+
+  // Recién entrado, a veces la primera consulta sale vacía (la sesión todavía no llegó a la base):
+  // antes de echarlo, se prueba una vez más
+  if (!clientes.length) {
+    await new Promise((ok) => setTimeout(ok, 1500));
+    const otra = await sb.from('clientes').select('id, slug, nombre, tipo, plan, limite_conversaciones, tope_duro').order('nombre');
+    clientes = otra.data || [];
+  }
 
   if (!clientes.length) {
     $('avisoLogin').innerHTML =
