@@ -17318,6 +17318,15 @@ let comandasVistas = null;   // ids de "Nuevo" ya mostrados, para el aviso sonor
 // hay donde guardar en que etapa esta cada uno.
 const hayColumnaEtapa = () => pedidosTodos.some(o => 'etapa' in o);
 
+// En gastronomia lo que se cobra en Ventas tambien hay que cocinarlo: el
+// cliente que viene al local a encargar una pizza. Antes quedaba confirmado
+// sin etapa y no aparecia en el tablero, y el encargado lo terminaba
+// cargando de nuevo desde la tienda. Va directo a En preparacion porque ya
+// esta cobrado y el stock ya se desconto.
+function etapaDeVentaDeMostrador() {
+  return rubroEsComida() && hayColumnaEtapa() ? { etapa: 'en_preparacion' } : {};
+}
+
 function etapaDeComanda(o) {
   const e = estadoPedido(o);
   if (e === 'cancelado') return null;
@@ -25183,6 +25192,7 @@ async function registrarVentaCarrito(resumen, nombreCliente, opciones) {
     // sigue vendiendo como siempre.
     ...(pagosDivididos ? { pagos_divididos: pagosDivididos } : {}),
     ...cajaDeLaVenta(),
+    ...etapaDeVentaDeMostrador(),
     created_at: new Date().toISOString()
   };
 
@@ -26107,6 +26117,7 @@ async function registrarVenta(product, qty, nombreCliente, opciones) {
     // sigue vendiendo como siempre.
     ...(pagosDivididos ? { pagos_divididos: pagosDivididos } : {}),
     ...cajaDeLaVenta(),
+    ...etapaDeVentaDeMostrador(),
     created_at: new Date().toISOString()
   };
 
