@@ -55,6 +55,7 @@ const panelMonedas = (() => {
   let filtroPedidos = 'pendientes';
   let busqueda = '';
   let filtroCharlas = 'humano';
+  let filtroEtiqueta = '';
   let busquedaCharlas = '';
   const elegidas = new Set(); // charlas tildadas para borrar de a varias ("canal|usuario")
   const pedidosElegidos = new Set(); // ids de pedidos tildados para borrar de a varios
@@ -189,7 +190,7 @@ const panelMonedas = (() => {
         .order('creado', { ascending: false })
         .limit(1000),
       sb.from('walter_conversaciones')
-        .select('canal, usuario, nombre_perfil, localidad, estado, pide_humano, bot_pausado, actualizado')
+        .select('canal, usuario, nombre_perfil, localidad, estado, pide_humano, bot_pausado, actualizado, no_leidos, etiquetas')
         .order('pide_humano', { ascending: false })
         .order('actualizado', { ascending: false })
         .limit(300),
@@ -279,12 +280,14 @@ const panelMonedas = (() => {
     const semana = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     const humano = charlas.filter((c) => c.pide_humano).length;
+    const sinLeer = charlas.filter((c) => c.pide_humano || c.no_leidos > 0).length;
     const sinDia = abiertos.filter((p) => p.retiro !== 'Depósito' && (!p.dia || !p.turno)).length;
 
     $('mNumHumano').textContent = humano;
-    // El número sobre el ícono de Bruwal Chat en la pantalla de inicio: las charlas que esperan respuesta
+    // El número sobre el ícono de Bruwal Chat en la pantalla de inicio: las charlas sin leer o que esperan
+    // respuesta, como en WhatsApp
     try {
-      if (humano && navigator.setAppBadge) navigator.setAppBadge(humano).catch(() => {});
+      if (sinLeer && navigator.setAppBadge) navigator.setAppBadge(sinLeer).catch(() => {});
       else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
     } catch (e) { /* el navegador no tiene número en el ícono */ }
     $('mNumSinDia').textContent = sinDia;
@@ -856,6 +859,8 @@ const panelMonedas = (() => {
         return sinTildes([nombreCharla(c), c.localidad].filter(Boolean).join(' ')).includes(texto) ||
           (digitos.length >= 3 && c.usuario.includes(digitos));
       }
+      if (filtroEtiqueta && !(c.etiquetas || []).includes(filtroEtiqueta)) return false;
+      if (filtroCharlas === 'noleidas') return c.no_leidos > 0;
       return filtroCharlas === 'todas' || filtroCharlas === 'contactos' ||
         (filtroCharlas === 'vos' ? c.bot_pausado : c.pide_humano);
     });
@@ -865,8 +870,32 @@ const panelMonedas = (() => {
     return lista;
   }
 
+  // Todas las etiquetas puestas en alguna charla, más las de siempre
+  const ETIQUETAS_BASE = ['Importante', 'Cliente nuevo', 'Cliente frecuente', 'Para retirar', 'Pagado'];
+  function etiquetasUsadas() {
+    const usadas = new Set();
+    charlas.forEach((c) => (c.etiquetas || []).forEach((e) => usadas.add(e)));
+    return Array.from(usadas).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }
+
+  function htmlEtiquetas(lista, quitar) {
+    return (lista || []).map((e) => '<span class="etiqueta">' + escapar(e) +
+      (quitar ? '<button type="button" data-quitar-etiqueta="' + escapar(e).replace(/"/g, '&quot;') + '" aria-label="Sacar ' +
+        escapar(e).replace(/"/g, '&quot;') + '">&times;</button>' : '') + '</span>').join('');
+  }
+
+  // Un botón por etiqueta, al lado de los filtros: muestra solo las charlas que la tienen
+  function pintarFiltroEtiquetas() {
+    const usadas = etiquetasUsadas();
+    if (filtroEtiqueta && !usadas.includes(filtroEtiqueta)) filtroEtiqueta = '';
+    $('mFiltroEtiquetas').innerHTML = usadas.map((e) =>
+      '<button type="button" class="filtro filtro-etiqueta' + (e === filtroEtiqueta ? ' activo' : '') + '" data-etiqueta="' +
+        escapar(e).replace(/"/g, '&quot;') + '">🏷 ' + escapar(e) + '</button>').join('');
+  }
+
   function pintarCharlas() {
     pintarModo();
+    pintarFiltroEtiquetas();
     const visibles = charlasVisibles();
     // Las que ya no están (borradas o recargadas) dejan de estar elegidas
     const hay = new Set(charlas.map(claveCharla));
@@ -877,7 +906,10 @@ const panelMonedas = (() => {
         '<td class="col-check"><input type="checkbox" data-elegir aria-label="Elegir esta charla"' +
           (elegidas.has(claveCharla(c)) ? ' checked' : '') + '></td>' +
         '<td>' +
-          '<div class="nombre-lead">' + escapar(nombreCharla(c)) + '</div>' +
+          '<div class="nombre-lead' + (c.no_leidos > 0 ? ' sin-leer' : '') + '">' + escapar(nombreCharla(c)) +
+            (c.no_leidos > 0 ? ' <span class="no-leidos" aria-label="' + c.no_leidos + ' sin leer">' + c.no_leidos + '</span>' : '') +
+          '</div>' +
+          ((c.etiquetas || []).length ? '<div class="etiquetas">' + htmlEtiquetas(c.etiquetas) + '</div>' : '') +
           '<div class="dato-secundario">' +
             escapar(PASOS[c.estado && c.estado.step] || (c.estado ? '' : c.localidad || 'Contacto cargado a mano')) + '</div>' +
         '</td>' +
@@ -896,6 +928,10 @@ const panelMonedas = (() => {
     if (visibles.length) return ocultar($('mSinCharlas'));
     $('mSinCharlas').innerHTML = busquedaCharlas.trim()
       ? '<strong>No encontramos a nadie con eso</strong>Probá con otra parte del nombre o del número.'
+      : filtroEtiqueta
+      ? '<strong>Ninguna charla de esta lista tiene esa etiqueta</strong>Tocá "Todas" para ver las demás.'
+      : filtroCharlas === 'noleidas'
+      ? '<strong>Leíste todo</strong>Cuando escriba alguien, la charla aparece acá hasta que la abras.'
       : filtroCharlas === 'humano'
       ? '<strong>Nadie está esperando que le escribas</strong>' +
           'Cuando alguien le pida al bot hablar con Walter, aparece acá.'
@@ -969,6 +1005,7 @@ const panelMonedas = (() => {
     $('mEnviar').disabled = !abierta;
     // Las fotos y los audios salen solo por WhatsApp
     $('mFotoBtn').classList.toggle('hidden', !abierta || c.canal !== 'whatsapp');
+    $('mUbicacionBtn').classList.toggle('hidden', !abierta);
     $('mRetomar').classList.toggle('hidden', !!abierta || c.canal !== 'whatsapp');
     pintarBotonesEnvio();
     if (grabacion || /Safari no te pida/.test($('mVentana').textContent)) return;
@@ -1082,6 +1119,15 @@ const panelMonedas = (() => {
     return '<a class="medio-link" data-medio="' + p + '" target="_blank" rel="noopener">Abrir el archivo</a>' + bajar;
   }
 
+  // Las tildes de WhatsApp en lo que sale: una gris (salió), dos grises (le llegó), dos azules (lo leyó)
+  const TILDES = {
+    sent: ['✓', 'Enviado'], delivered: ['✓✓', 'Entregado'], read: ['✓✓', 'Leído'], failed: ['!', 'No se pudo entregar']
+  };
+  function tildes(m) {
+    const t = m.direccion === 'sale' && TILDES[m.estado_wa];
+    return t ? ' <span class="tildes tildes-' + m.estado_wa + '" title="' + t[1] + '" aria-label="' + t[1] + '">' + t[0] + '</span>' : '';
+  }
+
   function htmlBurbuja(m) {
     const clase = m.direccion === 'entra' ? 'de-cliente' : m.autor === 'walter' ? 'de-walter' : 'de-bot';
     const quien = m.direccion === 'entra' ? '' : m.autor === 'walter' ? 'Vos · ' : 'Bot · ';
@@ -1094,7 +1140,7 @@ const panelMonedas = (() => {
         (o ? '<strong>' + escapar(quienDe(o)) + '</strong>' + escapar(textoCita(o)) : 'Un mensaje anterior') + '</span>';
     }
     return '<div class="burbuja ' + clase + '"' + (wa ? ' data-wa="' + wa + '"' : '') + '>' + citado + htmlMedio(m) + texto +
-      '<span class="hora">' + escapar(quien + fechaHora(m.creado)) +
+      '<span class="hora">' + escapar(quien + fechaHora(m.creado)) + tildes(m) +
         (wa ? '<button type="button" class="responder-a" data-citar="' + wa + '">Responder</button>' : '') +
       '</span></div>';
   }
@@ -1130,7 +1176,7 @@ const panelMonedas = (() => {
   async function cargarMensajes(c) {
     const { data, error } = await sb
       .from('walter_mensajes')
-      .select('direccion, texto, creado, autor, media_tipo, media_path, wa_id, responde_a')
+      .select('direccion, texto, creado, autor, media_tipo, media_path, wa_id, responde_a, estado_wa')
       .eq('canal', c.canal)
       .eq('usuario', c.usuario)
       .order('id', { ascending: false })
@@ -1186,7 +1232,151 @@ const panelMonedas = (() => {
     ver($('mTelon'));
     // El botón o el gesto de "atrás" del celular cierra la charla en vez de salir del panel
     if (!(history.state && history.state.charla)) history.pushState({ charla: true }, '');
+    pintarEtiquetasFicha();
+    marcarLeida(c);
     await cargarMensajes(c);
+  }
+
+  // Abrirla la deja leída en el panel y al cliente le aparecen las tildes azules, como en WhatsApp
+  function marcarLeida(c) {
+    if (!(c.no_leidos > 0)) return;
+    c.no_leidos = 0;
+    pintarTarjetas();
+    if (pestana === 'charlas') pintarCharlas();
+    llamarBot({ accion: 'leido', canal: c.canal, usuario: c.usuario });
+  }
+
+  async function marcarNoLeida() {
+    const c = charlaAbierta;
+    if (!c) return;
+    const { error } = await sb.from('walter_conversaciones').update({ no_leidos: 1 })
+      .eq('canal', c.canal).eq('usuario', c.usuario);
+    if (error) return errorFicha('No se pudo marcar: ' + error.message);
+    c.no_leidos = 1;
+    cerrarCharla();
+    pintarTarjetas();
+    pintarCharlas();
+  }
+
+  // ---------- Etiquetas de la charla ("Importante", "Cliente nuevo"…), a gusto ----------
+  function pintarEtiquetasFicha() {
+    const c = charlaAbierta;
+    if (!c) return;
+    $('mFichaEtiquetas').innerHTML = htmlEtiquetas(c.etiquetas, true);
+    const ya = new Set(c.etiquetas || []);
+    $('mListaEtiquetas').innerHTML = Array.from(new Set(ETIQUETAS_BASE.concat(etiquetasUsadas())))
+      .filter((e) => !ya.has(e)).map((e) => '<option value="' + escapar(e).replace(/"/g, '&quot;') + '"></option>').join('');
+  }
+
+  async function guardarEtiquetas(c, lista) {
+    const antes = c.etiquetas || [];
+    c.etiquetas = lista;
+    pintarEtiquetasFicha();
+    const { error } = await sb.from('walter_conversaciones').update({ etiquetas: lista })
+      .eq('canal', c.canal).eq('usuario', c.usuario);
+    if (error) {
+      c.etiquetas = antes;
+      pintarEtiquetasFicha();
+      return errorFicha('No se pudo guardar la etiqueta: ' + error.message);
+    }
+    pintarCharlas();
+  }
+
+  function agregarEtiqueta(e) {
+    if (e) e.preventDefault();
+    const c = charlaAbierta;
+    const nueva = $('mNuevaEtiqueta').value.trim().replace(/\s+/g, ' ').slice(0, 30);
+    $('mNuevaEtiqueta').value = '';
+    if (!c || !nueva) return;
+    // "importante" y "Importante" son la misma: se usa como ya estaba escrita
+    const igual = etiquetasUsadas().concat(ETIQUETAS_BASE).find((x) => sinTildes(x) === sinTildes(nueva));
+    const etiqueta = igual || nueva;
+    if ((c.etiquetas || []).includes(etiqueta)) return;
+    guardarEtiquetas(c, (c.etiquetas || []).concat(etiqueta));
+  }
+
+  // ---------- Mandar una ubicación (la del depósito, la de donde estás o la de un link de Google Maps) ----------
+  function abrirUbicacion() {
+    const dep = cfg.ubicacionDeposito;
+    $('mUbiDeposito').classList.toggle('hidden', !dep);
+    $('mUbiLat').value = '';
+    $('mUbiLng').value = '';
+    $('mUbiLink').value = '';
+    $('mUbiNombre').value = 'Punto Metales';
+    $('mUbiDireccion').value = '';
+    $('mUbiGuardar').checked = !dep;
+    $('mUbiEstado').textContent = '';
+    ocultar($('mUbiError'));
+    ver($('mTelonUbicacion'));
+  }
+
+  function cerrarUbicacion() {
+    ocultar($('mTelonUbicacion'));
+  }
+
+  function ponerUbicacion(lat, lng, nombre, direccion) {
+    $('mUbiLat').value = lat;
+    $('mUbiLng').value = lng;
+    if (nombre !== undefined) $('mUbiNombre').value = nombre;
+    if (direccion !== undefined) $('mUbiDireccion').value = direccion;
+    $('mUbiEstado').textContent = 'Ubicación: ' + lat + ', ' + lng;
+  }
+
+  function usarDeposito() {
+    const d = cfg.ubicacionDeposito;
+    if (!d) return;
+    ponerUbicacion(d.lat, d.lng, d.nombre || '', d.direccion || '');
+    $('mUbiGuardar').checked = false;
+  }
+
+  function usarMiUbicacion() {
+    if (!navigator.geolocation) return $('mUbiEstado').textContent = 'Este aparato no da la ubicación.';
+    $('mUbiEstado').textContent = 'Buscando dónde estás…';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => ponerUbicacion(pos.coords.latitude.toFixed(6), pos.coords.longitude.toFixed(6)),
+      () => { $('mUbiEstado').textContent = 'No se pudo: fijate que el navegador tenga permiso de ubicación.'; },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  // Saca las coordenadas de un link de Google Maps (…@-32.95,-60.65… o ?q=-32.95,-60.65) o de "-32.95, -60.65"
+  function leerLinkMapa() {
+    const t = $('mUbiLink').value;
+    // El pin del lugar (!3d…!4d…) antes que el centro del mapa (@…)
+    const m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || t.match(/[?&](?:q|query|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/) ||
+      t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || t.match(/^\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/);
+    if (m) return ponerUbicacion(m[1], m[2]);
+    $('mUbiEstado').textContent = t.trim()
+      ? 'Ese link no trae la ubicación. En Google Maps tocá el lugar, "Compartir" y copiá el link largo, o pegá las coordenadas.'
+      : '';
+  }
+
+  async function mandarUbicacion() {
+    const c = charlaAbierta;
+    const lat = Number($('mUbiLat').value), lng = Number($('mUbiLng').value);
+    if (!c) return;
+    if (!$('mUbiLat').value || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      $('mUbiError').textContent = 'Elegí primero la ubicación.';
+      return ver($('mUbiError'));
+    }
+    const nombre = $('mUbiNombre').value.trim(), direccion = $('mUbiDireccion').value.trim();
+    $('mUbiEnviar').disabled = true;
+    const r = await llamarBot({ accion: 'ubicacion', canal: c.canal, usuario: c.usuario, lat, lng, nombre, direccion });
+    $('mUbiEnviar').disabled = false;
+    if (r.error) {
+      $('mUbiError').textContent = r.error;
+      return ver($('mUbiError'));
+    }
+    if ($('mUbiGuardar').checked) {
+      const data = Object.assign({}, cfg, { ubicacionDeposito: { lat, lng, nombre, direccion } });
+      const { error } = await sb.from('walter_config').update({ data, actualizado: new Date().toISOString() }).eq('id', 1);
+      if (!error) cfg = data;
+    }
+    cerrarUbicacion();
+    c.bot_pausado = true;
+    c.pide_humano = false;
+    toast('Ubicación enviada');
+    if (charlaAbierta === c) cargarMensajes(c);
   }
 
   function cerrarCharla() {
@@ -1332,7 +1522,11 @@ const panelMonedas = (() => {
   const PERMISO = 800; // ms: si el micrófono tarda más en abrir, el navegador preguntó por el permiso
   const MIC_ABIERTO = 15 * 60 * 1000; // después del último audio, el micrófono queda abierto este rato
   // Si cierra la pestaña o la deja de lado, se suelta el micrófono
-  document.addEventListener('visibilitychange', () => { if (document.hidden && !grabacion) cerrarMic(); });
+  // En el iPhone, con Bruwal Chat en la pantalla de inicio, cerrar el micrófono al salir hace que pida permiso
+  // otra vez en el próximo audio: ahí queda abierto (el iPhone lo pausa solo) hasta MIC_ABIERTO.
+  const appIphone = /iPhone|iPad|iPod/.test(navigator.userAgent) && (navigator.standalone ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !grabacion && !appIphone) cerrarMic(); });
   let grabacion = null;
   // El micrófono queda abierto mientras la charla está abierta (y un rato después del último audio):
   // así el navegador no pide permiso para cada audio.
@@ -1880,6 +2074,11 @@ const panelMonedas = (() => {
     const c = charlaAbierta;
     if (c && cambio.table === 'walter_mensajes' && fila.canal === c.canal && fila.usuario === c.usuario) {
       cargarMensajes(c);
+      // Si la tiene abierta, lo que entra ya lo está viendo
+      if (cambio.eventType === 'INSERT' && fila.direccion === 'entra' && !document.hidden) {
+        clearTimeout(marcarLeida.reloj);
+        marcarLeida.reloj = setTimeout(() => { c.no_leidos = 1; if (charlaAbierta === c) marcarLeida(c); }, 1500);
+      }
     }
     clearTimeout(relojVivo);
     relojVivo = setTimeout(async () => {
@@ -1889,7 +2088,7 @@ const panelMonedas = (() => {
       if (!(await cargar())) return;
       if (charlaAbierta) {
         const nueva = charlas.find((x) => x.canal === charlaAbierta.canal && x.usuario === charlaAbierta.usuario);
-        if (nueva) { Object.assign(charlaAbierta, nueva); pintarFichaEstado(); }
+        if (nueva) { Object.assign(charlaAbierta, nueva); pintarFichaEstado(); pintarEtiquetasFicha(); }
       }
       pintar();
     }, 800);
@@ -2502,6 +2701,28 @@ const panelMonedas = (() => {
       else if (!$('mTelon').classList.contains('hidden')) cerrarCharla();
     });
     $('mBtnAtendida').addEventListener('click', marcarAtendida);
+    $('mBtnNoLeida').addEventListener('click', marcarNoLeida);
+    $('mFormEtiqueta').addEventListener('submit', agregarEtiqueta);
+    $('mFichaEtiquetas').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-quitar-etiqueta]');
+      const c = charlaAbierta;
+      if (b && c) guardarEtiquetas(c, (c.etiquetas || []).filter((x) => x !== b.dataset.quitarEtiqueta));
+    });
+    $('mFiltroEtiquetas').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-etiqueta]');
+      if (!b) return;
+      filtroEtiqueta = filtroEtiqueta === b.dataset.etiqueta ? '' : b.dataset.etiqueta;
+      // Con una etiqueta elegida se buscan en todas, no solo en las que esperan respuesta
+      if (filtroEtiqueta && filtroCharlas === 'humano') { filtroCharlas = 'todas'; marcarFiltro('mFiltrosCharlas', 'todas'); }
+      pintarCharlas();
+    });
+    $('mUbicacionBtn').addEventListener('click', abrirUbicacion);
+    $('mUbiCerrar').addEventListener('click', cerrarUbicacion);
+    $('mUbiCancelar').addEventListener('click', cerrarUbicacion);
+    $('mUbiDeposito').addEventListener('click', usarDeposito);
+    $('mUbiAca').addEventListener('click', usarMiUbicacion);
+    $('mUbiLink').addEventListener('input', leerLinkMapa);
+    $('mUbiEnviar').addEventListener('click', mandarUbicacion);
     $('mBtnAbrir').addEventListener('click', abrirAfuera);
     $('mBtnPausa').addEventListener('click', cambiarPausa);
     $('mBtnBorrar').addEventListener('click', borrarCharla);

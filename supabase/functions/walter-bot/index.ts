@@ -100,7 +100,10 @@ Deno.serve(async (req) => {
       const nombres: Record<string, string> = {};
       for (const c of v.contacts ?? []) nombres[c.wa_id] = c.profile?.name;
       // WhatsApp avisa después si un mensaje no se pudo entregar (por ejemplo un audio que no acepta)
-      for (const st of v.statuses ?? []) if (st.status === "failed") console.error("entrega fallida", st.recipient_id, st.id, JSON.stringify(st.errors ?? []).slice(0, 400));
+      for (const st of v.statuses ?? []) {
+        if (st.status === "failed") console.error("entrega fallida", st.recipient_id, st.id, JSON.stringify(st.errors ?? []).slice(0, 400));
+        if (st.id && ESTADOS_WA[st.status]) tareas.push(marcarEstado(st.id, st.status));
+      }
       for (const m of v.messages ?? []) {
         const texto = m.type === "text" ? m.text?.body
           : m.type === "interactive" ? (m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title)
@@ -108,7 +111,10 @@ Deno.serve(async (req) => {
         const md = MEDIA[m.type] ? m[m.type] : null;
         // El id de WhatsApp del mensaje y, si el cliente contestó citando uno, el id del citado
         const wa: Wa = { id: m.id, ctx: m.context?.id };
-        if (texto) tareas.push(atender("whatsapp", m.from, texto, m.type === "text", nombres[m.from], undefined, wa));
+        // Una ubicación queda en la charla como texto con el link al mapa, para que Walter la vea
+        const lugar = m.type === "location" && m.location ? textoUbicacion(m.location) : null;
+        if (lugar) tareas.push(atender("whatsapp", m.from, lugar, true, nombres[m.from], undefined, wa));
+        else if (texto) tareas.push(atender("whatsapp", m.from, texto, m.type === "text", nombres[m.from], undefined, wa));
         else if (md?.id) {
           tareas.push(recibirMedia("whatsapp", m.from, { tipo: MEDIA[m.type], id: md.id, mime: md.mime_type, caption: md.caption, archivo: md.filename }, nombres[m.from], wa));
         } else if (m.type !== "reaction") tareas.push(noSeAbre(m.from));
@@ -131,7 +137,24 @@ Deno.serve(async (req) => {
   return new Response("ok", { status: 200 });
 });
 
-// Un mensaje que no se puede leer (encuesta, ubicación…). Las reacciones no se contestan, y si la charla la
+// Las tildes de WhatsApp de cada mensaje que sale. Llegan en cualquier orden: nunca se baja de "leído" a
+// "entregado", y "no se entregó" queda.
+const ESTADOS_WA: Record<string, string[]> = {
+  sent: [], delivered: ["sent"], read: ["sent", "delivered"], failed: ["sent", "delivered", "read"],
+};
+async function marcarEstado(waId: string, estado: string) {
+  const antes = ESTADOS_WA[estado];
+  const q = db.from("walter_mensajes").update({ estado_wa: estado }).eq("wa_id", waId).eq("direccion", "sale");
+  const { error } = await (antes.length ? q.or(`estado_wa.is.null,estado_wa.in.(${antes.join(",")})`) : q.is("estado_wa", null));
+  if (error) console.error("estado_wa", waId, error.message);
+}
+
+type Lugar = { latitude: number; longitude: number; name?: string; address?: string };
+const mapa = (l: Lugar) => `https://maps.google.com/?q=${l.latitude},${l.longitude}`;
+const textoUbicacion = (l: Lugar) =>
+  ["Ubicación:", [l.name, l.address].filter(Boolean).join(", "), mapa(l)].filter(Boolean).join(" ");
+
+// Un mensaje que no se puede leer (encuesta, contacto…). Las reacciones no se contestan, y si la charla la
 // atiende Walter (o está el modo manual) el bot tampoco dice nada.
 async function noSeAbre(usuario: string) {
   const [cfg, { data: conv }] = await Promise.all([
@@ -191,6 +214,8 @@ async function responder(canal: Canal, usuario: string, texto: string, libre: bo
     await db.from("walter_conversaciones").upsert({
       canal, usuario, pide_humano: true, actualizado: new Date().toISOString(), ...(nombrePerfil ? { nombre_perfil: nombrePerfil } : {}),
     });
+    // Un cliente nuevo recibe igual la nota de voz de bienvenida, aunque lo atienda Walter
+    if (!conv.data && canal === "whatsapp") await mandarBienvenida(cfg, usuario).catch((e) => console.error("bienvenida", e));
     return;
   }
 
@@ -803,6 +828,8 @@ async function panel(req: Request): Promise<Response> {
     if (b.accion === "enviar") return await panelEnviar(String(b.canal), String(b.usuario), String(b.texto ?? "").trim(), cita);
     if (b.accion === "enviar_foto") return await panelEnviarMedio(String(b.canal), String(b.usuario), "imagen", b.foto, String(b.texto ?? "").trim(), cita);
     if (b.accion === "enviar_audio") return await panelEnviarMedio(String(b.canal), String(b.usuario), "audio", b.audio, "", cita);
+    if (b.accion === "ubicacion") return await panelUbicacion(String(b.canal), String(b.usuario), b);
+    if (b.accion === "leido") return await panelLeido(String(b.canal), String(b.usuario));
     if (b.accion === "medios") return await panelMedios(b.paths);
     if (b.accion === "borrar") return await panelBorrar(String(b.canal), String(b.usuario));
     if (b.accion === "contacto") {
@@ -849,6 +876,47 @@ async function panelEnviar(canal: string, usuario: string, texto: string, cita: 
   // Walter la atiende: el bot se queda callado en esta charla hasta que él se la devuelva
   await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
     .eq("canal", canal).eq("usuario", usuario);
+  return respuesta({ ok: true });
+}
+
+// Una ubicación desde el panel: en WhatsApp sale como ubicación (el cliente la abre en el mapa); en
+// Messenger, como texto con el link.
+async function panelUbicacion(canal: string, usuario: string, b: Record<string, unknown>) {
+  if (canal !== "whatsapp" && canal !== "messenger") return respuesta({ error: "Canal inválido" }, 400);
+  const lat = Number(b.lat), lng = Number(b.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return respuesta({ error: "La ubicación no es válida." }, 400);
+  }
+  const l: Lugar = { latitude: lat, longitude: lng, name: String(b.nombre ?? "").trim().slice(0, 100) || undefined,
+    address: String(b.direccion ?? "").trim().slice(0, 200) || undefined };
+  const { data: conv } = await db.from("walter_conversaciones").select("usuario").eq("canal", canal).eq("usuario", usuario).maybeSingle();
+  if (!conv) return respuesta({ error: "No encontramos esa charla." }, 404);
+  if (!(await ventanaAbierta(canal, usuario))) return SIN_VENTANA();
+  const texto = textoUbicacion(l);
+  const { error: motivo, id: waId } = canal === "whatsapp"
+    ? await graphEnviar(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
+      { messaging_product: "whatsapp", to: usuario, type: "location", location: l })
+    : await graphEnviar("me/messages", await secreto("FB_PAGE_TOKEN"),
+      { recipient: { id: usuario }, messaging_type: "RESPONSE", message: { text: texto } });
+  if (motivo) return respuesta({ error: "WhatsApp no lo aceptó: " + motivo }, 502);
+  await log(canal, usuario, "sale", texto, "walter", undefined, canal === "whatsapp" ? { id: waId } : undefined);
+  await db.from("walter_conversaciones").update({ bot_pausado: true, pide_humano: false, actualizado: new Date().toISOString() })
+    .eq("canal", canal).eq("usuario", usuario);
+  return respuesta({ ok: true });
+}
+
+// Walter abrió la charla en el panel: al cliente le aparecen las tildes azules en su último mensaje
+async function panelLeido(canal: string, usuario: string) {
+  await db.from("walter_conversaciones").update({ no_leidos: 0 }).eq("canal", canal).eq("usuario", usuario);
+  if (canal !== "whatsapp") return respuesta({ ok: true });
+  const { data: ult } = await db.from("walter_mensajes").select("wa_id, creado").eq("canal", canal).eq("usuario", usuario)
+    .eq("direccion", "entra").not("wa_id", "is", null).order("id", { ascending: false }).limit(1).maybeSingle();
+  // WhatsApp acepta el leído solo dentro de los 30 días del mensaje
+  if (ult?.wa_id && Date.now() - new Date(ult.creado).getTime() < 30 * 86400e3) {
+    const motivo = await graphError(`${await secreto("WA_PHONE_ID")}/messages`, await secreto("WA_TOKEN"),
+      { messaging_product: "whatsapp", status: "read", message_id: ult.wa_id });
+    if (motivo) console.error("leido", motivo);
+  }
   return respuesta({ ok: true });
 }
 

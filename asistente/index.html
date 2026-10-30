@@ -419,6 +419,19 @@ tbody tr:hover { background: #F8FBFF; }
 }
 .aviso-pedido { margin-top: 7px; font-size: 13px; color: var(--text-mute); }
 .btn-mover { display: inline-block; width: auto; margin-top: 6px; padding: 5px 10px; font-size: 13px; }
+.no-leidos { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: #25D366; color: #fff;
+  font-size: 12px; font-weight: 700; text-align: center; vertical-align: middle; }
+.nombre-lead.sin-leer { font-weight: 800; }
+.etiquetas { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.etiqueta { display: inline-flex; align-items: center; gap: 2px; padding: 1px 8px; border-radius: 10px; font-size: 12px;
+  background: #EDE9FE; color: #5B21B6; }
+.etiqueta button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 2px; }
+.etiquetas-ficha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.form-etiqueta input { width: 120px; padding: 2px 8px; font-size: 12px; border: 1px dashed var(--line); border-radius: 10px; background: transparent; color: inherit; }
+.filtros-etiquetas { display: contents; }
+.tildes { margin-left: 4px; letter-spacing: -2px; }
+.tildes-read { color: #53BDEB; opacity: 1; }
+.tildes-failed { color: #DC2626; font-weight: 700; letter-spacing: 0; }
 .foto-elegida { display: grid; gap: 8px; margin-bottom: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
 .foto-elegida img { max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 8px; justify-self: start; }
 .foto-elegida input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 15px; }
@@ -834,9 +847,11 @@ tbody tr:hover { background: #F8FBFF; }
           <h2>Charlas</h2>
           <div class="filtros" id="mFiltrosCharlas">
             <button type="button" class="filtro activo" data-filtro="humano">Quieren hablar con vos</button>
+            <button type="button" class="filtro" data-filtro="noleidas">No leídas</button>
             <button type="button" class="filtro" data-filtro="vos">Las atendés vos</button>
             <button type="button" class="filtro" data-filtro="todas">Todas</button>
             <button type="button" class="filtro" data-filtro="contactos">Contactos (A-Z)</button>
+            <span class="filtros-etiquetas" id="mFiltroEtiquetas"></span>
           </div>
           <input type="search" class="buscador" id="mBuscadorCharlas" placeholder="🔍 Buscar nombre o número…" aria-label="Buscar contacto">
           <button type="button" class="btn btn-suave" id="mNuevoContacto">+ Contacto nuevo</button>
@@ -1057,6 +1072,14 @@ tbody tr:hover { background: #F8FBFF; }
       <div>
         <h3 id="mFichaNombre"></h3>
         <div class="dato-secundario" id="mFichaCanal"></div>
+        <!-- Etiquetas a gusto, como en WhatsApp Business -->
+        <div class="etiquetas-ficha">
+          <span class="etiquetas" id="mFichaEtiquetas"></span>
+          <form id="mFormEtiqueta" class="form-etiqueta" onsubmit="return false">
+            <input type="text" id="mNuevaEtiqueta" list="mListaEtiquetas" maxlength="30" placeholder="+ Etiqueta" aria-label="Agregar etiqueta">
+            <datalist id="mListaEtiquetas"></datalist>
+          </form>
+        </div>
       </div>
       <button class="cerrar" id="mCerrarFicha" aria-label="Cerrar">&times;</button>
     </div>
@@ -1099,6 +1122,7 @@ tbody tr:hover { background: #F8FBFF; }
             <button type="button" class="btn btn-ok hidden" id="mRetomar">Mandar saludo para retomar</button>
             <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
             <input type="file" id="mFoto" accept="image/*" class="solo-lector">
+            <button type="button" class="btn btn-suave hidden" id="mUbicacionBtn">📍 Ubicación</button>
             <!-- Como en WhatsApp: con la caja vacía el botón graba, con texto manda -->
             <button type="button" class="btn btn-ok hidden" id="mAudioBtn" title="Mantené apretado para grabar y soltá para mandar">🎤 Audio</button>
             <button type="submit" class="btn btn-ok" id="mEnviar">Enviar</button>
@@ -1109,10 +1133,44 @@ tbody tr:hover { background: #F8FBFF; }
       <div class="acciones">
         <button class="btn btn-suave" id="mBtnPausa"></button>
         <button class="btn btn-ok" id="mBtnAtendida">Ya hablé con esta persona</button>
+        <button class="btn btn-suave" id="mBtnNoLeida">Marcar como no leída</button>
         <button class="btn btn-suave hidden" id="mBtnAbrir">Abrir la bandeja de Facebook</button>
       </div>
       <div class="acciones" style="margin-top:16px;">
         <button class="btn btn-peligro" id="mBtnBorrar">Eliminar charla</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MANDAR UNA UBICACIÓN (monedas) ===================== -->
+<div class="telon hidden" id="mTelonUbicacion">
+  <div class="ficha">
+    <div class="ficha-cabecera">
+      <div>
+        <h3>Mandar una ubicación</h3>
+        <div class="dato-secundario">Al cliente le llega para abrirla en el mapa.</div>
+      </div>
+      <button class="cerrar" id="mUbiCerrar" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="ficha-cuerpo">
+      <div class="acciones">
+        <button type="button" class="btn btn-suave hidden" id="mUbiDeposito">El depósito</button>
+        <button type="button" class="btn btn-suave" id="mUbiAca">Donde estoy ahora</button>
+      </div>
+      <div class="campo"><label for="mUbiLink">O pegá un link de Google Maps</label>
+        <input type="text" id="mUbiLink" placeholder="https://maps.google.com/… o -32.95, -60.65"></div>
+      <div class="dato-secundario" id="mUbiEstado" style="margin-bottom:12px;"></div>
+      <input type="hidden" id="mUbiLat"><input type="hidden" id="mUbiLng">
+      <div class="campo"><label for="mUbiNombre">Nombre del lugar</label>
+        <input type="text" id="mUbiNombre" maxlength="100"></div>
+      <div class="campo"><label for="mUbiDireccion">Dirección (opcional)</label>
+        <input type="text" id="mUbiDireccion" maxlength="200" placeholder="Urquiza 357, Pueblo Andino"></div>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:12px;"><input type="checkbox" id="mUbiGuardar"> Guardarla como la ubicación del depósito</label>
+      <div class="aviso aviso-error hidden" id="mUbiError"></div>
+      <div class="acciones">
+        <button type="button" class="btn btn-suave" id="mUbiCancelar">Cancelar</button>
+        <button type="button" class="btn btn-ok" id="mUbiEnviar">Enviar ubicación</button>
       </div>
     </div>
   </div>
@@ -1159,7 +1217,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261029a"></script>
+<script src="/asistente/monedas.js?v=20261030a"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
