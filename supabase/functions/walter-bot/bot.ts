@@ -715,7 +715,8 @@ function respuestaDesde(e: Estado, p: Pistas, c: Config): { texto: string; campo
     case "qty":
       // Kilos de monedas que veníamos contando: pasan a ir por kilo
       if (p.cant && p.modo === "kg" && d.modo === "u" && d.mat === "Monedas" && !esLlave(d.tipo)) return { texto: `${p.cant} kg`, campo: "cant" };
-      return p.cant && (!p.modo || p.modo === d.modo) ? { texto: String(p.cant), campo: "cant" } : null;
+      // "10" solo se leía como la moneda de $10 (tipoSuelto): con la unidad es una cantidad
+      return p.cant && (!p.modo || p.modo === d.modo) ? { texto: `${p.cant} ${d.modo === "u" ? "unidades" : "kg"}`, campo: "cant" } : null;
     // Nombró otro tipo ("también tengo de 50"): se suma al pedido
     case "mas":
       if (p.tipo && p.tipo !== MEZCLADAS && p.tipo !== d.tipo && !(d.items ?? []).some((x) => x.tipo === p.tipo)) return { texto: p.tipo, campo: "tipo" };
