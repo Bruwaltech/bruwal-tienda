@@ -54,7 +54,7 @@ Campos (null si el mensaje no lo dice claramente; no adivines):
 - monedas: si nombra dos o más clases de monedas con su cantidad, una entrada por clase ("145 de 1, 58 de 50" = $1: 145 y 50 centavos: 58; "$2 ---> 230 u" = $2: 230). Las de "25" sin color, si hay doradas y plateadas, no las adivines: dejalas afuera (van en de25_sin_color). "50 pesos" o "$50" no es 50 centavos, y una moneda que no está en la lista de tipos no va. Las que van por kilo, tipo ${MEZCLADAS} y la cantidad en kilos. Con una sola clase o ninguna, null. También las que dijo en mensajes anteriores de la charla reciente que el bot todavía no anotó.
 - entrega: si quiere que se lo pasen a buscar ("Retiro a domicilio"), encontrarse en algún lugar ("Punto de encuentro") o llevarlo él ("Depósito").
 - direccion: la calle y el número donde pasar a buscarlo, tal como los escribió, si los escribió.
-- de25_sin_color: cuántas monedas de 25 centavos nombró sin decir si son doradas o plateadas ("3 de 25" = 3); si no, null.
+- de25_sin_color: cuántas monedas de 25 centavos nombró sin decir si son doradas o plateadas ("3 de 25" = 3); si no, null. Esas no cuentan para tipo, cantidad ni monedas: en "3 de 25 y 10 de $1", tipo $1 y cantidad 10 (no ${MEZCLADAS} ni 13).
 - intencion: "precios" si pregunta cuánto pagan sin dar cantidad, "depositos" si pregunta dónde están o el horario, "humano" si pide hablar con una persona. "prohibido" si ofrece medidores (de agua, gas o luz), placas o cosas de cementerio, cables telefónicos, piezas con numeración o de la vía pública, o algo que parezca robado. "otro" si ofrece algo que claramente no es monedas, llaves, cobre ni bronce (aluminio, hierro, plomo, electrodomésticos); los cables o caños de cobre no son "otro". "no_vende" si dice que no quiere vender, que solo consultaba o se despide (gracias, chau, por ahora no). "consulta" si hace una pregunta que no es solo de precios ni de depósitos y que hay que contestarle antes de seguir (qué le conviene, cómo funciona el retiro, si tiene que mandar algo, si pagan en efectivo). Si no, null.
 
 Te paso también la charla reciente. Si en mensajes anteriores del cliente hay datos que el bot todavía no anotó (por ejemplo dijo "tengo monedas" y nadie le contestó), extraelos también.`;
@@ -110,6 +110,8 @@ export async function leer(apiKey: string, texto: string, estado: Estado | null,
     if (j.entrega) l.ret = j.entrega;
     if (j.direccion) l.dir = j.direccion;
     if (typeof j.de25_sin_color === "number" && j.de25_sin_color > 0) l.sin25 = j.de25_sin_color;
+    // "3 de 25 y 10 de $1" a veces volvía como 13 mezcladas por kilo: sin hablar de peso, eso no es por kilo
+    if (l.sin25 && l.tipo === MEZCLADAS && !/kilo|kg|gramo|pesad/i.test(texto)) { delete l.tipo; delete l.cant; delete l.modo; }
     if (j.intencion) l.intencion = j.intencion;
     return l;
   } catch (e) {
