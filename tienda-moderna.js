@@ -1,8 +1,8 @@
 // Estilo "moderno" de la tienda (ver tienda-moderna.css).
 //
 // tienda.html llama a BruwalModerno.activar(store) apenas tiene el perfil.
-// Si la tienda no eligió este estilo no hace nada, y la página queda igual
-// que siempre. Se puede probar en cualquier tienda con ?estilo=moderno (y
+// Es el estilo de todas las tiendas salvo las que eligieron el clásico
+// (ver elegido()); en esas no hace nada y la página queda como antes. Se puede probar en cualquier tienda con ?estilo=moderno (y
 // apagar con ?estilo=clasico), sin guardar nada.
 //
 // Lo que agrega el script y la hoja sola no puede:
@@ -15,12 +15,28 @@
 (function () {
   'use strict';
 
+  // Desde noviembre 2026 el estilo moderno es el de todas las tiendas.
+  // Para volver a como era antes (solo las que lo tildaban) alcanza con
+  // poner esto en false: no hay nada guardado en la base que deshacer.
+  const MODERNO_POR_DEFECTO = true;
+
+  // Una tienda queda en el clásico solo si el dueño lo destildó a propósito
+  // en Configuración DESPUÉS de este cambio (tema.estiloElegido). Antes el
+  // panel guardaba 'clasico' cada vez que se tocaban los colores aunque
+  // nadie hubiera elegido nada, así que ese 'clasico' viejo no cuenta.
+  function quiereClasico(tema) {
+    return !!(tema && tema.estilo === 'clasico' && tema.estiloElegido === true);
+  }
+
   function elegido(store) {
     let porLink = null;
     try { porLink = new URLSearchParams(window.location.search).get('estilo'); } catch (e) {}
     if (porLink === 'moderno') return true;
     if (porLink === 'clasico') return false;
-    return !!(store && store.tema && store.tema.estilo === 'moderno');
+    const tema = store && store.tema;
+    if (tema && tema.estilo === 'moderno') return true;
+    if (!MODERNO_POR_DEFECTO) return false;
+    return !quiereClasico(tema);
   }
 
   function escapar(t) {
@@ -153,11 +169,24 @@
     total.style.display = 'inline-block';
   }
 
+  // Con un color de tienda muy claro (beige, pastel) los íconos y textos de
+  // ese color sobre blanco no se leen: se marca para oscurecerlos (ver
+  // --bm-tinta). Mismo umbral que usa la tienda para el texto del banner.
+  function marcarAcentoClaro() {
+    const c = getComputedStyle(document.documentElement).getPropertyValue('--celeste').trim();
+    const m = /^#?([0-9a-f]{6})$/i.exec(c);
+    if (!m) return;
+    const n = parseInt(m[1], 16);
+    const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    document.documentElement.classList.toggle('bm-acento-claro', lum > 0.62);
+  }
+
   let activo = false;
   function activar(store) {
     if (activo || !elegido(store)) return false;
     activo = true;
     document.documentElement.classList.add('estilo-moderno');
+    marcarAcentoClaro();
     armarFondoDelEncabezado();
     armarCinta(store || {});
     animarEntradas();
@@ -178,5 +207,5 @@
     return true;
   }
 
-  window.BruwalModerno = { activar };
+  window.BruwalModerno = { activar, quiereClasico, MODERNO_POR_DEFECTO };
 })();
