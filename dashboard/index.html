@@ -5386,7 +5386,8 @@ tr:last-child td { border-bottom: none; }
           <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;line-height:1.5;">
             Encabezado oscuro con luces de tu color que se mueven, una cinta con
             lo que ofrecés (envíos, medios de pago) y productos que aparecen con
-            movimiento. Usa los colores que elijas abajo.
+            movimiento. Usa los colores que elijas abajo. Viene prendido en
+            todas las tiendas: si preferís el estilo clásico, destildalo y guardá.
             <a href="#" id="verEstiloModerno" style="color:var(--celeste);font-weight:600;">Ver cómo queda</a>
           </small>
         </div>
@@ -31575,8 +31576,11 @@ function temaElegido() {
     banner: byId('temaBanner').value,
     opacidadPortada: Number(byId('temaOpacidadPortada').value),
     posicionPortada: posicionPortadaX + '% ' + posicionPortadaY + '%',
-    // Ver tienda-moderna.js. Sin tildar queda 'clasico', como siempre.
-    estilo: byId('temaEstiloModerno').checked ? 'moderno' : 'clasico'
+    // Ver tienda-moderna.js. El moderno es el de todas las tiendas; si el
+    // dueño lo destilda queda 'clasico' y estiloElegido marca que fue a
+    // propósito (un 'clasico' viejo sin esa marca se ve moderno).
+    estilo: byId('temaEstiloModerno').checked ? 'moderno' : 'clasico',
+    estiloElegido: true
   };
 }
 
@@ -31620,7 +31624,9 @@ async function cargarConfiguracion() {
     byId('temaTexto').value = tema.texto || '#15294D';
     byId('temaBanner').value = tema.banner || '#2F8FE0';
     byId('temaOpacidadPortada').value = tema.opacidadPortada != null ? tema.opacidadPortada : 80;
-    byId('temaEstiloModerno').checked = tema.estilo === 'moderno';
+    // Tildado salvo que haya elegido el clásico a propósito (la misma regla
+    // que usa la tienda en tienda-moderna.js).
+    byId('temaEstiloModerno').checked = !(tema.estilo === 'clasico' && tema.estiloElegido === true);
     byId('verEstiloModerno').onclick = (ev) => {
       ev.preventDefault();
       // Se prueba sin guardar: el link fuerza el estilo solo en esa pestaña.

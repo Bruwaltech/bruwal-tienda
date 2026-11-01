@@ -2,10 +2,9 @@
    Tienda — estilo "moderno" (inspirado en los componentes de 21st.dev)
    --------------------------------------------------------------------------
    Es una capa opcional sobre tienda.html. Todo cuelga de html.estilo-moderno,
-   que la pone tienda-moderna.js solo cuando la tienda eligió este estilo
-   (tema.estilo = 'moderno') o cuando se abre con ?estilo=moderno para
-   probarlo. Sin esa clase esta hoja no cambia nada: las demás tiendas se ven
-   exactamente igual que antes.
+   que la pone tienda-moderna.js en todas las tiendas salvo las que eligieron
+   el estilo clásico en Configuración (o con ?estilo=clasico). Sin esa clase
+   esta hoja no cambia nada.
 
    Referencias de 21st.dev, portadas a CSS a mano (la tienda no usa React):
    - Aurora Hero: manchas de color difuminadas que se mueven detrás del
@@ -33,7 +32,12 @@ html.estilo-moderno {
   --bm-acento-2: color-mix(in oklab, var(--celeste) 55%, #22d3ee);
   --bm-acento-3: color-mix(in oklab, var(--celeste) 45%, #8b5cf6);
   --bm-curva: cubic-bezier(.22, .68, .36, 1);
+  /* Color para íconos y textos sobre fondo blanco. Es el de la tienda,
+     salvo que sea muy claro (beige, amarillo, pastel): ahí se oscurece para
+     que se lea. La clase la pone tienda-moderna.js mirando el color. */
+  --bm-tinta: var(--celeste);
 }
+html.estilo-moderno.bm-acento-claro { --bm-tinta: color-mix(in oklab, var(--celeste) 40%, #1f2937); }
 
 html.estilo-moderno body {
   background:
@@ -206,7 +210,7 @@ html.estilo-moderno #storePhone::after { background: linear-gradient(100deg, tra
   padding: 13px 26px; white-space: nowrap;
   font-size: 13px; font-weight: 600; color: #334155;
 }
-.bm-cinta-item i { color: var(--celeste); font-size: 14px; }
+.bm-cinta-item i { color: var(--bm-tinta); font-size: 14px; }
 .bm-cinta-item::after {
   content: ''; width: 4px; height: 4px; border-radius: 50%; background: #cbd5e1;
   margin-left: 26px; margin-right: -26px;
@@ -241,7 +245,7 @@ html.estilo-moderno .grupo-cat-titulo,
 html.estilo-moderno .titulo-sueltos {
   font-size: 20px; letter-spacing: -.02em; border-top-color: var(--bm-borde);
 }
-html.estilo-moderno .grupo-cat-ver { color: var(--celeste); }
+html.estilo-moderno .grupo-cat-ver { color: var(--bm-tinta); }
 
 /* Columna de contacto: vidrio claro, sin sombra pesada */
 html.estilo-moderno .store-menu {
@@ -296,7 +300,7 @@ html.estilo-moderno .product-card::after {
 html.estilo-moderno .product-photo-container { border-radius: 12px; }
 html.estilo-moderno .product-name { letter-spacing: -.01em; color: #0f172a; }
 html.estilo-moderno .product-price { letter-spacing: -.03em; color: #0f172a; }
-html.estilo-moderno .product-category { color: var(--celeste); letter-spacing: .08em; font-size: 11px; }
+html.estilo-moderno .product-category { color: var(--bm-tinta); letter-spacing: .08em; font-size: 11px; }
 html.estilo-moderno .badge-off {
   background: color-mix(in oklab, var(--celeste) 12%, #fff);
   color: color-mix(in oklab, var(--celeste) 70%, #0f172a);
