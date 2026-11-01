@@ -190,7 +190,7 @@ const panelMonedas = (() => {
         .order('creado', { ascending: false })
         .limit(1000),
       sb.from('walter_conversaciones')
-        .select('canal, usuario, nombre_perfil, localidad, estado, pide_humano, bot_pausado, actualizado, no_leidos, etiquetas')
+        .select('canal, usuario, nombre_perfil, localidad, estado, pide_humano, bot_pausado, actualizado, no_leidos, etiquetas, ultimo_texto, ultimo_direccion, ultimo_autor, ultimo_creado')
         .order('pide_humano', { ascending: false })
         .order('actualizado', { ascending: false })
         .limit(300),
@@ -866,8 +866,54 @@ const panelMonedas = (() => {
     });
     if (filtroCharlas === 'contactos') {
       lista = lista.slice().sort((a, b) => nombreCharla(a).localeCompare(nombreCharla(b), 'es', { sensitivity: 'base' }));
+    } else {
+      // Como WhatsApp: arriba la del último mensaje
+      lista = lista.slice().sort((a, b) => cuandoCharla(b) - cuandoCharla(a));
     }
     return lista;
+  }
+
+  // ---------- Como WhatsApp: foto con iniciales, último mensaje y hora en la lista ----------
+  const cuandoCharla = (c) => new Date(c.ultimo_creado || c.actualizado || 0).getTime();
+  const COLORES_AVATAR = ['#00A884', '#53BDEB', '#FF8F6B', '#A78BFA', '#F59E0B', '#EC4899', '#10B981', '#6366F1'];
+  function htmlAvatar(c, grande) {
+    const nombre = nombreCharla(c);
+    const letras = /^\+?\d/.test(nombre) ? '' : nombre.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
+    let h = 0;
+    for (const ch of c.usuario) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return '<span class="wa-avatar' + (grande ? ' grande' : '') + '" style="background:' + COLORES_AVATAR[h % COLORES_AVATAR.length] +
+      '" aria-hidden="true">' + (letras ? escapar(letras) :
+      '<svg viewBox="0 0 24 24" width="60%" height="60%"><path fill="currentColor" d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4 0-9 2-9 5.5V22h18v-2.5C21 16 16 14 12 14z"/></svg>') + '</span>';
+  }
+
+  // Día (aaaa-mm-dd) y hora de Argentina de una fecha
+  const DIA_AR = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const HORA_AR = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false });
+  const diaAR = (iso) => DIA_AR.format(new Date(iso));
+  const horaCorta = (iso) => HORA_AR.format(new Date(iso));
+  const DIAS_LISTA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+  // Hoy: la hora. Ayer: "Ayer". Esta semana: el día. Antes: la fecha.
+  function nombreFecha(iso, conHora) {
+    if (!iso) return '';
+    const dia = diaAR(iso), { hoy } = ahoraAR();
+    if (dia === hoy) return conHora ? horaCorta(iso) : 'Hoy';
+    if (dia === sumarDias(hoy, -1)) return 'Ayer';
+    if (dia > sumarDias(hoy, -7)) { const d = DIAS_LISTA[diaSemana(dia)]; return d[0].toUpperCase() + d.slice(1); }
+    const [a, m, d] = dia.split('-');
+    return d + '/' + m + '/' + a.slice(2);
+  }
+  const horaLista = (iso) => nombreFecha(iso, true);
+
+  const PREVIA_MEDIO = { '[Foto]': '📷 Foto', '[Audio]': '🎤 Audio', '[Video]': '🎥 Video', '[Archivo]': '📄 Archivo', '[Sticker]': 'Sticker',
+    '[Audio de bienvenida]': '🎤 Audio de bienvenida' };
+  function previaCharla(c) {
+    if (!c.ultimo_texto) {
+      return escapar(PASOS[c.estado && c.estado.step] || (c.estado ? '' : c.localidad || 'Contacto cargado a mano'));
+    }
+    const t = PREVIA_MEDIO[c.ultimo_texto] || (/^Ubicación:/.test(c.ultimo_texto) ? '📍 Ubicación' : c.ultimo_texto);
+    const quien = c.ultimo_direccion === 'sale' ? (c.ultimo_autor === 'walter' ? 'Vos: ' : 'Bot: ') : '';
+    return (quien ? '<span class="wa-quien">' + quien + '</span>' : '') + escapar(t.replace(/\s+/g, ' '));
   }
 
   // Todas las etiquetas puestas en alguna charla, más las de siempre
@@ -905,23 +951,26 @@ const panelMonedas = (() => {
       '<tr data-canal="' + escapar(c.canal) + '" data-usuario="' + escapar(c.usuario) + '">' +
         '<td class="col-check"><input type="checkbox" data-elegir aria-label="Elegir esta charla"' +
           (elegidas.has(claveCharla(c)) ? ' checked' : '') + '></td>' +
-        '<td>' +
-          '<div class="nombre-lead' + (c.no_leidos > 0 ? ' sin-leer' : '') + '">' + escapar(nombreCharla(c)) +
-            (c.no_leidos > 0 ? ' <span class="no-leidos" aria-label="' + c.no_leidos + ' sin leer">' + c.no_leidos + '</span>' : '') +
+        '<td class="wa-celda"><div class="wa-fila">' +
+          htmlAvatar(c) +
+          '<div class="wa-medio">' +
+            '<div class="wa-linea"><span class="nombre-lead' + (c.no_leidos > 0 ? ' sin-leer' : '') + '">' +
+              escapar(nombreCharla(c)) + '</span>' +
+              '<span class="wa-hora' + (c.no_leidos > 0 ? ' sin-leer' : '') + '">' + escapar(horaLista(c.ultimo_creado || c.actualizado)) + '</span></div>' +
+            '<div class="wa-linea"><span class="wa-previa">' + previaCharla(c) + '</span>' +
+              (c.no_leidos > 0 ? '<span class="no-leidos" aria-label="' + c.no_leidos + ' sin leer">' + c.no_leidos + '</span>' : '') +
+            '</div>' +
+            '<div class="wa-chips">' +
+              (c.pide_humano
+                ? '<span class="chip chip-pendiente">' + (c.bot_pausado ? 'Te escribió' : 'Quiere hablar con vos') + '</span>'
+                : c.bot_pausado
+                ? '<span class="chip chip-nuevo">La atendés vos</span>'
+                : '<span class="chip chip-atendido">La atiende el bot</span>') +
+              (c.canal === 'messenger' ? '<span class="chip chip-nuevo">Messenger</span>' : '') +
+              htmlEtiquetas(c.etiquetas) +
+            '</div>' +
           '</div>' +
-          ((c.etiquetas || []).length ? '<div class="etiquetas">' + htmlEtiquetas(c.etiquetas) + '</div>' : '') +
-          '<div class="dato-secundario">' +
-            escapar(PASOS[c.estado && c.estado.step] || (c.estado ? '' : c.localidad || 'Contacto cargado a mano')) + '</div>' +
-        '</td>' +
-        '<td class="opcional">' + escapar(canalDe(c.canal)) + '</td>' +
-        '<td class="opcional dato-secundario">' + escapar(fecha(c.actualizado)) + '</td>' +
-        '<td>' +
-          (c.pide_humano
-            ? '<span class="chip chip-pendiente">' + (c.bot_pausado ? 'Te escribió' : 'Quiere hablar con vos') + '</span>'
-            : c.bot_pausado
-            ? '<span class="chip chip-nuevo">La atendés vos</span>'
-            : '<span class="chip chip-atendido">La atiende el bot</span>') +
-        '</td>' +
+        '</div></td>' +
       '</tr>').join('');
     pintarSeleccion(visibles);
 
@@ -1120,18 +1169,24 @@ const panelMonedas = (() => {
   }
 
   // Las tildes de WhatsApp en lo que sale: una gris (salió), dos grises (le llegó), dos azules (lo leyó)
+  const UNA = '<path fill="currentColor" d="M11.1 3.3l-6 7.4-2.6-2.4-.9 1 3.6 3.3 6.9-8.5z"/>';
+  const DOS = '<path fill="currentColor" d="M11.1 3.3l-6 7.4-2.6-2.4-.9 1 3.6 3.3 6.9-8.5zM15.4 3.3l-6 7.4-.9-.8-.8 1 1.8 1.7 6.9-8.5z"/>';
   const TILDES = {
-    sent: ['✓', 'Enviado'], delivered: ['✓✓', 'Entregado'], read: ['✓✓', 'Leído'], failed: ['!', 'No se pudo entregar']
+    sent: [UNA, 'Enviado'], delivered: [DOS, 'Entregado'], read: [DOS, 'Leído'],
+    failed: ['<path fill="currentColor" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.2 4h1.6v5H7.2zm0 6.2h1.6v1.6H7.2z"/>', 'No se pudo entregar']
   };
   function tildes(m) {
     const t = m.direccion === 'sale' && TILDES[m.estado_wa];
-    return t ? ' <span class="tildes tildes-' + m.estado_wa + '" title="' + t[1] + '" aria-label="' + t[1] + '">' + t[0] + '</span>' : '';
+    return t ? '<svg class="tildes tildes-' + m.estado_wa + '" viewBox="0 0 16 15" width="16" height="15" role="img" aria-label="' + t[1] +
+      '"><title>' + t[1] + '</title>' + t[0] + '</svg>' : '';
   }
 
   function htmlBurbuja(m) {
     const clase = m.direccion === 'entra' ? 'de-cliente' : m.autor === 'walter' ? 'de-walter' : 'de-bot';
     const quien = m.direccion === 'entra' ? '' : m.autor === 'walter' ? 'Vos · ' : 'Bot · ';
-    const texto = m.media_tipo && SOLO_ETIQUETA.test(m.texto || '') ? '' : escapar(m.texto);
+    // Los links (por ejemplo el del mapa de una ubicación) se pueden tocar, como en WhatsApp
+    const texto = m.media_tipo && SOLO_ETIQUETA.test(m.texto || '') ? '' : escapar(m.texto)
+      .replace(/https:\/\/[^\s<"]+/g, (u) => '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>');
     const wa = m.wa_id ? escapar(m.wa_id).replace(/"/g, '&quot;') : '';
     let citado = '';
     if (m.responde_a) {
@@ -1140,7 +1195,7 @@ const panelMonedas = (() => {
         (o ? '<strong>' + escapar(quienDe(o)) + '</strong>' + escapar(textoCita(o)) : 'Un mensaje anterior') + '</span>';
     }
     return '<div class="burbuja ' + clase + '"' + (wa ? ' data-wa="' + wa + '"' : '') + '>' + citado + htmlMedio(m) + texto +
-      '<span class="hora">' + escapar(quien + fechaHora(m.creado)) + tildes(m) +
+      '<span class="hora">' + escapar(quien + horaCorta(m.creado)) + tildes(m) +
         (wa ? '<button type="button" class="responder-a" data-citar="' + wa + '">Responder</button>' : '') +
       '</span></div>';
   }
@@ -1193,7 +1248,9 @@ const panelMonedas = (() => {
 
     caja.innerHTML = error
       ? '<div class="dato-secundario">No se pudo cargar la conversación.</div>'
-      : lista.map(htmlBurbuja).join('') || '<div class="dato-secundario">Sin mensajes.</div>';
+      : lista.map((m, i) => (i && diaAR(lista[i - 1].creado) === diaAR(m.creado) ? '' :
+          '<div class="wa-dia"><span>' + escapar(nombreFecha(m.creado)) + '</span></div>') + htmlBurbuja(m)).join('') ||
+        '<div class="wa-dia"><span>Sin mensajes</span></div>';
     const pegado = alFinal || !caja.dataset.cargada;
     if (pegado) caja.scrollTop = caja.scrollHeight;
     caja.dataset.cargada = '1';
@@ -1212,6 +1269,8 @@ const panelMonedas = (() => {
 
     ocultar($('mFichaError'));
     $('mFichaNombre').textContent = nombreCharla(c);
+    $('mFichaAvatar').outerHTML = htmlAvatar(c).replace('class="wa-avatar"', 'class="wa-avatar" id="mFichaAvatar"');
+    verInfo(false);
     $('mFichaCanal').textContent = canalDe(canal) + (canal === 'whatsapp' ? ' · +' + usuario : '') +
       (c.localidad ? ' · ' + c.localidad : '');
     // Messenger no tiene el número del bot: ahí sigue la bandeja de Facebook
@@ -1235,6 +1294,12 @@ const panelMonedas = (() => {
     pintarEtiquetasFicha();
     marcarLeida(c);
     await cargarMensajes(c);
+  }
+
+  // Tocar el nombre muestra los datos del contacto (pedidos, etiquetas, borrar), como en WhatsApp
+  function verInfo(si) {
+    $('mFichaInfo').classList.toggle('hidden', !si);
+    $('mFichaInfoBtn').setAttribute('aria-expanded', si ? 'true' : 'false');
   }
 
   // Abrirla la deja leída en el panel y al cliente le aparecen las tildes azules, como en WhatsApp
@@ -1421,11 +1486,11 @@ const panelMonedas = (() => {
     if (!c || !texto) return;
     ocultar($('mFichaError'));
     $('mEnviar').disabled = true;
-    $('mEnviar').textContent = 'Enviando…';
+    $('mEnviar').classList.add('enviando');
 
     const r = await llamarBot({ accion: 'enviar', canal: c.canal, usuario: c.usuario, texto, responder_a: citaDe(c) });
 
-    $('mEnviar').textContent = 'Enviar';
+    $('mEnviar').classList.remove('enviando');
     if (charlaAbierta !== c) return;
     if (r.error) {
       errorFicha(r.error);
@@ -1491,11 +1556,11 @@ const panelMonedas = (() => {
 
   async function enviarFoto(c, foto, texto) {
     $('mEnviar').disabled = true;
-    $('mFotoBtn').textContent = 'Enviando foto…';
+    $('mFotoBtn').classList.add('enviando');
 
     const r = await llamarBot({ accion: 'enviar_foto', canal: c.canal, usuario: c.usuario, foto, texto, responder_a: citaDe(c) });
 
-    $('mFotoBtn').textContent = 'Foto';
+    $('mFotoBtn').classList.remove('enviando');
     if (charlaAbierta !== c) return;
     if (r.error) {
       errorFicha(r.error);
@@ -1791,7 +1856,7 @@ const panelMonedas = (() => {
     if (!enviar) return g.motor.cancelar();
 
     $('mAudioBtn').disabled = true;
-    $('mAudioBtn').textContent = 'Enviando…';
+    $('mAudioBtn').classList.add('enviando');
     try {
       const archivo = await g.motor.terminar();
       if (!archivo) throw new Error('vacío');
@@ -1813,7 +1878,7 @@ const panelMonedas = (() => {
       errorFicha('No se pudo preparar el audio. Probá de nuevo.');
     } finally {
       $('mAudioBtn').disabled = false;
-      $('mAudioBtn').textContent = '🎤 Audio';
+      $('mAudioBtn').classList.remove('enviando');
       if (charlaAbierta === g.c) pintarFichaEstado();
     }
   }
@@ -2690,7 +2755,11 @@ const panelMonedas = (() => {
     $('mBorrarElegidas').addEventListener('click', borrarElegidas);
     $('mSoltarElegidas').addEventListener('click', () => { elegidas.clear(); pintarCharlas(); });
     $('mCerrarFicha').addEventListener('click', cerrarCharla);
-    $('mVolverFicha').addEventListener('click', cerrarCharla);
+    // Con los datos del contacto abiertos, la flecha vuelve al chat (como en WhatsApp)
+    $('mVolverFicha').addEventListener('click', () => {
+      if (!$('mFichaInfo').classList.contains('hidden')) verInfo(false);
+      else cerrarCharla();
+    });
     window.addEventListener('popstate', () => {
       if (!$('mTelon').classList.contains('hidden')) cerrarCharla();
     });
@@ -2717,6 +2786,13 @@ const panelMonedas = (() => {
       pintarCharlas();
     });
     $('mUbicacionBtn').addEventListener('click', abrirUbicacion);
+    $('mFichaInfoBtn').addEventListener('click', () => verInfo($('mFichaInfo').classList.contains('hidden')));
+    // La caja de escribir crece con el texto, como en WhatsApp, hasta 6 renglones
+    $('mRespuesta').addEventListener('input', () => {
+      const t = $('mRespuesta');
+      t.style.height = 'auto';
+      t.style.height = Math.min(t.scrollHeight, 140) + 'px';
+    });
     $('mUbiCerrar').addEventListener('click', cerrarUbicacion);
     $('mUbiCancelar').addEventListener('click', cerrarUbicacion);
     $('mUbiDeposito').addEventListener('click', usarDeposito);
