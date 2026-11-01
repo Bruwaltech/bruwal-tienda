@@ -419,6 +419,19 @@ tbody tr:hover { background: #F8FBFF; }
 }
 .aviso-pedido { margin-top: 7px; font-size: 13px; color: var(--text-mute); }
 .btn-mover { display: inline-block; width: auto; margin-top: 6px; padding: 5px 10px; font-size: 13px; }
+.no-leidos { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: #25D366; color: #fff;
+  font-size: 12px; font-weight: 700; text-align: center; vertical-align: middle; }
+.nombre-lead.sin-leer { font-weight: 800; }
+.etiquetas { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.etiqueta { display: inline-flex; align-items: center; gap: 2px; padding: 1px 8px; border-radius: 10px; font-size: 12px;
+  background: #EDE9FE; color: #5B21B6; }
+.etiqueta button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 2px; }
+.etiquetas-ficha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.form-etiqueta input { width: 120px; padding: 2px 8px; font-size: 12px; border: 1px dashed var(--line); border-radius: 10px; background: transparent; color: inherit; }
+.filtros-etiquetas { display: contents; }
+.tildes { margin-left: 4px; letter-spacing: -2px; }
+.tildes-read { color: #53BDEB; opacity: 1; }
+.tildes-failed { color: #DC2626; font-weight: 700; letter-spacing: 0; }
 .foto-elegida { display: grid; gap: 8px; margin-bottom: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
 .foto-elegida img { max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 8px; justify-self: start; }
 .foto-elegida input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 15px; }
@@ -624,6 +637,149 @@ tbody tr:hover { background: #F8FBFF; }
     -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
   }
   .grabando { border-radius: 16px; background: rgba(253, 236, 236, .8); }
+}
+/* ---------------- Charlas como WhatsApp ----------------
+   La lista y el chat copian el aspecto de WhatsApp: fotos redondas, último mensaje, hora, número verde de
+   no leídos, fondo con dibujitos, burbujas blancas y verdes, tildes y la barra de escribir abajo. */
+:root {
+  --wa-verde: #00A884; --wa-verde-osc: #008069; --wa-sale: #D9FDD3; --wa-entra: #FFFFFF;
+  --wa-fondo: #EFEAE2; --wa-texto: #111B21; --wa-gris: #667781; --wa-linea: #E9EDEF; --wa-azul: #53BDEB;
+}
+.wa-lista thead th { background: transparent; }
+.wa-lista { table-layout: fixed; }
+.wa-lista .col-check { width: 44px; }
+.wa-lista td { border-top: 1px solid var(--wa-linea); padding: 10px 14px; vertical-align: middle; }
+.wa-lista tbody tr:hover { background: #F5F6F6; }
+.wa-celda { width: 100%; padding-left: 4px !important; }
+.wa-fila { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wa-avatar {
+  flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font-weight: 600; font-size: 17px; background: #DFE5E7; overflow: hidden;
+}
+.wa-avatar.grande { width: 80px; height: 80px; font-size: 28px; }
+.wa-medio { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wa-linea { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wa-linea .nombre-lead { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 500; color: var(--wa-texto); }
+.wa-linea .nombre-lead.sin-leer { font-weight: 700; }
+.wa-hora { flex: 0 0 auto; font-size: 12px; color: var(--wa-gris); }
+.wa-hora.sin-leer { color: var(--wa-verde); font-weight: 600; }
+.wa-previa { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--wa-gris); }
+.wa-quien { color: var(--wa-gris); font-weight: 500; }
+.wa-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.wa-chips .chip { font-size: 11px; padding: 2px 8px; }
+.wa-chips .etiquetas { margin-top: 0; }
+.no-leidos { background: var(--wa-verde); min-width: 22px; height: 22px; line-height: 20px; border-radius: 11px; padding: 0 6px; font-size: 12px; }
+
+/* El chat abierto */
+.ficha-wa { position: relative; max-width: 640px; background: var(--wa-fondo) !important; overflow: hidden; height: 100%; }
+@media screen {
+  .ficha-wa .wa-cabecera {
+    background: var(--wa-verde-osc); color: #fff; border-bottom: 0; align-items: center; padding: 8px 12px; gap: 10px;
+    -webkit-backdrop-filter: none; backdrop-filter: none; padding-top: max(8px, env(safe-area-inset-top));
+  }
+}
+.wa-cabecera .wa-avatar { width: 40px; height: 40px; font-size: 15px; }
+.wa-cabecera .cerrar { color: #fff; }
+.wa-cabecera .volver-ficha { color: #fff; padding: 4px; display: none; }
+.wa-titulo {
+  flex: 1; min-width: 0; text-align: left; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 2px 0;
+}
+.wa-titulo h3 { font-family: inherit; font-size: 16px; font-weight: 600; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-titulo span { display: block; font-size: 12.5px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-estado {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px;
+  background: #F0F2F5; border-bottom: 1px solid var(--wa-linea); font-size: 13px;
+}
+.wa-estado .btn { flex: 0 0 auto; min-width: 0; width: auto; padding: 5px 12px; font-size: 13px; }
+.wa-estado .chip { margin-right: auto; }
+.wa-info {
+  position: absolute; left: 0; right: 0; bottom: 0; top: 56px; z-index: 5; overflow-y: auto;
+  background: #F0F2F5; padding: 18px 16px 30px;
+}
+.ficha-wa .ficha-cuerpo { display: none; }
+#mFichaCharla.wa-fondo {
+  flex: 1; max-height: none; min-height: 0; border: 0; border-radius: 0; box-shadow: none; gap: 2px; padding: 10px 4% 14px;
+  background: var(--wa-fondo) url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"%3E%3Cg fill="none" stroke="%23000" stroke-opacity=".05" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"%3E%3Ccircle cx="24" cy="24" r="10"/%3E%3Ccircle cx="24" cy="24" r="6"/%3E%3Cpath d="M70 14h18a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6h-10l-8 6v-6a6 6 0 0 1-6-6V20a6 6 0 0 1 6-6z"/%3E%3Ccircle cx="128" cy="30" r="7"/%3E%3Cpath d="M135 30h16M146 30v6M151 30v4"/%3E%3Cpath d="M20 84l4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1z"/%3E%3Cpath d="M66 78c8-8 20-8 28 0M72 86c5-5 11-5 16 0"/%3E%3Ccircle cx="80" cy="94" r="2"/%3E%3Cpath d="M118 74h26v20h-26zM118 74l13 11 13-11"/%3E%3Cpath d="M30 128a8 8 0 0 1 16 0c0 8-8 16-8 16s-8-8-8-16z"/%3E%3Ccircle cx="38" cy="128" r="3"/%3E%3Cpath d="M76 124v22M70 130l6-6 6 6"/%3E%3Ccircle cx="130" cy="134" r="10"/%3E%3Cpath d="M126 134h8M130 130v8"/%3E%3C/g%3E%3C/svg%3E') repeat; background-size: 200px;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.wa-dia { align-self: center; margin: 10px 0 6px; }
+.wa-dia span {
+  display: inline-block; background: #fff; color: var(--wa-gris); font-size: 12.5px; padding: 5px 12px; border-radius: 8px;
+  box-shadow: 0 1px .5px rgba(11, 20, 26, .13); text-transform: none;
+}
+#mFichaCharla .burbuja {
+  position: relative; max-width: 80%; padding: 6px 8px 6px 9px; border-radius: 8px; color: var(--wa-texto);
+  font-size: 14.5px; line-height: 1.38; box-shadow: 0 1px .5px rgba(11, 20, 26, .13); margin-top: 2px;
+}
+#mFichaCharla .burbuja.de-cliente { background: var(--wa-entra); border-top-left-radius: 0; margin-left: 8px; }
+#mFichaCharla .burbuja.de-bot, #mFichaCharla .burbuja.de-walter { background: var(--wa-sale); border-top-right-radius: 0; margin-right: 8px; }
+/* El piquito de la burbuja */
+#mFichaCharla .burbuja::before {
+  content: ''; position: absolute; top: 0; width: 8px; height: 13px;
+}
+#mFichaCharla .burbuja.de-cliente::before { left: -8px; background: linear-gradient(to bottom left, var(--wa-entra) 50%, transparent 50%); }
+#mFichaCharla .burbuja.de-bot::before, #mFichaCharla .burbuja.de-walter::before {
+  right: -8px; background: linear-gradient(to bottom right, var(--wa-sale) 50%, transparent 50%);
+}
+#mFichaCharla .burbuja .hora {
+  display: flex; justify-content: flex-end; align-items: center; gap: 3px; float: right;
+  margin: 6px 0 -4px 10px; font-size: 11px; color: var(--wa-gris); opacity: 1; white-space: nowrap;
+}
+#mFichaCharla .burbuja .cita { background: rgba(11, 20, 26, .05); border-left: 4px solid var(--wa-verde); border-radius: 6px; color: var(--wa-texto); }
+#mFichaCharla .burbuja.de-cliente .cita { border-left-color: #53BDEB; }
+#mFichaCharla .burbuja .medio-link { color: #027EB5; }
+#mFichaCharla .burbuja.resaltada { outline: 2px solid var(--wa-verde); }
+.tildes { margin-left: 2px; color: var(--wa-gris); letter-spacing: 0; vertical-align: middle; }
+.tildes-read { color: var(--wa-azul); }
+.tildes-failed { color: #EA0038; }
+
+/* La barra de escribir */
+.wa-responder { margin: 0; padding: 6px 8px; background: #F0F2F5; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+.wa-aviso {
+  font-size: 12px; color: var(--wa-gris); text-align: center; padding: 2px 8px 6px; line-height: 1.35;
+}
+.wa-aviso:empty { display: none; }
+.wa-responder #mRetomar { display: block; width: 100%; margin-bottom: 6px; }
+.wa-responder #mRetomar.hidden { display: none; }
+.wa-barra { display: flex; align-items: flex-end; gap: 6px; }
+.wa-barra textarea {
+  flex: 1; min-height: 42px; max-height: 140px; resize: none; padding: 10px 14px; border: 0 !important; border-radius: 21px !important;
+  background: #fff !important; font: inherit; font-size: 15px; line-height: 1.4; color: var(--wa-texto); overflow-y: auto;
+}
+.wa-barra textarea:focus { outline: none; }
+.wa-icono {
+  flex: 0 0 auto; width: 42px; height: 42px; display: grid; place-items: center; border: 0; background: none;
+  color: #54656F; border-radius: 50%; cursor: pointer;
+}
+.wa-icono:hover { background: rgba(11, 20, 26, .06); }
+.wa-redondo {
+  flex: 0 0 auto; width: 46px; height: 46px; display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: var(--wa-verde); color: #fff; cursor: pointer; box-shadow: 0 1px 3px rgba(11, 20, 26, .2);
+}
+.wa-redondo:hover { background: var(--wa-verde-osc); }
+.wa-redondo:disabled { opacity: .5; cursor: default; }
+.wa-redondo.grabando { background: #EA0038; }
+.wa-icono.hidden, .wa-redondo.hidden { display: none; }
+.enviando { opacity: .5; pointer-events: none; animation: latido 1s infinite; }
+.ficha-wa > .aviso-error { margin: 0; border-radius: 0; }
+.ficha-wa .cita-elegida { background: #fff; border-left: 4px solid var(--wa-verde); border-radius: 8px; }
+@media (max-width: 640px) {
+  .ficha-wa { max-width: none; }
+  .wa-cabecera .volver-ficha { display: block; }
+  .wa-estado { padding: 5px 8px; }
+  #mFichaCharla .burbuja { max-width: 86%; }
+  .wa-lista td { padding: 9px 10px; }
+}
+/* El resto del panel con los colores de WhatsApp: barra verde arriba, pestañas y filtros como los de WhatsApp */
+@media screen {
+  #pantallaPanel .barra { background: var(--wa-verde-osc); border-bottom: 0; }
+  #pantallaPanel .barra .quien { color: rgba(255, 255, 255, .8); }
+  #vistaMonedas .pestana, #vistaMonedas .filtro {
+    background: #F0F2F5; color: #54656F; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #vistaMonedas .pestana.activa, #vistaMonedas .filtro.activo { background: #D9FDD3; color: var(--wa-verde-osc); }
+  #vistaMonedas .buscador { background: #F0F2F5; border: 0; box-shadow: none; border-radius: 8px; }
+  #vistaMonedas .tarjeta.alerta .numero { color: var(--wa-verde-osc); }
 }
 @media screen and (prefers-reduced-transparency: reduce) {
   .tarjeta, .panel, .datos, .charla, .ficha, .ficha-cabecera, .caja-login { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
@@ -834,9 +990,11 @@ tbody tr:hover { background: #F8FBFF; }
           <h2>Charlas</h2>
           <div class="filtros" id="mFiltrosCharlas">
             <button type="button" class="filtro activo" data-filtro="humano">Quieren hablar con vos</button>
+            <button type="button" class="filtro" data-filtro="noleidas">No leídas</button>
             <button type="button" class="filtro" data-filtro="vos">Las atendés vos</button>
             <button type="button" class="filtro" data-filtro="todas">Todas</button>
             <button type="button" class="filtro" data-filtro="contactos">Contactos (A-Z)</button>
+            <span class="filtros-etiquetas" id="mFiltroEtiquetas"></span>
           </div>
           <input type="search" class="buscador" id="mBuscadorCharlas" placeholder="🔍 Buscar nombre o número…" aria-label="Buscar contacto">
           <button type="button" class="btn btn-suave" id="mNuevoContacto">+ Contacto nuevo</button>
@@ -857,14 +1015,11 @@ tbody tr:hover { background: #F8FBFF; }
           <button type="button" class="btn btn-suave" id="mSoltarElegidas">Cancelar</button>
         </div>
         <div class="tabla-scroll">
-          <table>
+          <table class="wa-lista">
             <thead>
               <tr>
                 <th class="col-check"><input type="checkbox" id="mElegirTodas" aria-label="Elegir todas las que se ven"></th>
-                <th>Cliente</th>
-                <th class="opcional">Canal</th>
-                <th class="opcional">Último mensaje</th>
-                <th>Estado</th>
+                <th>Charlas</th>
               </tr>
             </thead>
             <tbody id="mCuerpoCharlas"></tbody>
@@ -1049,70 +1204,129 @@ tbody tr:hover { background: #F8FBFF; }
 </div>
 
 <!-- ===================== FICHA DE UNA CHARLA (monedas) ===================== -->
+<!-- Armada como un chat de WhatsApp: cabecera con foto y nombre, fondo con dibujitos, burbujas y la barra
+     de escribir abajo. Los pedidos, las etiquetas y las acciones están en "Datos del contacto" (tocar el nombre). -->
 <div class="telon hidden" id="mTelon">
-  <div class="ficha">
-    <div class="ficha-cabecera">
-      <!-- En el celular, "‹ Chats" arriba a la izquierda como en WhatsApp (y el gesto de atrás) -->
-      <button class="volver-ficha" id="mVolverFicha" aria-label="Volver a las charlas">&lsaquo; Chats</button>
-      <div>
+  <div class="ficha ficha-wa">
+    <div class="ficha-cabecera wa-cabecera">
+      <button class="volver-ficha" id="mVolverFicha" aria-label="Volver a las charlas">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 4l1.4 1.4L7.8 11H20v2H7.8l5.6 5.6L12 20l-8-8z"/></svg>
+      </button>
+      <span class="wa-avatar" id="mFichaAvatar" aria-hidden="true"></span>
+      <button type="button" class="wa-titulo" id="mFichaInfoBtn" aria-expanded="false" aria-controls="mFichaInfo">
         <h3 id="mFichaNombre"></h3>
-        <div class="dato-secundario" id="mFichaCanal"></div>
-      </div>
+        <span id="mFichaCanal"></span>
+      </button>
       <button class="cerrar" id="mCerrarFicha" aria-label="Cerrar">&times;</button>
     </div>
-    <div class="ficha-cuerpo">
+    <!-- Quién contesta esta charla, siempre a mano -->
+    <div class="wa-estado">
+      <span class="chip hidden" id="mChipBot"></span>
+      <button class="btn btn-suave" id="mBtnPausa"></button>
+      <button class="btn btn-ok" id="mBtnAtendida">Ya hablé con esta persona</button>
+    </div>
+    <!-- Datos del contacto, como en WhatsApp al tocar el nombre -->
+    <div class="wa-info hidden" id="mFichaInfo">
+      <div class="bloque">
+        <h4>Etiquetas</h4>
+        <div class="etiquetas-ficha">
+          <span class="etiquetas" id="mFichaEtiquetas"></span>
+          <form id="mFormEtiqueta" class="form-etiqueta" onsubmit="return false">
+            <input type="text" id="mNuevaEtiqueta" list="mListaEtiquetas" maxlength="30" placeholder="+ Etiqueta" aria-label="Agregar etiqueta">
+            <datalist id="mListaEtiquetas"></datalist>
+          </form>
+        </div>
+      </div>
       <div class="bloque">
         <h4>Pedidos</h4>
         <div class="datos" id="mFichaPedidos"></div>
       </div>
-      <div class="bloque">
-        <h4>Conversación <span class="chip hidden" id="mChipBot"></span></h4>
-        <div class="charla" id="mFichaCharla"></div>
-        <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
-        <form class="responder" id="mFormResponder" onsubmit="return false">
-          <!-- El mensaje que se va a citar, como "Responder" en WhatsApp -->
-          <div class="cita-elegida hidden" id="mCita">
-            <div class="cita-texto"><strong id="mCitaQuien"></strong><span id="mCitaTexto"></span></div>
-            <button type="button" class="cerrar" id="mCitaQuitar" aria-label="No citar">&times;</button>
-          </div>
-          <!-- Mientras graba un audio: mantener apretado y soltar para mandar, o tocar y usar estos botones -->
-          <div class="grabando hidden" id="mGrabando">
-            <span class="punto-rojo" id="mAudioPunto"></span>
-            <strong id="mAudioReloj">0:00</strong>
-            <span class="dato-secundario" id="mAudioAyuda"></span>
-            <button type="button" class="btn btn-suave" id="mAudioCancelar">Cancelar</button>
-            <button type="button" class="btn btn-suave" id="mAudioPausa">Pausar</button>
-            <button type="button" class="btn btn-ok" id="mAudioEnviar">Enviar audio</button>
-          </div>
-          <!-- La foto elegida, para escribirle el texto abajo antes de mandarla, como en WhatsApp -->
-          <div class="foto-elegida hidden" id="mFotoPrevia">
-            <img id="mFotoPreviaImg" alt="Foto elegida">
-            <input type="text" id="mFotoPie" aria-label="Texto de la foto" placeholder="Escribí un texto para la foto (opcional)" maxlength="1024">
-            <div class="foto-elegida-botones">
-              <button type="button" class="btn btn-suave" id="mFotoCancelar">Cancelar</button>
-              <button type="button" class="btn btn-ok" id="mFotoEnviar">Enviar foto</button>
-            </div>
-          </div>
-          <textarea id="mRespuesta" aria-label="Tu respuesta" placeholder="Escribile al cliente… (Enter envía, Shift+Enter baja de renglón)" maxlength="4000"></textarea>
-          <div class="responder-pie">
-            <span class="dato-secundario" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</span>
-            <button type="button" class="btn btn-ok hidden" id="mRetomar">Mandar saludo para retomar</button>
-            <label class="btn btn-suave hidden" for="mFoto" id="mFotoBtn">Foto</label>
-            <input type="file" id="mFoto" accept="image/*" class="solo-lector">
-            <!-- Como en WhatsApp: con la caja vacía el botón graba, con texto manda -->
-            <button type="button" class="btn btn-ok hidden" id="mAudioBtn" title="Mantené apretado para grabar y soltá para mandar">🎤 Audio</button>
-            <button type="submit" class="btn btn-ok" id="mEnviar">Enviar</button>
-          </div>
-        </form>
-      </div>
-      <div class="aviso aviso-error hidden" id="mFichaError"></div>
       <div class="acciones">
-        <button class="btn btn-suave" id="mBtnPausa"></button>
-        <button class="btn btn-ok" id="mBtnAtendida">Ya hablé con esta persona</button>
+        <button class="btn btn-suave" id="mBtnNoLeida">Marcar como no leída</button>
         <button class="btn btn-suave hidden" id="mBtnAbrir">Abrir la bandeja de Facebook</button>
       </div>
       <div class="acciones" style="margin-top:16px;">
         <button class="btn btn-peligro" id="mBtnBorrar">Eliminar charla</button>
+      </div>
+    </div>
+    <div class="charla wa-fondo" id="mFichaCharla"></div>
+    <div class="aviso aviso-error hidden" id="mFichaError"></div>
+    <!-- Lo que Walter escribe acá sale por el número del bot: el cliente no ve su WhatsApp -->
+    <form class="responder wa-responder" id="mFormResponder" onsubmit="return false">
+      <!-- El mensaje que se va a citar, como "Responder" en WhatsApp -->
+      <div class="cita-elegida hidden" id="mCita">
+        <div class="cita-texto"><strong id="mCitaQuien"></strong><span id="mCitaTexto"></span></div>
+        <button type="button" class="cerrar" id="mCitaQuitar" aria-label="No citar">&times;</button>
+      </div>
+      <!-- Mientras graba un audio: mantener apretado y soltar para mandar, o tocar y usar estos botones -->
+      <div class="grabando hidden" id="mGrabando">
+        <span class="punto-rojo" id="mAudioPunto"></span>
+        <strong id="mAudioReloj">0:00</strong>
+        <span class="dato-secundario" id="mAudioAyuda"></span>
+        <button type="button" class="btn btn-suave" id="mAudioCancelar">Cancelar</button>
+        <button type="button" class="btn btn-suave" id="mAudioPausa">Pausar</button>
+        <button type="button" class="btn btn-ok" id="mAudioEnviar">Enviar audio</button>
+      </div>
+      <!-- La foto elegida, para escribirle el texto abajo antes de mandarla, como en WhatsApp -->
+      <div class="foto-elegida hidden" id="mFotoPrevia">
+        <img id="mFotoPreviaImg" alt="Foto elegida">
+        <input type="text" id="mFotoPie" aria-label="Texto de la foto" placeholder="Escribí un texto para la foto (opcional)" maxlength="1024">
+        <div class="foto-elegida-botones">
+          <button type="button" class="btn btn-suave" id="mFotoCancelar">Cancelar</button>
+          <button type="button" class="btn btn-ok" id="mFotoEnviar">Enviar foto</button>
+        </div>
+      </div>
+      <div class="wa-aviso" id="mVentana">Sale por el número del bot. Mientras atendés vos, el bot no contesta.</div>
+      <button type="button" class="btn btn-ok hidden" id="mRetomar">Mandar saludo para retomar</button>
+      <div class="wa-barra">
+        <label class="wa-icono hidden" for="mFoto" id="mFotoBtn" title="Mandar una foto" aria-label="Mandar una foto">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M16.5 6.5v10.6a4.5 4.5 0 0 1-9 0V5.5a3 3 0 0 1 6 0v10.4a1.5 1.5 0 0 1-3 0V6.5H9v9.4a3 3 0 0 0 6 0V5.5a4.5 4.5 0 0 0-9 0v11.6a6 6 0 0 0 12 0V6.5z"/></svg>
+        </label>
+        <input type="file" id="mFoto" accept="image/*" class="solo-lector">
+        <button type="button" class="wa-icono hidden" id="mUbicacionBtn" title="Mandar una ubicación" aria-label="Mandar una ubicación">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+        </button>
+        <textarea id="mRespuesta" rows="1" aria-label="Tu respuesta" placeholder="Escribí un mensaje" maxlength="4000"></textarea>
+        <!-- Como en WhatsApp: con la caja vacía el botón graba, con texto manda -->
+        <button type="button" class="wa-redondo hidden" id="mAudioBtn" title="Mantené apretado para grabar y soltá para mandar" aria-label="Grabar audio">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15zm6-3.5a6 6 0 0 1-12 0H4.3a7.7 7.7 0 0 0 6.85 7.64V22h1.7v-2.86a7.7 7.7 0 0 0 6.85-7.64z"/></svg>
+        </button>
+        <button type="submit" class="wa-redondo" id="mEnviar" title="Enviar" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a1 1 0 0 0-1.39 1.17L4 11l9 1-9 1-1.99 6.23a1 1 0 0 0 1.39 1.17z"/></svg>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== MANDAR UNA UBICACIÓN (monedas) ===================== -->
+<div class="telon hidden" id="mTelonUbicacion">
+  <div class="ficha">
+    <div class="ficha-cabecera">
+      <div>
+        <h3>Mandar una ubicación</h3>
+        <div class="dato-secundario">Al cliente le llega para abrirla en el mapa.</div>
+      </div>
+      <button class="cerrar" id="mUbiCerrar" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="ficha-cuerpo">
+      <div class="acciones">
+        <button type="button" class="btn btn-suave hidden" id="mUbiDeposito">El depósito</button>
+        <button type="button" class="btn btn-suave" id="mUbiAca">Donde estoy ahora</button>
+      </div>
+      <div class="campo"><label for="mUbiLink">O pegá un link de Google Maps</label>
+        <input type="text" id="mUbiLink" placeholder="https://maps.google.com/… o -32.95, -60.65"></div>
+      <div class="dato-secundario" id="mUbiEstado" style="margin-bottom:12px;"></div>
+      <input type="hidden" id="mUbiLat"><input type="hidden" id="mUbiLng">
+      <div class="campo"><label for="mUbiNombre">Nombre del lugar</label>
+        <input type="text" id="mUbiNombre" maxlength="100"></div>
+      <div class="campo"><label for="mUbiDireccion">Dirección (opcional)</label>
+        <input type="text" id="mUbiDireccion" maxlength="200" placeholder="Urquiza 357, Pueblo Andino"></div>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:12px;"><input type="checkbox" id="mUbiGuardar"> Guardarla como la ubicación del depósito</label>
+      <div class="aviso aviso-error hidden" id="mUbiError"></div>
+      <div class="acciones">
+        <button type="button" class="btn btn-suave" id="mUbiCancelar">Cancelar</button>
+        <button type="button" class="btn btn-ok" id="mUbiEnviar">Enviar ubicación</button>
       </div>
     </div>
   </div>
@@ -1159,7 +1373,7 @@ tbody tr:hover { background: #F8FBFF; }
      panel de monedas ya tiene que estar definido. Ruta absoluta porque esta
      misma página se sirve también en /chat. El ?v= se cambia con cada cambio de
      monedas.js: Safari se quedaba con la versión vieja aunque la página fuera nueva. -->
-<script src="/asistente/monedas.js?v=20261029a"></script>
+<script src="/asistente/monedas.js?v=20261101a"></script>
 <script>
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xYt7UXHADSkLyWt4uIRl1w_Ka6WdSbN';
