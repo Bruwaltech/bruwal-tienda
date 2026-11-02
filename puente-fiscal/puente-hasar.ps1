@@ -99,7 +99,7 @@ function Imprimir($comandos, [bool]$sinCancelar) {
     Log ('-> ' + $cmd)
     $r = Enviar-Hasar $c
     if (-not $r.ok) {
-      Log ('   ERROR: ' + $r.texto)
+      Log ('   ERROR: ' + (Explicar $r $cmd))
       $msg = Explicar $r $cmd
       if ($abierto -and -not $sinCancelar) {
         Log '-> Cancelar (se anula el comprobante a medio hacer)'
