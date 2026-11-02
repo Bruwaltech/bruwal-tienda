@@ -1,0 +1,13 @@
+# Configuracion del Puente fiscal Hasar (Bruwal)
+# Cambia solo lo que esta despues del "=" y guarda.
+
+# IP de la impresora fiscal Hasar. La de fabrica es 192.168.1.1.
+# Si el sistema viejo ya imprimia, la IP esta en su configuracion.
+IP=192.168.1.1
+
+# Clave de la Hasar (4 numeros). La de fabrica es 9999.
+CLAVE=9999
+
+# No hace falta tocar lo de abajo.
+PUERTO=12750
+ORIGENES=https://bruwaltech.com.ar,https://www.bruwaltech.com.ar

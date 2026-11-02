@@ -2751,6 +2751,21 @@ tr:last-child td { border-bottom: none; }
                     <option value="no">No imprimir</option>
                   </select>
                 </label>
+                <label class="campo-distribuidora hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);">
+                  🧾 Tique fiscal:
+                  <select id="barcodeFiscal" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:inherit;">
+                    <option value="no">No</option>
+                    <option value="si">Imprimir en la Hasar</option>
+                  </select>
+                </label>
+                <label id="filaFiscalTipo" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);">
+                  Comprobante:
+                  <select id="barcodeFiscalTipo" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:inherit;">
+                    <option value="cf">Factura B (consumidor final)</option>
+                    <option value="ri">Factura A (responsable inscripto)</option>
+                  </select>
+                </label>
+                <button type="button" class="btn-ghost campo-distribuidora hidden" id="fiscalConfigBtn" style="padding:4px 10px;font-size:12px;">⚙️ Impresora fiscal</button>
               </div>
 
               <label id="filaTradeIn" class="hidden" style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dark);margin-bottom:10px;cursor:pointer;">
@@ -5160,6 +5175,29 @@ tr:last-child td { border-bottom: none; }
 </div>
 
 <!-- MODAL REMITO (distribuidora) -->
+<div class="modal-overlay hidden" id="fiscalModal">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" id="cerrarFiscalModal">✕</button>
+    <h3>🧾 Impresora fiscal Hasar</h3>
+    <p style="color:var(--text-mute);font-size:13.5px;margin:6px 0 14px;line-height:1.5;">
+      La página no puede hablarle sola a la Hasar: en la PC de la caja tiene que estar abierto el
+      programita <b>Puente fiscal Hasar</b>. Él recibe la venta y la manda a la impresora, que le informa a ARCA.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <button type="button" class="btn" id="fiscalProbarBtn">Probar conexión</button>
+      <a class="btn-ghost" href="/puente-fiscal/puente-fiscal-hasar.zip" download style="text-decoration:none;">⬇️ Descargar el programa</a>
+    </div>
+    <div id="fiscalEstado" style="font-size:13px;white-space:pre-wrap;line-height:1.45;color:var(--text-dark);min-height:20px;margin-bottom:14px;"></div>
+    <div style="border-top:1px solid var(--line);padding-top:12px;">
+      <div style="font-size:13.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">Cierre Z</div>
+      <p style="color:var(--text-mute);font-size:12.5px;margin:0 0 8px;line-height:1.45;">
+        Cierra la jornada fiscal del día en la impresora. Se hace una vez, al final del día.
+      </p>
+      <button type="button" class="btn-ghost" id="fiscalCierreZBtn">Hacer el cierre Z</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="remitoModal">
   <div class="modal" style="max-width:520px;">
     <button class="modal-close" id="cerrarRemitoModal">✕</button>
@@ -22330,6 +22368,7 @@ function inicializarTicketVenta() {
   // "Imprimir directo" sale con los datos de la venta, sin la pantalla del
   // remito. Lo viejo guardado era '1' (preguntar) o '0' (no).
   byId('barcodeRemito').value = modoRemito();
+  pintarFiscalCaja();
   // Pedido de JACI: casi todo se cobra en efectivo. Queda elegido y se
   // cambia si paga con otra cosa.
   if (!byId('barcodeMedioPago').value) byId('barcodeMedioPago').value = medioPagoPorDefecto();
@@ -22366,6 +22405,248 @@ async function imprimirRemitoDirecto(ordenId) {
   abrirRemito(ordenId, { directo: true });
 }
 byId('barcodeRemito').addEventListener('change', (e) => guardarModoRemito(e.target.value));
+
+// ---- Tique fiscal en la Hasar (JACI, 02/11) ----
+// JACI es responsable inscripto y factura con una Hasar SMH/PT-250F (2da
+// generación). Esa impresora no es una impresora de Windows: se le habla con
+// comandos JSON por HTTP (POST http://IP/fiscal.json), y la página no puede
+// hacerlo directo (https → http de la red local, y la Hasar no manda CORS).
+// Por eso en la PC de la caja corre el "Puente fiscal Hasar"
+// (puente-fiscal/puente-hasar.ps1), que escucha en 127.0.0.1 y le pasa los
+// comandos uno por uno. La impresora le informa a ARCA sola: acá no hay
+// nada de ARCA.
+//
+// Se prende por PC y por tienda (localStorage), porque el puente está
+// instalado en una PC puntual, no en el celular del dueño.
+const PUENTE_FISCAL = 'http://127.0.0.1:12750';
+
+function claveFiscal() { return 'bruwal_fiscal_' + (currentStore ? currentStore.slug : ''); }
+function fiscalActivo() {
+  if (!rubroEsDistribuidora()) return false;
+  try { return localStorage.getItem(claveFiscal()) === '1'; } catch (e) { return false; }
+}
+function guardarFiscalActivo(on) {
+  try { localStorage.setItem(claveFiscal(), on ? '1' : '0'); } catch (e) {}
+  pintarFiscalCaja();
+}
+function pintarFiscalCaja() {
+  const on = fiscalActivo();
+  if (byId('barcodeFiscal')) byId('barcodeFiscal').value = on ? 'si' : 'no';
+  byId('filaFiscalTipo')?.classList.toggle('hidden', !on);
+  // Con el tique fiscal no sale además el ticket común: en esa PC el ticket
+  // común iba a "Guardar como PDF" porque la Hasar no es impresora de Windows.
+  byId('filaTicket')?.classList.toggle('hidden', on);
+}
+
+// Lo que ya salió por la Hasar, para no hacer dos facturas de la misma venta
+// desde Ventas. Solo en esta PC (que es la que tiene la impresora).
+function claveFiscalesHechos() { return 'bruwal_fiscal_hechos_' + (currentStore ? currentStore.slug : ''); }
+function fiscalesHechos() {
+  try { return JSON.parse(localStorage.getItem(claveFiscalesHechos()) || '{}') || {}; } catch (e) { return {}; }
+}
+function anotarFiscalHecho(ordenId, numero) {
+  if (!ordenId) return;
+  const h = fiscalesHechos();
+  h[ordenId] = numero || 'si';
+  // Alcanza con las últimas 500: es para el apuro de reimprimir, no un registro.
+  const ids = Object.keys(h);
+  if (ids.length > 500) ids.slice(0, ids.length - 500).forEach(k => delete h[k]);
+  try { localStorage.setItem(claveFiscalesHechos(), JSON.stringify(h)); } catch (e) {}
+}
+
+function cuitValido(c) {
+  const d = String(c || '').replace(/\D/g, '');
+  if (d.length !== 11) return false;
+  const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let suma = 0;
+  for (let i = 0; i < 10; i++) suma += Number(d[i]) * pesos[i];
+  let dv = 11 - (suma % 11);
+  if (dv === 11) dv = 0;
+  if (dv === 10) dv = 9;
+  return dv === Number(d[10]);
+}
+
+// Se pide ANTES de registrar la venta: si falta el CUIT para la Factura A,
+// mejor frenar acá que tener la venta guardada y la factura sin salir.
+// Devuelve null si el cajero canceló.
+async function datosFiscalesDeVenta(cliente) {
+  const tipo = byId('barcodeFiscalTipo')?.value === 'ri' ? 'ri' : 'cf';
+  if (tipo === 'cf') return { tipo };
+  const p = typeof clienteDelPadron === 'function' ? clienteDelPadron(cliente) : null;
+  let cuit = String(p?.cuit || '').replace(/\D/g, '');
+  if (!cuitValido(cuit)) {
+    const r = await dialogoPedir('Factura A: CUIT del cliente (11 números).', cuit);
+    if (r === null || r === undefined) return null;
+    cuit = String(r).replace(/\D/g, '');
+    if (!cuitValido(cuit)) { dialogoAviso('Ese CUIT no es válido. Revisalo y registrá la venta de nuevo.'); return null; }
+  }
+  let razon = String(p?.nombre || cliente || '').replace(/\s*\((cuenta [^)]*|[^)]*)\)\s*$/, '').trim();
+  if (!razon) {
+    const r = await dialogoPedir('Factura A: razón social del cliente.', '');
+    if (r === null || r === undefined || !String(r).trim()) return null;
+    razon = String(r).trim();
+  }
+  const domicilio = [p?.domicilio, p?.localidad].filter(x => String(x || '').trim()).join(', ');
+  return { tipo, cuit, razon, domicilio };
+}
+
+// La Hasar imprime con su propia letra: sin acentos ni símbolos raros, y
+// la descripción tiene un largo máximo.
+function textoFiscal(t, max) {
+  return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function formaDePagoFiscal(medio) {
+  const m = String(medio || '').toLowerCase();
+  if (!m || m.includes('efectivo')) return 'Efectivo';
+  if (m.includes('débito') || m.includes('debito')) return 'TarjetaDeDebito';
+  if (m.includes('crédito') || m.includes('credito')) return 'TarjetaDeCredito';
+  return 'OtrasFormasPago';
+}
+
+// lineas: [{ nombre, cantidad, importe }] (importe = total de la línea, con IVA).
+// Arma la lista de comandos de la Hasar, cada uno ya como texto JSON: el
+// puente los manda tal cual, sin rearmarlos.
+function comandosTiqueFiscal(lineas, datos, medioPago) {
+  const comandos = [];
+  const fac = datos && datos.tipo === 'ri';
+  if (fac) {
+    comandos.push({ CargarDatosCliente: {
+      RazonSocial: textoFiscal(datos.razon, 50),
+      NumeroDocumento: datos.cuit,
+      ResponsabilidadIVA: 'ResponsableInscripto',
+      TipoDocumento: 'TipoCUIT',
+      Domicilio: textoFiscal(datos.domicilio || '-', 50),
+      DatosAdicionales1: '', DatosAdicionales2: '', DatosAdicionales3: ''
+    } });
+  }
+  comandos.push({ AbrirDocumento: { CodigoComprobante: fac ? 'TiqueFacturaA' : 'TiqueFacturaB' } });
+  let total = 0;
+  lineas.forEach(l => {
+    const cantidad = Number(l.cantidad) || 1;
+    const importe = Math.round(Number(l.importe || 0) * 100) / 100;
+    if (!(importe > 0)) return;
+    // Precio con IVA incluido (ModoPrecioTotal): así el total del tique da
+    // lo mismo que cobró la caja, sea A o B. La Hasar discrimina el IVA.
+    const unitario = Math.round((importe / cantidad) * 100) / 100;
+    total += Math.round(unitario * cantidad * 100) / 100;
+    comandos.push({ ImprimirItem: {
+      Descripcion: textoFiscal(l.nombre, 40) || 'Articulo',
+      Cantidad: Math.round(cantidad * 1000) / 1000,
+      PrecioUnitario: unitario,
+      CondicionIVA: 'Gravado',
+      AlicuotaIVA: 21.00,
+      OperacionMonto: 'ModoSumaMonto',
+      TipoImpuestoInterno: 'IIVariablePorcentual',
+      MagnitudImpuestoInterno: 0,
+      ModoDisplay: 'DisplayNo',
+      ModoBaseTotal: 'ModoPrecioTotal',
+      UnidadReferencia: 1,
+      CodigoProducto: '',
+      CodigoInterno: '',
+      UnidadMedida: 'Unidad'
+    } });
+  });
+  total = Math.round(total * 100) / 100;
+  comandos.push({ ImprimirPago: {
+    Descripcion: textoFiscal(medioPago || 'Efectivo', 30),
+    Monto: total,
+    Operacion: 'Pagar',
+    ModoDisplay: 'DisplayNo',
+    DescripcionAdicional: '',
+    CodigoFormaPago: formaDePagoFiscal(medioPago),
+    Cuotas: 0,
+    Cupones: ''
+  } });
+  comandos.push({ CerrarDocumento: { Copias: 0, DireccionEMail: '' } });
+  return { comandos: comandos.map(c => JSON.stringify(c)), total };
+}
+
+async function llamarPuenteFiscal(ruta, cuerpo) {
+  let resp;
+  try {
+    resp = await fetch(PUENTE_FISCAL + ruta, {
+      method: cuerpo ? 'POST' : 'GET',
+      // text/plain para que el navegador no tenga que preguntar antes (CORS).
+      headers: cuerpo ? { 'Content-Type': 'text/plain' } : undefined,
+      body: cuerpo ? JSON.stringify(cuerpo) : undefined
+    });
+  } catch (e) {
+    return { ok: false, sinPuente: true, error: 'No está abierto el programa "Puente fiscal Hasar" en esta PC (o Chrome no le dio permiso).' };
+  }
+  try { return await resp.json(); }
+  catch (e) { return { ok: false, error: 'El puente contestó algo que no se entiende (HTTP ' + resp.status + ').' }; }
+}
+
+// Manda el tique y avisa cómo salió. Nunca frena la venta: la venta ya
+// quedó guardada; si la Hasar falla se reintenta desde Ventas → 🧾 Fiscal.
+async function emitirTiqueFiscal(ordenId, lineas, datos, medioPago) {
+  const armado = comandosTiqueFiscal(lineas, datos, medioPago);
+  if (armado.comandos.length < 3) return;
+  const r = await llamarPuenteFiscal('/imprimir', { comandos: armado.comandos });
+  if (r && r.ok) {
+    anotarFiscalHecho(ordenId, r.numero || '');
+    return r;
+  }
+  dialogoAviso('⚠️ La venta quedó registrada, pero el tique fiscal NO salió.\n\n' +
+    (r && r.error ? r.error : 'Error desconocido.') +
+    (r && r.sinPuente ? '\n\nAbrí "Iniciar puente Hasar" en la PC y reintentá desde Ventas → 🧾 Fiscal.'
+                      : '\n\nCuando esté resuelto, reintentá desde Ventas → 🧾 Fiscal.'));
+  return r;
+}
+
+// Desde Ventas: misma venta, armada con lo guardado en la orden.
+async function tiqueFiscalDeOrden(id) {
+  const lista = (orders || []).concat(pedidosTodos || []);
+  const o = lista.find(x => String(x.id) === String(id));
+  if (!o) { dialogoAviso('No encontré esa venta.'); return; }
+  const hecho = fiscalesHechos()[o.id];
+  if (hecho && !(await dialogoConfirmar('Esta venta ya tiene tique fiscal' + (hecho !== 'si' ? ' (Nº ' + hecho + ')' : '') +
+      '.\n\nSi hacés otro, la venta queda facturada dos veces. ¿Hacerlo igual?'))) return;
+  const datos = await datosFiscalesDeVenta(o.customer_name && !/^Venta mostrador /.test(o.customer_name) ? o.customer_name : '');
+  if (!datos) return;
+  const lineas = (Array.isArray(o.items) ? o.items : []).map(it => ({
+    nombre: nombreDelItem(it), cantidad: Number(it.qty || 1), importe: Number(it.price || 0) * Number(it.qty || 1)
+  }));
+  const r = await emitirTiqueFiscal(o.id, lineas, datos, o.medio_pago);
+  if (r && r.ok) dialogoAviso('✓ Tique fiscal impreso' + (r.numero ? ': Nº ' + r.numero : '') + '.');
+}
+
+byId('barcodeFiscal')?.addEventListener('change', (e) => {
+  guardarFiscalActivo(e.target.value === 'si');
+  if (e.target.value === 'si') probarPuenteFiscal(true);
+});
+
+async function probarPuenteFiscal(soloSiFalla) {
+  const caja = byId('fiscalEstado');
+  if (caja && !soloSiFalla) caja.textContent = 'Probando…';
+  const r = await llamarPuenteFiscal('/estado');
+  const texto = r && r.ok
+    ? '✓ Puente abierto y la Hasar contesta (' + (r.ip || '') + ').'
+    : '✗ ' + ((r && r.error) || 'No responde.');
+  if (caja) caja.textContent = texto;
+  if (soloSiFalla && !(r && r.ok)) {
+    dialogoAviso('Ojo: ' + texto.replace(/^✗ /, '') + '\n\nMirá ⚙️ Impresora fiscal para instalarlo.');
+  }
+  return r;
+}
+
+byId('fiscalConfigBtn')?.addEventListener('click', () => {
+  byId('fiscalEstado').textContent = '';
+  show(byId('fiscalModal'));
+  probarPuenteFiscal(false);
+});
+byId('cerrarFiscalModal')?.addEventListener('click', () => hide(byId('fiscalModal')));
+byId('fiscalProbarBtn')?.addEventListener('click', () => probarPuenteFiscal(false));
+byId('fiscalCierreZBtn')?.addEventListener('click', () => {
+  conClaveDeCaja(async () => {
+    if (!(await dialogoConfirmar('¿Hacer el cierre Z de hoy en la Hasar?\n\nDespués de esto, lo que se venda entra en la jornada de mañana.'))) return;
+    byId('fiscalEstado').textContent = 'Haciendo el cierre Z…';
+    const r = await llamarPuenteFiscal('/imprimir', { comandos: [JSON.stringify({ CerrarJornadaFiscal: { Reporte: 'ReporteZ' } })], sinCancelar: true });
+    byId('fiscalEstado').textContent = r && r.ok ? '✓ Cierre Z hecho.' : '✗ ' + ((r && r.error) || 'No se pudo.');
+  }, 'Cierre Z', '');
+});
 
 // Etiqueta chica para pegarle al equipo en reparación: el código grande es
 // lo único que hace falta para encontrarlo después entre varios celulares
@@ -23895,6 +24176,8 @@ function renderSalesHistory() {
       '<td style="text-align:right;">' +
         '<button class="icon-btn" data-ticket-venta="' + o.id + '" title="Reimprimir el ticket">🧾</button>' +
         (rubroEsDistribuidora() ? '<button class="icon-btn" data-remito-venta="' + o.id + '" title="Hacer remito">📄</button>' : '') +
+        (fiscalActivo() ? '<button class="icon-btn" data-fiscal-venta="' + o.id + '" title="Tique fiscal (Hasar)" style="font-size:11px;font-weight:700;">' +
+          (fiscalesHechos()[o.id] ? '✓F' : '🧾F') + '</button>' : '') +
         '<button class="icon-btn" data-borrar-venta="' + o.id + '" title="Anular esta venta" ' +
         'style="color:var(--danger);">🗑</button></td>' +
       '</tr>';
@@ -23912,6 +24195,9 @@ function renderSalesHistory() {
   });
   el.querySelectorAll('[data-remito-venta]').forEach(b => {
     b.addEventListener('click', () => abrirRemito(b.dataset.remitoVenta));
+  });
+  el.querySelectorAll('[data-fiscal-venta]').forEach(b => {
+    b.addEventListener('click', () => tiqueFiscalDeOrden(b.dataset.fiscalVenta));
   });
 }
 
@@ -25125,6 +25411,9 @@ async function confirmarVentaCarrito() {
   const pago = leerDosMediosVenta(medioPago, esFiado ? abonaAhora : resumen.total);
   if (!pago) return;
   medioPago = pago.medio;
+  const conFiscal = fiscalActivo();
+  const datosFiscales = conFiscal ? await datosFiscalesDeVenta(cliente) : null;
+  if (conFiscal && !datosFiscales) return;
   const ok = await registrarVentaCarrito(resumen, cliente, { fiado: esFiado, abonaAhora, vendedor, medioPago, pagosDivididos: pago.partes, telefono: telefonoCliente, horaEntrega });
   if (!ok) return;
 
@@ -25135,7 +25424,11 @@ async function confirmarVentaCarrito() {
         (resumen.combos.length ? '\n\n' + resumen.combos.map(textoCombo).join('\n') : '') +
         (ok.sinInternet ? TEXTO_VENTA_SIN_INTERNET : ''));
 
-  if (byId('barcodeTicket')?.checked) {
+  if (conFiscal) {
+    // Sin await: la caja queda libre mientras la Hasar imprime.
+    emitirTiqueFiscal(ok.ordenId, resumen.lineas.map(l => ({ nombre: nombreDeLineaVenta(l), cantidad: l.qty, importe: l.importe })),
+      datosFiscales, medioPago);
+  } else if (byId('barcodeTicket')?.checked) {
     imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
   }
   if (rubroEsDistribuidora() && ok.ordenId) remitoDespuesDeVenta(ok.ordenId);
@@ -25159,6 +25452,8 @@ function limpiarDatosDeVentaRegistrada() {
   byId('campoFiadoMonto').classList.add('hidden');
   byId('barcodeFiadoAbono').value = '0';
   byId('barcodeMedioPago').value = medioPagoPorDefecto();
+  // La Factura A es venta por venta: la siguiente vuelve a consumidor final.
+  if (byId('barcodeFiscalTipo')) byId('barcodeFiscalTipo').value = 'cf';
   limpiarDosMediosVenta();
   actualizarAliasVenta();
   byId('barcodeAbono').value = '0';
@@ -25924,6 +26219,9 @@ async function confirmBarcodeVenta() {
     esFiado ? abonaAhora : precioCobrado * qty - (tradeIn ? Number(tradeIn.valor || 0) : 0));
   if (!pago) return;
   medioPago = pago.medio;
+  const conFiscal = fiscalActivo();
+  const datosFiscales = conFiscal ? await datosFiscalesDeVenta(cliente) : null;
+  if (conFiscal && !datosFiscales) return;
   const ok = await registrarVenta(product, qty, cliente, { fiado: esFiado, abonaAhora, tradeIn, variante, vendedor, medioPago, pagosDivididos: pago.partes, telefono: telefonoCliente, horaEntrega, imei: imeiSeleccionadoVenta, precioUnitario: precioCobrado, agregados, precioLista, promo });
   if (ok) {
     guardarNombreVendedor(vendedor);
@@ -25939,7 +26237,9 @@ async function confirmBarcodeVenta() {
     // Despues del alert a proposito: el vendedor confirma la venta y recien
     // ahi sale el ticket. Si saliera antes, el dialogo de impresion tapa el
     // aviso de la venta (y el de la foto del equipo tomado, mas abajo).
-    if (byId('barcodeTicket')?.checked) {
+    if (conFiscal) {
+      emitirTiqueFiscal(ok.ordenId, [{ nombre: product.name, cantidad: qty, importe: precioCobrado * qty }], datosFiscales, medioPago);
+    } else if (byId('barcodeTicket')?.checked) {
       imprimirTicketVenta({
         producto: product,
         qty,

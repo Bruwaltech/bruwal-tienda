@@ -1,0 +1,34 @@
+PUENTE FISCAL HASAR - BRUWAL
+============================
+
+Sirve para que la caja de Bruwal imprima el tique fiscal en la Hasar
+(SMH/PT-250F u otra Hasar de 2da generacion). La Hasar le informa a ARCA
+sola: esto no toca nada de ARCA.
+
+INSTALAR (una sola vez, en la PC de la caja)
+1. Descomprimir el zip en C:\ (queda la carpeta C:\PuenteHasar)
+2. Abrir config.txt con el Bloc de notas y poner la IP de la Hasar
+   (la de fabrica es 192.168.1.1; si el sistema viejo ya imprimia, la IP
+   esta en su configuracion). Guardar.
+3. Doble clic en "Iniciar puente Hasar.bat". Queda una ventana negra
+   abierta: se puede minimizar, NO cerrar.
+4. Para que arranque solo al prender la PC: tecla Windows + R, escribir
+   shell:startup y Enter. En esa carpeta, clic derecho > Nuevo > Acceso
+   directo y elegir C:\PuenteHasar\Iniciar puente Hasar.bat
+
+EN LA CAJA DE BRUWAL (Chrome)
+5. En la caja, "Tique fiscal" > "Imprimir en la Hasar".
+6. Boton "Impresora fiscal" > "Probar conexion". La primera vez Chrome
+   pregunta si la pagina puede usar dispositivos de la red local:
+   PERMITIR.
+7. Si dice "Puente abierto y la Hasar contesta", listo.
+
+USO
+- Cada venta sale como Factura B (consumidor final). Para Factura A,
+  elegir "Factura A" antes de registrar: toma el CUIT del padron de
+  clientes o lo pide.
+- Si un tique no sale, la venta igual queda guardada: se reintenta en
+  Ventas con el boton "F".
+- Al final del dia: "Impresora fiscal" > "Hacer el cierre Z".
+
+Si algo falla, el detalle queda en puente-hasar.log (en esta carpeta).
