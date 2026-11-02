@@ -227,6 +227,39 @@ body.modo-empleado #inicioLink { display: none !important; }
   .fila-escaner > button { width: 100% !important; padding: 12px 8px !important; }
 }
 
+/* ---- Atajos de teclado de la caja (distribuidora) ---- */
+.atajos-caja {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -6px 0 12px;
+}
+.atajos-caja button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 9px 4px 5px;
+  font-size: 12.5px;
+  color: var(--text-dark);
+  cursor: pointer;
+  font-family: inherit;
+}
+.atajos-caja button:hover { border-color: var(--celeste); }
+.atajos-caja kbd {
+  min-width: 22px;
+  text-align: center;
+  background: var(--navy);
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font: 700 12px/1.3 ui-monospace, Consolas, monospace;
+}
+/* En el celular no hay teclado fisico: la barra solo ocupa lugar. */
+@media (max-width: 700px) { .atajos-caja { display: none !important; } }
+
 .fila-resultado-venta {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -2603,6 +2636,20 @@ tr:last-child td { border-bottom: none; }
           <button onclick="toggleCameraScanner()" class="btn btn-primary" style="width:auto;padding:12px 24px;background:#1FA088;">📷 Cámara</button>
           <button type="button" id="conectarBalanzaBtn" class="btn btn-primary hidden" style="width:auto;padding:12px 20px;background:#8A5200;">⚖️ Conectar balanza</button>
         </div>
+        <!-- Distribuidora: la caja se maneja entera con el teclado, como el
+             sistema viejo de JACI. Cada boton hace lo mismo que su tecla
+             (ver atajosCaja). -->
+        <div id="atajosCaja" class="atajos-caja campo-distribuidora hidden">
+          <button type="button" data-atajo="cliente" title="Ir al cliente"><kbd>F2</kbd> Cliente</button>
+          <button type="button" data-atajo="buscar" title="Ir al buscador de productos"><kbd>F3</kbd> Producto</button>
+          <button type="button" data-atajo="cantidad" title="Cambiar la cantidad del artículo en pantalla"><kbd>F4</kbd> Cantidad</button>
+          <button type="button" data-atajo="agregar" title="Agrega el artículo en pantalla al comprobante y vuelve al buscador. Con texto escrito en el buscador, lo busca."><kbd>+</kbd> Agregar artículo</button>
+          <button type="button" data-atajo="quitar" title="Saca el artículo en pantalla, o el último renglón del comprobante"><kbd>−</kbd> Quitar último</button>
+          <button type="button" data-atajo="pago" title="Elegir el medio de pago (después, flechas arriba/abajo)"><kbd>F8</kbd> Medio de pago</button>
+          <button type="button" data-atajo="abona" title="Con cuánto paga, para el vuelto"><kbd>F9</kbd> Abona con</button>
+          <button type="button" data-atajo="registrar" title="Registrar la venta (también Ctrl+Enter)"><kbd>F10</kbd> Registrar venta</button>
+          <button type="button" data-atajo="esc" title="Cierra la lista de resultados y vuelve al buscador"><kbd>Esc</kbd> Volver al buscador</button>
+        </div>
         <div id="balanzaEnVivo" class="hidden" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:12px;">
           <span style="font-size:13px;color:var(--text-mute);">Balanza:</span>
           <b id="balanzaPeso" style="font-size:20px;color:var(--navy);">—</b>
@@ -2790,8 +2837,8 @@ tr:last-child td { border-bottom: none; }
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-start;">
-              <button id="btnRegistrarVenta" onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
-              <button id="btnAgregarAlPedido" type="button" onclick="agregarAlPedidoVenta()" class="btn" style="padding:10px 16px;font-size:14px;white-space:nowrap;background:#fff;color:var(--navy);border:1.5px solid var(--celeste);">➕ Agregar otro producto</button>
+              <button id="btnRegistrarVenta" title="Teclado: F10 o Ctrl+Enter" onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
+              <button id="btnAgregarAlPedido" title="Teclado: +" type="button" onclick="agregarAlPedidoVenta()" class="btn" style="padding:10px 16px;font-size:14px;white-space:nowrap;background:#fff;color:var(--navy);border:1.5px solid var(--celeste);">➕ Agregar otro producto</button>
               <button onclick="clearBarcodeResult()" class="btn-ghost" style="padding:10px 16px;font-size:14px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Limpiar</button>
             </div>
           </div>
@@ -26281,6 +26328,133 @@ document.addEventListener('keydown', (e) => {
   lectorGlobal.texto += e.key;
   lectorGlobal.ultimo = ahora;
 }, true);
+
+// ---- Atajos de teclado de la caja (distribuidora) ----
+// Bruno (02/11): en JACI la caja se tiene que poder manejar sin mouse,
+// como el sistema viejo ("+" agrega un articulo, F10 registra). Solo en
+// la distribuidora y con la pestaña Ventas a la vista. Las letras y
+// numeros nunca se tocan: "+" y "-" solo se toman en el buscador, la
+// cantidad o fuera de un campo de texto, para no comerse lo que alguien
+// escribe en Cliente, Vendedor o Abona con.
+function campoDeTexto(el) {
+  if (!el || !el.tagName) return false;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+  if (el.tagName !== 'INPUT') return false;
+  return !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file'].includes((el.type || '').toLowerCase());
+}
+
+function enfocarYSeleccionar(el) {
+  if (!el || el.classList.contains('hidden') || el.offsetParent === null) return false;
+  el.focus();
+  if (typeof el.select === 'function') { try { el.select(); } catch (e) {} }
+  return true;
+}
+
+function atajosCajaActivos() {
+  const vista = byId('ventasView');
+  if (!vista || !vista.classList.contains('visible')) return false;
+  if (!rubroEsDistribuidora()) return false;
+  if (hayModalAbierto() || document.querySelector('.bdlg-fondo')) return false;
+  return true;
+}
+
+const atajosCaja = {
+  cliente() { enfocarYSeleccionar(byId('barcodeCliente')); },
+  buscar() { enfocarYSeleccionar(byId('barcodeInput')); },
+  cantidad() {
+    if (!currentBarcodeProduct || !enfocarYSeleccionar(byId('barcodeQty'))) byId('barcodeInput').focus();
+  },
+  agregar() {
+    // Con algo escrito en el buscador, "+" lo busca (como Enter). Si no,
+    // o si el cursor esta en la cantidad, suma el articulo en pantalla.
+    const input = byId('barcodeInput');
+    const buscar = input.value.trim() && (document.activeElement === input || !currentBarcodeProduct);
+    if (buscar) { searchByBarcode(); return; }
+    if (currentBarcodeProduct) { agregarAlPedidoVenta(); return; }
+    input.focus();
+  },
+  quitar() {
+    if (currentBarcodeProduct) {
+      if (carritoVenta.length) entrarEnModoPedido(); else clearBarcodeResult();
+      return;
+    }
+    if (carritoVenta.length) quitarLineaDelPedido(carritoVenta.length - 1);
+    byId('barcodeInput').focus();
+  },
+  pago() { enfocarYSeleccionar(byId('barcodeMedioPago')); },
+  abona() { enfocarYSeleccionar(byId('barcodeAbono')); },
+  registrar() {
+    if (byId('barcodeResult').classList.contains('hidden')) {
+      dialogoAviso('Todavía no hay artículos en el comprobante.');
+      return;
+    }
+    confirmBarcodeVenta();
+  },
+  esc() {
+    hide(byId('barcodeMatches'));
+    const input = byId('barcodeInput');
+    if (document.activeElement === input && input.value) input.value = '';
+    input.focus();
+  }
+};
+
+document.querySelectorAll('#atajosCaja [data-atajo]').forEach(b =>
+  b.addEventListener('click', () => atajosCaja[b.dataset.atajo]()));
+
+// F6 (barra de direcciones), F7 (navegacion con cursor), F11 y F12 los
+// usa Chrome y no se pueden pisar: por eso medio de pago es F8.
+
+// Flechas para elegir entre los resultados de una busqueda por nombre
+// (Enter sobre el resultado lo elige, como un click).
+function moverEnCoincidencias(e) {
+  const caja = byId('barcodeMatches');
+  if (!caja || caja.classList.contains('hidden')) return false;
+  const botones = [...caja.querySelectorAll('#barcodeMatchesList button')];
+  if (!botones.length) return false;
+  const i = botones.indexOf(e.target);
+  if (i === -1 && e.target !== byId('barcodeInput')) return false;
+  let j;
+  if (e.key === 'ArrowDown') j = i === -1 ? 0 : Math.min(i + 1, botones.length - 1);
+  else if (i <= 0) { byId('barcodeInput').focus(); return true; }
+  else j = i - 1;
+  botones[j].focus();
+  botones[j].scrollIntoView({ block: 'nearest' });
+  return true;
+}
+
+const TECLAS_CAJA = { F2: 'cliente', F3: 'buscar', F4: 'cantidad', F8: 'pago', F9: 'abona', F10: 'registrar' };
+
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || e.isComposing) return;
+  // La pantalla del cliente en el iPhone/iPad tapa todo: Esc la cierra.
+  const capa = byId('pantallaClienteCapa');
+  if (capa && !capa.classList.contains('hidden')) {
+    if (e.key === 'Escape') { e.preventDefault(); cerrarPantallaClienteEnPagina(); }
+    return;
+  }
+  if (!atajosCajaActivos()) return;
+  const destino = e.target;
+  const enBuscador = destino === byId('barcodeInput');
+  const enCantidad = destino === byId('barcodeQty');
+  const libre = enBuscador || enCantidad || !campoDeTexto(destino);
+
+  let accion = null;
+  if (TECLAS_CAJA[e.key] && !e.ctrlKey && !e.altKey && !e.metaKey) accion = TECLAS_CAJA[e.key];
+  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) accion = 'registrar';
+  else if (e.key === 'Escape') accion = 'esc';
+  else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.ctrlKey && !e.altKey) {
+    if (moverEnCoincidencias(e)) e.preventDefault();
+    return;
+  }
+  else if (e.ctrlKey || e.altKey || e.metaKey) return;
+  else if (e.key === '+' && libre) accion = 'agregar';
+  // El "-" en el buscador solo si esta vacio: un codigo puede tener guion.
+  else if (e.key === '-' && libre && !(enBuscador && destino.value)) accion = 'quitar';
+  if (!accion) return;
+  e.preventDefault();
+  e.stopPropagation();
+  atajosCaja[accion]();
+});
 
 // ============ ESCANEO CON LA CAMARA ============
 // Un lector por pantalla: el de ventas y el del alta de producto.
