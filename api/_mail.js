@@ -104,4 +104,4 @@ async function bienvenida({ base, para, nombre, whatsapp }) {
   });
 }
 
-module.exports = { mandar, bienvenida, hayComoMandar };
+module.exports = { mandar, bienvenida, hayComoMandar, armarPlantilla };

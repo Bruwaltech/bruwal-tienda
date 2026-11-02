@@ -15,6 +15,7 @@
 const crypto = require('crypto');
 const mail = require('./_mail');
 const intentos = require('./_intentos');
+const cobroRechazado = require('./_cobro-rechazado');
 
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 
@@ -207,8 +208,8 @@ module.exports = async (req, res) => {
                (req.query && (req.query.type || req.query.topic)) || '';
   const dataId = (cuerpo.data && cuerpo.data.id) || (req.query && (req.query['data.id'] || req.query.id));
 
-  // Solo interesa cuando una suscripción cambia de estado. Los pagos
-  // individuales (subscription_authorized_payment) y otros topics se
+  // Interesa cuando una suscripción cambia de estado, y cuando una cuota
+  // (subscription_authorized_payment) se rechaza. Los demás topics se
   // confirman sin hacer nada — Mercado Pago reintenta si no contestamos 200.
   //
   // Se aceptan los DOS nombres porque Mercado Pago tiene dos formatos de
@@ -219,7 +220,12 @@ module.exports = async (req, res) => {
   // plan no se activaba nunca. Peor: Mercado Pago lo cuenta como entregado,
   // asi que el problema no se ve por ningun lado.
   const TOPICOS_SUSCRIPCION = ['subscription_preapproval', 'preapproval'];
-  if (!TOPICOS_SUSCRIPCION.includes(tipo) || !dataId) {
+  // Cada cuota es un "authorized_payment". Interesa solo cuando se rechaza:
+  // ahi se le avisa al cliente (api/_cobro-rechazado.js). Mismos dos
+  // formatos de nombre que arriba.
+  const TOPICOS_COBRO = ['subscription_authorized_payment', 'authorized_payment'];
+  const esCobro = TOPICOS_COBRO.includes(tipo);
+  if ((!TOPICOS_SUSCRIPCION.includes(tipo) && !esCobro) || !dataId) {
     res.statusCode = 200;
     return res.end('ignorado');
   }
@@ -230,6 +236,19 @@ module.exports = async (req, res) => {
     console.warn('Firma de Mercado Pago inválida para', dataId);
     res.statusCode = 401;
     return res.end('firma invalida');
+  }
+
+  if (esCobro) {
+    try {
+      const base = 'https://' + (req.headers['x-forwarded-host'] || req.headers.host);
+      const hizo = await cobroRechazado.procesarCobroPorId({ base, id: dataId });
+      res.statusCode = 200;
+      return res.end('cobro: ' + hizo);
+    } catch (err) {
+      console.error('Error procesando el cobro', dataId, err);
+      res.statusCode = 200;
+      return res.end('error registrado');
+    }
   }
 
   try {

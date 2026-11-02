@@ -15,6 +15,8 @@
 //      panel lo bloqueaba igual, pero en la base seguia figurando como
 //      cliente que paga y el padron mentia.
 //   3. Al que volvio a suscribirse le saca la fecha de corte.
+//   4. Al que le rechazaron una cuota le manda el aviso al cliente, si el
+//      webhook no lo mando ya (api/_cobro-rechazado.js).
 //
 // Y manda un mail con lo que cambio. Enterarse de que alguien se dio de
 // baja el dia que pasa -- y no el mes que viene mirando numeros -- es la
@@ -24,6 +26,7 @@
 // dejar sin sistema a alguien que esta pagando.
 
 const mail = require('./_mail');
+const cobroRechazado = require('./_cobro-rechazado');
 
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const MP_API = 'https://api.mercadopago.com';
@@ -76,6 +79,7 @@ module.exports = async (req, res) => {
   }
 
   const cortadas = [], avisadas = [], revividas = [], fallaron = [];
+  let cobrosAvisados = 0;
 
   try {
     const tiendas = await sb('/rest/v1/store_profiles?plan=in.(basic,pro)' +
@@ -126,6 +130,14 @@ module.exports = async (req, res) => {
       }
 
       if (sus.status === 'authorized') {
+        // 4) Cuota rechazada que Mercado Pago esta reintentando: aviso al
+        //    cliente, uno por intento. Es la red de seguridad del webhook
+        //    (si ya salio por ahi, no sale de nuevo). No toca el plan.
+        cobrosAvisados += await cobroRechazado.revisarSuscripcion({
+          base: 'https://' + (req.headers['x-forwarded-host'] || req.headers.host),
+          preapprovalId: t.mp_preapproval_id
+        });
+
         // 3) Volvio a estar autorizada y tenia fecha de corte: se la saca.
         if (t.plan_vence) {
           await sb('/rest/v1/store_profiles?slug=eq.' + encodeURIComponent(t.slug), {
@@ -167,7 +179,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       ok: true,
       revisadas: (tiendas || []).length,
-      cortadas, avisadas, revividas, fallaron
+      cortadas, avisadas, revividas, fallaron, cobrosAvisados
     });
   } catch (err) {
     console.error('revisar-suscripciones', err);
