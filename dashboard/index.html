@@ -2647,7 +2647,7 @@ tr:last-child td { border-bottom: none; }
           <button type="button" data-atajo="quitar" title="Saca el artículo en pantalla, o el último renglón del comprobante"><kbd>−</kbd> Quitar último</button>
           <button type="button" data-atajo="pago" title="Elegir el medio de pago (después, flechas arriba/abajo)"><kbd>F8</kbd> Medio de pago</button>
           <button type="button" data-atajo="abona" title="Con cuánto paga, para el vuelto"><kbd>F9</kbd> Abona con</button>
-          <button type="button" data-atajo="registrar" title="Registrar la venta (también Ctrl+Enter)"><kbd>F10</kbd> Registrar venta</button>
+          <button type="button" data-atajo="registrar" title="Registrar la venta (también Ctrl+Enter)"><kbd>.</kbd> Registrar venta</button>
           <button type="button" data-atajo="esc" title="Cierra la lista de resultados y vuelve al buscador"><kbd>Esc</kbd> Volver al buscador</button>
         </div>
         <div id="balanzaEnVivo" class="hidden" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:12px;">
@@ -2837,7 +2837,7 @@ tr:last-child td { border-bottom: none; }
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-start;">
-              <button id="btnRegistrarVenta" title="Teclado: F10 o Ctrl+Enter" onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
+              <button id="btnRegistrarVenta" title="Teclado: punto (.) o Ctrl+Enter" onclick="confirmBarcodeVenta()" class="btn btn-primary" style="padding:10px 16px;font-size:14px;white-space:nowrap;">Registrar venta</button>
               <button id="btnAgregarAlPedido" title="Teclado: +" type="button" onclick="agregarAlPedidoVenta()" class="btn" style="padding:10px 16px;font-size:14px;white-space:nowrap;background:#fff;color:var(--navy);border:1.5px solid var(--celeste);">➕ Agregar otro producto</button>
               <button onclick="clearBarcodeResult()" class="btn-ghost" style="padding:10px 16px;font-size:14px;background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;">Limpiar</button>
             </div>
@@ -26331,7 +26331,7 @@ document.addEventListener('keydown', (e) => {
 
 // ---- Atajos de teclado de la caja (distribuidora) ----
 // Bruno (02/11): en JACI la caja se tiene que poder manejar sin mouse,
-// como el sistema viejo ("+" agrega un articulo, F10 registra). Solo en
+// como el sistema viejo ("+" agrega un articulo, "." registra). Solo en
 // la distribuidora y con la pestaña Ventas a la vista. Las letras y
 // numeros nunca se tocan: "+" y "-" solo se toman en el buscador, la
 // cantidad o fuera de un campo de texto, para no comerse lo que alguien
@@ -26422,7 +26422,7 @@ function moverEnCoincidencias(e) {
   return true;
 }
 
-const TECLAS_CAJA = { F2: 'cliente', F3: 'buscar', F4: 'cantidad', F8: 'pago', F9: 'abona', F10: 'registrar' };
+const TECLAS_CAJA = { F2: 'cliente', F3: 'buscar', F4: 'cantidad', F8: 'pago', F9: 'abona' };
 
 document.addEventListener('keydown', (e) => {
   if (e.defaultPrevented || e.isComposing) return;
@@ -26450,6 +26450,13 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === '+' && libre) accion = 'agregar';
   // El "-" en el buscador solo si esta vacio: un codigo puede tener guion.
   else if (e.key === '-' && libre && !(enBuscador && destino.value)) accion = 'quitar';
+  // El "." registra (Bruno, 02/11). Tambien el punto del teclado numerico,
+  // que con teclado en español escribe ",". Igual que el "-": en el
+  // buscador solo si esta vacio ("2.25L"), y en la cantidad no si el
+  // producto se vende por peso o medida (1.5 kg).
+  else if ((e.key === '.' || e.code === 'NumpadDecimal') && libre &&
+           !(enBuscador && destino.value) &&
+           !(enCantidad && currentBarcodeProduct && seVendePorMedida(currentBarcodeProduct))) accion = 'registrar';
   if (!accion) return;
   e.preventDefault();
   e.stopPropagation();
