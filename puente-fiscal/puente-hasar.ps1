@@ -62,9 +62,11 @@ function Enviar-Hasar([string]$json) {
   $sr = New-Object System.IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)
   $texto = $sr.ReadToEnd(); $sr.Close()
   $codigo = [int]$resp.StatusCode
+  $auth = [string]$resp.Headers['WWW-Authenticate']
   $resp.Close()
-  $ok = ($codigo -ge 200 -and $codigo -lt 300) -and -not (Es-Error $texto)
-  return @{ ok = $ok; red = $false; texto = $texto; codigo = $codigo }
+  $esHasar = Parece-Hasar $texto
+  $ok = ($codigo -ge 200 -and $codigo -lt 300) -and $esHasar -and -not (Es-Error $texto)
+  return @{ ok = $ok; red = $false; texto = $texto; codigo = $codigo; auth = $auth; esHasar = $esHasar }
 }
 
 # La Hasar contesta 200 tambien cuando el comando no se pudo hacer: el
@@ -78,6 +80,15 @@ function Es-Error([string]$t) {
   return $false
 }
 
+# La Hasar contesta JSON. Un router o cualquier otro aparato que este en
+# esa IP contesta una pagina web (HTML) o pide usuario y contrasena: eso
+# NO es la Hasar, aunque conteste. En JACI paso con 192.168.1.1 (el router).
+function Parece-Hasar([string]$t) {
+  if (-not $t) { return $false }
+  $x = $t.TrimStart()
+  return $x.StartsWith('{') -or $x.StartsWith('<?xml')
+}
+
 function Nombre-Comando([string]$json) {
   if ($json -match '^\s*\{\s*"([A-Za-z]+)"') { return $matches[1] }
   return '?'
@@ -85,6 +96,12 @@ function Nombre-Comando([string]$json) {
 
 function Explicar($r, [string]$cmd) {
   if ($r.red) { return 'No se pudo conectar con la Hasar en ' + $cfg.IP + ' (' + $r.texto + '). Revisa que este prendida, conectada y que la IP de config.txt sea la correcta.' }
+  if (-not $r.esHasar) {
+    $que = 'contesto otro aparato (HTTP ' + $r.codigo + ')'
+    if ($r.auth) { return 'En ' + $cfg.IP + ' contesto un aparato que pide usuario y contrasena (' + $r.auth + '). Casi seguro es el router y no la Hasar: hay que poner en config.txt la IP de la Hasar.' }
+    elseif ($r.texto -match '(?i)<html') { $que = 'contesto una pagina web' }
+    return 'En ' + $cfg.IP + ' ' + $que + ': NO es la Hasar (seguramente es el router). Hay que poner en config.txt la IP de la Hasar.'
+  }
   if ($r.codigo -eq 401 -or $r.codigo -eq 403) { return 'La Hasar rechazo la clave (CLAVE en config.txt).' }
   $detalle = $r.texto
   if ($detalle.Length -gt 400) { $detalle = $detalle.Substring(0, 400) + '...' }
@@ -195,7 +212,7 @@ function Atender($cliente) {
   $ruta = $p.ruta.Split('?')[0]
   if ($p.metodo -eq 'GET' -and $ruta -eq '/estado') {
     $r = Enviar-Hasar '{"ConsultarEstado":{"CodigoComprobante":"TiqueFacturaB"}}'
-    if ($r.red) { Responder $stream 200 @{ ok = $false; ip = $cfg.IP; error = (Explicar $r 'ConsultarEstado') } $origen }
+    if ($r.red -or -not $r.esHasar) { Responder $stream 200 @{ ok = $false; ip = $cfg.IP; error = (Explicar $r 'ConsultarEstado') } $origen }
     else { Responder $stream 200 @{ ok = $true; ip = $cfg.IP; respuesta = $r.texto } $origen }
     return
   }
