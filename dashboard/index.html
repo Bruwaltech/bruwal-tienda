@@ -6417,8 +6417,8 @@ async function revisarPausaDeTienda() {
 
   if (e.pausada) {
     texto.textContent = porCobro
-      ? '⏸️ Tu tienda online está pausada porque no pudimos cobrar la cuota de tu plan. Tus clientes ven "no disponible por el momento". Actualizá la tarjeta en Mercado Pago: apenas se acredita el cobro, la tienda vuelve sola.'
-      : '⏸️ Tu tienda online está pausada porque tu plan no está activo. Tus clientes ven "no disponible por el momento". Activá tu plan y vuelve a estar online sola.';
+      ? '⏸️ La venta de tu tienda online está pausada porque no pudimos cobrar la cuota de tu plan. Tus clientes ven el catálogo pero no pueden hacer pedidos. Actualizá la tarjeta en Mercado Pago: apenas se acredita el cobro, la tienda vuelve sola.'
+      : '⏸️ La venta de tu tienda online está pausada porque tu plan no está activo. Tus clientes ven el catálogo pero no pueden hacer pedidos. Activá tu plan y vuelve a estar online sola.';
     // El cartel de arriba decía "tu tienda pública sigue online": ya no.
     const t = byId('trialTexto');
     if (t) t.textContent = t.textContent.replace(' Tu tienda pública sigue online.', '');

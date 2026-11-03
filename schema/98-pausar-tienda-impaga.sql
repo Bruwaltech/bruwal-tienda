@@ -2,14 +2,15 @@
 --  BRUWAL — 98: pausar la tienda online del que no tiene la
 --  suscripción al día.
 --
---  QUE HACE: el link público de la tienda muestra "no está disponible por
---  el momento" en vez del catálogo, y no entran pedidos ni turnos desde
---  afuera. El panel NO se toca: el dueño entra, ve el aviso con el botón
+--  QUE HACE: el link público sigue mostrando el catálogo, pero con el cartel
+--  "esta tienda no tiene habilitado el servicio de venta online": sin
+--  carrito, sin WhatsApp, y no entran pedidos ni turnos desde afuera. El panel NO se toca: el dueño entra, ve el aviso con el botón
 --  para pagar, y en cuanto se acredita el pago la tienda vuelve sola (la
 --  regla se calcula cada vez, no hay nada que "despausar" a mano).
 --
 --  CUANDO SE PAUSA (todo en días de Argentina):
---   * Nunca: cortesía y la cuenta demo.
+--   * Nunca: cortesía, la cuenta demo y las de la lista 'excepciones' del
+--     ajuste (nacen ahí josefina y demo-bruwal, pedido de Bruno 03/11).
 --   * Plan basic/pro con fecha de corte (se dio de baja, o se lo pusimos a
 --     mano): DIAS_GRACIA_VENCIDO días después de esa fecha.
 --   * Plan basic/pro con una cuota rechazada que Mercado Pago no pudo
@@ -25,8 +26,10 @@
 --       where clave = 'pausar_tiendas_impagas';
 --    Prender:  lo mismo con 'true'.
 --    Cambiar los días de gracia: jsonb_set(valor, '{dias_gracia_cobro}', '14'), etc.
---  Excepción para UNA tienda (ej. arregló por fuera): ponerle plan
---  'cortesia', o sacarle la fila de suscripcion_cobro_impago.
+--  Excepción para UNA tienda (ej. arregló por fuera): sumarla a la lista,
+--      update public.bruwal_ajustes
+--         set valor = jsonb_set(valor, '{excepciones}', (valor -> 'excepciones') || '["<slug>"]')
+--       where clave = 'pausar_tiendas_impagas';
 --
 --  NACE APAGADO. Se prende a mano cuando Bruno decide.
 --
@@ -44,7 +47,8 @@ revoke all on public.bruwal_ajustes from anon, authenticated;
 
 insert into public.bruwal_ajustes (clave, valor)
 values ('pausar_tiendas_impagas',
-        '{"activo": false, "dias_gracia_vencido": 3, "dias_gracia_cobro": 10}'::jsonb)
+        '{"activo": false, "dias_gracia_vencido": 3, "dias_gracia_cobro": 10,
+          "excepciones": ["josefina-indumentaria-y-accesorios", "demo-bruwal"]}'::jsonb)
 on conflict (clave) do nothing;
 
 -- 2) Cuota rechazada sin cobrar. La escriben el webhook y la revisión diaria
@@ -90,7 +94,8 @@ begin
 
   select slug, plan, plan_vence, trial_ends_at, mp_preapproval_id, es_demo
     into sp from store_profiles where slug = p_slug;
-  if not found or coalesce(sp.es_demo, false) or sp.plan = 'cortesia' then
+  if not found or coalesce(sp.es_demo, false) or sp.plan = 'cortesia'
+     or coalesce(aj -> 'excepciones', '[]'::jsonb) ? p_slug then
     return jsonb_build_object('pausada', false, 'activo', activo);
   end if;
 

@@ -65,7 +65,7 @@
   // Solo cosas que la tienda de verdad ofrece: todo sale de su perfil.
   function itemsDeLaCinta(store) {
     const items = [];
-    if (store.phone) items.push(['fa-brands fa-whatsapp', 'Pedí por WhatsApp']);
+    if (store.phone && !document.body.classList.contains('venta-pausada')) items.push(['fa-brands fa-whatsapp', 'Pedí por WhatsApp']);
     if (store.ofrece_envio !== false) items.push(['fa-solid fa-truck-fast', 'Envíos a domicilio']);
     else items.push(['fa-solid fa-store', 'Retiro en el local']);
 
