@@ -5204,6 +5204,15 @@ tr:last-child td { border-bottom: none; }
       </p>
       <button type="button" class="btn-ghost" id="fiscalCierreZBtn">Hacer el cierre Z</button>
     </div>
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px;">
+      <div style="font-size:13.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">Límite consumidor final</div>
+      <p style="color:var(--text-mute);font-size:12.5px;margin:0 0 8px;line-height:1.45;">
+        Si la Hasar dice que la venta <b>excede el límite para consumidor final</b>, tiene cargado un tope viejo.
+        ARCA hoy pide identificar al cliente recién desde $10.000.000. La Hasar solo deja cambiarlo
+        <b>justo después del cierre Z</b>, sin ventas en el medio.
+      </p>
+      <button type="button" class="btn-ghost" id="fiscalLimiteBtn">Actualizar el límite</button>
+    </div>
   </div>
 </div>
 
@@ -22689,6 +22698,22 @@ byId('fiscalCierreZBtn')?.addEventListener('click', () => {
     const r = await llamarPuenteFiscal('/imprimir', { comandos: [JSON.stringify({ CerrarJornadaFiscal: { Reporte: 'ReporteZ' } })], sinCancelar: true });
     byId('fiscalEstado').textContent = r && r.ok ? '✓ Cierre Z hecho.' : '✗ ' + ((r && r.error) || 'No se pudo.');
   }, 'Cierre Z', '');
+});
+
+// Tope de venta a consumidor final sin identificar (comprobantes B). ARCA lo
+// subió a $10.000.000 (RG 5700/2025); la Hasar trae cargado uno viejo y
+// rechaza ImprimirItem con "excede limite". Solo se cambia después de un Z.
+byId('fiscalLimiteBtn')?.addEventListener('click', () => {
+  conClaveDeCaja(async () => {
+    const txt = await dialogoPedir('Límite para consumidor final sin identificar (en pesos).\n\nTiene que estar recién hecho el cierre Z, sin ventas después.', '10000000');
+    if (txt === null || txt === undefined) return;
+    const monto = Number(String(txt).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, ''));
+    if (!(monto > 0) || monto > 999999999) { dialogoAviso('Ese monto no es válido.'); return; }
+    byId('fiscalEstado').textContent = 'Cambiando el límite…';
+    const r = await llamarPuenteFiscal('/imprimir', { comandos: [JSON.stringify({ ConfigurarImpresoraFiscal: { Variable: 'LimiteBC', Valor: monto.toFixed(2) } })], sinCancelar: true });
+    byId('fiscalEstado').textContent = r && r.ok ? '✓ Límite cambiado a $' + monto.toLocaleString('es-AR') + '.'
+      : '✗ ' + ((r && r.error) || 'No se pudo.') + ' Si dice algo de la jornada, hacé primero el cierre Z.';
+  }, 'Límite consumidor final', '');
 });
 
 // Etiqueta chica para pegarle al equipo en reparación: el código grande es
