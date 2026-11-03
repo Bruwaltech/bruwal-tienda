@@ -22528,6 +22528,25 @@ function alicuotaIvaDe(p) {
 function alicuotaIvaDeProductoId(id) {
   return alicuotaIvaDe((products || []).find(p => String(p.id) === String(id)));
 }
+// La Hasar exige código de barras (GTIN) o código interno en cada ítem; si
+// van los dos vacíos rechaza el ítem con ErrorParametro. Sin GTIN válido va
+// el genérico de ARCA "Ventas varias" (7790001001054) + el código interno.
+function gtinValido(c) {
+  if (!/^(\d{8}|\d{12,14})$/.test(c)) return false;
+  const d = c.split('').map(Number);
+  const control = d.pop();
+  let suma = 0;
+  d.reverse().forEach((n, i) => { suma += n * (i % 2 === 0 ? 3 : 1); });
+  return (10 - (suma % 10)) % 10 === control;
+}
+function codigosFiscalesDe(p, id) {
+  const ean = String((p && p.ean) || '').replace(/\s/g, '');
+  const interno = String((p && (p.sku || p.id)) || id || '').replace(/[^A-Za-z0-9\-_.]/g, '').slice(0, 20);
+  return { ean: gtinValido(ean) ? ean : '', interno: interno || 'ART' };
+}
+function productoPorId(id) {
+  return (products || []).find(p => String(p.id) === String(id));
+}
 
 function comandosTiqueFiscal(lineas, datos, medioPago) {
   const comandos = [];
@@ -22552,27 +22571,28 @@ function comandosTiqueFiscal(lineas, datos, medioPago) {
     // lo mismo que cobró la caja, sea A o B. La Hasar discrimina el IVA.
     const unitario = Math.round((importe / cantidad) * 100) / 100;
     total += Math.round(unitario * cantidad * 100) / 100;
+    const cod = l.codigos || codigosFiscalesDe(null, '');
     comandos.push({ ImprimirItem: {
       Descripcion: textoFiscal(l.nombre, 40) || 'Articulo',
-      Cantidad: Math.round(cantidad * 1000) / 1000,
-      PrecioUnitario: unitario,
+      Cantidad: String(Math.round(cantidad * 1000) / 1000),
+      PrecioUnitario: unitario.toFixed(2),
       CondicionIVA: alicuotaIvaLinea(l) === 0 ? 'Exento' : 'Gravado',
-      AlicuotaIVA: alicuotaIvaLinea(l),
+      AlicuotaIVA: alicuotaIvaLinea(l).toFixed(2),
       OperacionMonto: 'ModoSumaMonto',
-      TipoImpuestoInterno: 'IIVariablePorcentual',
-      MagnitudImpuestoInterno: 0,
+      TipoImpuestoInterno: 'IIVariableKIVA',
+      MagnitudImpuestoInterno: '0.00',
       ModoDisplay: 'DisplayNo',
       ModoBaseTotal: 'ModoPrecioTotal',
-      UnidadReferencia: 1,
-      CodigoProducto: '',
-      CodigoInterno: '',
+      UnidadReferencia: '1',
+      CodigoProducto: cod.ean || '7790001001054',
+      CodigoInterno: cod.interno,
       UnidadMedida: 'Unidad'
     } });
   });
   total = Math.round(total * 100) / 100;
   comandos.push({ ImprimirPago: {
     Descripcion: textoFiscal(medioPago || 'Efectivo', 30),
-    Monto: total,
+    Monto: total.toFixed(2),
     Operacion: 'Pagar',
     ModoDisplay: 'DisplayNo',
     DescripcionAdicional: '',
@@ -22629,7 +22649,8 @@ async function tiqueFiscalDeOrden(id) {
   if (!datos) return;
   const lineas = (Array.isArray(o.items) ? o.items : []).map(it => ({
     nombre: nombreDelItem(it), cantidad: Number(it.qty || 1), importe: Number(it.price || 0) * Number(it.qty || 1),
-    iva: alicuotaIvaDeProductoId(it.product_id)
+    iva: alicuotaIvaDeProductoId(it.product_id),
+    codigos: codigosFiscalesDe(productoPorId(it.product_id), it.product_id)
   }));
   const r = await emitirTiqueFiscal(o.id, lineas, datos, o.medio_pago);
   if (r && r.ok) dialogoAviso('✓ Tique fiscal impreso' + (r.numero ? ': Nº ' + r.numero : '') + '.');
@@ -25461,7 +25482,7 @@ async function confirmarVentaCarrito() {
 
   if (conFiscal) {
     // Sin await: la caja queda libre mientras la Hasar imprime.
-    emitirTiqueFiscal(ok.ordenId, resumen.lineas.map(l => ({ nombre: nombreDeLineaVenta(l), cantidad: l.qty, importe: l.importe, iva: alicuotaIvaDe(l.product) })),
+    emitirTiqueFiscal(ok.ordenId, resumen.lineas.map(l => ({ nombre: nombreDeLineaVenta(l), cantidad: l.qty, importe: l.importe, iva: alicuotaIvaDe(l.product), codigos: codigosFiscalesDe(l.product) })),
       datosFiscales, medioPago);
   } else if (byId('barcodeTicket')?.checked) {
     imprimirTicketPedidoMostrador(resumen, { cliente, medioPago, vendedor, ordenId: ok.ordenId, horaEntrega, fiado: esFiado, abonaAhora });
@@ -26273,7 +26294,7 @@ async function confirmBarcodeVenta() {
     // ahi sale el ticket. Si saliera antes, el dialogo de impresion tapa el
     // aviso de la venta (y el de la foto del equipo tomado, mas abajo).
     if (conFiscal) {
-      emitirTiqueFiscal(ok.ordenId, [{ nombre: product.name, cantidad: qty, importe: precioCobrado * qty, iva: alicuotaIvaDe(product) }], datosFiscales, medioPago);
+      emitirTiqueFiscal(ok.ordenId, [{ nombre: product.name, cantidad: qty, importe: precioCobrado * qty, iva: alicuotaIvaDe(product), codigos: codigosFiscalesDe(product) }], datosFiscales, medioPago);
     } else if (byId('barcodeTicket')?.checked) {
       imprimirTicketVenta({
         producto: product,
