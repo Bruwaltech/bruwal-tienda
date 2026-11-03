@@ -3632,6 +3632,71 @@ tr:last-child td { border-bottom: none; }
         </div>
 
         <div class="wizard-step hidden" data-step="3">
+        <div class="field">
+          <!-- El costo SIEMPRE es por unidad: la valoracion de stock hace
+               costo x stock y el margen hace costo x cantidad vendida. Poner
+               ahi el total de la factura multiplica todo por el stock, asi
+               que la etiqueta lo dice y abajo esta la calculadora para
+               sacarlo del total, que es el numero que el negocio tiene. -->
+          <label id="pCostoLabel">🔒 Costo por unidad <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
+          <button type="button" id="pCostoVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar costo</button>
+          <!-- En electrónica el costo se puede cargar en dólares: se guarda
+               en pesos (para margen y estadísticas) y además el monto en USD,
+               que es el que queda fijo cuando cambia la cotización. -->
+          <div id="pCostoFila" class="hidden" style="display:flex;gap:6px;">
+            <input type="number" id="pCosto" min="0" step="0.01" placeholder="0" style="flex:1;min-width:0;">
+            <select id="pCostoMoneda" class="campo-electronica hidden" style="flex-shrink:0;padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
+              <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
+            </select>
+          </div>
+          <small id="pCostoHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
+          <!-- Como la "Ficha Particular de un Producto" del sistema viejo de
+               JACI: costo + % de margen = precio. El margen NO se guarda: sale
+               de precio y costo cada vez que se abre el producto, asi nunca
+               queda desfasado de lo que de verdad se cobra. Escribir el %
+               calcula el precio; tocar el precio recalcula el %; tocar el
+               costo con un % puesto mueve el precio (igual que el viejo). -->
+          <div id="pMargenFila" class="hidden" style="margin-top:9px;">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <label for="pMargen" style="margin:0;font-size:13px;white-space:nowrap;">% Margen</label>
+              <input type="number" id="pMargen" step="0.01" inputmode="decimal" placeholder="Ej: 12" style="width:96px;">
+              <span id="pMargenIgual" style="font-size:12.5px;color:var(--text-mute);"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:7px;font-size:12.5px;">
+              <input type="checkbox" id="pRedondear" style="margin:0;width:auto;flex-shrink:0;">
+              <span onclick="byId('pRedondear').click()" style="cursor:pointer;">Redondear precio final para arriba</span>
+              <select id="pRedondearA" style="padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;">
+                <option value="1">a $1</option>
+                <option value="10" selected>a $10</option>
+                <option value="50">a $50</option>
+                <option value="100">a $100</option>
+              </select>
+            </div>
+            <small id="pMargenAviso" style="display:block;margin-top:5px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
+              Poné el % que le ganás sobre el costo y el precio de abajo se calcula solo. Si cambiás el precio, el % se recalcula.
+            </small>
+          </div>
+
+          <div id="pCostoDesdeTotal" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-top:9px;">
+            <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;">
+              <div style="flex:1;min-width:130px;">
+                <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;">¿Cuánto pagaste en total?</label>
+                <input type="number" id="pCostoTotal" min="0" step="0.01" placeholder="Ej: 38400" style="width:100%;padding:7px;font-size:13px;">
+              </div>
+              <div style="padding-bottom:7px;font-size:13px;color:var(--text-mute);white-space:nowrap;">
+                = <strong id="pCostoUnitarioPreview" style="color:var(--navy);font-size:14px;">$0</strong>
+              </div>
+            </div>
+            <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
+              Poné lo que te salió <strong>toda la compra</strong> y lo divide por el stock que cargaste arriba.
+              20 cajas de 12 hojas a $38.400 el total son $160 la hoja.
+            </small>
+          </div>
+
+          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
+            Para calcular el margen en Estadísticas y la valoración de tu stock. Protegido con el mismo PIN que Costos, si lo configuraste.
+          </small>
+        </div>
         <div class="field" id="campoPrecioVenta">
           <label id="pPrecioLabel">Precio</label>
           <div style="display:flex;gap:6px;">
@@ -3687,45 +3752,6 @@ tr:last-child td { border-bottom: none; }
           </div>
         </div>
 
-        <div class="field">
-          <!-- El costo SIEMPRE es por unidad: la valoracion de stock hace
-               costo x stock y el margen hace costo x cantidad vendida. Poner
-               ahi el total de la factura multiplica todo por el stock, asi
-               que la etiqueta lo dice y abajo esta la calculadora para
-               sacarlo del total, que es el numero que el negocio tiene. -->
-          <label id="pCostoLabel">🔒 Costo por unidad <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
-          <button type="button" id="pCostoVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar costo</button>
-          <!-- En electrónica el costo se puede cargar en dólares: se guarda
-               en pesos (para margen y estadísticas) y además el monto en USD,
-               que es el que queda fijo cuando cambia la cotización. -->
-          <div id="pCostoFila" class="hidden" style="display:flex;gap:6px;">
-            <input type="number" id="pCosto" min="0" step="0.01" placeholder="0" style="flex:1;min-width:0;">
-            <select id="pCostoMoneda" class="campo-electronica hidden" style="flex-shrink:0;padding:9px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;">
-              <option value="ARS">ARS</option><option value="USD">USD</option><option value="EUR">EUR</option>
-            </select>
-          </div>
-          <small id="pCostoHint" class="hidden" style="display:block;margin-top:5px;color:var(--celeste);font-size:11.5px;"></small>
-
-          <div id="pCostoDesdeTotal" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-top:9px;">
-            <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;">
-              <div style="flex:1;min-width:130px;">
-                <label style="display:block;font-size:10.5px;color:var(--text-mute);margin-bottom:3px;">¿Cuánto pagaste en total?</label>
-                <input type="number" id="pCostoTotal" min="0" step="0.01" placeholder="Ej: 38400" style="width:100%;padding:7px;font-size:13px;">
-              </div>
-              <div style="padding-bottom:7px;font-size:13px;color:var(--text-mute);white-space:nowrap;">
-                = <strong id="pCostoUnitarioPreview" style="color:var(--navy);font-size:14px;">$0</strong>
-              </div>
-            </div>
-            <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
-              Poné lo que te salió <strong>toda la compra</strong> y lo divide por el stock que cargaste arriba.
-              20 cajas de 12 hojas a $38.400 el total son $160 la hoja.
-            </small>
-          </div>
-
-          <small style="display:block;margin-top:6px;color:var(--text-mute);font-size:12px;">
-            Para calcular el margen en Estadísticas y la valoración de tu stock. Protegido con el mismo PIN que Costos, si lo configuraste.
-          </small>
-        </div>
         <div class="field hidden" id="campoDuracionServicio">
           <label>Duración de este servicio</label>
           <!-- Se escribe a mano en vez de elegirse de una lista: un corte
@@ -7642,6 +7668,8 @@ function renderCampoCosto() {
 
   aplicarVisibilidadCosto();
   calcularCostoUnitario();
+  cargarPrefRedondeo();
+  actualizarMargenDesdePrecio();
 }
 
 // Separada de renderCampoCosto a proposito: esta NO toca el valor del
@@ -7660,6 +7688,7 @@ function aplicarVisibilidadCosto() {
     requiereDesbloqueoCostos() || esServicio || esPlatoDelMenu());
 
   actualizarEtiquetaCosto();
+  if (typeof aplicarVisibilidadMargen === 'function') aplicarVisibilidadMargen();
 }
 
 // "Costo por hoja" en vez de "Costo por unidad" cuando el producto dice
@@ -7734,6 +7763,108 @@ async function valorCostoParaGuardar() {
   if (!conv.moneda) return { costo: conv.monto_ars || null, ...limpiarUsd };
   return { costo: conv.monto_ars || null, ...enUsd(conv.moneda, conv.monto_original, conv.cotizacion) };
 }
+
+// ---- % de margen sobre el costo (como la ficha del sistema viejo) --------
+// Margen = cuanto se le suma al costo: costo 35.201 con 12,22% = 39.502,56.
+// Es el "recargo" de los programas de almacen, no el margen sobre la venta
+// de Estadisticas. No se guarda en la base: sale de precio y costo, asi que
+// el historial de precios y los escalones en % siguen leyendo solo price.
+// Solo se ofrece con costo y precio en la misma moneda: un costo en dolares
+// contra un precio en pesos daria un % sin sentido.
+function margenFichaAplica() {
+  if (byId('pCostoFila')?.classList.contains('hidden')) return false;
+  if (byId('campoPrecioVenta')?.classList.contains('hidden')) return false;
+  const mc = byId('pCostoMoneda'), mp = byId('pPriceMoneda');
+  const monedaCosto = (mc && !mc.classList.contains('hidden')) ? mc.value : 'ARS';
+  const monedaPrecio = (mp && !mp.classList.contains('hidden')) ? mp.value : 'ARS';
+  return monedaCosto === monedaPrecio;
+}
+
+function aplicarVisibilidadMargen() {
+  const fila = byId('pMargenFila');
+  if (fila) fila.classList.toggle('hidden', !margenFichaAplica());
+}
+
+const clavePrefRedondeo = () => 'bruwal_redondeo_' + (currentStore?.slug || '');
+function cargarPrefRedondeo() {
+  try {
+    const v = JSON.parse(localStorage.getItem(clavePrefRedondeo()) || 'null');
+    if (v && byId('pRedondear')) {
+      byId('pRedondear').checked = !!v.activo;
+      if (['1', '10', '50', '100'].includes(String(v.a))) byId('pRedondearA').value = String(v.a);
+    }
+  } catch (_) { /* sin localStorage: arranca sin redondear */ }
+}
+function guardarPrefRedondeo() {
+  try {
+    localStorage.setItem(clavePrefRedondeo(), JSON.stringify({
+      activo: !!byId('pRedondear')?.checked, a: byId('pRedondearA')?.value || '10' }));
+  } catch (_) { /* no pasa nada: es solo comodidad */ }
+}
+
+// Para arriba, como el viejo: nunca se cobra menos que costo + margen.
+// El -1e-9 evita que 39.500 "exacto" en coma flotante suba a 39.510.
+function redondearPrecioFicha(precio) {
+  if (!byId('pRedondear')?.checked) return Math.round(precio * 100) / 100;
+  const paso = Number(byId('pRedondearA')?.value) || 1;
+  return Math.ceil(precio / paso - 1e-9) * paso;
+}
+
+function costoFichaEnEdicion() {
+  const v = Number(byId('pCosto')?.value);
+  return isFinite(v) && v > 0 ? v : 0;
+}
+
+function mostrarIgualMargen() {
+  const costo = costoFichaEnEdicion(), precio = precioDeListaEnEdicion();
+  const igual = byId('pMargenIgual');
+  if (!igual) return;
+  if (!(costo > 0)) { igual.textContent = 'Cargá el costo para usar el margen'; return; }
+  if (!(precio > 0)) { igual.textContent = ''; return; }
+  const ganancia = Math.round((precio - costo) * 100) / 100;
+  igual.textContent = '= precio ' + money(precio) + ' (ganás ' + money(ganancia) + ' por unidad)';
+}
+
+// Del precio y el costo que hay en el formulario, al %.
+function actualizarMargenDesdePrecio() {
+  aplicarVisibilidadMargen();
+  const campo = byId('pMargen');
+  if (!campo) return;
+  const costo = costoFichaEnEdicion(), precio = precioDeListaEnEdicion();
+  campo.value = (costo > 0 && precio > 0) ? String(Math.round((precio / costo - 1) * 10000) / 100) : '';
+  mostrarIgualMargen();
+}
+
+// Del % (y el costo) al precio. Se avisa al campo de precio con un evento
+// 'input' para que los escalones en % y el aviso de moneda se acomoden igual
+// que si lo hubieran escrito a mano.
+function aplicarMargenAlPrecio() {
+  const costo = costoFichaEnEdicion();
+  const txt = String(byId('pMargen')?.value ?? '').replace(',', '.').trim();
+  const margen = Number(txt);
+  if (!(costo > 0) || txt === '' || !isFinite(margen) || margen <= -100) { mostrarIgualMargen(); return; }
+  const precio = redondearPrecioFicha(costo * (1 + margen / 100));
+  const campoPrecio = byId('pPrice');
+  if (!campoPrecio) return;
+  campoPrecio.value = precio;
+  campoPrecio.dispatchEvent(new Event('input', { bubbles: true }));
+  mostrarIgualMargen();
+}
+
+byId('pMargen')?.addEventListener('input', aplicarMargenAlPrecio);
+// Precio escrito a mano: manda el precio, el % solo se recalcula.
+byId('pPrice')?.addEventListener('input', (ev) => {
+  if (ev.isTrusted) actualizarMargenDesdePrecio(); else mostrarIgualMargen();
+});
+// Costo nuevo con un % puesto: el precio sigue al costo, como en el viejo.
+// Sin % (producto sin precio todavia) solo se actualiza el texto.
+byId('pCosto')?.addEventListener('input', () => {
+  if (String(byId('pMargen')?.value || '').trim() !== '') aplicarMargenAlPrecio();
+  else actualizarMargenDesdePrecio();
+});
+['pCostoMoneda', 'pPriceMoneda'].forEach(id => byId(id)?.addEventListener('change', actualizarMargenDesdePrecio));
+byId('pRedondear')?.addEventListener('change', () => { guardarPrefRedondeo(); aplicarMargenAlPrecio(); });
+byId('pRedondearA')?.addEventListener('change', () => { guardarPrefRedondeo(); aplicarMargenAlPrecio(); });
 // ============================================================================
 
 // Cuantas letras hay que cambiar para llegar de la clave a ALGUN comienzo de
