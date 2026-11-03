@@ -23240,6 +23240,23 @@ function diaARDe(v) {
   return d.toLocaleDateString('en-CA', { timeZone: TZ_AR });
 }
 
+// Lo que costo una venta. Una reparacion entregada genera un pedido con un
+// solo renglon sin product_id ("Cambio de bateria — iPhone 13"), asi que
+// buscar el costo producto por producto daba 0 y la caja mostraba la
+// ganancia en "—" aunque la ficha tuviera el costo cargado. Para esas se
+// usa el costo de la ficha de reparacion, el mismo que usa el margen de la
+// pestania Reparaciones.
+function costoDeVenta(o) {
+  if (o && o.reparacion_id) {
+    const r = (reparaciones || []).find(x => String(x.id) === String(o.reparacion_id));
+    if (r) return Number(r.costo || 0);
+  }
+  return (Array.isArray(o?.items) ? o.items : []).reduce((suma, it) => {
+    const p = (products || []).find(x => String(x.id) === String(it.product_id));
+    return suma + costoDeItem(p, it) * Number(it.qty || 1);
+  }, 0);
+}
+
 // Lo ultimo que pinto la caja, para el ticket de cierre: asi el ticket
 // dice exactamente lo mismo que la pantalla, sin recalcular por otro lado.
 let ultimoResumenCaja = null;
@@ -23262,10 +23279,7 @@ function juntarMovimientosCaja(enRango) {
       // Lo que costo lo vendido en ESTA venta, item por item. Vender una
       // botella a $2.500 que costo $1.000 deja $1.500, y eso es lo que el
       // negocio quiere ver al lado del precio -- no solo cuanto entro.
-      const costo = (Array.isArray(o.items) ? o.items : []).reduce((suma, it) => {
-        const p = (products || []).find(x => String(x.id) === String(it.product_id));
-        return suma + costoDeItem(p, it) * Number(it.qty || 1);
-      }, 0);
+      const costo = costoDeVenta(o);
 
       movimientos.push({
         origen: 'venta', hora: o.created_at, tipo: 'ingreso',
@@ -23377,12 +23391,11 @@ function renderCaja() {
   orders.filter(o => cuentaComoVenta(o) && esDelDia(o.created_at)).forEach(o => {
     (Array.isArray(o.items) ? o.items : []).forEach(it => {
       const p = (products || []).find(x => String(x.id) === String(it.product_id));
-      const qty = Number(it.qty || 1);
-      ventaDelDia += Number(it.price ?? p?.price ?? 0) * qty;
-      const c = costoDeItem(p, it);
-      if (c > 0) hayCosto = true;
-      costoDelDia += c * qty;
+      ventaDelDia += Number(it.price ?? p?.price ?? 0) * Number(it.qty || 1);
     });
+    const c = costoDeVenta(o);
+    if (c > 0) hayCosto = true;
+    costoDelDia += c;
   });
 
   const elGanancia = byId('cajaGanancia');
