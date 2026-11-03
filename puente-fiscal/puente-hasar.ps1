@@ -80,6 +80,7 @@ function Enviar-Hasar([string]$json) {
     $cuerpoTexto = $json
     $tipo = 'application/json'
   }
+  if ($xml) { return (Enviar-Crudo $cuerpoTexto $tipo) }
   $req = [System.Net.HttpWebRequest]::Create($url)
   $req.Method = 'POST'
   $req.ContentType = $tipo
@@ -108,6 +109,60 @@ function Enviar-Hasar([string]$json) {
   $esHasar = Parece-Hasar $texto
   $ok = ($codigo -ge 200 -and $codigo -lt 300) -and $esHasar -and -not (Es-Error $texto)
   return @{ ok = $ok; red = $false; texto = $texto; codigo = $codigo; auth = $auth; esHasar = $esHasar }
+}
+
+# El Proxy Fiscal de Hasar contesta HTTP "a su manera" y .NET lo rechaza
+# ("infraccion de protocolo, ResponseStatusLine"). Por eso con el proxy se
+# habla a mano por el socket y se toma la respuesta como venga.
+function Enviar-Crudo([string]$cuerpoTexto, [string]$tipo) {
+  $hp = $cfg.IP.Split(':')
+  $host1 = $hp[0]
+  $puerto = 80
+  if ($hp.Length -gt 1) { $puerto = [int]$hp[1] }
+  $bytes = [Text.Encoding]::UTF8.GetBytes($cuerpoTexto)
+  $cab = "POST /fiscal.xml HTTP/1.0`r`n" +
+         "Host: " + $cfg.IP + "`r`n" +
+         "Content-Type: " + $tipo + "`r`n" +
+         "Authorization: Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(':' + $cfg.CLAVE)) + "`r`n" +
+         "Content-Length: " + $bytes.Length + "`r`n" +
+         "Connection: close`r`n`r`n"
+  $cli = New-Object System.Net.Sockets.TcpClient
+  try {
+    $cli.Connect($host1, $puerto)
+  } catch {
+    $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+    return @{ ok = $false; red = $true; texto = $ex.Message; codigo = 0 }
+  }
+  $buf = New-Object System.IO.MemoryStream
+  try {
+    $st = $cli.GetStream()
+    $cb = [Text.Encoding]::ASCII.GetBytes($cab)
+    $st.Write($cb, 0, $cb.Length); $st.Write($bytes, 0, $bytes.Length); $st.Flush()
+    # Hasta 40 s para la primera respuesta (la impresora puede tardar);
+    # despues de que empieza a llegar, 2 s de silencio = termino.
+    $st.ReadTimeout = 40000
+    $tmp = New-Object byte[] 8192
+    while ($true) {
+      try { $n = $st.Read($tmp, 0, $tmp.Length) } catch { break }
+      if ($n -le 0) { break }
+      $buf.Write($tmp, 0, $n)
+      $st.ReadTimeout = 2000
+    }
+  } finally { $cli.Close() }
+  $raw = [Text.Encoding]::UTF8.GetString($buf.ToArray())
+  if (-not $raw) { return @{ ok = $false; red = $true; texto = 'el Proxy Fiscal no contesto nada (puede que no haya podido abrir el COM)'; codigo = 0 } }
+  $codigo = 200
+  $texto = $raw
+  if ($raw -match '^\s*HTTP/\d(\.\d)?\s+(\d{3})') { $codigo = [int]$matches[2] }
+  $i = $raw.IndexOf('<')
+  $j = $raw.IndexOf("`r`n`r`n"); $k = 4
+  if ($j -lt 0) { $j = $raw.IndexOf("`n`n"); $k = 2 }
+  if ($raw -match '^\s*HTTP/' -and $j -ge 0) { $texto = $raw.Substring($j + $k) }
+  elseif ($i -gt 0) { $texto = $raw.Substring($i) }
+  $esHasar = Parece-Hasar $texto
+  if (-not $esHasar -and $texto.TrimStart().StartsWith('<')) { $esHasar = $true }
+  $ok = ($codigo -ge 200 -and $codigo -lt 300) -and $esHasar -and -not (Es-Error $texto)
+  return @{ ok = $ok; red = $false; texto = $texto; codigo = $codigo; auth = ''; esHasar = $esHasar }
 }
 
 # La Hasar contesta 200 tambien cuando el comando no se pudo hacer: el
@@ -259,6 +314,8 @@ function Atender($cliente) {
   $ruta = $p.ruta.Split('?')[0]
   if ($p.metodo -eq 'GET' -and $ruta -eq '/estado') {
     $r = Enviar-Hasar '{"ConsultarEstado":{"CodigoComprobante":"TiqueFacturaB"}}'
+    $muestra = [string]$r.texto; if ($muestra.Length -gt 300) { $muestra = $muestra.Substring(0, 300) }
+    Log ('Probar conexion -> ' + $(if ($r.ok) { 'OK' } else { 'FALLO' }) + ': ' + $muestra)
     if ($r.red -or -not $r.esHasar) { Responder $stream 200 @{ ok = $false; ip = $cfg.IP; error = (Explicar $r 'ConsultarEstado') } $origen }
     else { Responder $stream 200 @{ ok = $true; ip = $cfg.IP; respuesta = $r.texto } $origen }
     return
