@@ -8,6 +8,12 @@ IP=192.168.1.1
 # Clave de la Hasar (4 numeros). La de fabrica es 9999.
 CLAVE=9999
 
+# Como habla con la Hasar:
+#   json = por red (cable de red / WiFi), con la IP de la Hasar arriba.
+#   xml  = por USB, a traves del "Proxy Fiscal Hasar". En ese caso arriba
+#          va IP=127.0.0.1:5000
+FORMATO=json
+
 # No hace falta tocar lo de abajo.
 PUERTO=12750
 ORIGENES=https://bruwaltech.com.ar,https://www.bruwaltech.com.ar

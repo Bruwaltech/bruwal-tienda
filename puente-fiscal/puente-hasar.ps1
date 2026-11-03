@@ -7,6 +7,11 @@
 #  (http://127.0.0.1:12750) y le pasa a la Hasar los comandos de cada
 #  venta, uno por uno, por HTTP (POST http://IP-DE-LA-HASAR/fiscal.json).
 #
+#  Si la Hasar esta enchufada por USB (puerto COM) y no por red, se usa el
+#  "Proxy Fiscal HASAR" (http2pktw32ar.exe, programa oficial de Hasar):
+#  el proxy toma el COM y escucha en 127.0.0.1:5000. En config.txt va
+#  IP=127.0.0.1:5000 y FORMATO=xml (el proxy solo entiende XML).
+#
 #  La Hasar le informa a ARCA sola. Este programa no habla con ARCA.
 #
 #  Configuracion: config.txt, al lado de este archivo.
@@ -19,6 +24,7 @@ $cfg = @{
   IP       = '192.168.1.1'
   CLAVE    = '9999'
   PUERTO   = '12750'
+  FORMATO  = 'json'
   ORIGENES = 'https://bruwaltech.com.ar,https://www.bruwaltech.com.ar'
 }
 $cfgFile = Join-Path $dir 'config.txt'
@@ -29,6 +35,7 @@ if (Test-Path $cfgFile) {
 }
 $origenes = $cfg.ORIGENES.Split(',') | ForEach-Object { $_.Trim().TrimEnd('/') } | Where-Object { $_ }
 $logFile = Join-Path $dir 'puente-hasar.log'
+$xml = ($cfg.FORMATO.Trim().ToLower() -eq 'xml')
 
 function Log($texto) {
   $l = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $texto
@@ -37,16 +44,51 @@ function Log($texto) {
 }
 
 # --- Hablar con la Hasar --------------------------------------------------
+# La caja manda cada comando en JSON ({"Comando":{"Campo":valor}}). El
+# Proxy Fiscal (USB) solo entiende XML: <Comando><Campo>valor</Campo></Comando>
+function A-Xml([string]$nombre, $valor) {
+  if ($valor -is [System.Management.Automation.PSCustomObject]) {
+    $adentro = ''
+    foreach ($pr in $valor.PSObject.Properties) { $adentro += (A-Xml $pr.Name $pr.Value) }
+    if (-not $adentro) { return '<' + $nombre + '/>' }
+    return '<' + $nombre + '>' + $adentro + '</' + $nombre + '>'
+  }
+  if ($valor -is [System.Array]) {
+    $todo = ''
+    foreach ($v in $valor) { $todo += (A-Xml $nombre $v) }
+    return $todo
+  }
+  if ($valor -eq $null) { return '<' + $nombre + '></' + $nombre + '>' }
+  if ($valor -is [bool]) { $valor = $(if ($valor) { 'true' } else { 'false' }) }
+  $texto = [System.Security.SecurityElement]::Escape([string]$valor)
+  return '<' + $nombre + '>' + $texto + '</' + $nombre + '>'
+}
+
+function Json-A-Xml([string]$json) {
+  $o = ConvertFrom-Json $json
+  $p = @($o.PSObject.Properties)[0]
+  return '<?xml version="1.0" encoding="UTF-8"?>' + (A-Xml $p.Name $p.Value)
+}
+
 function Enviar-Hasar([string]$json) {
-  $url = 'http://' + $cfg.IP + '/fiscal.json'
+  if ($xml) {
+    $url = 'http://' + $cfg.IP + '/fiscal.xml'
+    $cuerpoTexto = Json-A-Xml $json
+    $tipo = 'text/xml'
+  } else {
+    $url = 'http://' + $cfg.IP + '/fiscal.json'
+    $cuerpoTexto = $json
+    $tipo = 'application/json'
+  }
+  if ($xml) { return (Enviar-Crudo $cuerpoTexto $tipo) }
   $req = [System.Net.HttpWebRequest]::Create($url)
   $req.Method = 'POST'
-  $req.ContentType = 'application/json'
+  $req.ContentType = $tipo
   $req.Proxy = $null
   $req.Timeout = 30000
   $req.ReadWriteTimeout = 30000
   $req.Headers['Authorization'] = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(':' + $cfg.CLAVE))
-  $bytes = [Text.Encoding]::UTF8.GetBytes($json)
+  $bytes = [Text.Encoding]::UTF8.GetBytes($cuerpoTexto)
   $req.ContentLength = $bytes.Length
   $resp = $null
   try {
@@ -69,6 +111,60 @@ function Enviar-Hasar([string]$json) {
   return @{ ok = $ok; red = $false; texto = $texto; codigo = $codigo; auth = $auth; esHasar = $esHasar }
 }
 
+# El Proxy Fiscal de Hasar contesta HTTP "a su manera" y .NET lo rechaza
+# ("infraccion de protocolo, ResponseStatusLine"). Por eso con el proxy se
+# habla a mano por el socket y se toma la respuesta como venga.
+function Enviar-Crudo([string]$cuerpoTexto, [string]$tipo) {
+  $hp = $cfg.IP.Split(':')
+  $host1 = $hp[0]
+  $puerto = 80
+  if ($hp.Length -gt 1) { $puerto = [int]$hp[1] }
+  $bytes = [Text.Encoding]::UTF8.GetBytes($cuerpoTexto)
+  $cab = "POST /fiscal.xml HTTP/1.0`r`n" +
+         "Host: " + $cfg.IP + "`r`n" +
+         "Content-Type: " + $tipo + "`r`n" +
+         "Authorization: Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(':' + $cfg.CLAVE)) + "`r`n" +
+         "Content-Length: " + $bytes.Length + "`r`n" +
+         "Connection: close`r`n`r`n"
+  $cli = New-Object System.Net.Sockets.TcpClient
+  try {
+    $cli.Connect($host1, $puerto)
+  } catch {
+    $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+    return @{ ok = $false; red = $true; texto = $ex.Message; codigo = 0 }
+  }
+  $buf = New-Object System.IO.MemoryStream
+  try {
+    $st = $cli.GetStream()
+    $cb = [Text.Encoding]::ASCII.GetBytes($cab)
+    $st.Write($cb, 0, $cb.Length); $st.Write($bytes, 0, $bytes.Length); $st.Flush()
+    # Hasta 40 s para la primera respuesta (la impresora puede tardar);
+    # despues de que empieza a llegar, 2 s de silencio = termino.
+    $st.ReadTimeout = 40000
+    $tmp = New-Object byte[] 8192
+    while ($true) {
+      try { $n = $st.Read($tmp, 0, $tmp.Length) } catch { break }
+      if ($n -le 0) { break }
+      $buf.Write($tmp, 0, $n)
+      $st.ReadTimeout = 2000
+    }
+  } finally { $cli.Close() }
+  $raw = [Text.Encoding]::UTF8.GetString($buf.ToArray())
+  if (-not $raw) { return @{ ok = $false; red = $true; texto = 'el Proxy Fiscal no contesto nada (puede que no haya podido abrir el COM)'; codigo = 0 } }
+  $codigo = 200
+  $texto = $raw
+  if ($raw -match '^\s*HTTP/\d(\.\d)?\s+(\d{3})') { $codigo = [int]$matches[2] }
+  $i = $raw.IndexOf('<')
+  $j = $raw.IndexOf("`r`n`r`n"); $k = 4
+  if ($j -lt 0) { $j = $raw.IndexOf("`n`n"); $k = 2 }
+  if ($raw -match '^\s*HTTP/' -and $j -ge 0) { $texto = $raw.Substring($j + $k) }
+  elseif ($i -gt 0) { $texto = $raw.Substring($i) }
+  $esHasar = Parece-Hasar $texto
+  if (-not $esHasar -and $texto.TrimStart().StartsWith('<')) { $esHasar = $true }
+  $ok = ($codigo -ge 200 -and $codigo -lt 300) -and $esHasar -and -not (Es-Error $texto)
+  return @{ ok = $ok; red = $false; texto = $texto; codigo = $codigo; auth = ''; esHasar = $esHasar }
+}
+
 # La Hasar contesta 200 tambien cuando el comando no se pudo hacer: el
 # problema viene en la respuesta (un bloque de error con Identificador /
 # Descripcion, o banderas de estado que empiezan con "Error").
@@ -77,6 +173,10 @@ function Es-Error([string]$t) {
   if ($t -match '"Identificador"') { return $true }
   if ($t -match '"Error[A-Za-z]*"\s*[,\]]') { return $true }
   if ($t -match '"ComandoInvalido"|"ComandoNoValido"|"CampoDeDatosInvalido"') { return $true }
+  # Lo mismo cuando contesta en XML (Proxy Fiscal por USB).
+  if ($t -match '<Identificador>') { return $true }
+  if ($t -match '>\s*Error[A-Za-z]*\s*<') { return $true }
+  if ($t -match '>\s*(ComandoInvalido|ComandoNoValido|CampoDeDatosInvalido)\s*<') { return $true }
   return $false
 }
 
@@ -95,6 +195,7 @@ function Nombre-Comando([string]$json) {
 }
 
 function Explicar($r, [string]$cmd) {
+  if ($r.red -and $xml) { return 'No se pudo conectar con el Proxy Fiscal Hasar en ' + $cfg.IP + ' (' + $r.texto + '). Revisa que la ventana "Proxy Fiscal Hasar" este abierta y que diga que abrio el COM.' }
   if ($r.red) { return 'No se pudo conectar con la Hasar en ' + $cfg.IP + ' (' + $r.texto + '). Revisa que este prendida, conectada y que la IP de config.txt sea la correcta.' }
   if (-not $r.esHasar) {
     $que = 'contesto otro aparato (HTTP ' + $r.codigo + ')'
@@ -108,6 +209,22 @@ function Explicar($r, [string]$cmd) {
   return 'La Hasar no acepto "' + $cmd + '" (HTTP ' + $r.codigo + '): ' + $detalle
 }
 
+function Campo-De([string]$t, [string]$campo) {
+  if ($t -match ('<' + $campo + '>\s*([^<]*?)\s*</' + $campo + '>')) { return $matches[1] }
+  if ($t -match ('"' + $campo + '"\s*:\s*"([^"]*)"')) { return $matches[1] }
+  return ''
+}
+function Motivo-Error([string]$t) {
+  if (-not $t) { return '' }
+  $partes = @()
+  foreach ($c in 'Descripcion', 'Contexto') { $v = Campo-De $t $c; if ($v) { $partes += $v } }
+  $np = Campo-De $t 'NombreParametro'
+  if ($np) { $partes += ('campo ' + $np) }
+  $id = Campo-De $t 'UltimoError'
+  if ($id) { $partes += ('(' + $id + ')') }
+  return ($partes -join ' - ')
+}
+
 function Imprimir($comandos, [bool]$sinCancelar) {
   $abierto = $false
   $numero = ''
@@ -116,8 +233,15 @@ function Imprimir($comandos, [bool]$sinCancelar) {
     Log ('-> ' + $cmd)
     $r = Enviar-Hasar $c
     if (-not $r.ok) {
-      Log ('   ERROR: ' + (Explicar $r $cmd))
       $msg = Explicar $r $cmd
+      # La Hasar dice el motivo exacto si se lo pregunta enseguida.
+      if (-not $r.red -and $r.esHasar) {
+        $ue = Enviar-Hasar '{"ConsultarUltimoError":{}}'
+        Log ('   ConsultarUltimoError: ' + $ue.texto)
+        $motivo = Motivo-Error ([string]$ue.texto)
+        if ($motivo) { $msg = 'La Hasar no acepto "' + $cmd + '": ' + $motivo }
+      }
+      Log ('   ERROR: ' + $msg)
       if ($abierto -and -not $sinCancelar) {
         Log '-> Cancelar (se anula el comprobante a medio hacer)'
         $rc = Enviar-Hasar '{"Cancelar":{}}'
@@ -129,6 +253,7 @@ function Imprimir($comandos, [bool]$sinCancelar) {
     if ($cmd -eq 'CerrarDocumento') {
       $abierto = $false
       if ($r.texto -match '"NumeroComprobante"\s*:\s*"?(\d+)') { $numero = $matches[1] }
+      elseif ($r.texto -match '<NumeroComprobante>\s*(\d+)') { $numero = $matches[1] }
     }
   }
   if ($numero) { Log ('   OK, comprobante N ' + $numero) } else { Log '   OK' }
@@ -212,6 +337,8 @@ function Atender($cliente) {
   $ruta = $p.ruta.Split('?')[0]
   if ($p.metodo -eq 'GET' -and $ruta -eq '/estado') {
     $r = Enviar-Hasar '{"ConsultarEstado":{"CodigoComprobante":"TiqueFacturaB"}}'
+    $muestra = [string]$r.texto; if ($muestra.Length -gt 300) { $muestra = $muestra.Substring(0, 300) }
+    Log ('Probar conexion -> ' + $(if ($r.ok) { 'OK' } else { 'FALLO' }) + ': ' + $muestra)
     if ($r.red -or -not $r.esHasar) { Responder $stream 200 @{ ok = $false; ip = $cfg.IP; error = (Explicar $r 'ConsultarEstado') } $origen }
     else { Responder $stream 200 @{ ok = $true; ip = $cfg.IP; respuesta = $r.texto } $origen }
     return
@@ -232,7 +359,8 @@ try { $listener.Start() } catch {
   Log ('No se pudo abrir el puerto ' + $cfg.PUERTO + '. Seguramente el puente ya esta abierto en otra ventana.')
   exit 1
 }
-Log ('Puente fiscal Hasar escuchando en http://127.0.0.1:' + $cfg.PUERTO + '  ->  Hasar en ' + $cfg.IP)
+$via = $(if ($xml) { 'Proxy Fiscal (USB) en ' } else { 'Hasar en ' })
+Log ('Puente fiscal Hasar escuchando en http://127.0.0.1:' + $cfg.PUERTO + '  ->  ' + $via + $cfg.IP)
 Log 'Deja esta ventana abierta (podes minimizarla) mientras uses la caja.'
 while ($true) {
   $c = $listener.AcceptTcpClient()

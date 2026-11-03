@@ -16,6 +16,14 @@ INSTALAR (una sola vez, en la PC de la caja)
    shell:startup y Enter. En esa carpeta, clic derecho > Nuevo > Acceso
    directo y elegir C:\PuenteHasar\Iniciar puente Hasar.bat
 
+SI LA HASAR VA POR USB (aparece como "Dispositivo serie USB (COMx)")
+- Hace falta el Proxy Fiscal de Hasar (http2pktw32ar.exe, viene en
+  CF-2G-Distribucion de Hasar, carpeta HERRAMIENTAS\PROXY FISCAL).
+- En su proxyconfig.xml: <SerialPort>COMx</SerialPort> y <HttpPort>5000</HttpPort>.
+- En config.txt: IP=127.0.0.1:5000 y FORMATO=xml
+- El sistema viejo tiene que estar CERRADO: el COM lo puede usar un solo
+  programa a la vez.
+
 EN LA CAJA DE BRUWAL (Chrome)
 5. En la caja, "Tique fiscal" > "Imprimir en la Hasar".
 6. Boton "Impresora fiscal" > "Probar conexion". La primera vez Chrome
