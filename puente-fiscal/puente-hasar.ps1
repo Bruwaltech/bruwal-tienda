@@ -209,6 +209,22 @@ function Explicar($r, [string]$cmd) {
   return 'La Hasar no acepto "' + $cmd + '" (HTTP ' + $r.codigo + '): ' + $detalle
 }
 
+function Campo-De([string]$t, [string]$campo) {
+  if ($t -match ('<' + $campo + '>\s*([^<]*?)\s*</' + $campo + '>')) { return $matches[1] }
+  if ($t -match ('"' + $campo + '"\s*:\s*"([^"]*)"')) { return $matches[1] }
+  return ''
+}
+function Motivo-Error([string]$t) {
+  if (-not $t) { return '' }
+  $partes = @()
+  foreach ($c in 'Descripcion', 'Contexto') { $v = Campo-De $t $c; if ($v) { $partes += $v } }
+  $np = Campo-De $t 'NombreParametro'
+  if ($np) { $partes += ('campo ' + $np) }
+  $id = Campo-De $t 'UltimoError'
+  if ($id) { $partes += ('(' + $id + ')') }
+  return ($partes -join ' - ')
+}
+
 function Imprimir($comandos, [bool]$sinCancelar) {
   $abierto = $false
   $numero = ''
@@ -217,8 +233,15 @@ function Imprimir($comandos, [bool]$sinCancelar) {
     Log ('-> ' + $cmd)
     $r = Enviar-Hasar $c
     if (-not $r.ok) {
-      Log ('   ERROR: ' + (Explicar $r $cmd))
       $msg = Explicar $r $cmd
+      # La Hasar dice el motivo exacto si se lo pregunta enseguida.
+      if (-not $r.red -and $r.esHasar) {
+        $ue = Enviar-Hasar '{"ConsultarUltimoError":{}}'
+        Log ('   ConsultarUltimoError: ' + $ue.texto)
+        $motivo = Motivo-Error ([string]$ue.texto)
+        if ($motivo) { $msg = 'La Hasar no acepto "' + $cmd + '": ' + $motivo }
+      }
+      Log ('   ERROR: ' + $msg)
       if ($abierto -and -not $sinCancelar) {
         Log '-> Cancelar (se anula el comprobante a medio hacer)'
         $rc = Enviar-Hasar '{"Cancelar":{}}'
