@@ -2158,7 +2158,7 @@ function htmlTarjetaProducto(p){
       : (p.image_url ? [p.image_url] : []);
 
     const photo = fotos.length
-      ? '<img class="product-photo" id="foto-' + p.id + '" src="' + escapeHtml(fotos[0]) + '" alt="">' +
+      ? '<img class="product-photo" loading="lazy" decoding="async" id="foto-' + p.id + '" src="' + escapeHtml(fotos[0]) + '" alt="">' +
         (fotos.length > 1
           ? '<div class="foto-puntos">' + fotos.map((u, i) =>
               '<button class="foto-punto' + (i === 0 ? ' activo' : '') + '" ' +
@@ -2412,7 +2412,7 @@ function abrirFicha(id) {
           '<img class="ficha-principal" id="fichaPrincipal" src="' + escapeHtml(fotos[0]) + '" alt="">' +
           (fotos.length > 1
             ? '<div class="ficha-miniaturas">' + fotos.map((u,i) =>
-                '<img class="ficha-mini' + (i===0?' activa':'') + '" data-url="' + escapeHtml(u) + '" src="' + escapeHtml(u) + '" alt="">'
+                '<img loading="lazy" class="ficha-mini' + (i===0?' activa':'') + '" data-url="' + escapeHtml(u) + '" src="' + escapeHtml(u) + '" alt="">'
               ).join('') + '</div>'
             : '') +
         '</div>'
