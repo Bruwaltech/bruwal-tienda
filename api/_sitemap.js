@@ -37,6 +37,19 @@ module.exports = async (req, res, base) => {
     if (!r.ok) r = await pedir('');
     const filas = r.ok ? await r.json() : [];
     if (Array.isArray(filas)) slugs = filas.map((f) => f.slug).filter(Boolean);
+
+    // Las tiendas pausadas por falta de pago (schema/98) no van a Google.
+    // Si la funcion no existe todavia, salen todas como antes.
+    const rp = await fetch(SUPABASE_URL + '/rest/v1/rpc/tiendas_online_pausadas', {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: '{}'
+    }).catch(() => null);
+    const pausadas = rp && rp.ok ? await rp.json().catch(() => null) : null;
+    if (Array.isArray(pausadas) && pausadas.length) {
+      const fuera = new Set(pausadas);
+      slugs = slugs.filter((s) => !fuera.has(s));
+    }
   } catch (err) {
     // Sin Supabase el sitemap sale igual, con las páginas fijas.
     console.error('Sitemap sin tiendas:', err);

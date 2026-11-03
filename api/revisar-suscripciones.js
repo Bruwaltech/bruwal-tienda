@@ -17,6 +17,9 @@
 //   3. Al que volvio a suscribirse le saca la fecha de corte.
 //   4. Al que le rechazaron una cuota le manda el aviso al cliente, si el
 //      webhook no lo mando ya (api/_cobro-rechazado.js).
+//      Y anota desde cuando tiene la cuota sin cobrar (schema/98): pasados
+//      los dias de gracia, su tienda online se pausa sola, y vuelve sola
+//      cuando entra el cobro.
 //
 // Y manda un mail con lo que cambio. Enterarse de que alguien se dio de
 // baja el dia que pasa -- y no el mes que viene mirando numeros -- es la
@@ -135,7 +138,8 @@ module.exports = async (req, res) => {
         //    (si ya salio por ahi, no sale de nuevo). No toca el plan.
         cobrosAvisados += await cobroRechazado.revisarSuscripcion({
           base: 'https://' + (req.headers['x-forwarded-host'] || req.headers.host),
-          preapprovalId: t.mp_preapproval_id
+          preapprovalId: t.mp_preapproval_id,
+          slug: t.slug
         });
 
         // 3) Volvio a estar autorizada y tenia fecha de corte: se la saca.

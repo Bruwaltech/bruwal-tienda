@@ -195,9 +195,19 @@ module.exports = async (req, res) => {
         '?slug=eq.' + encodeURIComponent(slug) +
         '&select=business_name,description,image_url';
 
-      const r = await fetch(consulta, {
-        headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
-      });
+      // Pausada por suscripcion impaga (schema/98): la vista previa sigue
+      // con el nombre del negocio, pero no se le pide a Google que la
+      // indexe. Si la funcion no existe todavia, cuenta como no pausada.
+      const [r, pausada] = await Promise.all([
+        fetch(consulta, {
+          headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
+        }),
+        fetch(SUPABASE_URL + '/rest/v1/rpc/tienda_online_pausada', {
+          method: 'POST',
+          headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_slug: slug })
+        }).then((x) => (x.ok ? x.json() : false)).catch(() => false)
+      ]);
 
       const filas = await r.json();
       const tienda = Array.isArray(filas) ? filas[0] : null;
@@ -231,7 +241,7 @@ module.exports = async (req, res) => {
         // tienda.html trae noindex porque, sola (tienda.html?slug=...), es
         // una copia de esta página. Por /<slug> es la dirección buena de la
         // tienda: esa sí queremos que aparezca en Google, con su descripción.
-        html = html.replace(
+        if (pausada !== true) html = html.replace(
           '<meta name="robots" content="noindex, follow">',
           '<meta name="robots" content="index, follow">\n' +
           '<meta name="description" content="' + bajada + '">\n' +

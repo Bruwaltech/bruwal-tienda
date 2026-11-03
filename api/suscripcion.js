@@ -18,6 +18,7 @@
 
 const mail = require('./_mail');
 const intentos = require('./_intentos');
+const cobroRechazado = require('./_cobro-rechazado');
 
 const SUPABASE_URL = 'https://qduguqazpxjjpxjfnkif.supabase.co';
 const MP_API = 'https://api.mercadopago.com';
@@ -650,6 +651,14 @@ module.exports = async (req, res) => {
     }
 
     if (sus.status === 'authorized') {
+      // De paso, la cuota impaga (schema/98): si ya entró el cobro se saca
+      // la marca y la tienda online vuelve en el momento, sin esperar a la
+      // revisión de la noche. Nunca tira error.
+      await cobroRechazado.revisarSuscripcion({
+        base: 'https://' + (req.headers['x-forwarded-host'] || req.headers.host),
+        preapprovalId: tienda.mp_preapproval_id,
+        slug: tienda.slug
+      });
       return res.status(200).json({ ok: true, revisado: true, sigue: true,
         proximo_cobro: sus.next_payment_date || null });
     }

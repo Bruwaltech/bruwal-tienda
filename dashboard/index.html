@@ -2257,6 +2257,13 @@ tr:last-child td { border-bottom: none; }
     <button type="button" id="verPlanesBtn">Ver planes</button>
   </div>
 
+  <!-- Tienda online pausada (o por pausarse) por la suscripción: schema/98 -->
+  <div class="trial-bar hidden" id="pausaBar">
+    <span id="pausaTexto"></span>
+    <button type="button" id="pausaBtn">Activar mi plan</button>
+    <button type="button" id="pausaRevisarBtn" class="hidden">Ya pagué, revisar</button>
+  </div>
+
   <div class="app-tabs">
     <div class="wrap-tabs">
       <button class="app-tab active" id="tabDashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</button>
@@ -6372,6 +6379,85 @@ function renderTrialBar() {
   show(bar);
   aplicarModoSoloLectura(estado === 'vencido');
   ofrecerPlanesLaPrimeraVez(estado);
+  revisarPausaDeTienda();
+}
+
+// ---- Tienda online pausada por la suscripción (schema/98) ----
+// El panel NUNCA se pausa: es donde el dueño arregla el pago. Lo que se
+// pausa es el link público. Acá se le avisa antes (desde 7 días) y mientras
+// dure, con el botón que corresponde: cambiar la tarjeta si es una cuota
+// rechazada, o activar el plan si ya no tiene ninguno. La regla vive en la
+// base (estado_pausa_tienda); si la función no existe, no se muestra nada.
+const LINK_MIS_SUSCRIPCIONES_MP = 'https://www.mercadopago.com.ar/subscriptions';
+
+async function revisarPausaDeTienda() {
+  const bar = byId('pausaBar');
+  if (!bar || !currentStore || currentStore.es_demo === true) return;
+  if (typeof estadoSinConexion !== 'undefined' && estadoSinConexion) return;
+
+  let e = null;
+  try {
+    const r = await sb.rpc('mi_pausa_tienda', { p_slug: currentStore.slug });
+    e = r && !r.error ? r.data : null;
+  } catch (err) { e = null; }
+
+  if (!e || !e.activo || !e.pausa_el) { hide(bar); return; }
+
+  const corte = venceEnHoraArgentina(e.pausa_el);
+  const dias = corte ? Math.ceil((corte.getTime() - Date.now()) / 86400000) : null;
+  if (!e.pausada && (dias === null || dias > 7)) { hide(bar); return; }
+
+  const ddmm = String(e.pausa_el).slice(8, 10) + '/' + String(e.pausa_el).slice(5, 7);
+  const porCobro = e.motivo === 'cobro';
+  const texto = byId('pausaTexto');
+  const btn = byId('pausaBtn');
+  const revisar = byId('pausaRevisarBtn');
+  bar.classList.toggle('vencido', !!e.pausada);
+  bar.classList.toggle('pronto', !e.pausada);
+
+  if (e.pausada) {
+    texto.textContent = porCobro
+      ? '⏸️ Tu tienda online está pausada porque no pudimos cobrar la cuota de tu plan. Tus clientes ven "no disponible por el momento". Actualizá la tarjeta en Mercado Pago: apenas se acredita el cobro, la tienda vuelve sola.'
+      : '⏸️ Tu tienda online está pausada porque tu plan no está activo. Tus clientes ven "no disponible por el momento". Activá tu plan y vuelve a estar online sola.';
+    // El cartel de arriba decía "tu tienda pública sigue online": ya no.
+    const t = byId('trialTexto');
+    if (t) t.textContent = t.textContent.replace(' Tu tienda pública sigue online.', '');
+  } else {
+    texto.textContent = porCobro
+      ? '⚠️ No pudimos cobrar la cuota de tu plan. Si no se regulariza, tu tienda online se pausa el ' + ddmm + '. El panel sigue funcionando igual.'
+      : '⚠️ Si no activás tu plan, tu tienda online se pausa el ' + ddmm + '. El panel sigue funcionando igual.';
+  }
+
+  btn.textContent = porCobro ? 'Actualizar mi tarjeta' : 'Activar mi plan';
+  btn.onclick = porCobro
+    ? () => window.open(LINK_MIS_SUSCRIPCIONES_MP, '_blank')
+    : () => abrirPlanes();
+
+  // "Ya pagué": pregunta a Mercado Pago en el momento, sin esperar a la
+  // revisión de la noche.
+  revisar.classList.toggle('hidden', !porCobro);
+  revisar.onclick = async () => {
+    revisar.disabled = true;
+    revisar.textContent = 'Revisando...';
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        await fetch('/api/suscripcion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+          body: JSON.stringify({ slug: currentStore.slug, accion: 'revisar' })
+        });
+      }
+    } catch (err) { /* se vuelve a mirar igual */ }
+    await revisarPausaDeTienda();
+    revisar.disabled = false;
+    revisar.textContent = 'Ya pagué, revisar';
+    if (!byId('pausaBar').classList.contains('hidden') && e.pausada) {
+      dialogoAviso('Mercado Pago todavía no acreditó el cobro. Si ya actualizaste la tarjeta, Mercado Pago lo reintenta solo en los próximos días; si querés, escribinos por WhatsApp y lo vemos juntos.');
+    }
+  };
+
+  show(bar);
 }
 
 // El ultimo paso del alta: elegir plan. Al que reci\u00e9n llega y todavia no

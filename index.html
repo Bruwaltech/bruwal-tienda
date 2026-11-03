@@ -1966,10 +1966,16 @@ async function loadStores() {
     // schema/73-columnas-publicas.sql). Columna nueva que la tienda necesite =
     // sumarla aca Y en el grant de esa migracion.
     const COLS_PERFIL_PUBLICO = 'id,user_id,slug,business_name,phone,created_at,website,instagram,location,description,image_url,email,lat,lng,mensaje_envio,plan,trial_ends_at,plan_updated_at,google_url,categorias,medios_pago,turnos,eslogan,portada_url,tema,hace_reparaciones,rubro_manual,plan_vence,costo_envio,horario_local,demora_texto,demora_minutos,ml_reputacion,transferencia,ofrece_envio,es_demo';
-    const { data, error } = await sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).order('business_name');
+    // Las tiendas pausadas por falta de pago (schema/98) no se listan. Si
+    // la funcion todavia no existe en la base, se listan todas como antes.
+    const [{ data, error }, pausadas] = await Promise.all([
+      sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).order('business_name'),
+      sbPublico.rpc('tiendas_online_pausadas').then(r => r, () => ({ data: null }))
+    ]);
     if (error) throw error;
+    const slugsPausados = new Set(Array.isArray(pausadas && pausadas.data) ? pausadas.data : []);
 
-    stores = conDestacadasPrimero(data || []);
+    stores = conDestacadasPrimero((data || []).filter(s => !slugsPausados.has(s.slug)));
     filteredStores = stores;
     mostrarPruebaSocial(stores.length);
     initMap();
