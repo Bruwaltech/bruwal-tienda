@@ -566,6 +566,18 @@
     .store-info h1{font-size:24px;}
     .store-contact{align-self:flex-start;}
   }
+
+/* Venta online pausada (schema/98): se ve el catálogo, no se vende. */
+body.venta-pausada #cartBar,
+body.venta-pausada #storePhone,
+body.venta-pausada #menuPhone,
+body.venta-pausada #checkoutModal,
+body.venta-pausada #fichaAgregar,
+body.venta-pausada .qty-controls,
+body.venta-pausada .btn-elegir,
+body.venta-pausada [data-plus],
+body.venta-pausada [data-elegir],
+body.venta-pausada a[href*="wa.me"] { display: none !important; }
 </style>
 </head>
 <body>
@@ -584,6 +596,18 @@
 </div>
 
 <div id="storeView" class="hidden">
+  <!-- Venta online pausada por la suscripción (schema/98): el catálogo se ve,
+       pero sin carrito, sin pedidos y sin WhatsApp. -->
+  <div id="ventaPausadaAviso" class="hidden" style="background:#FFF7E6;border-bottom:1px solid #F5D9A6;color:#7A4B00;font-size:14px;line-height:1.5;">
+    <div class="wrap" style="padding:12px 16px;text-align:center;">
+      <b>Esta tienda no tiene habilitado el servicio de venta online por el momento.</b>
+      Podés mirar el catálogo, pero no se pueden hacer pedidos.
+      <div id="ventaPausadaDuenio" class="hidden" style="margin-top:8px;text-align:left;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid #F5D9A6;">
+        <b>Sos el dueño de esta tienda.</b> La venta online está pausada porque la suscripción de BRUWAL no está al día. Entrá a tu panel para regularizarla: apenas se acredita el pago vuelve sola.
+        <a href="/dashboard/" style="font-weight:700;color:#7A4B00;white-space:nowrap;">Ir a mi panel →</a>
+      </div>
+    </div>
+  </div>
   <header>
     <div class="wrap">
       <div class="header-top">
@@ -1181,6 +1205,24 @@ function mostrarTiendaCerrada(store){
   show(byId('cerradaState'));
 }
 
+// Venta online pausada porque la suscripción no está al día (schema/98).
+// El catálogo se sigue viendo, pero sin carrito, sin pedidos y sin
+// WhatsApp: "esta tienda no tiene habilitado el servicio de venta online".
+// Al público no se le dice por qué (que el negocio no pagó no es asunto de
+// su cliente); al dueño que entra a ver su propia tienda sí, con el camino
+// para destrabarla. Y que Google no la indexe mientras dure.
+let ventaPausada = false;
+async function pausarVentaOnline(store){
+  ventaPausada = true;
+  document.body.classList.add('venta-pausada');
+  show(byId('ventaPausadaAviso'));
+  const robots = document.createElement('meta');
+  robots.name = 'robots';
+  robots.content = 'noindex';
+  document.head.appendChild(robots);
+  if (await esDuenioDeLaTienda(store)) show(byId('ventaPausadaDuenio'));
+}
+
 async function cargarAfiliado(slug, store){
   const delLink = (new URLSearchParams(window.location.search).get('ref') || '').trim();
   // El duenio no es un cliente recomendado: no se le recuerda el codigo
@@ -1315,9 +1357,12 @@ async function init(){
   // el local, schema/83-tienda-online-cerrada.sql). Se pregunta junto con el
   // perfil para no mostrar el catálogo ni un instante. Si la función todavía
   // no existe en la base, la tienda sigue abierta como siempre.
-  const [{ data: store, error: storeError }, cierre] = await Promise.all([
+  // Lo mismo con la pausa por suscripción impaga (schema/98): si la función
+  // no existe todavía, la tienda sigue abierta como siempre.
+  const [{ data: store, error: storeError }, cierre, pausa] = await Promise.all([
     sbPublico.from('store_profiles').select(COLS_PERFIL_PUBLICO).eq('slug', slug).maybeSingle(),
-    sbPublico.rpc('tienda_online_cerrada', { p_slug: slug }).then(r => r, () => ({ data: false }))
+    sbPublico.rpc('tienda_online_cerrada', { p_slug: slug }).then(r => r, () => ({ data: false })),
+    sbPublico.rpc('tienda_online_pausada', { p_slug: slug }).then(r => r, () => ({ data: false }))
   ]);
   if (storeError || !store){
     hide(byId('loadingState'));
@@ -1328,6 +1373,7 @@ async function init(){
     mostrarTiendaCerrada(store);
     return;
   }
+  if (pausa && pausa.data === true) pausarVentaOnline(store);
 
   perfilTienda = store;
   aplicarTema(store.tema);
@@ -3116,6 +3162,7 @@ function stockDisponibleParaLinea(productoId, variante){
 // stock disponible de esa combinación — así quien llama puede avisarle al
 // cliente en vez de dejarlo pedir de más silenciosamente.
 function sumarAlCarrito(productoId, opciones, cantidad, variante){
+  if (ventaPausada) return false;   // venta online pausada (schema/98)
   const k = claveLinea(productoId, opciones, variante);
   if (!cart[k]) cart[k] = { productId: productoId, qty: 0, opciones: opciones || [], variante: variante || null };
 
@@ -3672,6 +3719,7 @@ function pintarAvisoCheckout() {
 }
 
 byId('openCheckoutBtn').addEventListener('click', () => {
+  if (ventaPausada) return;   // venta online pausada (schema/98)
   byId('checkoutError').classList.add('hidden');
   pintarAvisoCheckout();
   // Se arma acá y no al cargar la página porque depende del carrito, que

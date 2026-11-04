@@ -147,10 +147,96 @@ async function avisarAdmins({ negocio, slug, para, cobro, intento }) {
   }
 }
 
+// ---- Cuota sin cobrar (schema/98) -------------------------------------
+// Además del mail, se anota DESDE CUÁNDO la tienda tiene una cuota sin
+// cobrar: con eso, pasados los días de gracia, la tienda online se pausa
+// (tienda_online_pausada en la base). Una fila por tienda, atada a la
+// suscripción, y se borra cuando entra un cobro. Si la tabla todavía no
+// existe, no pasa nada: se loguea y sigue.
+function esCobrado(cobro) {
+  return !!(cobro && cobro.payment && cobro.payment.status === 'approved');
+}
+
+async function impagoActual(slug) {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/suscripcion_cobro_impago?slug=eq.' +
+                        encodeURIComponent(slug) + '&select=preapproval_id,desde&limit=1',
+                        { headers: cabecerasSb() });
+  if (!r.ok) throw new Error('Supabase ' + r.status);
+  const filas = await r.json().catch(() => null);
+  return (Array.isArray(filas) && filas[0]) || null;
+}
+
+// desde = fecha del PRIMER rechazo sin cobrar. Si ya habia fila de esta
+// misma suscripcion se conserva su fecha: un reintento rechazado no
+// reinicia los dias de gracia.
+async function anotarImpago({ slug, preapprovalId, desde, cobroId }) {
+  try {
+    const actual = await impagoActual(slug);
+    const mismo = actual && actual.preapproval_id === String(preapprovalId);
+    const fila = {
+      slug,
+      preapproval_id: String(preapprovalId),
+      desde: mismo && new Date(actual.desde) <= new Date(desde) ? actual.desde : desde,
+      ultimo_cobro_id: String(cobroId),
+      actualizado_en: new Date().toISOString()
+    };
+    const r = await fetch(SUPABASE_URL + '/rest/v1/suscripcion_cobro_impago', {
+      method: 'POST',
+      headers: cabecerasSb({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify(fila)
+    });
+    if (!r.ok) throw new Error('Supabase ' + r.status + ': ' + (await r.text()).slice(0, 200));
+    return true;
+  } catch (err) {
+    console.warn('No se pudo anotar la cuota impaga de', slug, String((err && err.message) || err));
+    return false;
+  }
+}
+
+async function borrarImpago(slug) {
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/suscripcion_cobro_impago?slug=eq.' +
+                          encodeURIComponent(slug), {
+      method: 'DELETE', headers: cabecerasSb({ Prefer: 'return=representation' })
+    });
+    if (!r.ok) throw new Error('Supabase ' + r.status);
+    const filas = await r.json().catch(() => []);
+    if (Array.isArray(filas) && filas.length) console.log('Cuota al dia, se saca la marca de impago:', slug);
+    return true;
+  } catch (err) {
+    console.warn('No se pudo borrar la cuota impaga de', slug, String((err && err.message) || err));
+    return false;
+  }
+}
+
+// Con TODOS los cobros de una suscripcion: desde el ultimo cobrado, ¿hay
+// rechazados? El primero de esos es el "desde". Es la fuente de verdad (la
+// revision diaria la corre todas las noches): si un webhook llego fuera de
+// orden y dejo una marca de mas, aca se corrige.
+function primerImpagoPendiente(cobros) {
+  const orden = (cobros || []).slice().sort((a, b) =>
+    new Date(a.date_created || 0) - new Date(b.date_created || 0));
+  let primero = null;
+  for (const c of orden) {
+    if (esCobrado(c)) primero = null;
+    else if (esRechazado(c) && !primero) primero = c;
+  }
+  return primero;
+}
+
 // El corazon. Recibe un authorized_payment de Mercado Pago tal cual viene.
 // Devuelve un texto corto con lo que hizo, para el log / la respuesta.
 async function procesarCobro({ base, cobro }) {
   try {
+    // La marca de impago va antes que el mail y no depende de Resend.
+    if (cobro && cobro.preapproval_id && (esCobrado(cobro) || (esRechazado(cobro) && esReciente(cobro)))) {
+      const t = await tiendaDeSuscripcion(cobro.preapproval_id);
+      if (t && esCobrado(cobro)) await borrarImpago(t.slug);
+      else if (t) await anotarImpago({ slug: t.slug, preapprovalId: cobro.preapproval_id,
+                                       desde: cobro.date_created || new Date().toISOString(),
+                                       cobroId: cobro.id });
+    }
+
     if (!esRechazado(cobro)) return 'no rechazado';
     if (!esReciente(cobro)) return 'rechazo viejo';
     if (!mail.hayComoMandar()) return 'sin Resend';
@@ -206,15 +292,30 @@ async function procesarCobroPorId({ base, id }) {
 
 // Para la revision diaria: todos los cobros de una suscripcion. Devuelve
 // cuantos avisos salieron.
-async function revisarSuscripcion({ base, preapprovalId }) {
+async function revisarSuscripcion({ base, preapprovalId, slug }) {
   try {
     const r = await fetch(MP_API + '/authorized_payments/search?preapproval_id=' +
                           encodeURIComponent(preapprovalId) + '&limit=50',
       { headers: { Authorization: 'Bearer ' + process.env.MP_ACCESS_TOKEN } });
     if (!r.ok) return 0;
     const datos = await r.json().catch(() => null);
+    const cobros = (datos && datos.results) || [];
+
+    // La marca de impago, recalculada con la lista entera.
+    const tienda = slug ? { slug } : await tiendaDeSuscripcion(preapprovalId);
+    if (tienda) {
+      const pendiente = primerImpagoPendiente(cobros);
+      if (pendiente) {
+        await anotarImpago({ slug: tienda.slug, preapprovalId,
+                             desde: pendiente.date_created || new Date().toISOString(),
+                             cobroId: pendiente.id });
+      } else {
+        await borrarImpago(tienda.slug);
+      }
+    }
+
     let avisados = 0;
-    for (const cobro of (datos && datos.results) || []) {
+    for (const cobro of cobros) {
       if (!esRechazado(cobro) || !esReciente(cobro)) continue;
       if ((await procesarCobro({ base, cobro })) === 'avisado') avisados++;
     }
@@ -225,4 +326,4 @@ async function revisarSuscripcion({ base, preapprovalId }) {
 }
 
 module.exports = { procesarCobro, procesarCobroPorId, revisarSuscripcion,
-                   _probar: { esRechazado, esReciente, textoReintento, pesos } };
+                   _probar: { esRechazado, esReciente, esCobrado, primerImpagoPendiente, textoReintento, pesos } };
