@@ -3645,6 +3645,41 @@ tr:last-child td { border-bottom: none; }
                ahi el total de la factura multiplica todo por el stock, asi
                que la etiqueta lo dice y abajo esta la calculadora para
                sacarlo del total, que es el numero que el negocio tiene. -->
+          <!-- Solo distribuidora: el costo se arma como en la boleta del
+               proveedor (y como la ficha del sistema viejo de JACI): costo
+               neto sin IVA, menos los descuentos en cascada, más el IVA. El
+               resultado es el "costo final real" y va al campo de costo de
+               abajo, que es el que usan el % de margen, Estadísticas y la
+               valoración del stock. Ej.: 215 neto + 21% = 260,15; con 30% de
+               margen da 338,20, igual que el viejo. -->
+          <div id="pCostoArmado" class="hidden" style="background:var(--bg);padding:10px;border-radius:8px;margin-bottom:9px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+              <div style="flex:1;min-width:110px;">
+                <label for="pCostoNeto" style="display:block;font-size:11px;color:var(--text-mute);margin-bottom:3px;">Costo neto (sin IVA)</label>
+                <input type="number" id="pCostoNeto" min="0" step="0.01" inputmode="decimal" placeholder="Ej: 215" style="width:100%;padding:7px;font-size:13px;">
+              </div>
+              <div style="min-width:150px;">
+                <label style="display:block;font-size:11px;color:var(--text-mute);margin-bottom:3px;">Descuentos (%)</label>
+                <div style="display:flex;gap:4px;">
+                  <input type="number" id="pCostoDesc1" class="costo-desc" min="0" max="100" step="0.01" inputmode="decimal" placeholder="0" style="width:52px;padding:7px 5px;font-size:13px;">
+                  <input type="number" id="pCostoDesc2" class="costo-desc" min="0" max="100" step="0.01" inputmode="decimal" placeholder="0" style="width:52px;padding:7px 5px;font-size:13px;">
+                  <input type="number" id="pCostoDesc3" class="costo-desc" min="0" max="100" step="0.01" inputmode="decimal" placeholder="0" style="width:52px;padding:7px 5px;font-size:13px;">
+                </div>
+              </div>
+              <div style="min-width:90px;">
+                <label for="pCostoIva" style="display:block;font-size:11px;color:var(--text-mute);margin-bottom:3px;">% IVA</label>
+                <select id="pCostoIva" style="padding:7px 5px;font-size:13px;border:1px solid var(--line);border-radius:7px;">
+                  <option value="21">21</option>
+                  <option value="10.5">10,5</option>
+                  <option value="27">27</option>
+                  <option value="0">Exento</option>
+                </select>
+              </div>
+            </div>
+            <small style="display:block;margin-top:4px;color:var(--text-mute);font-size:11.5px;line-height:1.5;">
+              Neto menos los descuentos de la boleta, más el IVA. La cuenta va sola al costo final real de abajo, y el % de margen se calcula sobre ese costo.
+            </small>
+          </div>
           <label id="pCostoLabel">🔒 Costo por unidad <span style="font-weight:400;color:var(--text-mute);">(opcional)</span></label>
           <button type="button" id="pCostoVerBtn" class="btn-ghost hidden" style="width:auto;padding:8px 14px;font-size:13px;">🔒 Ver / cargar costo</button>
           <!-- En electrónica el costo se puede cargar en dólares: se guarda
@@ -7773,6 +7808,9 @@ function aplicarVisibilidadCosto() {
   if (desdeTotal) desdeTotal.classList.toggle('hidden',
     requiereDesbloqueoCostos() || esServicio || esPlatoDelMenu());
 
+  const armado = byId('pCostoArmado');
+  if (armado) armado.classList.toggle('hidden', !(typeof costoArmadoAplica === 'function' && costoArmadoAplica()));
+
   actualizarEtiquetaCosto();
   if (typeof aplicarVisibilidadMargen === 'function') aplicarVisibilidadMargen();
 }
@@ -7788,7 +7826,7 @@ function actualizarEtiquetaCosto() {
   const propia = nombreUnidadDe({ unidad_nombre: byId('pUnidadNombre')?.value });
   const porQue = u ? ('por ' + u.singular) : (propia ? ('por ' + propia.singular) : 'por unidad');
 
-  label.innerHTML = '\uD83D\uDD12 Costo ' + escapeHtml(byId('pTipoServicio')?.checked ? '' : porQue) +
+  label.innerHTML = '\uD83D\uDD12 Costo ' + (rubroEsDistribuidora() ? 'final real ' : '') + escapeHtml(byId('pTipoServicio')?.checked ? '' : porQue) +
     ' <span style="font-weight:400;color:var(--text-mute);">(opcional)</span>';
 }
 
@@ -7811,6 +7849,7 @@ function calcularCostoUnitario() {
   if (unitario > 0 && byId('pCosto') && !byId('pCostoFila').classList.contains('hidden')) {
     byId('pCosto').value = Math.round(unitario * 100) / 100;
     if (byId('pCostoMoneda')?.value === 'ARS') costoEnEdicion = Number(byId('pCosto').value);
+    if (typeof limpiarCostoArmado === 'function' && numeroCampo('pCostoNeto') > 0) limpiarCostoArmado();
     actualizarHintMoneda('pCosto', 'pCostoMoneda', 'pCostoHint');
   }
 }
@@ -7849,6 +7888,86 @@ async function valorCostoParaGuardar() {
   if (!conv.moneda) return { costo: conv.monto_ars || null, ...limpiarUsd };
   return { costo: conv.monto_ars || null, ...enUsd(conv.moneda, conv.monto_original, conv.cotizacion) };
 }
+
+// ---- Costo armado: neto - descuentos + IVA (solo distribuidora) ----------
+// Pedido de JACI: el costo se carga como viene en la boleta del proveedor.
+// Se guardan el neto y los descuentos (schema/100) para volver a verlos; el
+// IVA es el del artículo (alicuota_iva, schema/98), el mismo del tique
+// fiscal, y el campo "IVA del artículo" del paso 5 se mueve junto con este.
+// El costo final real va a la columna costo de siempre, así el margen, las
+// Estadísticas y la valoración del stock usan lo que de verdad cuesta.
+function costoArmadoAplica() {
+  return rubroEsDistribuidora() && !requiereDesbloqueoCostos();
+}
+function numeroCampo(id) {
+  const v = Number(String(byId(id)?.value ?? '').replace(',', '.'));
+  return isFinite(v) && v > 0 ? v : 0;
+}
+function descuentosCostoEnForm() {
+  return ['pCostoDesc1', 'pCostoDesc2', 'pCostoDesc3'].map(numeroCampo).map(d => Math.min(d, 100));
+}
+// Descuentos en cascada, como el viejo y como las boletas: 10% y después 5%
+// sobre lo que queda (no 15% de una).
+function calcularCostoFinal(neto, descuentos, iva) {
+  let c = Number(neto) || 0;
+  (descuentos || []).forEach(d => { c = c * (1 - (Number(d) || 0) / 100); });
+  c = c * (1 + (Number(iva) || 0) / 100);
+  return Math.round(c * 100) / 100;
+}
+function costoFinalArmado() {
+  const neto = numeroCampo('pCostoNeto');
+  if (!(neto > 0)) return 0;
+  return calcularCostoFinal(neto, descuentosCostoEnForm(), Number(byId('pCostoIva')?.value || 21));
+}
+// Neto, descuento o IVA tocados a mano: el costo final pasa al campo de
+// costo y se avisa con 'input' para que el % de margen mueva el precio.
+function aplicarCostoArmado() {
+  const final = costoFinalArmado();
+  const campo = byId('pCosto');
+  if (!(final > 0) || !campo || byId('pCostoFila')?.classList.contains('hidden')) return;
+  campo.value = final;
+  if ((byId('pCostoMoneda')?.value || 'ARS') === 'ARS') costoEnEdicion = final;
+  campo.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function cargarCostoArmado(p) {
+  if (!byId('pCostoNeto')) return;
+  const neto = Number(p && p.costo_neto);
+  byId('pCostoNeto').value = neto > 0 ? neto : '';
+  const descs = Array.isArray(p && p.costo_descuentos) ? p.costo_descuentos : [];
+  ['pCostoDesc1', 'pCostoDesc2', 'pCostoDesc3'].forEach((id, i) => {
+    byId(id).value = Number(descs[i]) > 0 ? Number(descs[i]) : '';
+  });
+  if (byId('pCostoIva')) byId('pCostoIva').value = String(p ? alicuotaIvaDe(p) : 21);
+}
+function limpiarCostoArmado() {
+  ['pCostoNeto', 'pCostoDesc1', 'pCostoDesc2', 'pCostoDesc3'].forEach(id => { if (byId(id)) byId(id).value = ''; });
+}
+// Para el payload. Null = no tocar (campo tapado por PIN o columnas que
+// todavía no existen: una tienda sin schema/100 guarda igual que antes).
+function valorCostoArmadoParaGuardar() {
+  if (!rubroEsDistribuidora() || byId('pCostoArmado')?.classList.contains('hidden')) return null;
+  if (!(products || []).some(x => 'costo_neto' in x)) return null;
+  const neto = numeroCampo('pCostoNeto');
+  if (!(neto > 0)) return { costo_neto: null, costo_descuentos: null };
+  const descs = descuentosCostoEnForm();
+  while (descs.length && !(descs[descs.length - 1] > 0)) descs.pop();
+  return { costo_neto: neto, costo_descuentos: descs.length ? descs : null };
+}
+
+['pCostoNeto', 'pCostoDesc1', 'pCostoDesc2', 'pCostoDesc3'].forEach(id => byId(id)?.addEventListener('input', aplicarCostoArmado));
+byId('pCostoIva')?.addEventListener('change', () => {
+  if (byId('pAlicuotaIva')) byId('pAlicuotaIva').value = byId('pCostoIva').value;
+  aplicarCostoArmado();
+});
+byId('pAlicuotaIva')?.addEventListener('change', () => {
+  if (byId('pCostoIva')) byId('pCostoIva').value = byId('pAlicuotaIva').value;
+  aplicarCostoArmado();
+});
+// Costo final escrito a mano: manda ese número y el neto deja de valer
+// (si no, al guardar quedaría un neto que no da el costo cargado).
+byId('pCosto')?.addEventListener('input', (ev) => {
+  if (ev.isTrusted && numeroCampo('pCostoNeto') > 0) limpiarCostoArmado();
+});
 
 // ---- % de margen sobre el costo (como la ficha del sistema viejo) --------
 // Margen = cuanto se le suma al costo: costo 35.201 con 12,22% = 39.502,56.
@@ -27426,6 +27545,7 @@ function abrirFormularioNuevo(tipo) {
     if (byId('insumoBuscar')) byId('insumoBuscar').value = '';
     if (byId('pComboEnCaja')) byId('pComboEnCaja').checked = false;
     if (byId('pAlicuotaIva')) byId('pAlicuotaIva').value = '21';
+    cargarCostoArmado(null);
     renderInsumos();
     usadoEnEnEdicion = [];
     if (byId('pServicioInterno')) byId('pServicioInterno').checked = false;
@@ -29411,6 +29531,8 @@ byId('productForm').addEventListener('submit', async (e) => {
       const iva = Number(byId('pAlicuotaIva')?.value ?? 21);
       payload.alicuota_iva = iva === 21 ? null : iva;
     }
+    const armado = valorCostoArmadoParaGuardar();
+    if (armado) Object.assign(payload, armado);
   }
   if (!id) payload.numero = Math.max(0, ...products.map(p => Number(p.numero) || 0)) + 1;
 
@@ -29585,6 +29707,7 @@ async function editProduct(id) {
   if (byId('insumoBuscar')) byId('insumoBuscar').value = '';
   if (byId('pComboEnCaja')) byId('pComboEnCaja').checked = !!p.combo_en_caja;
   if (byId('pAlicuotaIva')) byId('pAlicuotaIva').value = String(alicuotaIvaDe(p));
+  cargarCostoArmado(p);
   renderInsumos();
   iniciarWizard(false);
   if (byId('productModal')) show(byId('productModal'));
