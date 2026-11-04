@@ -2650,6 +2650,7 @@ tr:last-child td { border-bottom: none; }
           <button type="button" data-atajo="cliente" title="Ir al cliente"><kbd>F2</kbd> Cliente</button>
           <button type="button" data-atajo="buscar" title="Ir al buscador de productos"><kbd>F3</kbd> Producto</button>
           <button type="button" data-atajo="cantidad" title="Cambiar la cantidad del artículo en pantalla"><kbd>F4</kbd> Cantidad</button>
+          <button type="button" data-atajo="buscar" title="Escribí la cantidad y * antes de escanear: 3* y el código carga 3 unidades. 3* solo + Enter cambia la cantidad del artículo en pantalla."><kbd>3*</kbd> Cantidad antes del código</button>
           <button type="button" data-atajo="agregar" title="Agrega el artículo en pantalla al comprobante y vuelve al buscador. Con texto escrito en el buscador, lo busca."><kbd>+</kbd> Agregar artículo</button>
           <button type="button" data-atajo="quitar" title="Saca el artículo en pantalla, o el último renglón del comprobante"><kbd>−</kbd> Quitar último</button>
           <button type="button" data-atajo="pago" title="Elegir el medio de pago (después, flechas arriba/abajo)"><kbd>F8</kbd> Medio de pago</button>
@@ -24663,8 +24664,45 @@ let currentBarcodeProduct = null;
 // toca "Agregar otro producto" o se registra la venta.
 let carritoVenta = [];
 
+// ---- "3*" antes del código: cantidad con el teclado (distribuidora) ----
+// Pedido de JACI (04/11), como su sistema viejo: escribir 3* y después
+// escanear (o tipear) el código carga el artículo con 3 unidades, sin bajar
+// hasta la casilla Cantidad. "3*" solo + Enter cambia la cantidad del
+// artículo que está en pantalla. La cantidad queda pendiente hasta que se
+// elige el producto (sirve también para "3*arroz" con varios resultados).
+let cantidadPorTecladoVenta = null;
+function leerMultiplicadorVenta(texto) {
+  if (!rubroEsDistribuidora()) return null;
+  const m = /^\s*(\d+(?:[.,]\d+)?)\s*\*\s*(.*)$/.exec(String(texto || ''));
+  if (!m) return null;
+  const n = Number(m[1].replace(',', '.'));
+  if (!(n > 0) || n > 100000) return null;
+  return { cantidad: n, resto: m[2].trim() };
+}
+function cantidadPorTecladoPara(product, n) {
+  return seVendePorMedida(product) ? redondearMedida(n) : Math.max(1, Math.round(n));
+}
+
 async function searchByBarcode() {
-  const crudo = byId('barcodeInput').value.trim();
+  let crudo = byId('barcodeInput').value.trim();
+  const mult = leerMultiplicadorVenta(crudo);
+  cantidadPorTecladoVenta = mult ? mult.cantidad : null;
+  if (mult) {
+    crudo = mult.resto;
+    if (!crudo) {
+      cantidadPorTecladoVenta = null;
+      if (currentBarcodeProduct && !byId('barcodeResult').classList.contains('hidden')) {
+        byId('barcodeQty').value = cantidadPorTecladoPara(currentBarcodeProduct, mult.cantidad);
+        calculateTotal();
+        byId('barcodeInput').value = '';
+        byId('barcodeInput').focus();
+        return;
+      }
+      dialogoAviso('Escribí la cantidad, el * y después escaneá o escribí el producto.\n\nEj.: 3*7790070562180 carga 3 unidades.');
+      byId('barcodeInput').focus();
+      return;
+    }
+  }
   const query = normalizarTexto(crudo);
   if (!query) {
     dialogoAviso('Ingresa un código, EAN o nombre del producto');
@@ -24686,6 +24724,7 @@ async function searchByBarcode() {
       byId('barcodeInput').select();
       return;
     }
+    cantidadPorTecladoVenta = null;
     escaneoAutomaticoVenta(delaBalanza, cantidadDesdeBalanza(pesada, delaBalanza));
     return;
   }
@@ -24746,7 +24785,10 @@ async function searchByBarcode() {
 function escaneoAutomaticoVenta(product, cantidad, porImei) {
   const input = byId('barcodeInput');
   const actual = currentBarcodeProduct;
-  const sumar = (cantidad != null && Number(cantidad) > 0) ? Number(cantidad) : 1;
+  // "3*codigo": suma 3 en vez de 1 (el IMEI es un equipo, siempre 1).
+  const porTeclado = (!porImei && cantidadPorTecladoVenta > 0) ? cantidadPorTecladoPara(product, cantidadPorTecladoVenta) : null;
+  if (porImei) cantidadPorTecladoVenta = null;
+  const sumar = (cantidad != null && Number(cantidad) > 0) ? Number(cantidad) : (porTeclado || 1);
 
   if (actual && String(actual.id) === String(product.id)) {
     // El mismo IMEI dos veces es el mismo equipo: no son dos unidades.
@@ -24759,6 +24801,7 @@ function escaneoAutomaticoVenta(product, cantidad, porImei) {
       byId('barcodeQty').value = seVendePorMedida(actual) ? redondearMedida(nueva) : nueva;
       calculateTotal();
     }
+    cantidadPorTecladoVenta = null;
     avisarLectura();
     input.value = '';
     input.focus();
@@ -24911,6 +24954,10 @@ function seleccionarProductoVenta(id, cantidad) {
   const vinoDeBalanza = cantidad != null && Number(cantidad) > 0;
   byId('barcodeQty').value = vinoDeBalanza ? cantidad : '1';
   avisoBalanzaVenta(vinoDeBalanza ? { producto: product, cantidad } : null);
+  // "3*" escrito antes del código o del nombre (ver leerMultiplicadorVenta).
+  const porTeclado = !vinoDeBalanza && cantidadPorTecladoVenta > 0;
+  if (porTeclado) byId('barcodeQty').value = cantidadPorTecladoPara(product, cantidadPorTecladoVenta);
+  cantidadPorTecladoVenta = null;
   byId('barcodeAbono').value = '0';
   renderListaVendedores();
   // Solo lo autocompleta si todavía no escribió nada: así, si en la misma
@@ -24924,7 +24971,10 @@ function seleccionarProductoVenta(id, cantidad) {
   actualizarFilaMayorista();
   calculateTotal();
   show(byId('barcodeResult'));
-  byId('barcodeQty').focus();
+  // Con la cantidad ya puesta por teclado se sigue escaneando: el foco
+  // vuelve al buscador vacío en vez de ir a la casilla Cantidad.
+  if (porTeclado) { byId('barcodeInput').value = ''; byId('barcodeInput').focus(); }
+  else byId('barcodeQty').focus();
 }
 
 // La casilla de mayorista solo aparece si la tienda carga precios por
@@ -27108,6 +27158,7 @@ const atajosCaja = {
     confirmBarcodeVenta();
   },
   esc() {
+    cantidadPorTecladoVenta = null;
     hide(byId('barcodeMatches'));
     const input = byId('barcodeInput');
     if (document.activeElement === input && input.value) input.value = '';
